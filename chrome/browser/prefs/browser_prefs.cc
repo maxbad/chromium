@@ -314,6 +314,7 @@
 #include "chrome/browser/ash/login/users/multi_profile_user_controller.h"
 #include "chrome/browser/ash/plugin_vm/plugin_vm_pref_names.h"
 #include "chrome/browser/ash/power/auto_screen_brightness/metrics_reporter.h"
+#include "chrome/browser/ash/power/power_metrics_reporter.h"
 #include "chrome/browser/ash/release_notes/release_notes_storage.h"
 #include "chrome/browser/ash/settings/device_settings_cache.h"
 #include "chrome/browser/ash/system/automatic_reboot_manager.h"
@@ -336,7 +337,6 @@
 #include "chrome/browser/chromeos/policy/reporting/extension_install_event_log_manager_wrapper.h"
 #include "chrome/browser/chromeos/policy/status_collector/device_status_collector.h"
 #include "chrome/browser/chromeos/policy/status_collector/status_collector.h"
-#include "chrome/browser/chromeos/power/power_metrics_reporter.h"
 #include "chrome/browser/chromeos/preferences.h"
 #include "chrome/browser/chromeos/printing/cups_printers_manager.h"
 #include "chrome/browser/chromeos/printing/enterprise_printers_provider.h"
@@ -578,6 +578,10 @@ const char kToolbarSize[] = "extensions.toolbarsize";
 #endif
 const char kSessionExitedCleanly[] = "profile.exited_cleanly";
 
+// Deprecated 05/2021
+const char kSpellCheckBlacklistedDictionaries[] =
+    "spellcheck.blacklisted_dictionaries";
+
 // Register local state used only for migration (clearing or moving to a new
 // key).
 void RegisterLocalStatePrefsForMigration(PrefRegistrySimple* registry) {
@@ -713,6 +717,8 @@ void RegisterProfilePrefsForMigration(
 #if BUILDFLAG(IS_CHROMEOS_ASH)
   registry->RegisterInt64Pref(kFeatureUsageDailySampleFingerprint, 0);
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
+
+  registry->RegisterListPref(kSpellCheckBlacklistedDictionaries);
 }
 
 }  // namespace
@@ -1436,6 +1442,9 @@ void MigrateObsoleteProfilePrefs(Profile* profile) {
   // Added 05/2021
   profile_prefs->ClearPref(kFeatureUsageDailySampleFingerprint);
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
+
+  // Added 05/2021
+  profile_prefs->ClearPref(kSpellCheckBlacklistedDictionaries);
 
   // Please don't delete the following line. It is used by PRESUBMIT.py.
   // END_MIGRATE_OBSOLETE_PROFILE_PREFS

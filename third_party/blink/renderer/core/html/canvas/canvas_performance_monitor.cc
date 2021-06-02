@@ -5,6 +5,7 @@
 #include "third_party/blink/renderer/core/html/canvas/canvas_performance_monitor.h"
 
 #include "base/metrics/histogram_functions.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/trace_event/trace_event.h"
 #include "third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h"
 
@@ -169,15 +170,17 @@ void CanvasPerformanceMonitor::CurrentTaskDrawsToContext(
     // canvases per render task.
     measure_current_task_ = !(task_counter_++ % kSamplingProbabilityInv);
 
-    if (context->Host() && context->Host()->GetTopExecutionContext() &&
-        context->Host()
-            ->GetTopExecutionContext()
-            ->IsInRequestAnimationFrame()) {
-      call_type_ = CallType::kAnimation;
-    } else {
-      // TODO(crbug.com/1206028): Add support for CallType::kUserInput
-      call_type_ = CallType::kOther;
+    if (LIKELY(!measure_current_task_))
+      return;
+
+    call_type_ = CallType::kOther;
+    if (context->Host()) {
+      ExecutionContext* ec = context->Host()->GetTopExecutionContext();
+      if (ec && ec->IsInRequestAnimationFrame()) {
+        call_type_ = CallType::kAnimation;
+      }
     }
+    // TODO(crbug.com/1206028): Add support for CallType::kUserInput
   }
 
   if (LIKELY(!measure_current_task_))
@@ -204,6 +207,20 @@ void CanvasPerformanceMonitor::RecordMetrics(TimeTicks start_time,
                                              TimeTicks end_time) {
   TRACE_EVENT0("blink", "CanvasPerformanceMonitor::RecordMetrics");
   TimeDelta elapsed_time = end_time - start_time;
+  constexpr size_t kKiloByte = 1024;
+  int partition_alloc_kb = WTF::Partitions::TotalActiveBytes() / kKiloByte;
+  int blink_gc_alloc_kb = ProcessHeap::TotalAllocatedObjectSize() / kKiloByte;
+
+  bool canvas_context_type_was_used[CanvasRenderingContext::kMaxValue];
+  for (bool& b : canvas_context_type_was_used) {
+    b = false;
+  }
+
+  bool offscreen_context_type_was_used[CanvasRenderingContext::kMaxValue];
+  for (bool& b : offscreen_context_type_was_used) {
+    b = false;
+  }
+
   while (!rendering_context_descriptions_.IsEmpty()) {
     RenderingContextDescriptionCodec desc(
         rendering_context_descriptions_.TakeAny());
@@ -232,6 +249,84 @@ void CanvasPerformanceMonitor::RecordMetrics(TimeTicks start_time,
       base::UmaHistogramMicrosecondsTimes(histogram_name.Latin1(),
                                           elapsed_time);
     }
+    if (desc.IsOffscreen()) {
+      offscreen_context_type_was_used[desc.ContextType()] = true;
+    } else {
+      canvas_context_type_was_used[desc.ContextType()] = true;
+    }
+  }
+
+  if (canvas_context_type_was_used[CanvasRenderingContext::kContext2D]) {
+    UMA_HISTOGRAM_MEMORY_KB("Blink.Canvas.PartionAlloc.2D", partition_alloc_kb);
+    UMA_HISTOGRAM_MEMORY_KB("Blink.Canvas.BlinkGC.2D", blink_gc_alloc_kb);
+  }
+
+  if (canvas_context_type_was_used[CanvasRenderingContext::kContextWebgl] ||
+      canvas_context_type_was_used
+          [CanvasRenderingContext::kContextExperimentalWebgl]) {
+    UMA_HISTOGRAM_MEMORY_KB("Blink.Canvas.PartionAlloc.WebGL",
+                            partition_alloc_kb);
+    UMA_HISTOGRAM_MEMORY_KB("Blink.Canvas.BlinkGC.WebGL", blink_gc_alloc_kb);
+  }
+
+  if (canvas_context_type_was_used[CanvasRenderingContext::kContextWebgl2]) {
+    UMA_HISTOGRAM_MEMORY_KB("Blink.Canvas.PartionAlloc.WebGL2",
+                            partition_alloc_kb);
+    UMA_HISTOGRAM_MEMORY_KB("Blink.Canvas.BlinkGC.WebGL2", blink_gc_alloc_kb);
+  }
+
+  if (canvas_context_type_was_used
+          [CanvasRenderingContext::kContextGPUPresent]) {
+    UMA_HISTOGRAM_MEMORY_KB("Blink.Canvas.PartionAlloc.WebGPU",
+                            partition_alloc_kb);
+    UMA_HISTOGRAM_MEMORY_KB("Blink.Canvas.BlinkGC.WebGPU", blink_gc_alloc_kb);
+  }
+
+  if (canvas_context_type_was_used
+          [CanvasRenderingContext::kContextImageBitmap]) {
+    UMA_HISTOGRAM_MEMORY_KB("Blink.Canvas.PartionAlloc.ImageBitmap",
+                            partition_alloc_kb);
+    UMA_HISTOGRAM_MEMORY_KB("Blink.Canvas.BlinkGC.ImageBitmap",
+                            blink_gc_alloc_kb);
+  }
+
+  if (offscreen_context_type_was_used[CanvasRenderingContext::kContext2D]) {
+    UMA_HISTOGRAM_MEMORY_KB("Blink.OffscreenCanvas.PartionAlloc.2D",
+                            partition_alloc_kb);
+    UMA_HISTOGRAM_MEMORY_KB("Blink.OffscreenCanvas.BlinkGC.2D",
+                            blink_gc_alloc_kb);
+  }
+
+  if (offscreen_context_type_was_used[CanvasRenderingContext::kContextWebgl] ||
+      offscreen_context_type_was_used
+          [CanvasRenderingContext::kContextExperimentalWebgl]) {
+    UMA_HISTOGRAM_MEMORY_KB("Blink.OffscreenCanvas.PartionAlloc.WebGL",
+                            partition_alloc_kb);
+    UMA_HISTOGRAM_MEMORY_KB("Blink.OffscreenCanvas.BlinkGC.WebGL",
+                            blink_gc_alloc_kb);
+  }
+
+  if (offscreen_context_type_was_used[CanvasRenderingContext::kContextWebgl2]) {
+    UMA_HISTOGRAM_MEMORY_KB("Blink.OffscreenCanvas.PartionAlloc.WebGL2",
+                            partition_alloc_kb);
+    UMA_HISTOGRAM_MEMORY_KB("Blink.OffscreenCanvas.BlinkGC.WebGL2",
+                            blink_gc_alloc_kb);
+  }
+
+  if (offscreen_context_type_was_used
+          [CanvasRenderingContext::kContextGPUPresent]) {
+    UMA_HISTOGRAM_MEMORY_KB("Blink.OffscreenCanvas.PartionAlloc.WebGPU",
+                            partition_alloc_kb);
+    UMA_HISTOGRAM_MEMORY_KB("Blink.OffscreenCanvas.BlinkGC.WebGPU",
+                            blink_gc_alloc_kb);
+  }
+
+  if (offscreen_context_type_was_used
+          [CanvasRenderingContext::kContextImageBitmap]) {
+    UMA_HISTOGRAM_MEMORY_KB("Blink.OffscreenCanvas.PartionAlloc.ImageBitmap",
+                            partition_alloc_kb);
+    UMA_HISTOGRAM_MEMORY_KB("Blink.OffscreenCanvas.BlinkGC.ImageBitmap",
+                            blink_gc_alloc_kb);
   }
 }
 

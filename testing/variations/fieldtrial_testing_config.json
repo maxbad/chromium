@@ -1194,6 +1194,38 @@
             ]
         }
     ],
+    "BackForwardCacheDesktop": [
+        {
+            "platforms": [
+                "linux",
+                "mac",
+                "windows"
+            ],
+            "experiments": [
+                {
+                    "name": "EnabledForSpecificDomain",
+                    "params": {
+                        "TimeToLiveInBackForwardCacheInSeconds": "180",
+                        "blocked_websites": "https://domain1.org,https://domain2.org",
+                        "cache_size": "6",
+                        "check_eligibility_after_pagehide": "true",
+                        "enable_same_site": "false",
+                        "file_system_api_supported": "true",
+                        "foreground_cache_size": "2",
+                        "geolocation_supported": "true",
+                        "max_buffered_bytes": "100000",
+                        "max_buffered_bytes_per_process": "512000",
+                        "service_worker_supported": "true"
+                    },
+                    "enable_features": [
+                        "BackForwardCache",
+                        "FreezeWhileKeepActive",
+                        "LoadingTasksUnfreezable"
+                    ]
+                }
+            ]
+        }
+    ],
     "BackForwardCacheMemoryControls": [
         {
             "platforms": [
@@ -1240,34 +1272,6 @@
                     "name": "Enabled",
                     "enable_features": [
                         "BackgroundThreadPool"
-                    ]
-                }
-            ]
-        }
-    ],
-    "BlinkSchedulerPerAgentSchedulingStudy": [
-        {
-            "platforms": [
-                "android",
-                "android_weblayer",
-                "chromeos",
-                "chromeos_lacros",
-                "ios",
-                "linux",
-                "mac",
-                "windows"
-            ],
-            "experiments": [
-                {
-                    "name": "best-effort_timer-queues_until_onload",
-                    "params": {
-                        "delay_ms": "0",
-                        "method": "best-effort",
-                        "queues": "timer-queues",
-                        "signal": "onload"
-                    },
-                    "enable_features": [
-                        "BlinkSchedulerPerAgentSchedulingExperiments"
                     ]
                 }
             ]
@@ -1798,8 +1802,7 @@
                 {
                     "name": "Enabled",
                     "enable_features": [
-                        "ChromeShareScreenshot",
-                        "PreemptiveLinkToTextGeneration"
+                        "ChromeShareScreenshot"
                     ],
                     "min_os_version": "5.1"
                 }
@@ -6783,6 +6786,27 @@
             ]
         }
     ],
+    "SafeBrowsingBetterTelemetryAcrossReports": [
+        {
+            "platforms": [
+                "android",
+                "android_weblayer",
+                "chromeos",
+                "chromeos_lacros",
+                "linux",
+                "mac",
+                "windows"
+            ],
+            "experiments": [
+                {
+                    "name": "Enabled",
+                    "enable_features": [
+                        "SafeBrowsingBetterTelemetryAcrossReports"
+                    ]
+                }
+            ]
+        }
+    ],
     "SafeBrowsingCSDRequestWithToken": [
         {
             "platforms": [
@@ -7079,6 +7103,21 @@
                     "name": "Enabled",
                     "enable_features": [
                         "SharedClipboardUI"
+                    ]
+                }
+            ]
+        }
+    ],
+    "SharedHighlightingClank": [
+        {
+            "platforms": [
+                "android"
+            ],
+            "experiments": [
+                {
+                    "name": "Enabled",
+                    "enable_features": [
+                        "PreemptiveLinkToTextGeneration"
                     ]
                 }
             ]
@@ -7942,6 +7981,23 @@
             ]
         }
     ],
+    "UploadBrowserDeviceIdentifier": [
+        {
+            "platforms": [
+                "linux",
+                "mac",
+                "windows"
+            ],
+            "experiments": [
+                {
+                    "name": "Enabled",
+                    "enable_features": [
+                        "UploadBrowserDeviceIdentifier"
+                    ]
+                }
+            ]
+        }
+    ],
     "UseFluentLanguageModel": [
         {
             "platforms": [
@@ -8052,6 +8108,27 @@
                     "name": "Enabled",
                     "enable_features": [
                         "V8ConcurrentInlining"
+                    ]
+                }
+            ]
+        }
+    ],
+    "V8FastApiCalls": [
+        {
+            "platforms": [
+                "linux",
+                "windows",
+                "android",
+                "mac",
+                "chromeos_lacros",
+                "chromeos",
+                "ios"
+            ],
+            "experiments": [
+                {
+                    "name": "Enabled",
+                    "enable_features": [
+                        "V8TurboFastApiCalls"
                     ]
                 }
             ]

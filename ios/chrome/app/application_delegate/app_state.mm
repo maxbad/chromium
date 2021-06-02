@@ -31,6 +31,7 @@
 #include "ios/chrome/browser/browser_state/chrome_browser_state.h"
 #import "ios/chrome/browser/browsing_data/sessions_storage_util.h"
 #include "ios/chrome/browser/chrome_constants.h"
+#import "ios/chrome/browser/crash_report/crash_keys_helper.h"
 #include "ios/chrome/browser/crash_report/crash_keys_helper.h"
 #include "ios/chrome/browser/crash_report/crash_loop_detection_util.h"
 #include "ios/chrome/browser/crash_report/features.h"
@@ -129,7 +130,7 @@ const NSTimeInterval kMemoryFootprintRecordingTimeInterval = 5;
 // never reset.
 @property(nonatomic, assign) BOOL firstSceneHasActivated;
 
-// This flag is set when the first scene has initialized its UI and never reset.
+// Redefined as readwrite.
 @property(nonatomic, assign) BOOL firstSceneHasInitializedUI;
 
 // The current blocker target if any.
@@ -481,6 +482,7 @@ initWithBrowserLauncher:(id<BrowserLauncher>)browserLauncher
     [sessionIDs addObject:session.persistentIdentifier];
   }
   sessions_storage_util::MarkSessionsForRemoval(sessionIDs);
+  crash_keys::SetConnectedScenesCount([self connectedScenes].count);
 }
 
 - (void)willResignActiveTabModel {
@@ -728,6 +730,7 @@ initWithBrowserLauncher:(id<BrowserLauncher>)browserLauncher
     sceneState.presentingModalOverlay =
         (self.uiBlockerTarget != nil) && (self.uiBlockerTarget != sceneState);
   }
+  crash_keys::SetForegroundScenesCount([self foregroundScenes].count);
 }
 
 #pragma mark - Scenes lifecycle
@@ -743,6 +746,7 @@ initWithBrowserLauncher:(id<BrowserLauncher>)browserLauncher
     DCHECK(sceneState);
 
     [self.observers appState:self sceneConnected:sceneState];
+    crash_keys::SetConnectedScenesCount([self connectedScenes].count);
   }
 }
 

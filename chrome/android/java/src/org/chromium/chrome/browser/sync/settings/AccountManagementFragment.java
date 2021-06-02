@@ -175,7 +175,7 @@ public class AccountManagementFragment extends PreferenceFragmentCompat
         configureSignOutSwitch();
         configureChildAccountPreferences();
 
-        updateAccountsList();
+        AccountManagerFacadeProvider.getInstance().tryGetGoogleAccounts(this::updateAccountsList);
     }
 
     private boolean canAddAccounts() {
@@ -271,11 +271,8 @@ public class AccountManagementFragment extends PreferenceFragmentCompat
         }
     }
 
-    private void updateAccountsList() {
-        PreferenceCategory accountsCategory =
-                (PreferenceCategory) findPreference(PREF_ACCOUNTS_CATEGORY);
-        if (accountsCategory == null) return;
-
+    private void updateAccountsList(List<Account> accounts) {
+        PreferenceCategory accountsCategory = findPreference(PREF_ACCOUNTS_CATEGORY);
         accountsCategory.removeAll();
 
         accountsCategory.addPreference(
@@ -285,7 +282,6 @@ public class AccountManagementFragment extends PreferenceFragmentCompat
         accountsCategory.addPreference(createManageYourGoogleAccountPreference());
         accountsCategory.addPreference(createDividerPreference(R.layout.divider_preference));
 
-        List<Account> accounts = AccountManagerFacadeProvider.getInstance().tryGetGoogleAccounts();
         for (Account account : accounts) {
             if (!mSignedInAccountName.equals(account.name)) {
                 accountsCategory.addPreference(createAccountPreference(account));
@@ -372,7 +368,7 @@ public class AccountManagementFragment extends PreferenceFragmentCompat
     // ProfileDataCache.Observer implementation:
     @Override
     public void onProfileDataUpdated(String accountEmail) {
-        updateAccountsList();
+        AccountManagerFacadeProvider.getInstance().tryGetGoogleAccounts(this::updateAccountsList);
     }
 
     // SignOutDialogListener implementation:

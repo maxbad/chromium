@@ -153,6 +153,10 @@ class WebApp {
     return run_on_os_login_mode_;
   }
 
+  bool window_controls_overlay_enabled() const {
+    return window_controls_overlay_enabled_;
+  }
+
   // While local |name| and |theme_color| may vary from device to device, the
   // synced copies of these fields are replicated to all devices. The synced
   // copies are read by a device to generate a placeholder icon (if needed). Any
@@ -241,8 +245,8 @@ class WebApp {
       std::vector<std::string> additional_search_terms);
   void SetProtocolHandlers(
       std::vector<apps::ProtocolHandlerInfo> protocol_handlers);
-  void SetNoteTakingNewNoteUrl(const GURL& note_taking_new_note_url);
   void SetUrlHandlers(apps::UrlHandlers url_handlers);
+  void SetNoteTakingNewNoteUrl(const GURL& note_taking_new_note_url);
   void SetLastBadgingTime(const base::Time& time);
   void SetLastLaunchTime(const base::Time& time);
   void SetInstallTime(const base::Time& time);
@@ -252,6 +256,7 @@ class WebApp {
   void SetManifestUrl(const GURL& manifest_url);
   void SetManifestId(const absl::optional<std::string>& manifest_id);
   void SetFileHandlerPermissionBlocked(bool permission_blocked);
+  void SetWindowControlsOverlayEnabled(bool enabled);
 
   // For logging and debug purposes.
   bool operator==(const WebApp&) const;
@@ -300,19 +305,20 @@ class WebApp {
   absl::optional<apps::ShareTarget> share_target_;
   std::vector<std::string> additional_search_terms_;
   std::vector<apps::ProtocolHandlerInfo> protocol_handlers_;
+  apps::UrlHandlers url_handlers_;
   GURL note_taking_new_note_url_;
   base::Time last_badging_time_;
   base::Time last_launch_time_;
   base::Time install_time_;
   RunOnOsLoginMode run_on_os_login_mode_ = RunOnOsLoginMode::kNotRun;
   SyncFallbackData sync_fallback_data_;
-  apps::UrlHandlers url_handlers_;
   blink::mojom::CaptureLinks capture_links_ =
       blink::mojom::CaptureLinks::kUndefined;
   ClientData client_data_;
   GURL manifest_url_;
   absl::optional<std::string> manifest_id_;
   bool file_handler_permission_blocked_ = false;
+  bool window_controls_overlay_enabled_ = false;
   // New fields must be added to:
   //  - |operator==|
   //  - |operator<<|

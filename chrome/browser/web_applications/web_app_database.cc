@@ -376,6 +376,11 @@ std::unique_ptr<WebAppProto> WebAppDatabase::CreateWebAppProto(
     url_handler_proto->set_has_origin_wildcard(url_handler.has_origin_wildcard);
   }
 
+  if (web_app.note_taking_new_note_url().is_valid()) {
+    local_data->set_note_taking_new_note_url(
+        web_app.note_taking_new_note_url().spec());
+  }
+
   if (web_app.capture_links() != blink::mojom::CaptureLinks::kUndefined)
     local_data->set_capture_links(CaptureLinksToProto(web_app.capture_links()));
   else
@@ -386,6 +391,9 @@ std::unique_ptr<WebAppProto> WebAppDatabase::CreateWebAppProto(
 
   local_data->set_file_handler_permission_blocked(
       web_app.file_handler_permission_blocked());
+
+  local_data->set_window_controls_overlay_enabled(
+      web_app.window_controls_overlay_enabled());
   return local_data;
 }
 
@@ -750,11 +758,6 @@ std::unique_ptr<WebApp> WebAppDatabase::CreateWebApp(
   }
   web_app->SetProtocolHandlers(std::move(protocol_handlers));
 
-  if (local_data.has_user_run_on_os_login_mode()) {
-    web_app->SetRunOnOsLoginMode(
-        ToRunOnOsLoginMode(local_data.user_run_on_os_login_mode()));
-  }
-
   std::vector<apps::UrlHandlerInfo> url_handlers;
   for (const auto& url_handler_proto : local_data.url_handlers()) {
     apps::UrlHandlerInfo url_handler;
@@ -770,6 +773,16 @@ std::unique_ptr<WebApp> WebAppDatabase::CreateWebApp(
     url_handlers.push_back(std::move(url_handler));
   }
   web_app->SetUrlHandlers(std::move(url_handlers));
+
+  if (local_data.has_note_taking_new_note_url()) {
+    web_app->SetNoteTakingNewNoteUrl(
+        GURL(local_data.note_taking_new_note_url()));
+  }
+
+  if (local_data.has_user_run_on_os_login_mode()) {
+    web_app->SetRunOnOsLoginMode(
+        ToRunOnOsLoginMode(local_data.user_run_on_os_login_mode()));
+  }
 
   if (local_data.has_capture_links())
     web_app->SetCaptureLinks(ProtoToCaptureLinks(local_data.capture_links()));
@@ -788,6 +801,11 @@ std::unique_ptr<WebApp> WebAppDatabase::CreateWebApp(
   if (local_data.has_file_handler_permission_blocked())
     web_app->SetFileHandlerPermissionBlocked(
         local_data.file_handler_permission_blocked());
+
+  if (local_data.has_window_controls_overlay_enabled()) {
+    web_app->SetWindowControlsOverlayEnabled(
+        local_data.window_controls_overlay_enabled());
+  }
   return web_app;
 }
 
