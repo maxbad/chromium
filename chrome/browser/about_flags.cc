@@ -188,6 +188,7 @@
 #include "ui/events/event_switches.h"
 #include "ui/gfx/switches.h"
 #include "ui/gl/buildflags.h"
+#include "ui/gl/gl_features.h"
 #include "ui/gl/gl_switches.h"
 #include "ui/native_theme/native_theme_features.h"
 
@@ -5138,10 +5139,6 @@ const FeatureEntry kFeatureEntries[] = {
      flag_descriptions::kEnableArcUnifiedAudioFocusName,
      flag_descriptions::kEnableArcUnifiedAudioFocusDescription, kOsCrOS,
      FEATURE_VALUE_TYPE(arc::kEnableUnifiedAudioFocusFeature)},
-    {"enable-kerberos-settings-section",
-     flag_descriptions::kKerberosSettingsSectionName,
-     flag_descriptions::kKerberosSettingsSectionDescription, kOsCrOS,
-     FEATURE_VALUE_TYPE(chromeos::features::kKerberosSettingsSection)},
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
 
 #if defined(OS_WIN)
@@ -5498,10 +5495,6 @@ const FeatureEntry kFeatureEntries[] = {
      flag_descriptions::kSelectToSpeakNavigationControlName,
      flag_descriptions::kSelectToSpeakNavigationControlDescription, kOsCrOS,
      FEATURE_VALUE_TYPE(features::kSelectToSpeakNavigationControl)},
-
-    {"print-server-scaling", flag_descriptions::kPrintServerScalingName,
-     flag_descriptions::kPrintServerScalingDescription, kOsCrOS,
-     FEATURE_VALUE_TYPE(chromeos::features::kPrintServerScaling)},
 
     {"enable-networking-in-diagnostics-app",
      flag_descriptions::kEnableNetworkingInDiagnosticsAppName,
@@ -7205,6 +7198,12 @@ const FeatureEntry kFeatureEntries[] = {
      flag_descriptions::kEnableGeneratedWebApksDescription, kOsCrOS,
      FEATURE_VALUE_TYPE(ash::features::kWebApkGenerator)},
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
+
+    {"use-passthrough-command-decoder",
+     flag_descriptions::kUsePassthroughCommandDecoderName,
+     flag_descriptions::kUsePassthroughCommandDecoderDescription,
+     kOsMac | kOsLinux | kOsCrOS | kOsAndroid,
+     FEATURE_VALUE_TYPE(features::kDefaultPassthroughCommandDecoder)},
 
     // NOTE: Adding a new flag requires adding a corresponding entry to enum
     // "LoginCustomFlags" in tools/metrics/histograms/enums.xml. See "Flag

@@ -1408,11 +1408,6 @@ const char kJavascriptHarmonyShippingDescription[] =
     "conflict with the latest JavaScript features. This flag allows disabling "
     "support of those features for compatibility with such pages.";
 
-const char kKerberosSettingsSectionName[] = "Kerberos Settings Section";
-const char kKerberosSettingsSectionDescription[] =
-    "Enables the Kerberos Section in ChromeOS settings. When disabled, "
-    "Kerberos settings will stay under People Section.";
-
 const char kLegacyTLSEnforcedName[] =
     "Enforce deprecation of legacy TLS versions";
 const char kLegacyTLSEnforcedDescription[] =
@@ -1995,10 +1990,6 @@ const char kPrerender2Name[] = "Prerender2";
 const char kPrerender2Description[] =
     "Enables the new prerenderer implementation for <link rel=prerender> "
     "instead of NoStatePrefetch.";
-
-const char kPrintServerScalingName[] = "Print Server Scaling";
-const char kPrintServerScalingDescription[] =
-    "Allows print servers to be selected when beyond a specified limit.";
 
 const char kPrivacyAdvisorName[] = "Privacy Advisor";
 const char kPrivacyAdvisorDescription[] =
@@ -2729,6 +2720,12 @@ const char kDrawPredictedPointsName[] = "Draw predicted delegated ink points";
 const char kSanitizerApiName[] = "Sanitizer API";
 const char kSanitizerApiDescription[] =
     "Enable the Sanitizer API. See: https://github.com/WICG/sanitizer-api";
+
+const char kUsePassthroughCommandDecoderName[] =
+    "Use passthrough command decoder";
+const char kUsePassthroughCommandDecoderDescription[] =
+    "Use chrome passthrough command decoder instead of validating command "
+    "decoder.";
 
 // Android ---------------------------------------------------------------------
 

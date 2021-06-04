@@ -1979,6 +1979,10 @@ const char kWebAppsUninstalledDefaultChromeApps[] =
 // outlive the app installation and uninstallation.
 const char kWebAppsPreferences[] = "web_apps.web_app_ids";
 
+// Dictionary that maps the origin of a web app to other preferences related to
+// its isolation requirements.
+const char kWebAppsIsolationState[] = "web_apps.isolation_state";
+
 #if defined(OS_WIN) || defined(OS_MAC) || \
     (defined(OS_LINUX) && !BUILDFLAG(IS_CHROMEOS_LACROS))
 // Dictionary that maps origins to web apps that can act as URL handlers.
@@ -2397,12 +2401,12 @@ const char kExtensionInstallEventLoggingEnabled[] =
 const char kRemoveUsersRemoteCommand[] = "remove_users_remote_command";
 
 // Integer pref used by the metrics::DailyEvent owned by
-// chromeos::power::auto_screen_brightness::MetricsReporter.
+// ash::power::auto_screen_brightness::MetricsReporter.
 const char kAutoScreenBrightnessMetricsDailySample[] =
     "auto_screen_brightness.metrics.daily_sample";
 
 // Integer prefs used to back event counts reported by
-// chromeos::power::auto_screen_brightness::MetricsReporter.
+// ash::power::auto_screen_brightness::MetricsReporter.
 const char kAutoScreenBrightnessMetricsAtlasUserAdjustmentCount[] =
     "auto_screen_brightness.metrics.atlas_user_adjustment_count";
 const char kAutoScreenBrightnessMetricsEveUserAdjustmentCount[] =

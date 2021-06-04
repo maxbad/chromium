@@ -593,6 +593,27 @@ group("telemetry_gpu_integration_test") {
   ]
 }
 
+if (is_android) {
+  template("telemetry_gpu_integration_test_android_template") {
+    forward_variables_from(invoker, [ "telemetry_target_suffix" ])
+    group(target_name) {
+      testonly = true
+      data_deps = [
+        "//content/test:telemetry_gpu_integration_test_support",
+        "//tools/perf/chrome_telemetry_build:telemetry_chrome_test${telemetry_target_suffix}",
+      ]
+    }
+  }
+
+  import("//tools/perf/chrome_telemetry_build/android_browser_types.gni")
+  foreach(_target_suffix, telemetry_android_browser_target_suffixes) {
+    telemetry_gpu_integration_test_android_template(
+        "telemetry_gpu_integration_test${_target_suffix}") {
+      telemetry_target_suffix = _target_suffix
+    }
+  }
+}
+
 if (is_win) {
   source_set("credential_provider_test_utils") {
     testonly = true
@@ -3248,12 +3269,11 @@ if (!is_android) {
         "../browser/chromeos/policy/affiliation_mixin.h",
         "../browser/chromeos/policy/affiliation_test_helper.cc",
         "../browser/chromeos/policy/affiliation_test_helper.h",
+        "../browser/chromeos/policy/arc/unaffiliated_arc_allowed_browsertest.cc",
         "../browser/chromeos/policy/blocking_login_browsertest.cc",
         "../browser/chromeos/policy/browser_policy_connector_chromeos_browsertest.cc",
         "../browser/chromeos/policy/component_active_directory_policy_browsertest.cc",
         "../browser/chromeos/policy/device_cloud_policy_browsertest.cc",
-        "../browser/chromeos/policy/device_display_cros_browser_test.cc",
-        "../browser/chromeos/policy/device_display_cros_browser_test.h",
         "../browser/chromeos/policy/device_local_account_browsertest.cc",
         "../browser/chromeos/policy/device_login_screen_policy_browsertest.cc",
         "../browser/chromeos/policy/device_policy_cros_browser_test.cc",
@@ -3261,8 +3281,10 @@ if (!is_android) {
         "../browser/chromeos/policy/device_quirks_policy_browsertest.cc",
         "../browser/chromeos/policy/device_system_use_24hour_clock_browsertest.cc",
         "../browser/chromeos/policy/device_system_wide_tracing_enabled_browsertest.cc",
-        "../browser/chromeos/policy/display_resolution_handler_browsertest.cc",
-        "../browser/chromeos/policy/display_rotation_default_handler_browsertest.cc",
+        "../browser/chromeos/policy/display/device_display_cros_browser_test.cc",
+        "../browser/chromeos/policy/display/device_display_cros_browser_test.h",
+        "../browser/chromeos/policy/display/display_resolution_handler_browsertest.cc",
+        "../browser/chromeos/policy/display/display_rotation_default_handler_browsertest.cc",
         "../browser/chromeos/policy/dlp/data_transfer_dlp_controller_browsertest.cc",
         "../browser/chromeos/policy/dlp/dlp_content_manager_browsertest.cc",
         "../browser/chromeos/policy/dlp/dlp_content_tab_helper_browsertest.cc",
@@ -3285,8 +3307,8 @@ if (!is_android) {
         "../browser/chromeos/policy/login_screen_accessibility_policy_browsertest.cc",
         "../browser/chromeos/policy/login_screen_default_policy_browsertest.cc",
         "../browser/chromeos/policy/minimum_version_policy_handler_browsertest.cc",
-        "../browser/chromeos/policy/network_policy_application_browsertest.cc",
-        "../browser/chromeos/policy/policy_certs_browsertest.cc",
+        "../browser/chromeos/policy/networking/network_policy_application_browsertest.cc",
+        "../browser/chromeos/policy/networking/policy_certs_browsertest.cc",
         "../browser/chromeos/policy/power_policy_browsertest.cc",
         "../browser/chromeos/policy/restore_on_startup_browsertest_chromeos.cc",
         "../browser/chromeos/policy/signin_profile_extensions_policy_browsertest.cc",
@@ -3295,7 +3317,6 @@ if (!is_android) {
         "../browser/chromeos/policy/site_isolation_flag_handling_browsertest.cc",
         "../browser/chromeos/policy/status_collector/child_status_collector_browsertest.cc",
         "../browser/chromeos/policy/status_collector/device_status_collector_browsertest.cc",
-        "../browser/chromeos/policy/unaffiliated_arc_allowed_browsertest.cc",
         "../browser/chromeos/policy/user_affiliation_browsertest.cc",
         "../browser/chromeos/policy/user_cloud_policy_manager_chromeos_browsertest.cc",
         "../browser/chromeos/policy/variations_service_policy_browsertest.cc",
@@ -3482,6 +3503,7 @@ if (!is_android) {
       ]
 
       deps += [
+        "//chromeos/components/help_app_ui:buildflags",
         "//chromeos/components/help_app_ui/search:mojo_bindings",
         "//chromeos/components/media_app_ui:buildflags",
         "//chromeos/ui/frame:test_support",
@@ -3769,8 +3791,10 @@ if (!is_android) {
     }
 
     if (is_win || is_mac || (is_linux && !is_chromeos_lacros)) {
-      sources +=
-          [ "../browser/ui/views/profiles/profile_picker_view_browsertest.cc" ]
+      sources += [
+        "../browser/ui/views/profiles/profile_picker_view_browsertest.cc",
+        "../browser/ui/views/web_apps/web_app_url_handler_intent_picker_dialog_browsertest.cc",
+      ]
     }
 
     sources += metric_integration_sources
@@ -3900,10 +3924,8 @@ if (is_linux || is_chromeos || is_mac || is_win || is_android) {
   }
 }
 
-group("telemetry_perf_unittests") {
+group("telemetry_perf_unittests_base") {
   testonly = true
-  deps = [ "//tools/perf:perf" ]
-
   data = [
     # For isolate contract.
     "//testing/scripts/run_telemetry_as_googletest.py",
@@ -3922,14 +3944,70 @@ group("telemetry_perf_unittests") {
   data_deps = [ "//testing:test_scripts_shared" ]
 }
 
-group("telemetry_perf_tests") {
+group("telemetry_perf_unittests") {
   testonly = true
-  deps = [ "//tools/perf/:perf" ]
+  data_deps = [
+    ":telemetry_perf_unittests_base",
+    "//tools/perf:perf",
+  ]
+}
 
+if (is_android) {
+  template("telemetry_perf_unittests_android_template") {
+    forward_variables_from(invoker, [ "telemetry_target_suffix" ])
+    group(target_name) {
+      testonly = true
+      data_deps = [
+        ":telemetry_perf_unittests_base",
+        "//tools/perf:perf${telemetry_target_suffix}",
+      ]
+    }
+  }
+
+  import("//tools/perf/chrome_telemetry_build/android_browser_types.gni")
+  foreach(_target_suffix, telemetry_android_browser_target_suffixes) {
+    telemetry_perf_unittests_android_template(
+        "telemetry_perf_unittests${_target_suffix}") {
+      telemetry_target_suffix = _target_suffix
+    }
+  }
+}
+
+group("telemetry_perf_tests_base") {
+  testonly = true
   data_deps = [
     # Needed for isolate script to execute.
     "//testing:test_scripts_shared",
   ]
+}
+
+group("telemetry_perf_tests") {
+  testonly = true
+  data_deps = [
+    ":telemetry_perf_tests_base",
+    "//tools/perf/:perf",
+  ]
+}
+
+if (is_android) {
+  template("telemetry_perf_tests_android_template") {
+    forward_variables_from(invoker, [ "telemetry_target_suffix" ])
+    group(target_name) {
+      testonly = true
+      data_deps = [
+        ":telemetry_perf_tests_base",
+        "//tools/perf/:perf${telemetry_target_suffix}",
+      ]
+    }
+  }
+
+  import("//tools/perf/chrome_telemetry_build/android_browser_types.gni")
+  foreach(_target_suffix, telemetry_android_browser_target_suffixes) {
+    telemetry_perf_tests_android_template(
+        "telemetry_perf_tests${_target_suffix}") {
+      telemetry_target_suffix = _target_suffix
+    }
+  }
 }
 
 group("ct_telemetry_perf_tests_without_chrome") {
@@ -3951,8 +4029,12 @@ group("ct_telemetry_perf_tests_without_chrome") {
 
 # New target that will replace telemetry_perf_tests when testing
 # is done.
-template("performance_test_suite_template") {
-  forward_variables_from(invoker, [ "override_board" ])
+template("performance_test_suite_template_base") {
+  forward_variables_from(invoker,
+                         [
+                           "override_board",
+                           "data_deps",
+                         ])
   script_test(target_name) {
     run_under_python2 = true
     script = "//testing/scripts/run_performance_tests.py"
@@ -3966,9 +4048,8 @@ template("performance_test_suite_template") {
       args = [ "../../tools/perf/run_benchmark" ]
     }
 
-    data_deps = [
+    data_deps += [
       "//base:base_perftests",
-      "//chrome/test:telemetry_perf_tests",
       "//components:components_perftests",
       "//components/tracing:tracing_perftests",
       "//gpu:command_buffer_perftests",
@@ -4002,7 +4083,38 @@ template("performance_test_suite_template") {
   }
 }
 
+template("performance_test_suite_template") {
+  forward_variables_from(invoker, [ "override_board" ])
+  performance_test_suite_template_base(target_name) {
+    data_deps = [ "//chrome/test:telemetry_perf_tests" ]
+  }
+}
+
+if (is_android) {
+  template("performance_test_suite_template_android") {
+    forward_variables_from(invoker,
+                           [
+                             "override_board",
+                             "telemetry_target_suffix",
+                           ])
+    performance_test_suite_template_base(target_name) {
+      data_deps =
+          [ "//chrome/test:telemetry_perf_tests${telemetry_target_suffix}" ]
+    }
+  }
+}
+
 performance_test_suite_template("performance_test_suite") {
+}
+
+if (is_android) {
+  import("//tools/perf/chrome_telemetry_build/android_browser_types.gni")
+  foreach(_target_suffix, telemetry_android_browser_target_suffixes) {
+    performance_test_suite_template_android(
+        "performance_test_suite${_target_suffix}") {
+      telemetry_target_suffix = _target_suffix
+    }
+  }
 }
 
 # Generate performance_test_suite_${board} targets.
@@ -4019,25 +4131,27 @@ if (is_chromeos_device && cros_boards != "") {
   }
 }
 
-# Difference between this and performance_test_suite is that this runs a devil
-# script before the build, to remove the system webview. See
-# //testing/buildbot/gn_isolate_map.pyl
-group("performance_webview_test_suite") {
-  testonly = true
-  deps = [ "//chrome/test:performance_test_suite" ]
-}
+if (is_android) {
+  # Difference between this and performance_test_suite is that this runs a devil
+  # script before the build, to remove the system webview. See
+  # //testing/buildbot/gn_isolate_map.pyl
+  group("performance_webview_test_suite") {
+    testonly = true
+    deps = [ "//chrome/test:performance_test_suite_android_webview" ]
+  }
 
-group("performance_weblayer_test_suite") {
-  testonly = true
-  deps = [ "//chrome/test:performance_test_suite" ]
-}
+  group("performance_weblayer_test_suite") {
+    testonly = true
+    deps = [ "//chrome/test:performance_test_suite_android_weblayer" ]
+  }
 
-# Difference between this and telemetry_perf_tests is that this runs a devil
-# script before the build, to remove the system webview. See
-# //testing/buildbot/gn_isolate_map.pyl
-group("telemetry_perf_webview_tests") {
-  testonly = true
-  deps = [ "//chrome/test:telemetry_perf_tests" ]
+  # Difference between this and telemetry_perf_tests is that this runs a devil
+  # script before the build, to remove the system webview. See
+  # //testing/buildbot/gn_isolate_map.pyl
+  group("telemetry_perf_webview_tests") {
+    testonly = true
+    deps = [ "//chrome/test:telemetry_perf_tests_android_webview" ]
+  }
 }
 
 config("disable_thinlto_cache_flags") {
@@ -6819,6 +6933,7 @@ test("unit_tests") {
       "../browser/ui/views/relaunch_notification/relaunch_notification_controller_unittest.cc",
       "../browser/ui/views/relaunch_notification/relaunch_required_timer_internal_unittest.cc",
       "../browser/ui/views/send_tab_to_self/send_tab_to_self_bubble_view_impl_unittest.cc",
+      "../browser/ui/views/send_tab_to_self/send_tab_to_self_toolbar_bubble_view_unittest.cc",
       "../browser/ui/views/tab_contents/chrome_web_contents_view_delegate_views_unittest.cc",
       "../browser/ui/views/tabs/color_picker_view_unittest.cc",
       "../browser/ui/views/tabs/fake_base_tab_strip_controller.cc",
@@ -8470,9 +8585,8 @@ if (is_chromeos_ash) {
 }
 
 if (is_mac || is_win || is_android) {
-  group("rendering_representative_perf_tests") {
+  group("rendering_representative_perf_tests_base") {
     testonly = true
-    deps = [ "//tools/perf/chrome_telemetry_build:telemetry_chrome_test" ]
     data = [
       "//build/android/pylib",
       "//chrome/test/data/perf",
@@ -8482,6 +8596,35 @@ if (is_mac || is_win || is_android) {
       "//tools/perf",
     ]
     data_deps = [ "//testing:test_scripts_shared" ]
+  }
+
+  group("rendering_representative_perf_tests") {
+    testonly = true
+    data_deps = [
+      ":rendering_representative_perf_tests_base",
+      "//tools/perf/chrome_telemetry_build:telemetry_chrome_test",
+    ]
+  }
+
+  if (is_android) {
+    template("rendering_representative_perf_tests_android_template") {
+      forward_variables_from(invoker, [ "telemetry_target_suffix" ])
+      group(target_name) {
+        testonly = true
+        data_deps = [
+          ":rendering_representative_perf_tests_base",
+          "//tools/perf/chrome_telemetry_build:telemetry_chrome_test${telemetry_target_suffix}",
+        ]
+      }
+    }
+
+    import("//tools/perf/chrome_telemetry_build/android_browser_types.gni")
+    foreach(_target_suffix, telemetry_android_browser_target_suffixes) {
+      rendering_representative_perf_tests_android_template(
+          "rendering_representative_perf_tests${_target_suffix}") {
+        telemetry_target_suffix = _target_suffix
+      }
+    }
   }
 }
 
