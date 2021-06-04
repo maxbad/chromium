@@ -43,6 +43,7 @@
 #include "base/trace_event/optional_trace_event.h"
 #include "base/trace_event/trace_conversion_helper.h"
 #include "base/trace_event/traced_value.h"
+#include "base/trace_event/typed_macros.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
 #include "components/download/public/common/download_url_parameters.h"
@@ -829,15 +830,18 @@ void VerifyThatBrowserAndRendererCalculatedOriginsToCommitMatch(
   if (renderer_side_origin.opaque() && browser_side_origin.opaque())
     return;
 
-  // Navigating to file://localhost/... on windows causes `browser_side_origin`
-  // and `renderer_side_origin` to be different (file://localhost/ vs file:///).
-  // In particular, without the following block the test
+#if defined(OS_WIN)
+  // TODO(https://crbug.com/1214098): Navigating to a test-crafted
+  // (GURL::ReplaceComponents-crafted) file://localhost/C:/dir/file.txt URL will
+  // fail to round-trip the URL causing `browser_side_origin` and
+  // `renderer_side_origin` to be different (file://localhost/ vs file:///). In
+  // particular, without the following "if" statement the test
   // ContentSecurityPolicyBrowserTest.FileURLs fails.
-  if ((browser_side_origin.opaque() == renderer_side_origin.opaque()) &&
-      browser_side_origin.scheme() == url::kFileScheme &&
+  if (browser_side_origin.scheme() == url::kFileScheme &&
       renderer_side_origin.scheme() == url::kFileScheme) {
     return;
   }
+#endif
 
   DCHECK_EQ(browser_side_origin, renderer_side_origin)
       << "; navigation_request->GetURL() = " << navigation_request->GetURL();
@@ -1819,8 +1823,8 @@ RenderFrameHostImpl* RenderFrameHostImpl::GetParent() {
   return parent_;
 }
 
-PageImpl* RenderFrameHostImpl::GetPage() {
-  return GetMainFrame()->document_associated_data_->owned_page.get();
+PageImpl& RenderFrameHostImpl::GetPage() {
+  return *GetMainFrame()->document_associated_data_->owned_page.get();
 }
 
 std::vector<RenderFrameHost*> RenderFrameHostImpl::GetFramesInSubtree() {
@@ -3358,6 +3362,14 @@ void RenderFrameHostImpl::DidNavigate(
   if (did_create_new_document)
     DidCommitNewDocument(params, navigation_request);
 
+  // Set up reporting endpoints for this document.
+  DCHECK(frame_token_.value());
+  if (!reporting_endpoints_.empty()) {
+    GetStoragePartition()->GetNetworkContext()->SetDocumentReportingEndpoints(
+        params.origin, isolation_info_.network_isolation_key(),
+        reporting_endpoints_);
+  }
+
   // When the frame hosts a different document, its state must be replicated
   // via its proxies to the other processes where it appears as remote.
   //
@@ -4306,8 +4318,8 @@ void RenderFrameHostImpl::RunBeforeUnloadConfirm(
 void RenderFrameHostImpl::UpdateFaviconURL(
     std::vector<blink::mojom::FaviconURLPtr> favicon_urls) {
   DCHECK(!GetParent());
-  GetPage()->set_favicon_urls(std::move(favicon_urls));
-  delegate_->UpdateFaviconURL(this, GetPage()->favicon_urls());
+  GetPage().set_favicon_urls(std::move(favicon_urls));
+  delegate_->UpdateFaviconURL(this, GetPage().favicon_urls());
 }
 
 void RenderFrameHostImpl::ScaleFactorChanged(float scale) {
@@ -4380,7 +4392,7 @@ void RenderFrameHostImpl::SetWindowRect(const gfx::Rect& bounds,
 void RenderFrameHostImpl::UpdateManifestURL(
     const absl::optional<GURL>& manifest_url) {
   DCHECK(!GetParent());
-  GetPage()->update_manifest_url(manifest_url.value_or(GURL()));
+  GetPage().update_manifest_url(manifest_url.value_or(GURL()));
 }
 
 void RenderFrameHostImpl::DownloadURL(
@@ -5100,7 +5112,7 @@ void RenderFrameHostImpl::HandleAccessibilityFindInPageTermination() {
 
 // TODO(crbug.com/1213863): Move this method to content::PageImpl.
 void RenderFrameHostImpl::DocumentOnLoadCompleted() {
-  GetPage()->set_is_on_load_completed(true);
+  GetPage().set_is_on_load_completed(true);
   // This message is only sent for top-level frames.
   //
   // TODO(avi): when frame tree mirroring works correctly, add a check here
@@ -5246,7 +5258,7 @@ void RenderFrameHostImpl::EvictFromBackForwardCacheWithReasons(
   if (!in_back_forward_cache) {
     TRACE_EVENT0("navigation", "BackForwardCache_EvictAfterDocumentRestored");
     // TODO(carlscab): We should no longer get into this branch thanks to
-    // https://crrev.com/c/2352815. Lets keep this old code for now just in case
+    // https://crrev.com/c/2563674. Lets keep this old code for now just in case
     // and replace with a CHECK once we are confident that is the case.
     base::debug::DumpWithoutCrashing();
     BackForwardCacheMetrics::RecordEvictedAfterDocumentRestored(
@@ -8500,9 +8512,17 @@ void RenderFrameHostImpl::ActivateForPrerendering() {
   DCHECK(!is_notifying_activation_for_prerendering_);
   is_notifying_activation_for_prerendering_ = true;
 
+  // Currently cross origin iframes are deferred. So the origin must be same
+  // as the main frame's origin. But if we will decide not to defer the cross
+  // origin iframes, we need to remove the DCHECK_EQ and change the code not
+  // to send |activation_start_time_for_prerendering| to the renderer.
+  DCHECK_EQ(GetLastCommittedOrigin(), GetMainFrame()->GetLastCommittedOrigin());
+
   // Notify the renderer of activation to update the prerendering state and
   // dispatch the prerenderingchange event.
-  GetAssociatedLocalFrame()->ActivateForPrerendering();
+  GetAssociatedLocalFrame()->ActivateForPrerendering(
+      *GetMainFrame()
+           ->document_associated_data_->activation_start_time_for_prerendering);
 
   for (auto& child : children_)
     child->current_frame_host()->ActivateForPrerendering();
@@ -9601,6 +9621,25 @@ bool RenderFrameHostImpl::DidCommitNavigationInternal(
     DCHECK_EQ(navigation_request->is_overriding_user_agent() &&
                   frame_tree_node_->IsMainFrame(),
               params->is_overriding_user_agent);
+    if (navigation_request->IsPrerenderedPageActivation()) {
+      DCHECK(blink::features::IsPrerender2Enabled());
+      // Set the NavigationStart time for
+      // PerformanceNavigationTiming.activationStart.
+      // https://jeremyroman.github.io/alternate-loading-modes/#performance-navigation-timing-extension
+
+      // Currently, prerendering is only supported on same-origin pages. When
+      // supporting cross-origin prerendering (https://crbug.com/1176054), we
+      // need to change this CHECK to "if ()" not to send the activation start
+      // time to the prerendering page so that it is not used to send
+      // identifiers between origins.
+      CHECK_EQ(GetLastCommittedOrigin(),
+               navigation_request->GetOriginForURLLoaderFactory());
+      DCHECK(
+          !document_associated_data_->activation_start_time_for_prerendering);
+      document_associated_data_->activation_start_time_for_prerendering =
+          navigation_request->NavigationStart();
+    }
+
   } else {
     DCHECK_EQ(is_overriding_user_agent_, params->is_overriding_user_agent);
   }
@@ -9790,6 +9829,16 @@ void RenderFrameHostImpl::TakeNewDocumentPropertiesFromNavigation(
       navigation_request->private_network_request_policy();
   cross_origin_embedder_policy_ =
       navigation_request->cross_origin_embedder_policy();
+
+  reporting_endpoints_.clear();
+  DCHECK(navigation_request);
+
+  if (navigation_request->response() &&
+      navigation_request->response()->parsed_headers &&
+      navigation_request->response()->parsed_headers->reporting_endpoints) {
+    reporting_endpoints_ =
+        *(navigation_request->response()->parsed_headers->reporting_endpoints);
+  }
 
   // We move the PolicyContainerHost of |navigation_request| into the
   // RenderFrameHost unless this is the initial, "fake" navigation to
@@ -10934,9 +10983,9 @@ void RenderFrameHostImpl::MaybeEvictFromBackForwardCache() {
   auto can_store =
       frame_tree()->controller().GetBackForwardCache().CanStorePageNow(
           top_document);
-  TRACE_EVENT1("navigation",
-               "RenderFrameHostImpl::MaybeEvictFromBackForwardCache",
-               "can_store", can_store.ToString());
+  TRACE_EVENT("navigation",
+              "RenderFrameHostImpl::MaybeEvictFromBackForwardCache",
+              "render_frame_host", this, "can_store", can_store.ToString());
 
   if (can_store)
     return;
@@ -11331,18 +11380,13 @@ void RenderFrameHostImpl::DisableWebRtcEventLogOutput(int lid) {
 }
 
 bool RenderFrameHostImpl::IsDocumentOnLoadCompletedInMainFrame() {
-  return GetPage()->is_on_load_completed();
-}
-
-// TODO(crbug.com/1192003): Move this method to content::Page when available.
-const GURL& RenderFrameHostImpl::ManifestURL() {
-  return GetPage()->manifest_url();
+  return GetPage().is_on_load_completed();
 }
 
 // TODO(crbug.com/1192003): Move this method to content::Page when available.
 const std::vector<blink::mojom::FaviconURLPtr>&
 RenderFrameHostImpl::FaviconURLs() {
-  return GetPage()->favicon_urls();
+  return GetPage().favicon_urls();
 }
 
 mojo::PendingRemote<network::mojom::CookieAccessObserver>

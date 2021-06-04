@@ -1337,6 +1337,7 @@ if (!is_android) {
       "../browser/browsing_data/navigation_entry_remover_browsertest.cc",
       "../browser/browsing_data/third_party_data_remover_browsertest.cc",
       "../browser/capability_delegation_browsertest.cc",
+      "../browser/cart/cart_service_browsertest.cc",
       "../browser/chrome_back_forward_cache_browsertest.cc",
       "../browser/chrome_content_browser_client_browsertest.cc",
       "../browser/chrome_do_not_track_browsertest.cc",
@@ -1352,6 +1353,7 @@ if (!is_android) {
       "../browser/component_updater/component_patcher_operation_browsertest.cc",
       "../browser/content_index/content_index_browsertest.cc",
       "../browser/content_settings/content_settings_browsertest.cc",
+      "../browser/content_settings/sound_content_setting_observer_browsertest.cc",
       "../browser/crash_recovery_browsertest.cc",
       "../browser/custom_handlers/protocol_handler_registry_browsertest.cc",
       "../browser/data_saver/data_saver_browsertest.cc",
@@ -1443,6 +1445,7 @@ if (!is_android) {
       "../browser/media/test_license_server.h",
       "../browser/media/test_license_server_config.h",
       "../browser/media/unified_autoplay_browsertest.cc",
+      "../browser/media/webrtc/capture_handle_browsertest.cc",
       "../browser/media/webrtc/media_stream_devices_controller_browsertest.cc",
       "../browser/media/webrtc/media_stream_permission_browsertest.cc",
       "../browser/media/webrtc/test_stats_dictionary.cc",
@@ -1833,6 +1836,7 @@ if (!is_android) {
       "../browser/ui/views/content_test_utils.cc",
       "../browser/ui/views/content_test_utils.h",
       "../browser/ui/views/device_chooser_browsertest.cc",
+      "../browser/ui/views/direct_sockets_connection_bubble_dialog_browsertest.cc",
       "../browser/ui/views/eye_dropper/eye_dropper_browsertest.cc",
       "../browser/ui/views/hats/hats_browsertest.cc",
       "../browser/ui/views/intent_picker_bubble_view_browsertest.cc",
@@ -1971,7 +1975,6 @@ if (!is_android) {
     # files will probably not be applicable.
     sources += [
       "../browser/speech/extension_api/tts_extension_apitest.cc",
-      "../browser/speech/network_speech_recognizer_browsertest.cc",
       "../browser/speech/speech_recognition_browsertest.cc",
     ]
     deps += [ "//services/audio/public/cpp:test_support" ]
@@ -2057,6 +2060,10 @@ if (!is_android) {
     if (enable_soda) {
       sources +=
           [ "../browser/speech/speech_recognition_service_browsertest.cc" ]
+      deps += [
+        "//chrome/services/speech:lib",
+        "//chrome/services/speech/soda",
+      ]
       if (is_mac) {
         data_deps += [ "//third_party/soda-mac64:soda_resources" ]
       } else if (is_win && target_cpu == "x86") {
@@ -3244,13 +3251,11 @@ if (!is_android) {
         "../browser/chromeos/policy/blocking_login_browsertest.cc",
         "../browser/chromeos/policy/browser_policy_connector_chromeos_browsertest.cc",
         "../browser/chromeos/policy/component_active_directory_policy_browsertest.cc",
-        "../browser/chromeos/policy/device_cloud_external_data_policy_observer_browsertest.cc",
         "../browser/chromeos/policy/device_cloud_policy_browsertest.cc",
         "../browser/chromeos/policy/device_display_cros_browser_test.cc",
         "../browser/chromeos/policy/device_display_cros_browser_test.h",
         "../browser/chromeos/policy/device_local_account_browsertest.cc",
         "../browser/chromeos/policy/device_login_screen_policy_browsertest.cc",
-        "../browser/chromeos/policy/device_policy_cloud_external_data_manager_browsertest.cc",
         "../browser/chromeos/policy/device_policy_cros_browser_test.cc",
         "../browser/chromeos/policy/device_policy_cros_browser_test.h",
         "../browser/chromeos/policy/device_quirks_policy_browsertest.cc",
@@ -3270,7 +3275,10 @@ if (!is_android) {
         "../browser/chromeos/policy/dlp/mock_dlp_content_manager.h",
         "../browser/chromeos/policy/dlp/mock_dlp_rules_manager.cc",
         "../browser/chromeos/policy/dlp/mock_dlp_rules_manager.h",
-        "../browser/chromeos/policy/external_data_handlers/device_wilco_dtc_configuration_external_data_handler_browsertest.cc",
+        "../browser/chromeos/policy/external_data/device_cloud_external_data_policy_observer_browsertest.cc",
+        "../browser/chromeos/policy/external_data/device_policy_cloud_external_data_manager_browsertest.cc",
+        "../browser/chromeos/policy/external_data/handlers/device_wilco_dtc_configuration_external_data_handler_browsertest.cc",
+        "../browser/chromeos/policy/external_data/user_cloud_external_data_manager_browsertest.cc",
         "../browser/chromeos/policy/force_maximize_on_first_run_chromeos_browsertest.cc",
         "../browser/chromeos/policy/login_policy_test_base.cc",
         "../browser/chromeos/policy/login_policy_test_base.h",
@@ -3289,7 +3297,6 @@ if (!is_android) {
         "../browser/chromeos/policy/status_collector/device_status_collector_browsertest.cc",
         "../browser/chromeos/policy/unaffiliated_arc_allowed_browsertest.cc",
         "../browser/chromeos/policy/user_affiliation_browsertest.cc",
-        "../browser/chromeos/policy/user_cloud_external_data_manager_browsertest.cc",
         "../browser/chromeos/policy/user_cloud_policy_manager_chromeos_browsertest.cc",
         "../browser/chromeos/policy/variations_service_policy_browsertest.cc",
         "../browser/chromeos/preferences_chromeos_browsertest.cc",
@@ -3324,6 +3331,7 @@ if (!is_android) {
         "../browser/resources/chromeos/zip_archiver/test/zip_archiver_jstest.cc",
         "../browser/sessions/session_restore_browsertest_chromeos.cc",
         "../browser/signin/chromeos_mirror_account_consistency_browsertest.cc",
+        "../browser/speech/network_speech_recognizer_browsertest.cc",
         "../browser/speech/on_device_speech_recognizer_browsertest.cc",
         "../browser/ui/app_list/app_list_client_impl_browsertest.cc",
         "../browser/ui/app_list/app_service/app_service_app_item_browsertest.cc",
@@ -3794,8 +3802,6 @@ if (is_chromeos_lacros) {
     sources = [
       "../browser/lacros/browser_test_util.cc",
       "../browser/lacros/browser_test_util.h",
-      "../browser/lacros/clipboard_lacros_browsertest.cc",
-      "../browser/lacros/crosapi_pref_observer_lacros_browsertest.cc",
       "../browser/lacros/device_attributes_lacros_browsertest.cc",
       "../browser/lacros/file_manager_lacros_browsertest.cc",
       "../browser/lacros/holding_space_service_lacros_browsertest.cc",
@@ -3805,10 +3811,8 @@ if (is_chromeos_lacros) {
       "../browser/lacros/media_session_lacros_browsertest.cc",
       "../browser/lacros/message_center_lacros_browsertest.cc",
       "../browser/lacros/metrics_reporting_lacros_browsertest.cc",
-      "../browser/lacros/overview_lacros_browsertest.cc",
       "../browser/lacros/popup_lacros_browsertest.cc",
       "../browser/lacros/screen_manager_lacros_browsertest.cc",
-      "../browser/lacros/tablet_mode_lacros_browsertest.cc",
       "../browser/lacros/web_contents_can_go_back_observer_browsertest.cc",
     ]
 
@@ -3824,6 +3828,41 @@ if (is_chromeos_lacros) {
     ]
 
     data = [ "data/media/" ]
+
+    data_deps = [ "//chrome:packed_resources" ]
+  }
+
+  # This test target is intended for lacros chrome specific tests that depend
+  # on crosapi and must run in series, for those that can run in parallel,
+  # please use lacros_chrome_browsertests target instead.
+  test("lacros_chrome_browsertests_run_in_series") {
+    use_xvfb = use_xvfb_in_this_config
+
+    configs += [ "//build/config:precompiled_headers" ]
+    defines = [
+      "HAS_OUT_OF_PROC_TEST_RUNNER",
+      "CHROME_VERSION_MAJOR=" + chrome_version_major,
+    ]
+
+    sources = [
+      "../browser/lacros/browser_test_util.cc",
+      "../browser/lacros/browser_test_util.h",
+      "../browser/lacros/clipboard_lacros_browsertest.cc",
+      "../browser/lacros/crosapi_pref_observer_lacros_browsertest.cc",
+      "../browser/lacros/overview_lacros_browsertest.cc",
+      "../browser/lacros/tablet_mode_lacros_browsertest.cc",
+    ]
+
+    deps = [
+      ":browser_tests_runner",
+      ":test_support",
+      "//chromeos/crosapi/mojom",
+      "//chromeos/lacros",
+      "//chromeos/services/machine_learning/public/cpp",
+      "//chromeos/services/machine_learning/public/cpp:stub",
+      "//chromeos/services/machine_learning/public/mojom",
+      "//ui/platform_window",
+    ]
 
     data_deps = [ "//chrome:packed_resources" ]
   }
@@ -4591,13 +4630,6 @@ test("unit_tests") {
     ]
   }
 
-  if (is_android) {
-    sources += [
-      "../browser/enterprise/util/android_enterprise_info_unittest.cc",
-      "../browser/policy/browser_dm_token_storage_android_unittest.cc",
-    ]
-  }
-
   if (!is_android) {
     sources += [
       "../browser/browsing_data/chrome_browsing_data_lifetime_manager_unittest.cc",
@@ -4957,6 +4989,7 @@ test("unit_tests") {
       "../browser/autofill/autofill_save_card_infobar_delegate_mobile_unittest.cc",
       "../browser/autofill/credit_card_accessory_controller_impl_unittest.cc",
       "../browser/autofill/manual_filling_controller_impl_unittest.cc",
+      "../browser/enterprise/util/android_enterprise_info_unittest.cc",
       "../browser/long_screenshots/long_screenshots_tab_service_unittest.cc",
       "../browser/media/android/cdm/media_drm_origin_id_manager_unittest.cc",
       "../browser/metrics/chrome_android_metrics_provider_unittest.cc",
@@ -4975,6 +5008,7 @@ test("unit_tests") {
       "../browser/password_manager/android/save_password_message_delegate_unittest.cc",
       "../browser/password_manager/android/update_password_infobar_delegate_android_unittest.cc",
       "../browser/permissions/permission_prompt_android_unittest.cc",
+      "../browser/policy/browser_dm_token_storage_android_unittest.cc",
       "../browser/profiles/android/profile_resolver_unittest.cc",
       "../browser/reputation/safety_tip_message_delegate_unittest.cc",
       "../browser/sharing/click_to_call/click_to_call_message_handler_android_unittest.cc",
@@ -8566,7 +8600,7 @@ if (!is_android) {
       "//third_party/blink/web_tests/resources/testharness.js",
     ]
 
-    if (is_win) {
+    if (is_win && enable_vr) {
       deps += [
         "//device/vr",
         "//device/vr:directx_helpers",

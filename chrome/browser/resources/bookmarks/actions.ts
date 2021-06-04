@@ -14,12 +14,12 @@ import {getDescendants, getDisplayedList, normalizeNode} from './util.js';
  * listed in one place to document available actions and their parameters.
  */
 
-export class CreateBookmarkAction extends Action {
+export type CreateBookmarkAction = Action & {
   id: string;
   parentId: string;
   parentIndex: number;
   node: BookmarkNode;
-}
+};
 
 export function createBookmark(
     id: string,
@@ -33,7 +33,7 @@ export function createBookmark(
   };
 }
 
-export class EditBookmarkAction extends Action {
+export type EditBookmarkAction = Action & {
   id: string;
   changeInfo: {title: string, url?: string};
 }
@@ -47,7 +47,7 @@ export function editBookmark(
   };
 }
 
-export class MoveBookmarkAction extends Action {
+export type MoveBookmarkAction = Action & {
   id: string;
   parentId: string;
   index: number;
@@ -68,7 +68,7 @@ export function moveBookmark(
   };
 }
 
-export class ReorderChildrenAction extends Action {
+export type ReorderChildrenAction = Action & {
   id: string;
   children: string[];
 }
@@ -82,7 +82,7 @@ export function reorderChildren(
   };
 }
 
-export class RemoveBookmarkAction extends Action {
+export type RemoveBookmarkAction = Action & {
   id: string;
   parentId: string;
   index: number;
@@ -102,7 +102,7 @@ export function removeBookmark(
   };
 }
 
-export class RefreshNodesAction extends Action {
+export type RefreshNodesAction = Action & {
   nodes: NodeMap;
 }
 
@@ -113,7 +113,7 @@ export function refreshNodes(nodeMap: NodeMap): RefreshNodesAction {
   };
 }
 
-export class SelectFolderAction extends Action {
+export type SelectFolderAction = Action & {
   id: string;
 }
 
@@ -130,7 +130,7 @@ export function selectFolder(
   };
 }
 
-export class ChangeFolderOpenAction extends Action {
+export type ChangeFolderOpenAction = Action & {
   id: string;
   open: boolean;
 }
@@ -156,7 +156,7 @@ export function deselectItems(): Action {
   };
 }
 
-export class SelectItemsAction extends Action {
+export type SelectItemsAction = Action & {
   clear: boolean;
   toggle: boolean;
   anchor: string;
@@ -219,7 +219,7 @@ export function selectAll(
   };
 }
 
-export class UpdateAnchorAction extends Action {
+export type UpdateAnchorAction = Action & {
   anchor: string;
 }
 
@@ -230,7 +230,7 @@ export function updateAnchor(id: string): UpdateAnchorAction {
   };
 }
 
-export class StartSearchAction extends Action {
+export type StartSearchAction = Action & {
   term: string;
 }
 
@@ -245,7 +245,7 @@ export function setSearchTerm(term: string): (Action|StartSearchAction) {
   };
 }
 
-export class FinishSearchAction extends Action {
+export type FinishSearchAction = Action & {
   results: string[];
 }
 
@@ -256,7 +256,7 @@ export function setSearchResults(ids: string[]): Action {
   } as Action;
 }
 
-export class SetPrefAction extends Action {
+export type SetPrefAction = Action & {
   value: IncognitoAvailability|boolean;
 }
 

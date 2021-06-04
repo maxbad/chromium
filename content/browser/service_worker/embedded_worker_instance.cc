@@ -48,6 +48,7 @@
 #include "services/metrics/public/cpp/ukm_source_id.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/blink/public/common/features.h"
+#include "third_party/blink/public/common/storage_key/storage_key.h"
 #include "third_party/blink/public/mojom/loader/url_loader_factory_bundle.mojom.h"
 #include "third_party/blink/public/mojom/renderer_preference_watcher.mojom.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_object.mojom.h"
@@ -347,6 +348,14 @@ void EmbeddedWorkerInstance::Start(
           coep_reporter_for_scripts.InitWithNewPipeAndPassReceiver());
       coep_reporter_->Clone(
           coep_reporter_for_subresources.InitWithNewPipeAndPassReceiver());
+    }
+
+    // Initialize the global scope now if the worker won't be paused. Otherwise,
+    // delay initialization until the main script is loaded.
+    if (!owner_version_->initialize_global_scope_after_main_script_loaded()) {
+      owner_version_->InitializeGlobalScope(
+          /*script_loader_factories=*/nullptr,
+          /*subresource_loader_factories=*/nullptr);
     }
 
     // Register to DevTools and update params accordingly.
@@ -1129,7 +1138,7 @@ void EmbeddedWorkerInstance::BindCacheStorageInternal() {
       return;
 
     rph->BindCacheStorage(coep, std::move(coep_reporter_remote),
-                          owner_version_->origin(), std::move(receiver));
+                          owner_version_->key().origin(), std::move(receiver));
   }
   pending_cache_storage_receivers_.clear();
 }

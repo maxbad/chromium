@@ -35,11 +35,11 @@
 
 namespace base {
 
-namespace {
-
 #if BUILDFLAG(USE_PARTITION_ALLOC_AS_MALLOC)
 
-#if defined(OS_LINUX)
+namespace {
+
+#if defined(OS_APPLE) || defined(OS_LINUX)
 
 // NO_THREAD_SAFETY_ANALYSIS: acquires the lock and doesn't release it, by
 // design.
@@ -92,7 +92,7 @@ void AfterForkInChild() {
   internal::ThreadCacheRegistry::Instance()
       .ForcePurgeAllThreadAfterForkUnsafe();
 }
-#endif  // defined(OS_LINUX)
+#endif  // defined(OS_APPLE) || defined(OS_LINUX)
 
 std::atomic<bool> g_global_init_called;
 void PartitionAllocMallocInitOnce() {
@@ -129,9 +129,24 @@ void PartitionAllocMallocInitOnce() {
   PA_CHECK(err == 0);
 #endif  // defined(OS_LINUX)
 }
-#endif  // BUILDFLAG(USE_PARTITION_ALLOC_AS_MALLOC)
 
 }  // namespace
+
+#if defined(OS_APPLE)
+void PartitionAllocMallocHookOnBeforeForkInParent() {
+  BeforeForkInParent();
+}
+
+void PartitionAllocMallocHookOnAfterForkInParent() {
+  AfterForkInParent();
+}
+
+void PartitionAllocMallocHookOnAfterForkInChild() {
+  AfterForkInChild();
+}
+#endif  // defined(OS_APPLE)
+
+#endif  // BUILDFLAG(USE_PARTITION_ALLOC_AS_MALLOC)
 
 namespace internal {
 

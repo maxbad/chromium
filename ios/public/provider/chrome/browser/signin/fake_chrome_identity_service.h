@@ -55,7 +55,7 @@ class FakeChromeIdentityService : public ChromeIdentityService {
   virtual UIImage* GetCachedAvatarForIdentity(
       ChromeIdentity* identity) override;
 
-  virtual absl::optional<bool> IsSubjectToMinorModeRestrictions(
+  virtual absl::optional<bool> CanOfferExtendedSyncPromos(
       ChromeIdentity* identity) override;
 
   virtual void GetHostedDomainForIdentity(
@@ -72,6 +72,12 @@ class FakeChromeIdentityService : public ChromeIdentityService {
                bool(ChromeIdentity* identity,
                     NSDictionary* user_info,
                     ios::MDMStatusCallback callback));
+
+  // Simulates |identity| removed from another Google app.
+  void SimulateForgetIdentityFromOtherApp(ChromeIdentity* identity);
+
+  // Simulates reloading the identities from the keychain by SSOAuth.
+  void FireChromeIdentityReload();
 
   // Sets up the mock methods for integration tests.
   void SetUpForIntegrationTests();

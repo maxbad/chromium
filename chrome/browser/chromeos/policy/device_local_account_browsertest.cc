@@ -74,11 +74,11 @@
 #include "chrome/browser/chromeos/extensions/device_local_account_external_policy_loader.h"
 #include "chrome/browser/chromeos/extensions/external_cache.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
-#include "chrome/browser/chromeos/policy/cloud_external_data_manager_base_test_util.h"
 #include "chrome/browser/chromeos/policy/device_local_account.h"
 #include "chrome/browser/chromeos/policy/device_local_account_policy_service.h"
 #include "chrome/browser/chromeos/policy/device_network_configuration_updater.h"
 #include "chrome/browser/chromeos/policy/device_policy_cros_browser_test.h"
+#include "chrome/browser/chromeos/policy/external_data/cloud_external_data_manager_base_test_util.h"
 #include "chrome/browser/extensions/crx_installer.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/updater/chromeos_extension_cache_delegate.h"
@@ -451,8 +451,7 @@ class DeviceLocalAccountTest : public DevicePolicyCrosBrowserTest,
         chrome::NOTIFICATION_LOGIN_OR_LOCK_WEBUI_VISIBLE,
         content::NotificationService::AllSources()).Wait();
 
-    chromeos::LoginDisplayHost* host =
-        chromeos::LoginDisplayHost::default_host();
+    auto* host = ash::LoginDisplayHost::default_host();
     contents_ = host->GetOobeWebContents();
     ASSERT_TRUE(contents_);
 
@@ -668,8 +667,7 @@ class DeviceLocalAccountTest : public DevicePolicyCrosBrowserTest,
   void StartLogin(const std::string& locale,
                   const std::string& input_method) {
     // Start login into the device-local account.
-    chromeos::LoginDisplayHost* host =
-        chromeos::LoginDisplayHost::default_host();
+    auto* host = ash::LoginDisplayHost::default_host();
     ASSERT_TRUE(host);
     host->StartSignInScreen();
     chromeos::ExistingUserController* controller =
@@ -686,7 +684,7 @@ class DeviceLocalAccountTest : public DevicePolicyCrosBrowserTest,
   void WaitForSessionStart() {
     if (IsSessionStarted())
       return;
-    chromeos::WizardController::SkipPostLoginScreensForTesting();
+    ash::WizardController::SkipPostLoginScreensForTesting();
     chromeos::test::WaitForPrimaryUserSessionStart();
   }
 
@@ -2648,8 +2646,7 @@ IN_PROC_BROWSER_TEST_P(TermsOfServiceDownloadTest, TermsOfServiceScreen) {
   controller->RemoveLoginStatusConsumer(&login_status_consumer);
 
   // Verify that the Terms of Service screen is being shown.
-  chromeos::WizardController* wizard_controller =
-        chromeos::WizardController::default_controller();
+  auto* wizard_controller = ash::WizardController::default_controller();
   ASSERT_TRUE(wizard_controller);
   ASSERT_TRUE(wizard_controller->current_screen());
   EXPECT_EQ(chromeos::TermsOfServiceScreenView::kScreenId.AsId(),
@@ -2758,8 +2755,7 @@ IN_PROC_BROWSER_TEST_P(TermsOfServiceDownloadTest, DeclineTermsOfService) {
   controller->RemoveLoginStatusConsumer(&login_status_consumer);
 
   // Verify that the Terms of Service screen is being shown.
-  chromeos::WizardController* wizard_controller =
-      chromeos::WizardController::default_controller();
+  auto* wizard_controller = ash::WizardController::default_controller();
   ASSERT_TRUE(wizard_controller);
   ASSERT_TRUE(wizard_controller->current_screen());
   EXPECT_EQ(chromeos::TermsOfServiceScreenView::kScreenId.AsId(),

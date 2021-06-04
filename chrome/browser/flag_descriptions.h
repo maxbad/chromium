@@ -1213,9 +1213,6 @@ extern const char kMBIModeDescription[];
 extern const char kIntensiveWakeUpThrottlingName[];
 extern const char kIntensiveWakeUpThrottlingDescription[];
 
-extern const char kPrinterStatusDialogName[];
-extern const char kPrinterStatusDialogDescription[];
-
 extern const char kSafetyTipName[];
 extern const char kSafetyTipDescription[];
 
@@ -2106,9 +2103,6 @@ extern const char kCloudPrintXpsDescription[];
 extern const char kD3D11VideoDecoderName[];
 extern const char kD3D11VideoDecoderDescription[];
 
-extern const char kElasticOverscrollWinName[];
-extern const char kElasticOverscrollWinDescription[];
-
 extern const char kEnableIncognitoShortcutOnDesktopName[];
 extern const char kEnableIncognitoShortcutOnDesktopDescription[];
 
@@ -2394,9 +2388,6 @@ extern const char kEnableAssistantLauncherIntegrationDescription[];
 
 extern const char kEnableAssistantLauncherUIName[];
 extern const char kEnableAssistantLauncherUIDescription[];
-
-extern const char kEnableAssistantMediaSessionIntegrationName[];
-extern const char kEnableAssistantMediaSessionIntegrationDescription[];
 
 extern const char kEnableAssistantRoutinesName[];
 extern const char kEnableAssistantRoutinesDescription[];
@@ -2894,9 +2885,6 @@ extern const char kInstallableInkDropDescription[];
 extern const char kEnableOopPrintDriversName[];
 extern const char kEnableOopPrintDriversDescription[];
 
-extern const char kDirectManipulationStylusName[];
-extern const char kDirectManipulationStylusDescription[];
-
 extern const char kWebuiFeedbackName[];
 extern const char kWebuiFeedbackDescription[];
 
@@ -3010,6 +2998,11 @@ extern const char kAutofillCreditCardUploadDescription[];
 extern const char kSendWebUIJavaScriptErrorReportsName[];
 extern const char kSendWebUIJavaScriptErrorReportsDescription[];
 #endif
+
+#if defined(OS_WIN) || defined(OS_ANDROID)
+extern const char kElasticOverscrollName[];
+extern const char kElasticOverscrollDescription[];
+#endif  // defined(OS_WIN) || defined(OS_ANDROID)
 
 #if defined(OS_WIN) || (defined(OS_LINUX) || BUILDFLAG(IS_CHROMEOS_LACROS)) || \
     defined(OS_MAC)

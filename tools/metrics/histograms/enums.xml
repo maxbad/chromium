@@ -3285,6 +3285,12 @@ Unknown properties are collapsed to zero. -->
   <int value="10" label="Peeking To Half"/>
 </enum>
 
+<enum name="AppListUsageStateByNewUsers">
+  <int value="0" label="LAUNCHER_USED"/>
+  <int value="1" label="LAUNCHER_NOT_USED_BEFORE_DESTRUCTION"/>
+  <int value="2" label="LAUNCHER_NOT_USED_BEFORE_SWITCHING_ACCOUNTS"/>
+</enum>
+
 <enum name="AppListUserEvent">
   <int value="0" label="Impression"/>
   <int value="1" label="Launch"/>
@@ -21924,6 +21930,8 @@ Called by update_document_policy_enum.py.-->
     portrait dimension has 1 subtracted from the enum index to differentiate it
     from the landscape index value.
   </summary>
+  <int value="345599" label="480 x 720 (deprecated)"/>
+  <int value="345600" label="720 x 480 (deprecated)"/>
   <int value="349183" label="512 x 682"/>
   <int value="349184" label="682 x 512"/>
   <int value="387203" label="492 x 787"/>
@@ -21942,6 +21950,8 @@ Called by update_document_policy_enum.py.-->
   <int value="479037" label="923 x 519"/>
   <int value="482797" label="566 x 853"/>
   <int value="482798" label="853 x 566"/>
+  <int value="497663" label="576 x 864 (deprecated)"/>
+  <int value="497664" label="864 x 576 (deprecated)"/>
   <int value="502865" label="614 x 819"/>
   <int value="502866" label="819 x 614"/>
   <int value="505799" label="562 x 900"/>
@@ -21976,6 +21986,8 @@ Called by update_document_policy_enum.py.-->
   <int value="619500" label="1050 x 590"/>
   <int value="639599" label="600 x 1066"/>
   <int value="639600" label="1066 x 600"/>
+  <int value="641573" label="654 x 981 (deprecated)"/>
+  <int value="641574" label="981 x 654 (deprecated)"/>
   <int value="649139" label="698 x 930"/>
   <int value="649140" label="930 x 698"/>
   <int value="655359" label="640 x 1024"/>
@@ -22010,6 +22022,8 @@ Called by update_document_policy_enum.py.-->
   <int value="760602" label="1163 x 654"/>
   <int value="773534" label="695 x 1113"/>
   <int value="773535" label="1113 x 695"/>
+  <int value="777599" label="720 x 1080 (deprecated)"/>
+  <int value="777600" label="1080 x 720 (deprecated)"/>
   <int value="783731" label="723 x 1084"/>
   <int value="783732" label="1084 x 723"/>
   <int value="784183" label="664 x 1181"/>
@@ -22098,6 +22112,8 @@ Called by update_document_policy_enum.py.-->
   <int value="1183704" label="1333 x 888"/>
   <int value="1189371" label="818 x 1454"/>
   <int value="1189372" label="1454 x 818"/>
+  <int value="1214999" label="900 x 1350 (deprecated)"/>
+  <int value="1215000" label="1350 x 900 (deprecated)"/>
   <int value="1217311" label="872 x 1396"/>
   <int value="1217312" label="1396 x 872"/>
   <int value="1225079" label="830 x 1476"/>
@@ -22144,6 +22160,8 @@ Called by update_document_policy_enum.py.-->
   <int value="1536721" label="1517 x 1013"/>
   <int value="1567190" label="939 x 1669"/>
   <int value="1567191" label="1669 x 939"/>
+  <int value="1585175" label="1028 x 1542 (deprecated)"/>
+  <int value="1585176" label="1542 x 1028 (deprecated)"/>
   <int value="1599999" label="1000 x 1600"/>
   <int value="1600000" label="1600 x 1000"/>
   <int value="1603813" label="1097 x 1462"/>
@@ -22192,6 +22210,8 @@ Called by update_document_policy_enum.py.-->
   <int value="2070350" label="1762 x 1175"/>
   <int value="2073599" label="1080 x 1920"/>
   <int value="2073600" label="1920 x 1080"/>
+  <int value="2159999" label="1200 x 1800 (deprecated)"/>
+  <int value="2160000" label="1800 x 1200 (deprecated)"/>
   <int value="2183679" label="1280 x 1706"/>
   <int value="2183680" label="1706 x 1280"/>
   <int value="2219191" label="1214 x 1828"/>
@@ -24738,6 +24758,7 @@ Called by update_document_policy_enum.py.-->
   <int value="859" label="CloudUserPolicyMerge"/>
   <int value="860" label="ManagedAccountRestriction"/>
   <int value="861" label="LockIconInAddressBarEnabled"/>
+  <int value="862" label="DeviceScheduledReboot"/>
 </enum>
 
 <enum name="EnterprisePolicyDeviceIdValidity">
@@ -32796,6 +32817,7 @@ Called by update_use_counter_feature_enum.py.-->
   <int value="3926" label="FontFaceSizeAdjust"/>
   <int value="3927" label="HiddenBackfaceWith3D"/>
   <int value="3928" label="MainFrameNonSecurePrivateAddressSpace"/>
+  <int value="3929" label="CSSSelectorPseudoHas"/>
 </enum>
 
 <enum name="FeaturePolicyAllowlistType">
@@ -46276,6 +46298,7 @@ from previous Chrome versions.
   <int value="-968675274" label="Rar2Fs:enabled"/>
   <int value="-968010468" label="SharedArrayBuffer:disabled"/>
   <int value="-967825290" label="WebViewConnectionlessSafeBrowsing:disabled"/>
+  <int value="-966661415" label="ElasticOverscroll:disabled"/>
   <int value="-966290456" label="WebAuthenticationCtap2:enabled"/>
   <int value="-965842218" label="MultiDeviceApi:disabled"/>
   <int value="-964676765" label="enable-accelerated-mjpeg-decode"/>
@@ -47682,7 +47705,6 @@ from previous Chrome versions.
   <int value="296215399" label="WindowsMixedReality:disabled"/>
   <int value="296296761" label="MediaFoundationVideoCapture:disabled"/>
   <int value="297095559" label="ShowBluetoothDebugLogToggle:disabled"/>
-  <int value="297346310" label="ElasticOverscrollWin:enabled"/>
   <int value="297750703" label="DesktopPWAsAppIconShortcutsMenu:enabled"/>
   <int value="299792415" label="OmniboxSuggestionTransparencyOptions:enabled"/>
   <int value="300095239" label="FCMInvalidations:enabled"/>
@@ -47953,6 +47975,7 @@ from previous Chrome versions.
   <int value="513728926" label="OsSettingsPolymer3:enabled"/>
   <int value="514406112" label="WebUIOmniboxPopup:disabled"/>
   <int value="514569020" label="RemoteCopyImageNotification:enabled"/>
+  <int value="515981953" label="ElasticOverscroll:enabled"/>
   <int value="516143995" label="EnableAriaElementReflection:enabled"/>
   <int value="516603570" label="QuickAnswersRichUi:disabled"/>
   <int value="517429103" label="AutofillImportDynamicForms:enabled"/>
@@ -49349,7 +49372,6 @@ from previous Chrome versions.
   <int value="1714520147" label="MBIMode:disabled"/>
   <int value="1714922056" label="GlobalMediaControls:disabled"/>
   <int value="1715338237" label="ContextualSearchSecondTap:disabled"/>
-  <int value="1715382788" label="ElasticOverscrollWin:disabled"/>
   <int value="1716104463" label="enable-fullscreen-app-list"/>
   <int value="1717788959" label="SlowDCTimerInterruptsWin:disabled"/>
   <int value="1717987538" label="NTPTilesLowerResolutionFavicons:enabled"/>
@@ -54347,7 +54369,9 @@ Called by update_use_counter_css.py.-->
 <enum name="NearbyConnectionsUtilityProcessShutdownReason">
   <int value="0" label="Normal"/>
   <int value="1" label="Crash"/>
-  <int value="2" label="Mojo pipe disconnection"/>
+  <int value="2" label="Mojo pipe disconnection (deprecated)"/>
+  <int value="3" label="Utility process disconnected Decoder mojo pipe"/>
+  <int value="4" label="Utility process disconnected Connections mojo pipe"/>
 </enum>
 
 <enum name="NearbyShareAttachmentType">
@@ -62936,6 +62960,24 @@ Called by update_net_trust_anchors.py.-->
   <int value="1" label="Started"/>
 </enum>
 
+<enum name="PlatformCellularConnectResult">
+  <summary>
+    The return status as a result of a call to connect to a cellular device at
+    the shill layer.
+  </summary>
+  <int value="0" label="Success"/>
+  <int value="1" label="Unknown"/>
+  <int value="2" label="Wrong State"/>
+  <int value="3" label="Operation Failed"/>
+  <int value="4" label="Already Connected"/>
+  <int value="5" label="Not Registered"/>
+  <int value="6" label="Not On Home Network"/>
+  <int value="7" label="Incorrect Pin"/>
+  <int value="8" label="Pin Required"/>
+  <int value="9" label="Pin Blocked"/>
+  <int value="10" label="Invalid APN"/>
+</enum>
+
 <enum name="PlatformFileError">
   <summary>Errors from base::File::Error</summary>
   <int value="0" label="OK"/>
@@ -66312,6 +66354,8 @@ https://www.dmtf.org/sites/default/files/standards/documents/DSP0134_2.7.1.pdf
   <int value="12"
       label="Exceeding maximum number of migrations on write error"/>
   <int value="13" label="Path degrading before handshake confirmed"/>
+  <int value="14" label="Idle migration period exceeded"/>
+  <int value="15" label="Migration fails due to lack of connection ID"/>
 </enum>
 
 <enum name="QuicDisabledReason">
@@ -76670,6 +76714,24 @@ would be helpful to identify which type is being sent.
   <int value="5" label="Unknown response code"/>
 </enum>
 
+<enum name="SurveyDownloadResponseCodes2">
+<!-- This enum allocations are not without meaning. Thus, these allocations
+     should never be changed, and new possible return values should be appended
+     as new items with new values.
+  -->
+
+  <summary>
+    Results when download survey response is available. Used by
+    Android.Survey.SurveyDownloadResponseCodes2.
+  </summary>
+  <int value="0" label="Success"/>
+  <int value="1" label="Backend timeout"/>
+  <int value="2" label="Failed to fetch survey"/>
+  <int value="3" label="No available survey"/>
+  <int value="4" label="Trigger Id not set"/>
+  <int value="5" label="Unsupported Cronet engine"/>
+</enum>
+
 <enum name="SurveyFilteringResult">
   <int value="0" label="Survey info bar already displayed"/>
   <int value="1" label="Chrome Home enabled for less than one week [removed]"/>
@@ -78105,6 +78167,8 @@ would be helpful to identify which type is being sent.
 </enum>
 
 <enum name="TimeLimitPolicyType">
+<!-- App Time Limit does not cover blocked apps. -->
+
   <int value="0" label="No Time Limit"/>
   <int value="1" label="Override Time Limit"/>
   <int value="2" label="Bed Time Limit"/>

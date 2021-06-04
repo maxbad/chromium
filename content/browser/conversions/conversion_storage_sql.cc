@@ -61,12 +61,16 @@ const base::FilePath::CharType kDatabasePath[] =
 //
 // Version 6 - 2021/05/06 - https://crrev.com/c/2878235
 //
-// Version 6 adds the impression.priority column.
-const int kCurrentVersionNumber = 6;
+// Version 6 adds the impressions.priority column.
+//
+// Version 7 - 2021/06/03 - https://crrev.com/c/2904386
+//
+// Version 7 adds the impressions.impression_site column.
+const int kCurrentVersionNumber = 7;
 
 // Earliest version which can use a |kCurrentVersionNumber| database
 // without failing.
-const int kCompatibleVersionNumber = 6;
+const int kCompatibleVersionNumber = 7;
 
 // Latest version of the database that cannot be upgraded to
 // |kCurrentVersionNumber| without razing the database. No versions are
@@ -168,8 +172,8 @@ void ConversionStorageSql::StoreImpression(
       "(impression_data, impression_origin, conversion_origin, "
       "conversion_destination, "
       "reporting_origin, impression_time, expiry_time, source_type, "
-      "attributed_truthfully, priority) "
-      "VALUES (?,?,?,?,?,?,?,?,?,?)";
+      "attributed_truthfully, priority, impression_site) "
+      "VALUES (?,?,?,?,?,?,?,?,?,?,?)";
   sql::Statement statement(
       db_->GetCachedStatement(SQL_FROM_HERE, kInsertImpressionSql));
   statement.BindString(
@@ -184,6 +188,7 @@ void ConversionStorageSql::StoreImpression(
   statement.BindInt(
       8, static_cast<int>(delegate_->SelectAttributionLogic(impression)));
   statement.BindInt64(9, impression.priority());
+  statement.BindString(10, impression.ImpressionSite().Serialize());
   statement.Run();
 
   transaction.Commit();
@@ -211,20 +216,16 @@ bool ConversionStorageSql::MaybeCreateAndStoreConversionReport(
 
   base::Time current_time = clock_->Now();
 
-  // TODO(apaseltiner): Support kEvent as well as kNavigation.
-  const StorableImpression::SourceType kSourceType =
-      StorableImpression::SourceType::kNavigation;
-
   // Get all impressions that match this <reporting_origin,
   // conversion_destination> pair. Only get impressions that are active and not
   // past their expiry time.
   const char kGetMatchingImpressionsSql[] =
       "SELECT impression_id, impression_data, impression_origin, "
       "conversion_origin, impression_time, expiry_time, priority, "
-      "attributed_truthfully "
+      "attributed_truthfully, source_type "
       "FROM impressions "
       "WHERE conversion_destination = ? AND reporting_origin = ? "
-      "AND active = 1 AND expiry_time > ? AND source_type = ?"
+      "AND active = 1 AND expiry_time > ? "
       "ORDER BY impression_time DESC";
 
   sql::Statement statement(
@@ -232,7 +233,6 @@ bool ConversionStorageSql::MaybeCreateAndStoreConversionReport(
   statement.BindString(0, serialized_conversion_destination);
   statement.BindString(1, SerializeOrigin(reporting_origin));
   statement.BindTime(2, current_time);
-  statement.BindInt(3, static_cast<int>(kSourceType));
 
   std::vector<StorableImpression> impressions;
 
@@ -259,10 +259,12 @@ bool ConversionStorageSql::MaybeCreateAndStoreConversionReport(
     StorableImpression::AttributionLogic attribution_logic =
         static_cast<StorableImpression::AttributionLogic>(
             statement.ColumnInt(7));
+    StorableImpression::SourceType source_type =
+        static_cast<StorableImpression::SourceType>(statement.ColumnInt(8));
 
     StorableImpression impression(impression_data, impression_origin,
                                   conversion_origin, reporting_origin,
-                                  impression_time, expiry_time, kSourceType,
+                                  impression_time, expiry_time, source_type,
                                   attribution_source_priority, impression_id);
     impressions.push_back(std::move(impression));
     attribution_logics.insert_or_assign(impression_id, attribution_logic);
@@ -275,7 +277,13 @@ bool ConversionStorageSql::MaybeCreateAndStoreConversionReport(
   const StorableImpression& impression_to_attribute =
       delegate_->GetImpressionToAttribute(impressions);
 
-  ConversionReport report(impression_to_attribute, conversion.conversion_data(),
+  const uint64_t conversion_data =
+      impression_to_attribute.source_type() ==
+              StorableImpression::SourceType::kEvent
+          ? conversion.event_source_trigger_data()
+          : conversion.conversion_data();
+
+  ConversionReport report(impression_to_attribute, conversion_data,
                           /*conversion_time=*/current_time,
                           /*report_time=*/current_time,
                           /*conversion_id=*/absl::nullopt);
@@ -332,7 +340,9 @@ bool ConversionStorageSql::MaybeCreateAndStoreConversionReport(
   // provide the max number of conversions prior to this new conversion being
   // logged.
   int max_prior_conversions_before_inactive =
-      delegate_->GetMaxConversionsPerImpression(kSourceType) - 1;
+      delegate_->GetMaxConversionsPerImpression(
+          report.impression.source_type()) -
+      1;
 
   // Update the attributed impression.
   impression_update_statement.BindInt(0, max_prior_conversions_before_inactive);
@@ -956,6 +966,8 @@ bool ConversionStorageSql::CreateSchema() {
   // |kNavigation|.
   // |attributed_truthfully| corresponds to the
   // |StorableImpression::AttributionLogic| enum.
+  // |impression_site| is used to optimize the lookup of impressions;
+  // |StorableImpression::ImpressionSite| is always derived from the origin.
   const char kImpressionTableSql[] =
       "CREATE TABLE IF NOT EXISTS impressions"
       "(impression_id INTEGER PRIMARY KEY,"
@@ -970,7 +982,8 @@ bool ConversionStorageSql::CreateSchema() {
       "conversion_destination TEXT NOT NULL,"
       "source_type INTEGER NOT NULL,"
       "attributed_truthfully INTEGER NOT NULL,"
-      "priority INTEGER NOT NULL)";
+      "priority INTEGER NOT NULL,"
+      "impression_site TEXT NOT NULL)";
   if (!db_->Execute(kImpressionTableSql))
     return false;
 
@@ -1000,6 +1013,13 @@ bool ConversionStorageSql::CreateSchema() {
       "CREATE INDEX IF NOT EXISTS impression_origin_idx "
       "ON impressions(impression_origin)";
   if (!db_->Execute(kImpressionOriginIndexSql))
+    return false;
+
+  // Optimizes `EnsureCapacityForPendingDestinationLimit()`.
+  const char kImpressionSiteIndexSql[] =
+      "CREATE INDEX IF NOT EXISTS impression_site_idx "
+      "ON impressions(active, impression_site, source_type)";
+  if (!db_->Execute(kImpressionSiteIndexSql))
     return false;
 
   // All columns in this table are const. |impression_id| is the primary key of

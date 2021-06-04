@@ -157,17 +157,14 @@ void Normalizer::NormalizeIPsec(base::DictionaryValue* ipsec) {
                     ::onc::client_cert::kClientCertRef,
                     clientcert_type == ::onc::client_cert::kRef);
 
-  int ike_version = -1;
-  ipsec->GetIntegerWithoutPathExpansion(::onc::ipsec::kIKEVersion,
-                                        &ike_version);
+  int ike_version = ipsec->FindIntKey(::onc::ipsec::kIKEVersion).value_or(-1);
   RemoveEntryUnless(ipsec, ::onc::ipsec::kEAP, ike_version == 2);
   RemoveEntryUnless(ipsec, ::onc::ipsec::kGroup, ike_version == 1);
   RemoveEntryUnless(ipsec, ::onc::ipsec::kXAUTH, ike_version == 1);
 }
 
 void Normalizer::NormalizeNetworkConfiguration(base::DictionaryValue* network) {
-  bool remove = false;
-  network->GetBooleanWithoutPathExpansion(::onc::kRemove, &remove);
+  bool remove = network->FindBoolKey(::onc::kRemove).value_or(false);
   if (remove) {
     network->RemoveKey(::onc::network_config::kStaticIPConfig);
     network->RemoveKey(::onc::network_config::kName);

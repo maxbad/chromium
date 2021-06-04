@@ -487,23 +487,23 @@
             ]
         }
     ],
-    "AndroidInProductHelpToolbarButtons_TabSwitcher": [
+    "AndroidInProductHelpToolbarButtons": [
         {
             "platforms": [
                 "android"
             ],
             "experiments": [
                 {
-                    "name": "TabSwitcherButtonIphConfig",
+                    "name": "Default_20210520",
                     "params": {
-                        "availability": ">=1",
-                        "cohortFeatureName": "ToolbarIphAndroidCohort1",
+                        "availability": ">=14",
                         "event_trigger": "name:tab_switcher_iph_triggered;comparator:==0;window:90;storage:90",
                         "event_used": "name:tab_switcher_button_clicked;comparator:==0;window:14;storage:90",
                         "session_rate": "<1"
                     },
                     "enable_features": [
-                        "IPH_TabSwitcherButton"
+                        "IPH_TabSwitcherButton",
+                        "ToolbarIphAndroid"
                     ]
                 }
             ]
@@ -2280,7 +2280,9 @@
                 {
                     "name": "Enabled",
                     "enable_features": [
-                        "CopyLinkToText"
+                        "CopyLinkToText",
+                        "PreemptiveLinkToTextGeneration",
+                        "SharedHighlightingV2"
                     ]
                 }
             ]
@@ -2960,6 +2962,24 @@
             ]
         }
     ],
+    "DiceWebSigninInterception": [
+        {
+            "platforms": [
+                "linux",
+                "mac",
+                "windows"
+            ],
+            "experiments": [
+                {
+                    "name": "EnabledWithEphemeralGuest20210526",
+                    "enable_features": [
+                        "DiceWebSigninInterception",
+                        "EnableEphemeralGuestProfilesOnDesktop"
+                    ]
+                }
+            ]
+        }
+    ],
     "DirectActions": [
         {
             "platforms": [
@@ -3556,6 +3576,25 @@
             ]
         }
     ],
+    "ForceAccountIdMigration": [
+        {
+            "platforms": [
+                "android",
+                "ios",
+                "linux",
+                "mac",
+                "windows"
+            ],
+            "experiments": [
+                {
+                    "name": "Enabled",
+                    "enable_features": [
+                        "ForceAccountIdMigration"
+                    ]
+                }
+            ]
+        }
+    ],
     "ForceSynchronousHTMLParsing": [
         {
             "platforms": [
@@ -3757,6 +3796,21 @@
                     },
                     "enable_features": [
                         "HeapProfilerReporting"
+                    ]
+                }
+            ]
+        }
+    ],
+    "HelpAppLauncherSearch": [
+        {
+            "platforms": [
+                "chromeos"
+            ],
+            "experiments": [
+                {
+                    "name": "Enabled",
+                    "enable_features": [
+                        "HelpAppLauncherSearch"
                     ]
                 }
             ]
@@ -4112,6 +4166,25 @@
                     "name": "Enabled",
                     "enable_features": [
                         "IOSSharedHighlightingColorChange"
+                    ]
+                }
+            ]
+        }
+    ],
+    "IOSStartSurface": [
+        {
+            "platforms": [
+                "ios"
+            ],
+            "experiments": [
+                {
+                    "name": "ShrinkLogo",
+                    "params": {
+                        "ReturnToStartSurfaceInactiveDurationInSeconds": "0",
+                        "shrink_logo": "true"
+                    },
+                    "enable_features": [
+                        "StartSurface"
                     ]
                 }
             ]
@@ -5744,6 +5817,29 @@
             ]
         }
     ],
+    "PageInfoIPH": [
+        {
+            "platforms": [
+                "android"
+            ],
+            "experiments": [
+                {
+                    "name": "Enabled",
+                    "params": {
+                        "availability": ">=14",
+                        "event_1": "name:permission_request_shown;comparator:>=3;window:90;storage:90",
+                        "event_trigger": "name:page_info_iph_triggered;comparator:==0;window:90;storage:90",
+                        "event_used": "name:page_info_opened;comparator:==0;window:90;storage:90",
+                        "session_rate": "<1"
+                    },
+                    "enable_features": [
+                        "IPH_PageInfo"
+                    ],
+                    "disable_features": []
+                }
+            ]
+        }
+    ],
     "PageLoadMetricsBufferTimer": [
         {
             "platforms": [
@@ -6276,6 +6372,25 @@
                     },
                     "enable_features": [
                         "ProbabilisticCryptidRenderer"
+                    ]
+                }
+            ]
+        }
+    ],
+    "ProcessHostOnUI": [
+        {
+            "platforms": [
+                "android",
+                "chromeos",
+                "linux",
+                "mac",
+                "windows"
+            ],
+            "experiments": [
+                {
+                    "name": "Enabled",
+                    "enable_features": [
+                        "ProcessHostOnUI"
                     ]
                 }
             ]
@@ -7284,24 +7399,6 @@
                     "name": "Enabled",
                     "enable_features": [
                         "SmoothnessModeForAnimatedScrolls"
-                    ]
-                }
-            ]
-        }
-    ],
-    "SpacesM2": [
-        {
-            "platforms": [
-                "linux",
-                "mac",
-                "windows"
-            ],
-            "experiments": [
-                {
-                    "name": "Enabled",
-                    "enable_features": [
-                        "DiceWebSigninInterception",
-                        "NewProfilePicker"
                     ]
                 }
             ]

@@ -259,10 +259,13 @@ int GetStartupNotificationPrefCount(PrefService* pref_service) {
       prefs::kImprovedShortcutsNotificationShownCount);
 }
 
-bool IsGuestUserSession() {
+bool ShouldShowStartupNotificationForCurrentUser() {
   const absl::optional<user_manager::UserType> user_type =
       Shell::Get()->session_controller()->GetUserType();
-  return user_type && *user_type == user_manager::USER_TYPE_GUEST;
+  return user_type &&
+         (*user_type == user_manager::USER_TYPE_REGULAR ||
+          *user_type == user_manager::USER_TYPE_CHILD) &&
+         !Shell::Get()->session_controller()->IsUserFirstLogin();
 }
 
 // Increments the number of times the startup notification has been shown
@@ -1047,8 +1050,8 @@ void HandleWindowSnap(AcceleratorAction action) {
   }
 
   const WMEvent event(action == WINDOW_CYCLE_SNAP_LEFT
-                          ? WM_EVENT_CYCLE_SNAP_LEFT
-                          : WM_EVENT_CYCLE_SNAP_RIGHT);
+                          ? WM_EVENT_CYCLE_SNAP_PRIMARY
+                          : WM_EVENT_CYCLE_SNAP_SECONDARY);
   aura::Window* active_window = window_util::GetActiveWindow();
   DCHECK(active_window);
   WindowState::Get(active_window)->OnWMEvent(&event);
@@ -1815,8 +1818,10 @@ void AcceleratorControllerImpl::OnActiveUserPrefServiceChanged(
     PrefService* pref_service) {
   DCHECK(pref_service);
   if (::features::IsImprovedKeyboardShortcutsEnabled()) {
-    if (should_show_shortcut_notification_ && !IsGuestUserSession())
+    if (should_show_shortcut_notification_ &&
+        ShouldShowStartupNotificationForCurrentUser()) {
       NotifyShortcutChangesInRelease(pref_service);
+    }
   }
 }
 

@@ -21,6 +21,7 @@
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/time/time.h"
+#include "base/trace_event/base_tracing.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
 #include "media/base/media_log.h"
@@ -179,6 +180,10 @@ std::unique_ptr<RTCVideoDecoderAdapter> RTCVideoDecoderAdapter::Create(
     }
   }
 
+  // To mirror what RTCVideoDecoderStreamAdapter does a little more closely,
+  // record an init failure here.  Otherwise, we only ever record successes.
+  base::UmaHistogramBoolean("Media.RTCVideoDecoderInitDecodeSuccess", false);
+
   return nullptr;
 }
 
@@ -207,6 +212,7 @@ RTCVideoDecoderAdapter::~RTCVideoDecoderAdapter() {
 
 bool RTCVideoDecoderAdapter::InitializeSync(
     const media::VideoDecoderConfig& config) {
+  TRACE_EVENT0("webrtc", "RTCVideoDecoderAdapter::InitializeSync");
   DVLOG(3) << __func__;
   // Can be called on |worker_thread_| or |decoding_thread_|.
   DCHECK(!media_task_runner_->RunsTasksInCurrentSequence());
@@ -251,7 +257,8 @@ int32_t RTCVideoDecoderAdapter::InitDecode(
   current_resolution_ =
       static_cast<int32_t>(codec_settings->width) * codec_settings->height;
 
-  UMA_HISTOGRAM_BOOLEAN("Media.RTCVideoDecoderInitDecodeSuccess", !has_error_);
+  base::UmaHistogramBoolean("Media.RTCVideoDecoderInitDecodeSuccess",
+                            !has_error_);
   if (!has_error_) {
     UMA_HISTOGRAM_ENUMERATION(
         "Media.RTCVideoDecoderProfile",

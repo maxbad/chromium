@@ -201,6 +201,11 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
 }
 
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
+                       AccessibilityCSSContentVisibilityAutoAriaHidden) {
+  RunCSSTest(FILE_PATH_LITERAL("content-visibility-auto-aria-hidden.html"));
+}
+
+IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
                        AccessibilityCSSContentVisibilityHiddenCheckFailure) {
   RunCSSTest(FILE_PATH_LITERAL("content-visibility-hidden-check-failure.html"));
 }
@@ -616,6 +621,11 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
 
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest, AccessibilityContinuations) {
   RunHtmlTest(FILE_PATH_LITERAL("continuations.html"));
+}
+
+IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
+                       AccessibilityContinuationsParserSplitsMarkup) {
+  RunHtmlTest(FILE_PATH_LITERAL("continuations-parser-splits-markup.html"));
 }
 
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest, AccessibilityAriaControls) {

@@ -63,9 +63,10 @@ void OnSodaResponse(const char* serialized_proto,
     DCHECK(result.hypothesis_size());
     static_cast<SpeechRecognitionRecognizerImpl*>(callback_handle)
         ->recognition_event_callback()
-        .Run(
-            std::string(result.hypothesis(0)),
-            result.result_type() == soda::chrome::SodaRecognitionResult::FINAL);
+        .Run(media::SpeechRecognitionResult(
+            result.hypothesis(0),
+            result.result_type() ==
+                soda::chrome::SodaRecognitionResult::FINAL));
   }
 
   if (response.soda_type() == soda::chrome::SodaResponse::LANGID) {
@@ -129,12 +130,12 @@ bool SpeechRecognitionRecognizerImpl::IsMultichannelSupported() {
 }
 
 void SpeechRecognitionRecognizerImpl::OnRecognitionEvent(
-    const std::string& result,
-    const bool is_final) {
+    media::SpeechRecognitionResult event) {
   if (!client_remote_.is_bound())
     return;
+
   client_remote_->OnSpeechRecognitionRecognitionEvent(
-      media::mojom::SpeechRecognitionResult::New(result, is_final),
+      std::move(event),
       base::BindOnce(&SpeechRecognitionRecognizerImpl::
                          OnSpeechRecognitionRecognitionEventCallback,
                      weak_factory_.GetWeakPtr()));
@@ -162,9 +163,9 @@ SpeechRecognitionRecognizerImpl::SpeechRecognitionRecognizerImpl(
     const base::FilePath& binary_path,
     const base::FilePath& config_path)
     : enable_soda_(base::FeatureList::IsEnabled(media::kUseSodaForLiveCaption)),
+      options_(std::move(options)),
       client_remote_(std::move(remote)),
-      config_path_(config_path),
-      options_(std::move(options)) {
+      config_path_(config_path) {
   recognition_event_callback_ = media::BindToCurrentLoop(
       base::BindRepeating(&SpeechRecognitionRecognizerImpl::OnRecognitionEvent,
                           weak_factory_.GetWeakPtr()));

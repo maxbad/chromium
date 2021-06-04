@@ -12,6 +12,7 @@
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "build/build_config.h"
 #include "media/base/cdm_config.h"
 #include "media/base/key_system_names.h"
 #include "media/base/key_systems.h"
@@ -159,12 +160,11 @@ bool IsSupportedMediaType(const std::string& container_mime_type,
   std::vector<std::string> codec_vector;
   SplitCodecs(codecs, &codec_vector);
 
-#if BUILDFLAG(ENABLE_PLATFORM_HEVC) && \
-    (BUILDFLAG(USE_CHROMEOS_PROTECTED_MEDIA) || defined(OS_WIN))
-  // EME HEVC is supported on CrOS and Windows under these build flags, but it
-  // is not supported for clear playback. Remove the HEVC codec strings to avoid
-  // asking IsSupported*MediaFormat() about HEVC. EME support for HEVC profiles
-  // is described via KeySystemProperties::GetSupportedCodecs().
+#if BUILDFLAG(ENABLE_PLATFORM_ENCRYPTED_HEVC)
+  // EME HEVC is supported on under this build flag, but it is not supported for
+  // clear playback. Remove the HEVC codec strings to avoid asking
+  // IsSupported*MediaFormat() about HEVC. EME support for HEVC profiles is
+  // described via KeySystemProperties::GetSupportedCodecs().
   // TODO(1156282): Decouple the rest of clear vs EME codec support.
   if (base::ToLowerASCII(container_mime_type) == "video/mp4" &&
       !codec_vector.empty()) {
@@ -184,7 +184,7 @@ bool IsSupportedMediaType(const std::string& container_mime_type,
     if (codec_vector.empty())
       return true;
   }
-#endif  // ENABLE_PLATFORM_HEVC && (USE_CHROMEOS_PROTECTED_MEDIA || OS_WIN)
+#endif  // BUILDFLAG(ENABLE_PLATFORM_ENCRYPTED_HEVC)
 
   // AesDecryptor decrypts the stream in the demuxer before it reaches the
   // decoder so check whether the media format is supported when clear.
@@ -657,14 +657,18 @@ KeySystemConfigSelector::GetSupportedConfiguration(
   // permission has already been denied. This would happen anyway later.
   EmeFeatureSupport distinctive_identifier_support =
       key_systems_->GetDistinctiveIdentifierSupport(key_system);
+#if !defined(OS_ANDROID)
   // NOTE: This is an additional action we are taking here that is not in the
   // spec currently.  Specifically, we are not allowing a distinctive identifier
-  // for cross-origin frames.
+  // for cross-origin frames. We do not do this on Android because there is no
+  // CDM selection available to Chrome that doesn't require a distinct
+  // identifier.
   if (web_frame_delegate_->IsCrossOriginToMainFrame()) {
     if (distinctive_identifier_support == EmeFeatureSupport::ALWAYS_ENABLED)
       return CONFIGURATION_NOT_SUPPORTED;
     distinctive_identifier_support = EmeFeatureSupport::NOT_SUPPORTED;
   }
+#endif  // !defined(OS_ANDROID)
   EmeConfigRule di_rule = GetDistinctiveIdentifierConfigRule(
       distinctive_identifier_support, distinctive_identifier);
   if (!config_state->IsRuleSupported(di_rule)) {

@@ -41,6 +41,7 @@ class WebThreadScheduler;
 class WebGraphicsContext3DProvider;
 class WebSecurityOrigin;
 enum class ProtocolHandlerSecurityLevel;
+struct WebContentSecurityPolicyHeader;
 }  // namespace blink
 
 namespace gpu {
@@ -242,7 +243,8 @@ class CONTENT_EXPORT RendererBlinkPlatformImpl : public BlinkPlatformImpl {
       scoped_refptr<network::SharedURLLoaderFactory> factory) override;
   std::unique_ptr<media::MediaLog> GetMediaLog(
       blink::MediaInspectorContext* inspector_context,
-      scoped_refptr<base::SingleThreadTaskRunner> owner_task_runner) override;
+      scoped_refptr<base::SingleThreadTaskRunner> owner_task_runner,
+      bool is_on_worker) override;
   media::GpuVideoAcceleratorFactories* GetGpuFactories() override;
   scoped_refptr<base::SingleThreadTaskRunner> MediaThreadTaskRunner() override;
   media::DecoderFactory* GetMediaDecoderFactory() override;
@@ -253,6 +255,9 @@ class CONTENT_EXPORT RendererBlinkPlatformImpl : public BlinkPlatformImpl {
   SkBitmap* GetSadPageBitmap() override;
   std::unique_ptr<blink::WebV8ValueConverter> CreateWebV8ValueConverter()
       override;
+  void AppendContentSecurityPolicy(
+      const blink::WebURL& url,
+      blink::WebVector<blink::WebContentSecurityPolicyHeader>* csp) override;
 
   // Tells this platform that the renderer is locked to a site (i.e., a scheme
   // plus eTLD+1, such as https://google.com), or to a more specific origin.

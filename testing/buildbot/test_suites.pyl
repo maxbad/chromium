@@ -4331,6 +4331,7 @@
 
     'linux_lacros_chrome_browsertests_version_skew': {
       'lacros_chrome_browsertests': { },
+      'lacros_chrome_browsertests_run_in_series': { },
     },
 
     'linux_lacros_cq_gtests': {
@@ -4348,6 +4349,7 @@
         },
       },
       'lacros_chrome_browsertests': {},
+      'lacros_chrome_browsertests_run_in_series': {},
       'lacros_chrome_unittests': {},
       'sync_integration_tests': {},
       'ui_base_unittests': {},
@@ -4356,6 +4358,7 @@
 
     'linux_lacros_specific_gtests': {
       'lacros_chrome_browsertests': {},
+      'lacros_chrome_browsertests_run_in_series': {},
       'lacros_chrome_unittests': {},
     },
 
@@ -7246,28 +7249,28 @@
     'ios_webkit_tot_tests': {
       'ios_common_tests': {
         'variants': [
-          'SIM_IPHONE_X_13_5',
-          'SIM_IPAD_AIR_2_13_5',
+          'SIM_IPHONE_X_14_5',
+          'SIM_IPAD_AIR_2_14_5',
         ]
       },
       'ios_eg2_cq_tests': {
         'mixins': ['xcode_parallelization'],
         'variants': [
-          'SIM_IPHONE_X_13_5',
-          'SIM_IPAD_AIR_2_13_5',
+          'SIM_IPHONE_X_14_5',
+          'SIM_IPAD_AIR_2_14_5',
         ]
       },
       'ios_eg2_tests': {
         'mixins': ['xcode_parallelization'],
         'variants': [
-          'SIM_IPHONE_X_13_5',
-          'SIM_IPAD_AIR_2_13_5',
+          'SIM_IPHONE_X_14_5',
+          'SIM_IPAD_AIR_2_14_5',
         ]
       },
       'ios_screen_size_dependent_tests': {
         'variants': [
-          'SIM_IPHONE_X_13_5',
-          'SIM_IPAD_AIR_2_13_5',
+          'SIM_IPHONE_X_14_5',
+          'SIM_IPAD_AIR_2_14_5',
         ]
       },
     },

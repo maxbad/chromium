@@ -6,7 +6,6 @@ package org.chromium.chrome.browser.share;
 
 import android.app.Activity;
 import android.net.Uri;
-import android.text.TextUtils;
 
 import androidx.annotation.IntDef;
 import androidx.annotation.NonNull;
@@ -232,8 +231,7 @@ public class ShareDelegateImpl implements ShareDelegate {
         WebContents webContents = currentTab.getWebContents();
         if (webContents == null) return false;
         if (webContents.getMainFrame() == null) return false;
-        String url = currentTab.getUrlString();
-        if (TextUtils.isEmpty(url)) return false;
+        if (currentTab.getUrl().isEmpty()) return false;
         if (currentTab.isShowingErrorPage() || SadTab.isShowing(currentTab)) {
             return false;
         }
@@ -315,6 +313,10 @@ public class ShareDelegateImpl implements ShareDelegate {
                 Supplier<Tab> tabProvider, Callback<Tab> printCallback,
                 @ShareOrigin int shareOrigin, boolean isSyncEnabled, long shareStartTime,
                 boolean sharingHubEnabled) {
+            Profile profile = null;
+            if (tabProvider.get() != null && tabProvider.get().getWebContents() != null) {
+                profile = Profile.fromWebContents(tabProvider.get().getWebContents());
+            }
             if (chromeShareExtras.shareDirectly()) {
                 RecordHistogram.recordEnumeratedHistogram(ANY_SHARE_HISTOGRAM_NAME,
                         ShareSourceAndroid.DIRECT_SHARE, ShareSourceAndroid.COUNT);
@@ -330,7 +332,7 @@ public class ShareDelegateImpl implements ShareDelegate {
                 ShareSheetCoordinator coordinator = new ShareSheetCoordinator(controller,
                         lifecycleDispatcher, tabProvider,
                         new ShareSheetPropertyModelBuilder(controller,
-                                ContextUtils.getApplicationContext().getPackageManager()),
+                                ContextUtils.getApplicationContext().getPackageManager(), profile),
                         printCallback, new LargeIconBridge(Profile.getLastUsedRegularProfile()),
                         new SettingsLauncherImpl(), isSyncEnabled,
                         AppHooks.get().getImageEditorModuleProvider(),
@@ -342,7 +344,7 @@ public class ShareDelegateImpl implements ShareDelegate {
                         "Sharing.DefaultSharesheetAndroid.Opened", shareOrigin, ShareOrigin.COUNT);
                 RecordHistogram.recordEnumeratedHistogram(ANY_SHARE_HISTOGRAM_NAME,
                         ShareSourceAndroid.ANDROID_SHARE_SHEET, ShareSourceAndroid.COUNT);
-                ShareHelper.showDefaultShareUi(params, chromeShareExtras.saveLastUsed());
+                ShareHelper.showDefaultShareUi(params, profile, chromeShareExtras.saveLastUsed());
             }
         }
     }

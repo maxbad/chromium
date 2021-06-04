@@ -2106,12 +2106,6 @@ const char kIntensiveWakeUpThrottlingDescription[] =
     "page that has been hidden for 5 minutes. For additional details, see "
     "https://www.chromestatus.com/feature/4718288976216064.";
 
-const char kPrinterStatusDialogName[] =
-    "Show printer status on destination dialog";
-const char kPrinterStatusDialogDescription[] =
-    "Enables printer status icons and labels for saved printers on the Print "
-    "Preview destination dialog";
-
 const char kSafetyTipName[] =
     "Show Safety Tip UI when visiting low-reputation websites";
 const char kSafetyTipDescription[] =
@@ -3667,11 +3661,6 @@ const char kD3D11VideoDecoderName[] = "D3D11 Video Decoder";
 const char kD3D11VideoDecoderDescription[] =
     "Enables D3D11VideoDecoder for hardware accelerated video decoding.";
 
-const char kElasticOverscrollWinName[] = "Elastic Overscroll for Windows";
-const char kElasticOverscrollWinDescription[] =
-    "Enables Elastic Overscrolling for Windows on touchscreens and precision "
-    "touchpads.";
-
 const char kEnableIncognitoShortcutOnDesktopName[] =
     "Enable Incognito Desktop Shortcut";
 const char kEnableIncognitoShortcutOnDesktopDescription[] =
@@ -4151,11 +4140,6 @@ const char kEnableAssistantLauncherUIName[] = "Assistant Launcher UI";
 const char kEnableAssistantLauncherUIDescription[] =
     "Enables the embedded Assistant UI in the app list. Requires Assistant to "
     "be enabled.";
-
-const char kEnableAssistantMediaSessionIntegrationName[] =
-    "Assistant Media Session integration";
-const char kEnableAssistantMediaSessionIntegrationDescription[] =
-    "Enable Assistant Media Session Integration.";
 
 const char kEnableAssistantRoutinesName[] = "Assistant Routines";
 const char kEnableAssistantRoutinesDescription[] = "Enable Assistant Routines.";
@@ -4961,10 +4945,6 @@ const char kEnableOopPrintDriversDescription[] =
     "Enables printing interactions with the operating system to be performed "
     "out-of-process.";
 
-const char kDirectManipulationStylusName[] = "Direct Manipulation Stylus";
-const char kDirectManipulationStylusDescription[] =
-    "If enabled, Chrome will scroll web pages on stylus drag.";
-
 const char kWebuiFeedbackName[] = "WebUI Feedback";
 const char kWebuiFeedbackDescription[] =
     "If enabled, Chrome will show the Feedback WebUI, as opposed to Chrome "
@@ -5129,6 +5109,12 @@ const char kSendWebUIJavaScriptErrorReportsDescription[] =
     "then when the JavaScript has an error on a WebUI page, an error report "
     "will be sent to Google.";
 #endif
+
+#if defined(OS_WIN) || defined(OS_ANDROID)
+const char kElasticOverscrollName[] = "Elastic Overscroll";
+const char kElasticOverscrollDescription[] =
+    "Enables Elastic Overscrolling on touchscreens and precision touchpads.";
+#endif  // defined(OS_WIN) || defined(OS_ANDROID)
 
 #if defined(OS_WIN) || (defined(OS_LINUX) || BUILDFLAG(IS_CHROMEOS_LACROS)) || \
     defined(OS_MAC)

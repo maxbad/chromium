@@ -361,6 +361,21 @@ void FakeShillServiceClient::GetWiFiPassphrase(
   std::move(callback).Run(passphrase ? *passphrase : std::string());
 }
 
+void FakeShillServiceClient::RequestTrafficCounters(
+    const dbus::ObjectPath& service_path,
+    ListValueCallback callback,
+    ErrorCallback error_callback) {
+  std::move(callback).Run(
+      base::Value::AsListValue(fake_traffic_counters_.Clone()));
+}
+
+void FakeShillServiceClient::ResetTrafficCounters(
+    const dbus::ObjectPath& service_path,
+    base::OnceClosure callback,
+    ErrorCallback error_callback) {
+  base::ThreadTaskRunnerHandle::Get()->PostTask(FROM_HERE, std::move(callback));
+}
+
 ShillServiceClient::TestInterface* FakeShillServiceClient::GetTestInterface() {
   return this;
 }
@@ -783,6 +798,15 @@ void FakeShillServiceClient::ContinueConnect(const std::string& service_path) {
     SetServiceProperty(service_path, shill::kStateProperty,
                        base::Value(shill::kStateOnline));
   }
+}
+
+void FakeShillServiceClient::SetFakeTrafficCounters(
+    base::Value fake_traffic_counters) {
+  if (!fake_traffic_counters.is_list()) {
+    LOG(ERROR) << "Fake traffic counters must be a list";
+    return;
+  }
+  fake_traffic_counters_ = std::move(fake_traffic_counters);
 }
 
 }  // namespace chromeos

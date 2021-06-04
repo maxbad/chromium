@@ -21,6 +21,7 @@
 #include "components/user_prefs/user_prefs.h"
 #include "content/public/test/browser_task_environment.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace chromeos {
 namespace file_system_provider {
@@ -202,20 +203,19 @@ TEST_F(FileSystemProviderRegistryTest, RememberFileSystem) {
                                                          &display_name));
   EXPECT_EQ(kDisplayName, display_name);
 
-  bool writable = false;
-  EXPECT_TRUE(
-      file_system->GetBooleanWithoutPathExpansion(kPrefKeyWritable, &writable));
-  EXPECT_TRUE(writable);
+  absl::optional<bool> writable = file_system->FindBoolKey(kPrefKeyWritable);
+  EXPECT_TRUE(writable.has_value());
+  EXPECT_TRUE(writable.value());
 
-  bool supports_notify_tag = false;
-  EXPECT_TRUE(file_system->GetBooleanWithoutPathExpansion(
-      kPrefKeySupportsNotifyTag, &supports_notify_tag));
-  EXPECT_TRUE(supports_notify_tag);
+  absl::optional<bool> supports_notify_tag =
+      file_system->FindBoolKey(kPrefKeySupportsNotifyTag);
+  EXPECT_TRUE(supports_notify_tag.has_value());
+  EXPECT_TRUE(supports_notify_tag.value());
 
-  int opened_files_limit = 0;
-  EXPECT_TRUE(file_system->GetIntegerWithoutPathExpansion(
-      kPrefKeyOpenedFilesLimit, &opened_files_limit));
-  EXPECT_EQ(kOpenedFilesLimit, opened_files_limit);
+  absl::optional<int> opened_files_limit =
+      file_system->FindIntKey(kPrefKeyOpenedFilesLimit);
+  EXPECT_TRUE(opened_files_limit.has_value());
+  EXPECT_EQ(kOpenedFilesLimit, opened_files_limit.value());
 
   const base::DictionaryValue* watchers_value = NULL;
   ASSERT_TRUE(file_system->GetDictionaryWithoutPathExpansion(kPrefKeyWatchers,
@@ -230,10 +230,10 @@ TEST_F(FileSystemProviderRegistryTest, RememberFileSystem) {
                                                      &entry_path));
   EXPECT_EQ(fake_watcher_.entry_path.value(), entry_path);
 
-  bool recursive = false;
-  EXPECT_TRUE(watcher->GetBooleanWithoutPathExpansion(kPrefKeyWatcherRecursive,
-                                                      &recursive));
-  EXPECT_EQ(fake_watcher_.recursive, recursive);
+  absl::optional<bool> recursive =
+      watcher->FindBoolKey(kPrefKeyWatcherRecursive);
+  EXPECT_TRUE(recursive.has_value());
+  EXPECT_EQ(fake_watcher_.recursive, recursive.value());
 
   std::string last_tag;
   EXPECT_TRUE(watcher->GetStringWithoutPathExpansion(kPrefKeyWatcherLastTag,

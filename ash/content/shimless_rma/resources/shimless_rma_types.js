@@ -10,6 +10,13 @@
  * re-aliased to the corresponding mojo types, or replaced by them.
  */
 
+/**
+ * Return type from state progression methods.
+ * Convenience type as mojo-lite does not define types for method results and
+ * this is used frequently.
+ * @typedef {{state: !RmaState, error: !RmadErrorCode}}
+ */
+export let StateResult;
 
 /**
  * @enum {number}
@@ -116,9 +123,8 @@ export let CalibrationComponent = {
  */
 export let ProvisioningStep = {
   kProvisioningUnknown: 0,
-  kFrobWidget: 1,
-  kTwiddleSettings: 2,
-  kProvisioningComplete: 3,
+  kInProgress: 1,
+  kProvisioningComplete: 2,
   MIN_VALUE: 0,
   MAX_VALUE: 3,
 };
@@ -131,34 +137,11 @@ export let ProvisioningStep = {
  */
 export let Component;
 
-// TODO(gavindodd): Change the mojo interface to always use
-// (RmaState state, RmadErrorCode error)
-// as the method return signature so *State types are consolidated.
-/**
- * @typedef {{state: !RmaState, error: !RmadErrorCode}}
- */
-export let State;
-
-/**
- * @typedef {{currentState: !RmaState, error: !RmadErrorCode}}
- */
-export let CurrentState;
-
-/**
- * @typedef {{nextState: !RmaState, error: !RmadErrorCode}}
- */
-export let NextState;
-
-/**
- * @typedef {{prevState: !RmaState, error: !RmadErrorCode}}
- */
-export let PrevState;
-
 /**
  * Type alias for ErrorObserver.
  * @typedef {{onError: !function(!RmadErrorCode)}}
  */
-export let ErrorObserver;
+export let ErrorObserverRemote;
 
 /**
  * Type alias for CalibrationProgressObserver.
@@ -166,7 +149,7 @@ export let ErrorObserver;
  *   onCalibrationUpdated: !function(!CalibrationComponent, number)
  * }}
  */
-export let CalibrationObserver;
+export let CalibrationObserverRemote;
 
 /**
  * Type alias for ProvisioningProgressObserver.
@@ -174,7 +157,7 @@ export let CalibrationObserver;
  *   onProvisioningUpdated: !function(!ProvisioningStep, number)
  * }}
  */
-export let ProvisioningObserver;
+export let ProvisioningObserverRemote;
 
 /**
  * Type alias for HardwareWriteProtectionState.
@@ -182,7 +165,7 @@ export let ProvisioningObserver;
  *   onHardwareWriteProtectionStateChanged: !function(boolean)
  * }}
  */
-export let HardwareWriteProtectionStateObserver;
+export let HardwareWriteProtectionStateObserverRemote;
 
 /**
  * Type alias for PowerCableState.
@@ -190,7 +173,7 @@ export let HardwareWriteProtectionStateObserver;
  *   onPowerCableStateChanged: !function(boolean)
  * }}
  */
-export let PowerCableStateObserver;
+export let PowerCableStateObserverRemote;
 
 /**
  * Type of ShimlessRmaServiceInterface.setStates function.

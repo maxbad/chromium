@@ -5,12 +5,13 @@
 #include "third_party/blink/public/common/storage_key/storage_key.h"
 
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "url/gurl.h"
 
 namespace blink {
 
 // Test when a constructed StorageKey object should be considered valid/opaque.
-TEST(BlinkStorageKeyTest, ConstructionValidity) {
+TEST(StorageKeyTest, ConstructionValidity) {
   StorageKey empty = StorageKey();
   EXPECT_TRUE(empty.opaque());
 
@@ -25,7 +26,7 @@ TEST(BlinkStorageKeyTest, ConstructionValidity) {
 }
 
 // Test that StorageKeys are/aren't equivalent as expected.
-TEST(BlinkStorageKeyTest, Equivalance) {
+TEST(StorageKeyTest, Equivalance) {
   url::Origin origin1 = url::Origin::Create(GURL("https://example.com"));
   url::Origin origin2 = url::Origin::Create(GURL("https://test.example"));
   url::Origin origin3 = url::Origin();
@@ -61,7 +62,7 @@ TEST(BlinkStorageKeyTest, Equivalance) {
 }
 
 // Test that StorageKeys Serialize to the expected value.
-TEST(BlinkStorageKeyTest, Serialize) {
+TEST(StorageKeyTest, Serialize) {
   std::string example = "https://example.com/";
   std::string example_no_trailing_slash = "https://example.com";
   std::string test = "https://test.example/";
@@ -77,24 +78,26 @@ TEST(BlinkStorageKeyTest, Serialize) {
 }
 
 // Test that deserialized StorageKeys are valid/opaque as expected.
-TEST(BlinkStorageKeyTest, Deserialize) {
+TEST(StorageKeyTest, Deserialize) {
   std::string example = "https://example.com/";
   std::string test = "https://test.example/";
   std::string wrong = "I'm not a valid URL.";
 
-  StorageKey key1 = StorageKey::Deserialize(example);
-  StorageKey key2 = StorageKey::Deserialize(test);
-  StorageKey key3 = StorageKey::Deserialize(wrong);
-  StorageKey key4 = StorageKey::Deserialize(std::string());
+  absl::optional<StorageKey> key1 = StorageKey::Deserialize(example);
+  absl::optional<StorageKey> key2 = StorageKey::Deserialize(test);
+  absl::optional<StorageKey> key3 = StorageKey::Deserialize(wrong);
+  absl::optional<StorageKey> key4 = StorageKey::Deserialize(std::string());
 
-  EXPECT_FALSE(key1.opaque());
-  EXPECT_FALSE(key2.opaque());
-  EXPECT_TRUE(key3.opaque());
-  EXPECT_TRUE(key4.opaque());
+  EXPECT_TRUE(key1.has_value());
+  EXPECT_FALSE(key1->opaque());
+  EXPECT_TRUE(key2.has_value());
+  EXPECT_FALSE(key2->opaque());
+  EXPECT_FALSE(key3.has_value());
+  EXPECT_FALSE(key4.has_value());
 }
 
 // Test that string -> StorageKey test function performs as expected.
-TEST(BlinkStorageKeyTest, CreateFromStringForTesting) {
+TEST(StorageKeyTest, CreateFromStringForTesting) {
   std::string example = "https://example.com/";
   std::string wrong = "I'm not a valid URL.";
 
@@ -110,7 +113,7 @@ TEST(BlinkStorageKeyTest, CreateFromStringForTesting) {
 
 // Test that a StorageKey, constructed by deserializing another serialized
 // StorageKey, is equivalent to the original.
-TEST(BlinkStorageKeyTest, SerializeDeserialize) {
+TEST(StorageKeyTest, SerializeDeserialize) {
   url::Origin origin1 = url::Origin::Create(GURL("https://example.com"));
   url::Origin origin2 = url::Origin::Create(GURL("https://test.example"));
 
@@ -120,8 +123,8 @@ TEST(BlinkStorageKeyTest, SerializeDeserialize) {
   std::string key1_string = key1.Serialize();
   std::string key2_string = key2.Serialize();
 
-  StorageKey key1_deserialized = StorageKey::Deserialize(key1_string);
-  StorageKey key2_deserialized = StorageKey::Deserialize(key2_string);
+  StorageKey key1_deserialized = *StorageKey::Deserialize(key1_string);
+  StorageKey key2_deserialized = *StorageKey::Deserialize(key2_string);
 
   EXPECT_EQ(key1, key1_deserialized);
   EXPECT_EQ(key2, key2_deserialized);

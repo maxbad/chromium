@@ -697,16 +697,17 @@ class WebContentsImpl::WebContentsDestructionObserver
   DISALLOW_COPY_AND_ASSIGN(WebContentsDestructionObserver);
 };
 
-// TODO(sreejakshetty): Make |WebContentsImpl::ColorChooser| per-frame instead
-// of WebContents-owned.
-// WebContentsImpl::ColorChooser ----------------------------------------------
-class WebContentsImpl::ColorChooser : public blink::mojom::ColorChooser {
+// TODO(sreejakshetty): Make |WebContentsImpl::ColorChooserHolder| per-frame
+// instead of WebContents-owned.
+// WebContentsImpl::ColorChooserHolder -----------------------------------------
+class WebContentsImpl::ColorChooserHolder : public blink::mojom::ColorChooser {
  public:
-  ColorChooser(mojo::PendingReceiver<blink::mojom::ColorChooser> receiver,
-               mojo::PendingRemote<blink::mojom::ColorChooserClient> client)
+  ColorChooserHolder(
+      mojo::PendingReceiver<blink::mojom::ColorChooser> receiver,
+      mojo::PendingRemote<blink::mojom::ColorChooserClient> client)
       : receiver_(this, std::move(receiver)), client_(std::move(client)) {}
 
-  ~ColorChooser() override {
+  ~ColorChooserHolder() override {
     if (chooser_)
       chooser_->End();
   }
@@ -721,8 +722,8 @@ class WebContentsImpl::ColorChooser : public blink::mojom::ColorChooser {
   }
 
   void SetSelectedColor(SkColor color) override {
-    OPTIONAL_TRACE_EVENT0("content",
-                          "WebContentsImpl::ColorChooser::SetSelectedColor");
+    OPTIONAL_TRACE_EVENT0(
+        "content", "WebContentsImpl::ColorChooserHolder::SetSelectedColor");
     if (chooser_)
       chooser_->SetSelectedColor(color);
   }
@@ -730,7 +731,7 @@ class WebContentsImpl::ColorChooser : public blink::mojom::ColorChooser {
   void DidChooseColorInColorChooser(SkColor color) {
     OPTIONAL_TRACE_EVENT0(
         "content",
-        "WebContentsImpl::ColorChooser::DidChooseColorInColorChooser");
+        "WebContentsImpl::ColorChooserHolder::DidChooseColorInColorChooser");
     client_->DidChooseColor(color);
   }
 
@@ -1000,7 +1001,7 @@ WebContentsImpl::~WebContentsImpl() {
     dialog_manager_->CancelDialogs(this, /*reset_state=*/true);
   }
 
-  color_chooser_.reset();
+  color_chooser_holder_.reset();
   find_request_manager_.reset();
 
   // Shutdown the primary FrameTree.
@@ -1177,21 +1178,6 @@ WebContentsImpl* WebContentsImpl::FromOuterFrameTreeNode(
 
 RenderFrameHostManager* WebContentsImpl::GetRenderManagerForTesting() {
   return GetRenderManager();
-}
-
-bool WebContentsImpl::OnMessageReceived(RenderViewHostImpl* render_view_host,
-                                        const IPC::Message& message) {
-  OPTIONAL_TRACE_EVENT1("content", "WebContentsImpl::OnMessageReceived",
-                        "render_view_host", render_view_host);
-  for (auto& observer : observers_.observer_list()) {
-    // TODO(nick, creis): https://crbug.com/758026: Replace all uses of this
-    // variant of OnMessageReceived with the version that takes a
-    // RenderFrameHost, and then delete it.
-    if (observer.OnMessageReceived(message))
-      return true;
-  }
-
-  return false;
 }
 
 bool WebContentsImpl::OnMessageReceived(RenderFrameHostImpl* render_frame_host,
@@ -2616,8 +2602,7 @@ const blink::web_pref::WebPreferences WebContentsImpl::ComputeWebPreferences() {
 // TODO(dtapuska): Enable barrel button selection drag support on Android.
 // crbug.com/758042
 #if defined(OS_WIN)
-  prefs.barrel_button_for_drag_enabled =
-      base::FeatureList::IsEnabled(features::kDirectManipulationStylus);
+  prefs.barrel_button_for_drag_enabled = true;
 #endif  // defined(OS_WIN)
 
   prefs.enable_scroll_animator =
@@ -5117,13 +5102,13 @@ void WebContentsImpl::DidChooseColorInColorChooser(SkColor color) {
   OPTIONAL_TRACE_EVENT1("content",
                         "WebContentsImpl::DidChooseColorInColorChooser",
                         "color", color);
-  if (color_chooser_)
-    color_chooser_->DidChooseColorInColorChooser(color);
+  if (color_chooser_holder_)
+    color_chooser_holder_->DidChooseColorInColorChooser(color);
 }
 
 void WebContentsImpl::DidEndColorChooser() {
   OPTIONAL_TRACE_EVENT0("content", "WebContentsImpl::DidEndColorChooser");
-  color_chooser_.reset();
+  color_chooser_holder_.reset();
 }
 
 int WebContentsImpl::DownloadImage(
@@ -6147,24 +6132,24 @@ void WebContentsImpl::OpenColorChooser(
     SkColor color,
     std::vector<blink::mojom::ColorSuggestionPtr> suggestions) {
   OPTIONAL_TRACE_EVENT0("content", "WebContentsImpl::OpenColorChooser");
-  // Create `color_chooser_` before calling OpenColorChooser since
+  // Create `color_chooser_holder_` before calling OpenColorChooser since
   // OpenColorChooser may callback with results.
-  color_chooser_.reset();
-  color_chooser_ = std::make_unique<ColorChooser>(std::move(chooser_receiver),
-                                                  std::move(client));
+  color_chooser_holder_.reset();
+  color_chooser_holder_ = std::make_unique<ColorChooserHolder>(
+      std::move(chooser_receiver), std::move(client));
 
-  auto new_color_chooser = base::WrapUnique(
+  auto new_color_chooser =
       delegate_ ? delegate_->OpenColorChooser(this, color, suggestions)
-                : nullptr);
-  if (color_chooser_ && new_color_chooser) {
-    color_chooser_->SetChooser(std::move(new_color_chooser));
+                : nullptr;
+  if (color_chooser_holder_ && new_color_chooser) {
+    color_chooser_holder_->SetChooser(std::move(new_color_chooser));
   } else if (new_color_chooser) {
     // OpenColorChooser synchronously called back to DidEndColorChooser.
-    DCHECK(!color_chooser_);
+    DCHECK(!color_chooser_holder_);
     new_color_chooser->End();
-  } else if (color_chooser_) {
+  } else if (color_chooser_holder_) {
     DCHECK(!new_color_chooser);
-    color_chooser_.reset();
+    color_chooser_holder_.reset();
   }
 }
 
@@ -8914,11 +8899,11 @@ void WebContentsImpl::RenderFrameHostStateChanged(
                         });
 
   if (old_state == LifecycleState::kActive && !render_frame_host->GetParent()) {
-    // TODO(sreejakshetty): Remove this reset when ColorChooser becomes
+    // TODO(sreejakshetty): Remove this reset when ColorChooserHolder becomes
     // per-frame.
     // Close the color chooser popup when RenderFrameHost changes state from
     // kActive.
-    color_chooser_.reset();
+    color_chooser_holder_.reset();
   }
 
   observers_.NotifyObservers(&WebContentsObserver::RenderFrameHostStateChanged,

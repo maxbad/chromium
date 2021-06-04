@@ -373,6 +373,7 @@
     },
     {
       name: "CompositeBGColorAnimation",
+      status: "experimental",
     },
     {
       name: "CompositeClipPathAnimation",
@@ -607,6 +608,10 @@
     {
       name: "CSSPseudoDir",
       status: "experimental",
+    },
+    {
+      name: "CSSPseudoHas",
+      status: "test",
     },
     {
       // When an audio, video, or similar resource is "playing"

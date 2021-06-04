@@ -7,8 +7,10 @@
 #include <limits>
 #include <memory>
 
+#include "ash/app_list/model/app_list_model.h"
 #include "ash/app_list/views/app_list_item_view.h"
 #include "ash/public/cpp/app_list/app_list_config.h"
+#include "ui/views/animation/bounds_animator.h"
 #include "ui/views/view_model_utils.h"
 
 namespace ash {
@@ -16,10 +18,6 @@ namespace {
 
 // TODO(crbug.com/1211608): Add this to AppListConfig.
 const int kVerticalTilePadding = 8;
-
-gfx::Size GetTileViewSize(const AppListConfig& config) {
-  return gfx::Size(config.grid_tile_width(), config.grid_tile_height());
-}
 
 }  // namespace
 
@@ -56,11 +54,16 @@ void ScrollableAppsGridView::Layout() {
     } else {
       // If the drag view size changes, make sure it has the same center.
       gfx::Rect bounds = view->bounds();
-      bounds.ClampToCenteredSize(GetTileViewSize(GetAppListConfig()));
+      bounds.ClampToCenteredSize(GetTileViewSize());
       view->SetBoundsRect(bounds);
     }
   }
   views::ViewModelUtils::SetViewBoundsToIdealBounds(pulsing_blocks_model());
+}
+
+gfx::Size ScrollableAppsGridView::GetTileViewSize() const {
+  const AppListConfig& config = GetAppListConfig();
+  return gfx::Size(config.grid_tile_width(), config.grid_tile_height());
 }
 
 gfx::Insets ScrollableAppsGridView::GetTilePadding() const {
@@ -81,8 +84,17 @@ gfx::Size ScrollableAppsGridView::GetTileGridSize() const {
   return grid_size;
 }
 
+int ScrollableAppsGridView::GetPaddingBetweenPages() const {
+  // The scrollable apps grid does not use pages.
+  return 0;
+}
+
+bool ScrollableAppsGridView::IsScrollAxisVertical() const {
+  return true;
+}
+
 void ScrollableAppsGridView::CalculateIdealBounds() {
-  DCHECK(!is_in_folder());
+  DCHECK(!IsInFolder());
 
   int grid_index = 0;
   int model_index = 0;

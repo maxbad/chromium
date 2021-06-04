@@ -909,7 +909,11 @@ class CONTENT_EXPORT NavigationRequest
       const FrameNavigationEntry* frame_navigation_entry,
       NavigationEntryImpl* navitation_entry,
       std::unique_ptr<NavigationUIData> navigation_ui_data,
+      scoped_refptr<network::SharedURLLoaderFactory> blob_url_loader_factory,
       mojo::PendingAssociatedRemote<mojom::NavigationClient> navigation_client,
+      scoped_refptr<PrefetchedSignedExchangeCache>
+          prefetched_signed_exchange_cache,
+      std::unique_ptr<WebBundleHandleTracker> web_bundle_handle_tracker,
       RenderFrameHostImpl* rfh_restored_from_back_forward_cache,
       int initiator_process_id,
       bool was_opener_suppressed);
@@ -1361,7 +1365,7 @@ class CONTENT_EXPORT NavigationRequest
   std::unique_ptr<NavigationUIData> navigation_ui_data_;
 
   // URLLoaderFactory to facilitate loading blob URLs.
-  scoped_refptr<network::SharedURLLoaderFactory> blob_url_loader_factory_;
+  const scoped_refptr<network::SharedURLLoaderFactory> blob_url_loader_factory_;
 
   NavigationState state_ = NOT_STARTED;
   bool is_navigation_started_ = false;
@@ -1529,7 +1533,7 @@ class CONTENT_EXPORT NavigationRequest
 
   // Tracks navigations within a Web Bundle file. Used when WebBundles feature
   // is enabled or TrustableWebBundleFileUrl switch is set.
-  std::unique_ptr<WebBundleHandleTracker> web_bundle_handle_tracker_;
+  const std::unique_ptr<WebBundleHandleTracker> web_bundle_handle_tracker_;
 
   // Timing information of loading for the navigation. Used for recording UMAs.
   NavigationHandleTiming navigation_handle_timing_;

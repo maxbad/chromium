@@ -11,6 +11,7 @@
 #include "chromeos/services/assistant/public/cpp/features.h"
 #include "chromeos/services/libassistant/display_connection_impl.h"
 #include "chromeos/services/libassistant/public/mojom/speech_recognition_observer.mojom.h"
+#include "chromeos/services/libassistant/util.h"
 #include "libassistant/shared/internal_api/assistant_manager_internal.h"
 
 namespace chromeos {
@@ -49,8 +50,7 @@ DisplayController::DisplayController(
     : event_observer_(std::make_unique<EventObserver>(this)),
       display_connection_(std::make_unique<DisplayConnectionImpl>(
           event_observer_.get(),
-          /*feedback_ui_enabled=*/true,
-          assistant::features::IsMediaSessionIntegrationEnabled())),
+          /*feedback_ui_enabled=*/true)),
       speech_recognition_observers_(*speech_recognition_observers),
       mojom_task_runner_(base::SequencedTaskRunnerHandle::Get()) {
   DCHECK(speech_recognition_observers);
@@ -121,8 +121,9 @@ void DisplayController::OnVerifyAndroidApp(
     result_apps_info.emplace_back(result_app_info);
   }
 
-  std::string interaction_proto = CreateVerifyProviderResponseInteraction(
-      interaction.interaction_id, result_apps_info);
+  std::string interaction_proto =
+      chromeos::libassistant::CreateVerifyProviderResponseInteraction(
+          interaction.interaction_id, result_apps_info);
 
   assistant_client::VoicelessOptions options;
   options.obfuscated_gaia_id = interaction.user_id;

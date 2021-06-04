@@ -46,6 +46,7 @@
 #include "crypto/nss_util_internal.h"
 #include "crypto/scoped_nss_types.h"
 #include "crypto/signature_creator.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace em = enterprise_management;
 
@@ -335,11 +336,11 @@ bool OwnerSettingsServiceAsh::RemoveFromList(const std::string& setting,
   const base::Value* old_value = CrosSettings::Get()->GetPref(setting);
   if (old_value && !old_value->is_list())
     return false;
-  std::unique_ptr<base::ListValue> new_value(
-      old_value ? static_cast<const base::ListValue*>(old_value)->DeepCopy()
-                : new base::ListValue());
-  new_value->Remove(value, nullptr);
-  return Set(setting, *new_value);
+  base::Value new_value(base::Value::Type::LIST);
+  if (old_value)
+    new_value = old_value->Clone();
+  new_value.EraseListValue(value);
+  return Set(setting, std::move(new_value));
 }
 
 bool OwnerSettingsServiceAsh::CommitTentativeDeviceSettings(
@@ -497,12 +498,12 @@ void OwnerSettingsServiceAsh::UpdateDeviceSettings(
                   kAccountsPrefDeviceLocalAccountsKeyId, &account_id)) {
             account->set_account_id(account_id);
           }
-          int type;
-          if (entry_dict->GetIntegerWithoutPathExpansion(
-                  kAccountsPrefDeviceLocalAccountsKeyType, &type)) {
+          absl::optional<int> type =
+              entry_dict->FindIntKey(kAccountsPrefDeviceLocalAccountsKeyType);
+          if (type.has_value()) {
             account->set_type(
                 static_cast<em::DeviceLocalAccountInfoProto::AccountType>(
-                    type));
+                    type.value()));
           }
           std::string kiosk_app_id;
           if (entry_dict->GetStringWithoutPathExpansion(

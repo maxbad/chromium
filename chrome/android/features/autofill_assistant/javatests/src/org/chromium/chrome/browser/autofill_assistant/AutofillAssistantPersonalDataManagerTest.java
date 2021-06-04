@@ -60,6 +60,7 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 
 import org.chromium.base.test.util.CommandLineFlags;
+import org.chromium.base.test.util.DisabledTest;
 import org.chromium.base.test.util.FlakyTest;
 import org.chromium.chrome.autofill_assistant.R;
 import org.chromium.chrome.browser.autofill.PersonalDataManager;
@@ -698,8 +699,8 @@ public class AutofillAssistantPersonalDataManagerTest {
                                  CollectUserDataProto.newBuilder()
                                          .setRequestPaymentMethod(true)
                                          .setBillingAddressName("billing_address")
-                                         .setRequireBillingPostalCode(true)
-                                         .setBillingPostalCodeMissingText("Missing Billing Code")
+                                         .addRequiredBillingAddressDataPiece(
+                                                 buildRequiredDataPiece("Requires Billing Zip", 35))
                                          .setRequestTermsAndConditions(false))
                          .build());
         AutofillAssistantTestScript script = new AutofillAssistantTestScript(
@@ -717,8 +718,14 @@ public class AutofillAssistantPersonalDataManagerTest {
         String profileId =
                 mHelper.addDummyProfile("John Doe", "johndoe@google.com", /* postcode= */ "");
         mHelper.addDummyCreditCard(profileId);
-        waitUntilViewMatchesCondition(allOf(withText("Missing Billing Code"),
-                                              isDescendantOfA(withId(R.id.payment_method_summary))),
+        waitUntilViewMatchesCondition(
+                allOf(withText(mTestRule.getActivity().getString(
+                              R.string.autofill_assistant_payment_information_missing)),
+                        isDescendantOfA(withId(R.id.payment_method_summary))),
+                isDisplayed());
+        onView(withText("Payment method")).perform(click());
+        waitUntilViewMatchesCondition(allOf(withText("Requires Billing Zip"),
+                                              isDescendantOfA(withId(R.id.payment_method_full))),
                 isDisplayed());
         onView(withContentDescription("Continue")).check(matches(not(isEnabled())));
 
@@ -986,6 +993,7 @@ public class AutofillAssistantPersonalDataManagerTest {
      */
     @Test
     @MediumTest
+    @DisabledTest(message = "Flaky - https://crbug.com/1215465")
     public void testCreateAndEnterShippingAddress() throws Exception {
         ArrayList<ActionProto> list = new ArrayList<>();
         list.add((ActionProto) ActionProto.newBuilder()

@@ -33,6 +33,7 @@ constexpr char kAppId[] = "aaa";
 
 constexpr int32_t kId1 = 100;
 constexpr int32_t kId2 = 200;
+constexpr int32_t kId3 = 300;
 
 constexpr int32_t kActivationIndex1 = 100;
 constexpr int32_t kActivationIndex2 = 101;
@@ -281,6 +282,13 @@ TEST_F(FullRestoreReadAndSaveTest, SaveAndReadRestoreData) {
   timer->FireNow();
   task_environment().RunUntilIdle();
 
+  // Modify the window id from `kId2` to `kId3` for `kAppId`.
+  FullRestoreSaveHandler::GetInstance()->ModifyWindowId(GetPath(), kAppId, kId2,
+                                                        kId3);
+  EXPECT_TRUE(timer->IsRunning());
+  timer->FireNow();
+  task_environment().RunUntilIdle();
+
   ReadFromFile(GetPath());
 
   // Verify the restore data can be read correctly.
@@ -303,13 +311,16 @@ TEST_F(FullRestoreReadAndSaveTest, SaveAndReadRestoreData) {
   EXPECT_TRUE(data1->activation_index.has_value());
   EXPECT_EQ(kActivationIndex1, data1->activation_index.value());
 
-  // Verify for |kId2|.
-  const auto app_restore_data_it2 = launch_list_it->second.find(kId2);
-  EXPECT_TRUE(app_restore_data_it2 != launch_list_it->second.end());
+  // Verify the restore data for |kId2| doesn't exist.
+  EXPECT_TRUE(!base::Contains(launch_list_it->second, kId2));
 
-  const auto& data2 = app_restore_data_it2->second;
-  EXPECT_TRUE(data2->activation_index.has_value());
-  EXPECT_EQ(kActivationIndex2, data2->activation_index.value());
+  // Verify the restore data for |kId2| is moved to |kId3|.
+  const auto app_restore_data_it3 = launch_list_it->second.find(kId3);
+  ASSERT_NE(app_restore_data_it3, launch_list_it->second.end());
+
+  const auto& data3 = app_restore_data_it3->second;
+  EXPECT_TRUE(data3->activation_index.has_value());
+  EXPECT_EQ(kActivationIndex2, data3->activation_index.value());
 }
 
 TEST_F(FullRestoreReadAndSaveTest, MultipleFilePaths) {
@@ -491,10 +502,15 @@ TEST_F(FullRestoreReadAndSaveTest, ArcWindowRestore) {
   read_handler->SetArcSessionIdForWindowId(kArcSessionId2, kArcTaskId1);
   EXPECT_EQ(1u, read_test_api.GetArcSessionIdMap().size());
 
+  // Before OnTaskCreated is called, return |kArcTaskId1| for |kArcSessionId2|
+  // to simulate the ghost window property setting.
+  EXPECT_EQ(kArcTaskId1,
+            full_restore::GetArcRestoreWindowIdForSessionId(kArcSessionId2));
+
   // Before OnTaskCreated is called, return -1 to add the ARC app window to the
   // hidden container.
   EXPECT_EQ(kParentToHiddenContainer,
-            full_restore::GetArcRestoreWindowId(kArcTaskId2));
+            full_restore::GetArcRestoreWindowIdForTaskId(kArcTaskId2));
 
   // Call OnTaskCreated to simulate that the ARC app with |kAppId| has been
   // launched, and the new task id |kArcTaskId2| has been created with
@@ -506,7 +522,8 @@ TEST_F(FullRestoreReadAndSaveTest, ArcWindowRestore) {
   // map can be cleared. And verify that we can get the restore window id
   // |kArcTaskId1| with the new |kArcTaskId2|.
   EXPECT_TRUE(read_test_api.GetArcSessionIdMap().empty());
-  EXPECT_EQ(kArcTaskId1, full_restore::GetArcRestoreWindowId(kArcTaskId2));
+  EXPECT_EQ(kArcTaskId1,
+            full_restore::GetArcRestoreWindowIdForTaskId(kArcTaskId2));
 
   // Verify |window_info| for |kArcTaskId1|.
   auto window_info = GetArcWindowInfo(kArcTaskId1);
@@ -517,7 +534,7 @@ TEST_F(FullRestoreReadAndSaveTest, ArcWindowRestore) {
   // for |kArcTaskId2|, and verify the task id map is now empty and a invalid
   // value is returned when trying to get the restore window id.
   read_handler->OnTaskDestroyed(kArcTaskId2);
-  EXPECT_EQ(0, full_restore::GetArcRestoreWindowId(kArcTaskId2));
+  EXPECT_EQ(0, full_restore::GetArcRestoreWindowIdForTaskId(kArcTaskId2));
   EXPECT_TRUE(read_test_api.GetArcTaskIdMap().empty());
   EXPECT_TRUE(read_test_api.GetArcWindowIdMap().empty());
 }

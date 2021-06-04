@@ -1094,7 +1094,8 @@
                   'ash/system/holding_space|'\
                   'chrome/browser/lacros/.*holding_space.*|'\
                   'chrome/browser/ui/ash/holding_space|'\
-                  'chromeos/crosapi/mojom/.*holding_space.*'
+                  'chromeos/crosapi/mojom/.*holding_space.*|'\
+                  'tools/metrics/histograms/histograms_xml/holding_space'
     },
     'i18n': {
       'filepath': 'base/i18n/|base/string|l10n|icu|'\
@@ -1443,11 +1444,14 @@
     },
     'omnibox': {
       'filepath': '^chrome/browser/autocomplete/|'\
+                  '^chrome/browser/resources/new_tab_page/realbox/|'\
                   '^chrome/browser/resources/omnibox|'\
                   '^chrome/browser/ui/location_bar/|'\
                   '^chrome/browser/ui/omnibox/|'\
                   '^chrome/browser/ui/.*/location_bar/|'\
                   '^chrome/browser/ui/.*/omnibox/|'\
+                  '^chrome/browser/ui/.*/realbox/|'\
+                  '^chrome/test/data/webui/new_tab_page/realbox/|'\
                   '^components/omnibox/|'\
                   '^components/search_engines/'
     },

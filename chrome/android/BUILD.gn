@@ -581,6 +581,7 @@ android_library("chrome_java") {
   deps += web_feed_deps
 
   srcjar_deps = [
+    ":autofill_verification_status_generated_enum",
     ":chrome_android_java_enums_srcjar",
     ":chrome_android_java_google_api_keys_srcjar",
     ":chrome_strict_mode_switch",
@@ -777,6 +778,10 @@ action_with_pydeps("chrome_android_java_google_api_keys_srcjar") {
     "--srcjar",
     rebase_path(outputs[0], root_build_dir),
   ]
+}
+
+java_cpp_enum("autofill_verification_status_generated_enum") {
+  sources = [ "//components/autofill/core/browser/data_model/autofill_structured_address_component.h" ]
 }
 
 java_cpp_enum("chrome_android_java_enums_srcjar") {
@@ -2006,13 +2011,7 @@ if (current_toolchain == default_toolchain) {
       renaming_sources = []
       renaming_destinations = []
 
-      # Only include all Android locales on bundle builds.
-      if (_is_bundle_module) {
-        _locales_list = locales
-      } else {
-        _locales_list = android_apk_locales
-      }
-      foreach(_locale, _locales_list) {
+      foreach(_locale, locales) {
         renaming_sources +=
             [ "$target_gen_dir/${_variant}_paks/locales/$_locale.pak" ]
         renaming_destinations += [ "locales/$_locale.pak" ]

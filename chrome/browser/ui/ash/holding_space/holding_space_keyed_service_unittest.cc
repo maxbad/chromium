@@ -550,7 +550,7 @@ TEST_F(HoldingSpaceKeyedServiceTest, SecondaryUserProfile) {
 
   // Just creating a secondary profile shouldn't change the active client/model.
   EXPECT_EQ(HoldingSpaceController::Get()->client(),
-            primary_holding_space_service->client_for_testing());
+            primary_holding_space_service->client());
   EXPECT_EQ(HoldingSpaceController::Get()->model(),
             primary_holding_space_service->model_for_testing());
 
@@ -558,7 +558,7 @@ TEST_F(HoldingSpaceKeyedServiceTest, SecondaryUserProfile) {
   // support).
   ActivateSecondaryProfile();
   EXPECT_EQ(HoldingSpaceController::Get()->client(),
-            secondary_holding_space_service->client_for_testing());
+            secondary_holding_space_service->client());
   EXPECT_EQ(HoldingSpaceController::Get()->model(),
             secondary_holding_space_service->model_for_testing());
 }
@@ -604,7 +604,8 @@ TEST_F(HoldingSpaceKeyedServiceTest, UpdatePersistentStorage) {
     const auto* holding_space_item =
         primary_holding_space_model->items()[0].get();
 
-    persisted_holding_space_items.Remove(0, /*out_value=*/nullptr);
+    persisted_holding_space_items.EraseListIter(
+        persisted_holding_space_items.GetList().begin());
     primary_holding_space_model->RemoveItem(holding_space_item->id());
 
     EXPECT_EQ(*GetProfile()->GetPrefs()->GetList(
