@@ -9,6 +9,7 @@
 
 #include "base/callback.h"
 #include "base/callback_forward.h"
+#include "base/rand_util.h"
 #include "base/strings/strcat.h"
 #include "base/strings/stringprintf.h"
 #include "base/time/time.h"
@@ -84,9 +85,8 @@ std::unique_ptr<AuctionRunner> AuctionRunner::CreateAndStart(
   DCHECK(!filtered_buyers.empty());
   std::unique_ptr<AuctionRunner> instance(new AuctionRunner(
       delegate, interest_group_manager, std::move(auction_config),
-      std::move(filtered_buyers), std::move(browser_signals), frame_origin,
-      std::move(callback)));
-  instance->ReadNextInterestGroup();
+      std::move(browser_signals), frame_origin, std::move(callback)));
+  instance->ReadInterestGroups(std::move(filtered_buyers));
   return instance;
 }
 
@@ -94,47 +94,44 @@ AuctionRunner::AuctionRunner(
     Delegate* delegate,
     InterestGroupManager* interest_group_manager,
     blink::mojom::AuctionAdConfigPtr auction_config,
-    std::vector<url::Origin> filtered_buyers,
     auction_worklet::mojom::BrowserSignalsPtr browser_signals,
     const url::Origin& frame_origin,
     RunAuctionCallback callback)
     : delegate_(delegate),
       interest_group_manager_(interest_group_manager),
       auction_config_(std::move(auction_config)),
-      pending_buyers_(std::move(filtered_buyers)),
       browser_signals_(std::move(browser_signals)),
       frame_origin_(frame_origin),
       callback_(std::move(callback)) {}
 
 AuctionRunner::~AuctionRunner() = default;
 
-void AuctionRunner::ReadNextInterestGroup() {
-  DCHECK_LT(next_pending_buyer_, pending_buyers_.size());
+void AuctionRunner::ReadInterestGroups(
+    std::vector<url::Origin> filtered_buyers) {
+  num_pending_buyers_ = filtered_buyers.size();
 
-  interest_group_manager_->GetInterestGroupsForOwner(
-      pending_buyers_[next_pending_buyer_],
-      base::BindOnce(&AuctionRunner::OnInterestGroupRead,
-                     weak_ptr_factory_.GetWeakPtr()));
+  for (const url::Origin& buyer : filtered_buyers) {
+    interest_group_manager_->GetInterestGroupsForOwner(
+        buyer, base::BindOnce(&AuctionRunner::OnInterestGroupRead,
+                              weak_ptr_factory_.GetWeakPtr()));
+  }
 }
 
 void AuctionRunner::OnInterestGroupRead(
     std::vector<auction_worklet::mojom::BiddingInterestGroupPtr>
         interest_groups) {
+  DCHECK_GT(num_pending_buyers_, 0u);
+  --num_pending_buyers_;
+
   for (auto bidder = std::make_move_iterator(interest_groups.begin());
        bidder != std::make_move_iterator(interest_groups.end()); ++bidder) {
     bid_states_.emplace_back(BidState());
     bid_states_.back().bidder = std::move(*bidder);
   }
-  next_pending_buyer_++;
 
-  // If more buyers in the queue, load the next one.
-  if (next_pending_buyer_ < pending_buyers_.size()) {
-    ReadNextInterestGroup();
+  // Wait for more buyers to be loaded, if there are still some pending.
+  if (num_pending_buyers_ > 0)
     return;
-  }
-
-  // Pending buyers are no longer needed.
-  pending_buyers_.clear();
 
   // If no interest groups were found, end the auction without a winner.
   if (bid_states_.empty()) {
@@ -317,24 +314,38 @@ void AuctionRunner::OnBidScored(BidState* state,
                                 const std::vector<std::string>& errors) {
   DCHECK_EQ(state->state, BidState::State::kSellerScoringBid);
   state->seller_score = score;
-
-  // Check if this is the top bidder. If not, unload its worklet.
-  //
-  // TODO(morlovich): What if there is a tie?
-  if (score > 0 && (!top_bidder_ || score > top_bidder_->seller_score)) {
-    // If this bidder out scored a previous winning bidder, unload that bidder's
-    // worklet.
-    if (top_bidder_)
-      top_bidder_->bidder_worklet.reset();
-    top_bidder_ = state;
-  } else {
-    state->bidder_worklet.reset();
-  }
-
   --outstanding_bids_;
   state->state = BidState::State::kScoringComplete;
-
   errors_.insert(errors_.end(), errors.begin(), errors.end());
+
+  if (score <= 0) {
+    // If the worklet didn't bid, destroy the worklet.
+    state->bidder_worklet.reset();
+  } else {
+    bool replace_top_bidder = false;
+    if (!top_bidder_ || score > top_bidder_->seller_score) {
+      // If there's no previous top bidder, or the bidder has the highest score,
+      // need to replace the previous top bidder.
+      replace_top_bidder = true;
+      num_top_bidders_ = 1;
+    } else if (score == top_bidder_->seller_score) {
+      // If there's a tie, replace the top-bidder with 1-in-`num_top_bidders_`
+      // chance. This is the select random value from a stream with fixed
+      // storage problem.
+      ++num_top_bidders_;
+      if (1 == base::RandInt(1, num_top_bidders_))
+        replace_top_bidder = true;
+    }
+
+    if (replace_top_bidder) {
+      if (top_bidder_)
+        top_bidder_->bidder_worklet.reset();
+      top_bidder_ = state;
+    } else {
+      state->bidder_worklet.reset();
+    }
+  }
+
   MaybeCompleteAuction();
 }
 
