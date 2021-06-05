@@ -878,7 +878,7 @@ TEST_F(PartitionAllocTest, AllocSizes) {
 }
 
 // Test that we can fetch the real allocated size after an allocation.
-TEST_F(PartitionAllocTest, AllocGetSizeAndOffsetAndStart) {
+TEST_F(PartitionAllocTest, AllocGetSizeAndStart) {
   void* ptr;
   void* slot_start;
   size_t requested_size, actual_capacity, predicted_capacity;
@@ -972,12 +972,16 @@ TEST_F(PartitionAllocTest, AllocGetSizeAndOffsetAndStart) {
         allocator.root()->AllocationCapacityFromRequestedSize(requested_size);
     ptr = allocator.root()->Alloc(requested_size, type_name);
     EXPECT_TRUE(ptr);
+    slot_start = reinterpret_cast<char*>(ptr) - allocator.root()->extras_offset;
     actual_capacity = allocator.root()->AllocationCapacityFromPtr(ptr);
     EXPECT_EQ(predicted_capacity, actual_capacity);
     EXPECT_LT(requested_size, actual_capacity);
-    // Unlike above, don't test for PartitionAllocGetSlotOffset. Such large
-    // allocations are direct-mapped, for which one can't easily obtain the
-    // offset.
+#if BUILDFLAG(USE_BACKUP_REF_PTR)
+    for (size_t offset = 0; offset < requested_size; offset += 16111) {
+      EXPECT_EQ(PartitionAllocGetSlotStart(static_cast<char*>(ptr) + offset),
+                slot_start);
+    }
+#endif  // BUILDFLAG(USE_BACKUP_REF_PTR)
     allocator.root()->Free(ptr);
   }
 
@@ -2971,10 +2975,8 @@ TEST_F(PartitionAllocTest, RefCountRealloc) {
 
 #endif  // BUILDFLAG(USE_BACKUP_REF_PTR)
 
-#if BUILDFLAG(ENABLE_BRP_DIRECTMAP_SUPPORT)
-
 TEST_F(PartitionAllocTest, ReservationOffset) {
-  // For normal buckets, offsets should be 0.
+  // For normal buckets, offsets should be kNotInDirectMap.
   void* ptr = allocator.root()->Alloc(kTestAllocSize, type_name);
   EXPECT_TRUE(ptr);
   uintptr_t ptr_as_uintptr = reinterpret_cast<uintptr_t>(ptr);
@@ -3055,8 +3057,6 @@ TEST_F(PartitionAllocTest, GetReservationStart) {
 
   allocator.root()->Free(ptr);
 }
-
-#endif  // BUILDFLAG(ENABLE_BRP_DIRECTMAP_SUPPORT)
 
 // Test for crash http://crbug.com/1169003.
 TEST_F(PartitionAllocTest, CrossPartitionRootRealloc) {
