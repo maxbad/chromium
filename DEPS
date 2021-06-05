@@ -221,7 +221,7 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling ANGLE
   # and whatever else without interference from each other.
-  'angle_revision': '26a54260780773a8b5dc3998822d2ab2e27653e1',
+  'angle_revision': '1b680b772850bc830e20a05db0e5da9cb6069d37',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling SwiftShader
   # and whatever else without interference from each other.
@@ -229,7 +229,7 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling PDFium
   # and whatever else without interference from each other.
-  'pdfium_revision': 'bb27d59629cb6011dd98dbe3ffcf205687ec93bb',
+  'pdfium_revision': 'b06da09a538a94b1f42db38b558466d01580f179',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling BoringSSL
   # and whatever else without interference from each other.
@@ -643,7 +643,7 @@ deps = {
       'packages': [
         {
           'package': 'chromium/rts/model/linux-amd64',
-          'version': 'uPb1yeI6S76mes4-I2-QnICUSuSlqx2HtNtKj_VwNjsC',
+          'version': 'EFisNemD7_L2ayYT4NNG3mrkK9ZfmS_plIrEcqzVLZEC',
         },
       ],
       'dep_type': 'cipd',
@@ -654,7 +654,7 @@ deps = {
       'packages': [
         {
           'package': 'chromium/rts/model/mac-amd64',
-          'version': 'qO5bBO5jhQMaN1C-qNqj9qkQhx8yPh6D_-6YqYZ0_d4C',
+          'version': 'VRfRZwgRsOQNbcMaCb9432AI395RYHGW_0LrXap79scC',
         },
       ],
       'dep_type': 'cipd',
@@ -665,7 +665,7 @@ deps = {
       'packages': [
         {
           'package': 'chromium/rts/model/windows-amd64',
-          'version': 'r2LdbqZcTkgMTleeafRmqwbJpZIC-G_0ocKSOcIT3oUC',
+          'version': 'KSLmRRSU4mNkbLrdPaN5JgEIesscE6Akao2OUkcYk7wC',
         },
       ],
       'dep_type': 'cipd',
@@ -1547,7 +1547,7 @@ deps = {
   'src/third_party/usrsctp/usrsctplib':
     Var('chromium_git') + '/external/github.com/sctplab/usrsctp' + '@' + '22ba62ffe79c3881581ab430368bf3764d9533eb',
 
-  'src/third_party/vulkan-deps': '{chromium_git}/vulkan-deps@2a28006a9b15e018b815d331397598d402736e0b',
+  'src/third_party/vulkan-deps': '{chromium_git}/vulkan-deps@a192354a0d2ad9827d8e8c155d62d577e292b7f4',
 
   'src/third_party/vulkan_memory_allocator':
     Var('chromium_git') + '/external/github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git' + '@' + '732a76d9d3c70d6aa487216495eeb28518349c3a',
@@ -1635,7 +1635,7 @@ deps = {
     Var('chromium_git') + '/v8/v8.git' + '@' +  Var('v8_revision'),
 
   'src-internal': {
-    'url': 'https://chrome-internal.googlesource.com/chrome/src-internal.git@70d65109cd75114d45b1690a856bd060e91d01d4',
+    'url': 'https://chrome-internal.googlesource.com/chrome/src-internal.git@1383fe4bd3b840528b8ee464222afc9647da7bf1',
     'condition': 'checkout_src_internal',
   },
 
@@ -1665,7 +1665,7 @@ deps = {
     'packages': [
       {
         'package': 'chromeos_internal/apps/media_app/app',
-        'version': 'r2Fx9-2kUKP9602kDlV1UtcS3Z7XPdUyRd2f6hfUh8kC',
+        'version': '55E4S_oNPU2hw_NhCYxvcAE5BnLNreKgTlfdehkuetcC',
       },
     ],
     'condition': 'checkout_chromeos and checkout_src_internal',
