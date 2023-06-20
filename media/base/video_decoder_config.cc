@@ -69,7 +69,7 @@ void VideoDecoderConfig::Initialize(VideoCodec codec,
 }
 
 bool VideoDecoderConfig::IsValidConfig() const {
-  return codec_ != kUnknownVideoCodec && IsValidSize(coded_size_) &&
+  return codec_ != VideoCodec::kUnknown && IsValidSize(coded_size_) &&
          IsValidSize(natural_size_) &&
          gfx::Rect(coded_size_).Contains(visible_rect_);
 }
@@ -109,16 +109,17 @@ std::string VideoDecoderConfig::AsHumanReadableString() const {
 
   if (hdr_metadata().has_value()) {
     s << std::setprecision(4) << ", luminance range: "
-      << hdr_metadata()->mastering_metadata.luminance_min << "-"
-      << hdr_metadata()->mastering_metadata.luminance_max << ", primaries: r("
-      << hdr_metadata()->mastering_metadata.primary_r.x() << ","
-      << hdr_metadata()->mastering_metadata.primary_r.y() << ") g("
-      << hdr_metadata()->mastering_metadata.primary_g.x() << ","
-      << hdr_metadata()->mastering_metadata.primary_g.y() << ") b("
-      << hdr_metadata()->mastering_metadata.primary_b.x() << ","
-      << hdr_metadata()->mastering_metadata.primary_b.y() << ") wp("
-      << hdr_metadata()->mastering_metadata.white_point.x() << ","
-      << hdr_metadata()->mastering_metadata.white_point.y()
+      << hdr_metadata()->color_volume_metadata.luminance_min << "-"
+      << hdr_metadata()->color_volume_metadata.luminance_max
+      << ", primaries: r("
+      << hdr_metadata()->color_volume_metadata.primary_r.x() << ","
+      << hdr_metadata()->color_volume_metadata.primary_r.y() << ") g("
+      << hdr_metadata()->color_volume_metadata.primary_g.x() << ","
+      << hdr_metadata()->color_volume_metadata.primary_g.y() << ") b("
+      << hdr_metadata()->color_volume_metadata.primary_b.x() << ","
+      << hdr_metadata()->color_volume_metadata.primary_b.y() << ") wp("
+      << hdr_metadata()->color_volume_metadata.white_point.x() << ","
+      << hdr_metadata()->color_volume_metadata.white_point.y()
       << "), max_content_light_level="
       << hdr_metadata()->max_content_light_level
       << ", max_frame_average_light_level="

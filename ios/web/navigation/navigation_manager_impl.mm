@@ -22,9 +22,9 @@
 #include "base/timer/elapsed_timer.h"
 #include "ios/web/common/features.h"
 #import "ios/web/navigation/crw_navigation_item_holder.h"
-#include "ios/web/navigation/navigation_item_impl_list.h"
 #import "ios/web/navigation/navigation_manager_delegate.h"
 #import "ios/web/navigation/wk_navigation_util.h"
+#import "ios/web/public/navigation/navigation_item.h"
 #import "ios/web/public/web_client.h"
 #import "ios/web/public/web_state.h"
 #import "ios/web/web_state/ui/crw_web_view_navigation_proxy.h"
@@ -51,13 +51,6 @@ web::NavigationItemImpl* GetNavigationItemFromWKItem(
 
   return [[CRWNavigationItemHolder holderForBackForwardListItem:wk_item]
       navigationItem];
-}
-
-// Returns true if |url1| is the same as |url2| or is a placeholder of |url2|.
-bool IsSameOrPlaceholderOf(const GURL& url1, const GURL& url2) {
-  DCHECK(!base::FeatureList::IsEnabled(web::features::kUseJSForErrorPage));
-  return url1 == url2 ||
-         url1 == web::wk_navigation_util::CreatePlaceholderUrlForUrl(url2);
 }
 
 }  // namespace
@@ -250,18 +243,13 @@ void NavigationManagerImpl::AddPendingItem(
         GetNavigationItemFromWKItem(current_wk_item)->GetUserAgentType());
   }
 
-  BOOL isCurrentURLSameAsPending = NO;
-  if (base::FeatureList::IsEnabled(web::features::kUseJSForErrorPage)) {
-    isCurrentURLSameAsPending =
-        current_item_url == pending_item_->GetURL() &&
-        current_item_url == net::GURLWithNSURL(proxy.URL);
-  } else {
-    isCurrentURLSameAsPending =
-        IsSameOrPlaceholderOf(current_item_url, pending_item_->GetURL()) &&
-        IsSameOrPlaceholderOf(current_item_url, net::GURLWithNSURL(proxy.URL));
-  }
+  BOOL isCurrentURLSameAsPending =
+      current_item_url == pending_item_->GetURL() &&
+      current_item_url == net::GURLWithNSURL(proxy.URL);
 
   bool is_form_post =
+      base::FeatureList::IsEnabled(
+          web::features::kCreatePendingItemForPostFormSubmission) &&
       is_post_navigation &&
       (navigation_type & ui::PageTransition::PAGE_TRANSITION_FORM_SUBMIT);
   if (proxy.backForwardList.currentItem && isCurrentURLSameAsPending &&
@@ -278,10 +266,13 @@ void NavigationManagerImpl::AddPendingItem(
       current_item = pending_item_.get();
       SetNavigationItemInWKItem(current_wk_item, std::move(pending_item_));
     }
-    // Updating the transition type of the item is needed, for example when
-    // doing a FormSubmit with a GET method on the same URL. See
-    // crbug.com/1211879.
-    current_item->SetTransitionType(transition);
+    if (base::FeatureList::IsEnabled(
+            web::features::kCreatePendingItemForPostFormSubmission)) {
+      // Updating the transition type of the item is needed, for example when
+      // doing a FormSubmit with a GET method on the same URL. See
+      // crbug.com/1211879.
+      current_item->SetTransitionType(transition);
+    }
 
     pending_item_.reset();
   }
@@ -363,13 +354,6 @@ void NavigationManagerImpl::CommitPendingItem(
   // If |currentItem| is not nil, it is the last committed item in the
   // WKWebView.
   if (proxy.backForwardList && !proxy.backForwardList.currentItem) {
-    if (!base::ios::IsRunningOnIOS13OrLater()) {
-      // Prior to iOS 13 WKWebView's URL should be about:blank for empty window
-      // open item. TODO(crbug.com/885249): Use GURL::IsAboutBlank() instead.
-      DCHECK(base::StartsWith(net::GURLWithNSURL(proxy.URL).spec(),
-                              url::kAboutBlankURL,
-                              base::CompareCase::SENSITIVE));
-    }
     // There should be no back-forward history for empty window open item.
     DCHECK_EQ(0UL, proxy.backForwardList.backList.count);
     DCHECK_EQ(0UL, proxy.backForwardList.forwardList.count);
@@ -457,7 +441,7 @@ void NavigationManagerImpl::ApplyWKWebViewForwardHistoryClobberWorkaround() {
   for (size_t i = 0; i < forward_items.size(); i++) {
     const NavigationItemImpl* item =
         GetNavigationItemImplAtIndex(i + current_item_index);
-    forward_items[i] = std::make_unique<web::NavigationItemImpl>(*item);
+    forward_items[i] = std::make_unique<NavigationItemImpl>(*item);
   }
 
   DiscardNonCommittedItems();
@@ -496,8 +480,10 @@ bool NavigationManagerImpl::RestoreSessionFromCache(const GURL& url) {
       restored_visible_item_->GetUserAgentType() != UserAgentType::NONE) {
     NavigationItem* last_committed_item =
         GetLastCommittedItemInCurrentOrRestoredSession();
-    last_committed_item->SetUserAgentType(
-        restored_visible_item_->GetUserAgentType());
+    if (last_committed_item) {
+      last_committed_item->SetUserAgentType(
+          restored_visible_item_->GetUserAgentType());
+    }
   }
   restored_visible_item_.reset();
   FinalizeSessionRestore();
@@ -558,7 +544,6 @@ void NavigationManagerImpl::UpdateCurrentItemForReplaceState(
   NavigationItemImpl* current_item = GetCurrentItemImpl();
   current_item->SetURL(url);
   current_item->SetSerializedStateObject(state_object);
-  current_item->SetHasStateBeenReplaced(true);
   current_item->SetPostData(nil);
 }
 
@@ -928,8 +913,8 @@ void NavigationManagerImpl::ReloadWithUserAgentType(
   LoadURLWithParams(params);
 }
 
-NavigationItemList NavigationManagerImpl::GetBackwardItems() const {
-  NavigationItemList items;
+std::vector<NavigationItem*> NavigationManagerImpl::GetBackwardItems() const {
+  std::vector<NavigationItem*> items;
 
   if (is_restore_session_in_progress_)
     return items;
@@ -942,8 +927,8 @@ NavigationItemList NavigationManagerImpl::GetBackwardItems() const {
   return items;
 }
 
-NavigationItemList NavigationManagerImpl::GetForwardItems() const {
-  NavigationItemList items;
+std::vector<NavigationItem*> NavigationManagerImpl::GetForwardItems() const {
+  std::vector<NavigationItem*> items;
 
   if (is_restore_session_in_progress_)
     return items;
@@ -1039,13 +1024,7 @@ NavigationManagerImpl::GetLastCommittedItemInCurrentOrRestoredSession() const {
     GURL virtual_url;
     if (wk_navigation_util::IsRestoreSessionUrl(document_url) &&
         wk_navigation_util::ExtractTargetURL(document_url, &virtual_url)) {
-      if (!base::FeatureList::IsEnabled(web::features::kUseJSForErrorPage) &&
-          wk_navigation_util::IsPlaceholderUrl(virtual_url)) {
-        last_committed_web_view_item_->SetVirtualURL(
-            wk_navigation_util::ExtractUrlFromPlaceholderUrl(virtual_url));
-      } else {
-        last_committed_web_view_item_->SetVirtualURL(virtual_url);
-      }
+      last_committed_web_view_item_->SetVirtualURL(virtual_url);
     } else {
       last_committed_web_view_item_->SetVirtualURL(document_url);
     }
@@ -1230,22 +1209,19 @@ NavigationManagerImpl::CreateNavigationItemWithRewriters(
     const {
   GURL loaded_url(url);
 
-  // Do not rewrite placeholder URL. Navigation code relies on this special URL
-  // to implement native view and WebUI, and rewriter code should not be exposed
-  // to this special type of about:blank URL.
-  if (base::FeatureList::IsEnabled(web::features::kUseJSForErrorPage) ||
-      !IsPlaceholderUrl(url)) {
-    bool url_was_rewritten = false;
-    if (additional_rewriters && !additional_rewriters->empty()) {
-      url_was_rewritten = web::BrowserURLRewriter::RewriteURLWithWriters(
-          &loaded_url, browser_state_, *additional_rewriters);
-    }
+  // Navigation code relies on this special URL to implement native view and
+  // WebUI, and rewriter code should not be exposed to this special type of
+  // about:blank URL.
+  bool url_was_rewritten = false;
+  if (additional_rewriters && !additional_rewriters->empty()) {
+    url_was_rewritten = web::BrowserURLRewriter::RewriteURLWithWriters(
+        &loaded_url, browser_state_, *additional_rewriters);
+  }
 
     if (!url_was_rewritten) {
       web::BrowserURLRewriter::GetInstance()->RewriteURLIfNecessary(
           &loaded_url, browser_state_);
     }
-  }
 
   // The URL should not be changed to app-specific URL if the load is
   // renderer-initiated or a reload requested by non-app-specific URL. Pages
@@ -1299,7 +1275,8 @@ bool NavigationManagerImpl::CanTrustLastCommittedItem(
   // visible.
   GURL web_view_url = web_view_cache_.GetVisibleWebViewURL();
   GURL last_committed_url = last_committed_item->GetURL();
-  if (web_view_url.GetOrigin() == last_committed_url.GetOrigin())
+  if (web_view_url.DeprecatedGetOriginAsURL() ==
+      last_committed_url.DeprecatedGetOriginAsURL())
     return true;
 
   // Fast back-forward navigations can be performed synchronously, with the
@@ -1334,11 +1311,6 @@ void NavigationManagerImpl::FinalizeSessionRestore() {
   }
   restore_session_completion_callbacks_.clear();
   LoadIfNecessary();
-}
-
-bool NavigationManagerImpl::IsPlaceholderUrl(const GURL& url) const {
-  DCHECK(!base::FeatureList::IsEnabled(web::features::kUseJSForErrorPage));
-  return wk_navigation_util::IsPlaceholderUrl(url);
 }
 
 NavigationManagerImpl::WKWebViewCache::WKWebViewCache(
@@ -1473,25 +1445,8 @@ NavigationManagerImpl::WKWebViewCache::GetNavigationItemImplAtIndex(
   if (wk_navigation_util::IsRestoreSessionUrl(url)) {
     GURL virtual_url;
     if (wk_navigation_util::ExtractTargetURL(url, &virtual_url)) {
-      if (!base::FeatureList::IsEnabled(web::features::kUseJSForErrorPage) &&
-          wk_navigation_util::IsPlaceholderUrl(virtual_url)) {
-        new_item->SetVirtualURL(
-            wk_navigation_util::ExtractUrlFromPlaceholderUrl(virtual_url));
-      } else {
-        new_item->SetVirtualURL(virtual_url);
-      }
+      new_item->SetVirtualURL(virtual_url);
     }
-  }
-
-  // TODO(crbug.com/1003680) This seems to happen if a restored navigation fails
-  // provisionally before the NavigationContext associates with the original
-  // navigation. Rather than expose the internal placeholder to the UI and to
-  // URL-sensing components outside of //ios/web layer, set virtual URL to the
-  // placeholder original URL here.
-  if (!base::FeatureList::IsEnabled(web::features::kUseJSForErrorPage) &&
-      wk_navigation_util::IsPlaceholderUrl(url)) {
-    new_item->SetVirtualURL(
-        wk_navigation_util::ExtractUrlFromPlaceholderUrl(url));
   }
 
   SetNavigationItemInWKItem(wk_item, std::move(new_item));

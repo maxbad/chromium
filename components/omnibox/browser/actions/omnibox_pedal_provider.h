@@ -6,13 +6,12 @@
 #define COMPONENTS_OMNIBOX_BROWSER_ACTIONS_OMNIBOX_PEDAL_PROVIDER_H_
 
 #include <unordered_map>
-#include <vector>
 
+#include "base/gtest_prod_util.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/strings/utf_offset_string_conversions.h"
 #include "base/values.h"
 #include "components/omnibox/browser/actions/omnibox_pedal.h"
-#include "components/omnibox/browser/actions/omnibox_pedal_implementations.h"
 #include "components/omnibox/browser/autocomplete_provider.h"
 
 class OmniboxPedal;
@@ -24,8 +23,9 @@ class AutocompleteProviderClient;
 // providers (search in particular).
 class OmniboxPedalProvider {
  public:
-  // |with_branding| specifies whether to include Google Chrome branded Pedals.
-  OmniboxPedalProvider(AutocompleteProviderClient& client, bool with_branding);
+  OmniboxPedalProvider(
+      AutocompleteProviderClient& client,
+      std::unordered_map<OmniboxPedalId, scoped_refptr<OmniboxPedal>> pedals);
   ~OmniboxPedalProvider();
   OmniboxPedalProvider(const OmniboxPedalProvider&) = delete;
   OmniboxPedalProvider& operator=(const OmniboxPedalProvider&) = delete;
@@ -56,10 +56,19 @@ class OmniboxPedalProvider {
   size_t EstimateMemoryUsage() const;
 
  protected:
+  // Befriending this test base class prevents duplication of a long exhaustive
+  // unit test (specifically the TestLiteralConceptExpressions method).
+  friend class OmniboxPedalImplementationsTest;
   FRIEND_TEST_ALL_PREFIXES(OmniboxPedalImplementationsTest,
                            ProviderFiltersPedalUpdateChrome);
+  FRIEND_TEST_ALL_PREFIXES(
+      OmniboxPedalImplementationsWithoutTranslationConsoleTest,
+      ProviderFiltersPedalUpdateChrome);
   FRIEND_TEST_ALL_PREFIXES(OmniboxPedalImplementationsTest,
                            UnorderedSynonymExpressionsAreConceptMatches);
+  FRIEND_TEST_ALL_PREFIXES(
+      OmniboxPedalImplementationsWithoutTranslationConsoleTest,
+      UnorderedSynonymExpressionsAreConceptMatches);
 
   // Generate a token sequence for text using internal dictionary & delimiters.
   // Outputs empty sequence if any delimited part of text is not in dictionary.

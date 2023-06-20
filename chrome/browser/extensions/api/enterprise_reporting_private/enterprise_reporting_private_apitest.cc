@@ -2,7 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "build/branding_buildflags.h"
 #include "build/build_config.h"
+#include "build/chromeos_buildflags.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "components/version_info/version_info.h"
@@ -126,13 +128,18 @@ IN_PROC_BROWSER_TEST_F(EnterpriseReportingPrivateApiTest, GetDeviceId) {
   RunTest(base::StringPrintf(kTest, kAssertions));
 }
 
-IN_PROC_BROWSER_TEST_F(EnterpriseReportingPrivateApiTest, GetPersistentSecret) {
+#if defined(OS_MAC) && defined(ARCH_CPU_ARM64)
+// https://crbug.com/1222670
+#define MAYBE_GetPersistentSecret DISABLED_GetPersistentSecret
+#else
+#define MAYBE_GetPersistentSecret GetPersistentSecret
+#endif
+IN_PROC_BROWSER_TEST_F(EnterpriseReportingPrivateApiTest,
+                       MAYBE_GetPersistentSecret) {
   constexpr char kAssertions[] =
 #if defined(OS_WIN) || defined(OS_MAC)
       "chrome.test.assertNoLastError();"
       "chrome.test.assertTrue(secret instanceof ArrayBuffer);";
-#elif defined(OS_LINUX)
-      "chrome.test.assertLastError('-1');";
 #else
       "chrome.test.assertLastError('Access to extension API denied.');";
 #endif
@@ -208,7 +215,47 @@ IN_PROC_BROWSER_TEST_F(EnterpriseReportingPrivateApiTest, GetDeviceInfo) {
   constexpr char kOSName[] = "linux";
 #endif
 
-#if defined(OS_WIN) || defined(OS_MAC) || defined(OS_LINUX)
+#if defined(OS_WIN)
+  // The added conditions for windows are related to the fact that we don't know
+  // if the machine running the test is managed or not
+  constexpr char kTest[] = R"(
+    chrome.test.assertEq(
+      'function',
+      typeof chrome.enterprise.reportingPrivate.getDeviceInfo);
+
+    chrome.enterprise.reportingPrivate.getDeviceInfo((deviceInfo) => {
+      chrome.test.assertNoLastError();
+      let count = 9;
+      if(deviceInfo.windowsUserDomain){
+        count++;
+        chrome.test.assertEq(typeof deviceInfo.windowsUserDomain, "string");
+      } else {
+        chrome.test.assertEq(typeof deviceInfo.windowsUserDomain, "undefined");
+      }
+
+      if(deviceInfo.windowsMachineDomain){
+        count++;
+        chrome.test.assertEq(typeof deviceInfo.windowsMachineDomain, "string");
+      } else {
+        chrome.test.assertEq(
+          typeof deviceInfo.windowsMachineDomain,
+          "undefined");
+      }
+      chrome.test.assertEq(count, Object.keys(deviceInfo).length);
+      chrome.test.assertEq('%s', deviceInfo.osName);
+      chrome.test.assertEq(typeof deviceInfo.osVersion, 'string');
+      chrome.test.assertEq(typeof deviceInfo.securityPatchLevel, 'string');
+      chrome.test.assertEq(typeof deviceInfo.deviceHostName, 'string');
+      chrome.test.assertEq(typeof deviceInfo.deviceModel, 'string');
+      chrome.test.assertEq(typeof deviceInfo.serialNumber, 'string');
+      chrome.test.assertEq(typeof deviceInfo.screenLockSecured, 'string');
+      chrome.test.assertEq(typeof deviceInfo.diskEncrypted, 'string');
+      chrome.test.assertTrue(deviceInfo.macAddresses instanceof Array);
+
+      chrome.test.notifyPass();
+    });)";
+  RunTest(base::StringPrintf(kTest, kOSName));
+#elif defined(OS_MAC) || defined(OS_LINUX)
   constexpr char kTest[] = R"(
     chrome.test.assertEq(
       'function',
@@ -217,15 +264,18 @@ IN_PROC_BROWSER_TEST_F(EnterpriseReportingPrivateApiTest, GetDeviceInfo) {
     chrome.enterprise.reportingPrivate.getDeviceInfo((deviceInfo) => {
       chrome.test.assertNoLastError();
 
-      chrome.test.assertEq(8, Object.keys(deviceInfo).length);
+      chrome.test.assertEq(9, Object.keys(deviceInfo).length);
       chrome.test.assertEq('%s', deviceInfo.osName);
       chrome.test.assertEq(typeof deviceInfo.osVersion, 'string');
+      chrome.test.assertEq(typeof deviceInfo.securityPatchLevel, 'string');
       chrome.test.assertEq(typeof deviceInfo.deviceHostName, 'string');
       chrome.test.assertEq(typeof deviceInfo.deviceModel, 'string');
       chrome.test.assertEq(typeof deviceInfo.serialNumber, 'string');
       chrome.test.assertEq(typeof deviceInfo.screenLockSecured, 'string');
       chrome.test.assertEq(typeof deviceInfo.diskEncrypted, 'string');
       chrome.test.assertTrue(deviceInfo.macAddresses instanceof Array);
+      chrome.test.assertEq(typeof deviceInfo.windowsMachineDomain, "undefined");
+      chrome.test.assertEq(typeof deviceInfo.windowsUserDomain, "undefined");
 
       chrome.test.notifyPass();
     });)";
@@ -245,14 +295,29 @@ IN_PROC_BROWSER_TEST_F(EnterpriseReportingPrivateApiTest, GetDeviceInfo) {
 }
 
 IN_PROC_BROWSER_TEST_F(EnterpriseReportingPrivateApiTest, GetContextInfo) {
-  RunTest(R"(
+#if defined(OS_WIN)
+  constexpr char kChromeCleanupEnabledType[] = "boolean";
+#if BUILDFLAG(GOOGLE_CHROME_BRANDING)
+  constexpr char kThirdPartyBlockingEnabledType[] = "boolean";
+  constexpr char kCount[] = "17";
+#else
+  constexpr char kThirdPartyBlockingEnabledType[] = "undefined";
+  constexpr char kCount[] = "16";
+#endif  // BUILDFLAG(GOOGLE_CHROME_BRANDING)
+#else
+  constexpr char kChromeCleanupEnabledType[] = "undefined";
+  constexpr char kThirdPartyBlockingEnabledType[] = "undefined";
+  constexpr char kCount[] = "15";
+#endif  // defined(OS_WIN)
+
+  constexpr char kTest[] = R"(
     chrome.test.assertEq(
       'function',
       typeof chrome.enterprise.reportingPrivate.getContextInfo);
     chrome.enterprise.reportingPrivate.getContextInfo((info) => {
       chrome.test.assertNoLastError();
 
-      chrome.test.assertEq(9, Object.keys(info).length);
+      chrome.test.assertEq(%s, Object.keys(info).length);
       chrome.test.assertTrue(info.browserAffiliationIds instanceof Array);
       chrome.test.assertTrue(info.profileAffiliationIds instanceof Array);
       chrome.test.assertTrue(info.onFileAttachedProviders instanceof Array);
@@ -262,9 +327,21 @@ IN_PROC_BROWSER_TEST_F(EnterpriseReportingPrivateApiTest, GetContextInfo) {
       chrome.test.assertTrue(info.onSecurityEventProviders instanceof Array);
       chrome.test.assertEq(typeof info.browserVersion, 'string');
       chrome.test.assertEq(typeof info.safeBrowsingProtectionLevel, 'string');
+      chrome.test.assertEq(typeof info.siteIsolationEnabled, 'boolean');
+      chrome.test.assertEq(typeof info.builtInDnsClientEnabled, 'boolean');
+      chrome.test.assertEq
+        (typeof info.passwordProtectionWarningTrigger, 'string');
+      chrome.test.assertEq(typeof info.chromeCleanupEnabled, '%s');
+      chrome.test.assertEq
+        (typeof info.chromeRemoteDesktopAppBlocked, 'boolean');
+      chrome.test.assertEq(typeof info.thirdPartyBlockingEnabled,'%s');
+      chrome.test.assertEq(typeof info.osFirewall, 'string');
+      chrome.test.assertTrue(info.systemDnsServers instanceof Array);
 
       chrome.test.notifyPass();
-    });)");
+    });)";
+  RunTest(base::StringPrintf(kTest, kCount, kChromeCleanupEnabledType,
+                             kThirdPartyBlockingEnabledType));
 }
 
 IN_PROC_BROWSER_TEST_F(EnterpriseReportingPrivateApiTest, GetCertificate) {

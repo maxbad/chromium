@@ -20,9 +20,9 @@ namespace {
 
 const int kLastTitleSource = static_cast<int>(TileTitleSource::LAST);
 
-// Identifiers for the various tile sources.
+// Identifiers for the various tile sources. Should sync with
+// NewTabPageProviders in histogram_suffixes_list.xml.
 const char kHistogramClientName[] = "client";
-const char kHistogramServerName[] = "server";
 const char kHistogramPopularName[] = "popular_fetched";
 const char kHistogramBakedInName[] = "popular_baked_in";
 const char kHistogramAllowlistName[] = "allowlist";
@@ -35,12 +35,6 @@ const char kTileTypeSuffixIconColor[] = "IconsColor";
 const char kTileTypeSuffixIconGray[] = "IconsGray";
 const char kTileTypeSuffixIconReal[] = "IconsReal";
 
-void LogUmaHistogramAge(const std::string& name, const base::TimeDelta& value) {
-  // Log the value in number of seconds.
-  base::UmaHistogramCustomCounts(name, value.InSeconds(), 5,
-                                 base::TimeDelta::FromDays(14).InSeconds(), 20);
-}
-
 std::string GetSourceHistogramName(TileSource source) {
   switch (source) {
     case TileSource::TOP_SITES:
@@ -51,8 +45,6 @@ std::string GetSourceHistogramName(TileSource source) {
       return kHistogramPopularName;
     case TileSource::ALLOWLIST:
       return kHistogramAllowlistName;
-    case TileSource::SUGGESTIONS_SERVICE:
-      return kHistogramServerName;
     case TileSource::HOMEPAGE:
       return kHistogramHomepageName;
     case TileSource::CUSTOM_LINKS:
@@ -94,16 +86,6 @@ void RecordTileImpression(const NTPTileImpression& impression) {
       base::StringPrintf("NewTabPage.SuggestionsImpression.%s",
                          source_name.c_str()),
       impression.index, kMaxNumTiles);
-
-  if (!impression.data_generation_time.is_null()) {
-    const base::TimeDelta age =
-        base::Time::Now() - impression.data_generation_time;
-    LogUmaHistogramAge("NewTabPage.SuggestionsImpressionAge", age);
-    LogUmaHistogramAge(
-        base::StringPrintf("NewTabPage.SuggestionsImpressionAge.%s",
-                           source_name.c_str()),
-        age);
-  }
 
   UMA_HISTOGRAM_ENUMERATION("NewTabPage.TileTitle",
                             static_cast<int>(impression.title_source),
@@ -155,15 +137,6 @@ void RecordTileClick(const NTPTileImpression& impression) {
   base::UmaHistogramExactLinear(
       base::StringPrintf("NewTabPage.MostVisited.%s", source_name.c_str()),
       impression.index, kMaxNumTiles);
-
-  if (!impression.data_generation_time.is_null()) {
-    const base::TimeDelta age =
-        base::Time::Now() - impression.data_generation_time;
-    LogUmaHistogramAge("NewTabPage.MostVisitedAge", age);
-    LogUmaHistogramAge(
-        base::StringPrintf("NewTabPage.MostVisitedAge.%s", source_name.c_str()),
-        age);
-  }
 
   const char* tile_type_suffix = GetTileTypeSuffix(impression.visual_type);
   if (tile_type_suffix) {

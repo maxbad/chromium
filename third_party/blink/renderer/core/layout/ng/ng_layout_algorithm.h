@@ -5,7 +5,6 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_LAYOUT_NG_NG_LAYOUT_ALGORITHM_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_LAYOUT_NG_NG_LAYOUT_ALGORITHM_H_
 
-#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/layout/min_max_sizes.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_block_node.h"
@@ -33,7 +32,7 @@ class NGLayoutAlgorithmOperations {
   // The result will not take any min-width, max-width or width properties into
   // account.
   virtual MinMaxSizesResult ComputeMinMaxSizes(
-      const MinMaxSizesFloatInput&) const = 0;
+      const MinMaxSizesFloatInput&) = 0;
 };
 
 // Parameters to pass when creating a layout algorithm for a block node.
@@ -115,9 +114,9 @@ class CORE_EXPORT NGLayoutAlgorithm : public NGLayoutAlgorithmOperations {
             *container_builder_.BfcBlockOffset()};
   }
 
-  NGInputNodeType Node() const { return node_; }
+  const NGInputNodeType& Node() const { return node_; }
 
-  const NGBreakTokenType* BreakToken() const { return break_token_.get(); }
+  const NGBreakTokenType* BreakToken() const { return break_token_; }
 
   const NGBoxStrut& BorderPadding() const {
     return container_builder_.BorderPadding();
@@ -185,7 +184,7 @@ class CORE_EXPORT NGLayoutAlgorithm : public NGLayoutAlgorithmOperations {
   const NGEarlyBreak* early_break_ = nullptr;
 
   // The break token from which we are currently resuming layout.
-  scoped_refptr<const NGBreakTokenType> break_token_;
+  const NGBreakTokenType* break_token_;
 
   NGBoxFragmentBuilderType container_builder_;
 };

@@ -29,9 +29,11 @@
   TabGridNewTabButton* _largeNewTabButton;
   UIBarButtonItem* _doneButton;
   UIBarButtonItem* _closeAllOrUndoButton;
+  UIBarButtonItem* _editButton;
   UIBarButtonItem* _addToButton;
   UIBarButtonItem* _closeTabsButton;
   UIBarButtonItem* _shareButton;
+  BOOL _undoActive;
 }
 
 #pragma mark - UIView
@@ -45,13 +47,18 @@
 
 - (void)traitCollectionDidChange:(UITraitCollection*)previousTraitCollection {
   [super traitCollectionDidChange:previousTraitCollection];
-  [self updateLayout];
+  if ((self.traitCollection.verticalSizeClass !=
+       previousTraitCollection.verticalSizeClass) ||
+      (self.traitCollection.horizontalSizeClass !=
+       previousTraitCollection.horizontalSizeClass)) {
+    [self updateLayout];
+  }
 }
 
 // Controls hit testing of the bottom toolbar. When the toolbar is transparent,
 // only respond to tapping on the new tab button.
 - (BOOL)pointInside:(CGPoint)point withEvent:(UIEvent*)event {
-  if ([self shouldUseCompactLayout]) {
+  if ([self shouldShowFullBar]) {
     return [super pointInside:point withEvent:event];
   }
   // Only floating new tab button is tappable.
@@ -60,12 +67,13 @@
                                withEvent:event];
 }
 
-// Returns UIToolbar's intrinsicContentSize for compact layout, and CGSizeZero
-// for floating button layout.
+// Returns UIToolbar's intrinsicContentSize based on the orientation and the
+// mode.
 - (CGSize)intrinsicContentSize {
-  if ([self shouldUseCompactLayout]) {
+  if ([self shouldShowFullBar]) {
     return _toolbar.intrinsicContentSize;
   }
+  // Return CGSizeZero for floating button layout.
   return CGSizeZero;
 }
 
@@ -90,13 +98,16 @@
 - (void)setMode:(TabGridMode)mode {
   if (_mode == mode)
     return;
+  DCHECK(IsTabsBulkActionsEnabled() || mode == TabGridModeNormal);
   _mode = mode;
+  // Reset selected tabs count when mode changes.
+  self.selectedTabsCount = 0;
   [self updateLayout];
 }
 
 - (void)setSelectedTabsCount:(int)count {
   _selectedTabsCount = count;
-  [self updateSelectionButtonsTitle];
+  [self updateCloseTabsButtonTitle];
 }
 
 - (void)setNewTabButtonTarget:(id)target action:(SEL)action {
@@ -131,12 +142,6 @@
   _closeAllOrUndoButton.enabled = enabled;
 }
 
-- (void)setSelectionModeButtonsEnabled:(BOOL)enabled {
-  _addToButton.enabled = enabled;
-  _closeTabsButton.enabled = enabled;
-  _shareButton.enabled = enabled;
-}
-
 - (void)useUndoCloseAll:(BOOL)useUndo {
   _closeAllOrUndoButton.enabled = YES;
   if (useUndo) {
@@ -160,6 +165,10 @@
           kTabGridCloseAllButtonIdentifier;
     }
   }
+  if (_undoActive != useUndo) {
+    _undoActive = useUndo;
+    [self updateLayout];
+  }
 }
 
 - (void)hide {
@@ -170,6 +179,47 @@
 - (void)show {
   _smallNewTabButton.alpha = 1.0;
   _largeNewTabButton.alpha = 1.0;
+}
+
+#pragma mark Close Tabs
+
+- (void)setCloseTabsButtonTarget:(id)target action:(SEL)action {
+  _closeTabsButton.target = target;
+  _closeTabsButton.action = action;
+}
+
+- (void)setCloseTabsButtonEnabled:(BOOL)enabled {
+  _closeTabsButton.enabled = enabled;
+}
+
+#pragma mark Share Tabs
+
+- (void)setShareTabsButtonTarget:(id)target action:(SEL)action {
+  _shareButton.target = target;
+  _shareButton.action = action;
+}
+- (void)setShareTabsButtonEnabled:(BOOL)enabled {
+  _shareButton.enabled = enabled;
+}
+
+#pragma mark Add To
+
+- (void)setAddToButtonMenu:(UIMenu*)menu API_AVAILABLE(ios(14.0)) {
+  _addToButton.menu = menu;
+}
+
+- (void)setAddToButtonEnabled:(BOOL)enabled {
+  _addToButton.enabled = enabled;
+}
+
+#pragma mark Edit Button
+
+- (void)setEditButtonMenu:(UIMenu*)menu API_AVAILABLE(ios(14.0)) {
+  _editButton.menu = menu;
+}
+
+- (void)setEditButtonEnabled:(BOOL)enabled {
+  _editButton.enabled = enabled;
 }
 
 #pragma mark - Private
@@ -213,20 +263,26 @@
 
   // Create selection mode buttons
   if (IsTabsBulkActionsEnabled()) {
+    _editButton = [[UIBarButtonItem alloc] init];
+    _editButton.tintColor = UIColorFromRGB(kTabGridToolbarTextButtonColor);
+    _editButton.title = l10n_util::GetNSString(IDS_IOS_TAB_GRID_EDIT_BUTTON);
+    _editButton.accessibilityIdentifier = kTabGridEditButtonIdentifier;
+
     _addToButton = [[UIBarButtonItem alloc] init];
     _addToButton.tintColor = UIColorFromRGB(kTabGridToolbarTextButtonColor);
     _addToButton.title = l10n_util::GetNSString(IDS_IOS_TAB_GRID_ADD_TO_BUTTON);
-    _addToButton.accessibilityIdentifier = kTabGridAddToButtonIdentifier;
+    _addToButton.accessibilityIdentifier = kTabGridEditAddToButtonIdentifier;
     _shareButton = [[UIBarButtonItem alloc]
         initWithBarButtonSystemItem:UIBarButtonSystemItemAction
                              target:nil
                              action:nil];
     _shareButton.tintColor = UIColorFromRGB(kTabGridToolbarTextButtonColor);
-    _shareButton.accessibilityIdentifier = kTabGridShareButtonIdentifier;
+    _shareButton.accessibilityIdentifier = kTabGridEditShareButtonIdentifier;
     _closeTabsButton = [[UIBarButtonItem alloc] init];
     _closeTabsButton.tintColor = UIColorFromRGB(kTabGridToolbarTextButtonColor);
-    _closeTabsButton.accessibilityIdentifier = kTabGridCloseButtonIdentifier;
-    [self updateSelectionButtonsTitle];
+    _closeTabsButton.accessibilityIdentifier =
+        kTabGridEditCloseTabsButtonIdentifier;
+    [self updateCloseTabsButtonTitle];
   }
 
   _compactConstraints = @[
@@ -272,7 +328,7 @@
   _newTabButtonItem.title = _largeNewTabButton.accessibilityLabel;
 }
 
-- (void)updateSelectionButtonsTitle {
+- (void)updateCloseTabsButtonTitle {
   _closeTabsButton.title = l10n_util::GetPluralNSStringF(
       IDS_IOS_TAB_GRID_CLOSE_TABS_BUTTON, _selectedTabsCount);
 }
@@ -280,10 +336,9 @@
 - (void)updateLayout {
   _largeNewTabButtonBottomAnchor.constant =
       -kTabGridFloatingButtonVerticalInset;
-  UIBarButtonItem* leadingButton = _closeAllOrUndoButton;
-  UIBarButtonItem* trailingButton = _doneButton;
 
   if (self.mode == TabGridModeSelection) {
+    DCHECK(IsTabsBulkActionsEnabled());
     [_toolbar setItems:@[
       _closeTabsButton, _spaceItem, _shareButton, _spaceItem, _addToButton
     ]];
@@ -293,6 +348,10 @@
     [NSLayoutConstraint activateConstraints:_compactConstraints];
     return;
   }
+  UIBarButtonItem* leadingButton = _closeAllOrUndoButton;
+  if (IsTabsBulkActionsEnabled() && !_undoActive)
+    leadingButton = _editButton;
+  UIBarButtonItem* trailingButton = _doneButton;
 
   if ([self shouldUseCompactLayout]) {
     // For incognito/regular pages, display all 3 buttons;
@@ -324,6 +383,12 @@
       [NSLayoutConstraint activateConstraints:_floatingConstraints];
     }
   }
+}
+
+// Returns YES if the full toolbar should be shown instead of the floating
+// button.
+- (BOOL)shouldShowFullBar {
+  return [self shouldUseCompactLayout] || self.mode == TabGridModeSelection;
 }
 
 // Returns YES if should use compact bottom toolbar layout.

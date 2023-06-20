@@ -19,7 +19,7 @@
 #include <vector>
 
 #include "base/containers/flat_map.h"
-#include "base/containers/mru_cache.h"
+#include "base/containers/lru_cache.h"
 #include "base/macros.h"
 #include "base/observer_list_types.h"
 #include "base/strings/string_piece.h"
@@ -53,6 +53,7 @@
 #include "net/third_party/quiche/src/quic/core/quic_time.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "url/origin.h"
+#include "url/scheme_host_port.h"
 
 namespace net {
 
@@ -196,7 +197,7 @@ class NET_EXPORT_PRIVATE QuicChromiumClientSession
     // Constructs a handle to |session| which was created via the alternative
     // server |destination|.
     Handle(const base::WeakPtr<QuicChromiumClientSession>& session,
-           const HostPortPair& destination);
+           url::SchemeHostPort destination);
     Handle(const Handle& other) = delete;
     ~Handle() override;
 
@@ -267,7 +268,7 @@ class NET_EXPORT_PRIVATE QuicChromiumClientSession
     quic::QuicServerId server_id() const { return server_id_; }
 
     // Returns the alternative server used for this session.
-    HostPortPair destination() const { return destination_; }
+    const url::SchemeHostPort& destination() const { return destination_; }
 
     // Returns the session's net log.
     const NetLogWithSource& net_log() const { return net_log_; }
@@ -323,7 +324,7 @@ class NET_EXPORT_PRIVATE QuicChromiumClientSession
     // Underlying session which may be destroyed before this handle.
     base::WeakPtr<QuicChromiumClientSession> session_;
 
-    HostPortPair destination_;
+    url::SchemeHostPort destination_;
 
     // Stream request created by |RequestStream()|.
     std::unique_ptr<StreamRequest> stream_request_;
@@ -354,6 +355,9 @@ class NET_EXPORT_PRIVATE QuicChromiumClientSession
   // A helper class used to manage a request to create a stream.
   class NET_EXPORT_PRIVATE StreamRequest {
    public:
+    StreamRequest(const StreamRequest&) = delete;
+    StreamRequest& operator=(const StreamRequest&) = delete;
+
     // Cancels any pending stream creation request and resets |stream_| if
     // it has not yet been released.
     ~StreamRequest();
@@ -417,8 +421,6 @@ class NET_EXPORT_PRIVATE QuicChromiumClientSession
     const NetworkTrafficAnnotationTag traffic_annotation_;
 
     base::WeakPtrFactory<StreamRequest> weak_factory_{this};
-
-    DISALLOW_COPY_AND_ASSIGN(StreamRequest);
   };
 
   // This class contains all the context needed for path validation and
@@ -495,6 +497,12 @@ class NET_EXPORT_PRIVATE QuicChromiumClientSession
     QuicChromiumPathValidationWriterDelegate(
         QuicChromiumClientSession* session,
         base::SequencedTaskRunner* task_runner);
+
+    QuicChromiumPathValidationWriterDelegate(
+        const QuicChromiumPathValidationWriterDelegate&) = delete;
+    QuicChromiumPathValidationWriterDelegate& operator=(
+        const QuicChromiumPathValidationWriterDelegate&) = delete;
+
     ~QuicChromiumPathValidationWriterDelegate();
 
     // QuicChromiumPacketWriter::Delegate interface.
@@ -520,7 +528,6 @@ class NET_EXPORT_PRIVATE QuicChromiumClientSession
     quic::QuicSocketAddress peer_address_;
     base::WeakPtrFactory<QuicChromiumPathValidationWriterDelegate>
         weak_factory_{this};
-    DISALLOW_COPY_AND_ASSIGN(QuicChromiumPathValidationWriterDelegate);
   };
 
   // Constructs a new session which will own |connection|, but not
@@ -569,6 +576,11 @@ class NET_EXPORT_PRIVATE QuicChromiumClientSession
       base::SequencedTaskRunner* task_runner,
       std::unique_ptr<SocketPerformanceWatcher> socket_performance_watcher,
       NetLog* net_log);
+
+  QuicChromiumClientSession(const QuicChromiumClientSession&) = delete;
+  QuicChromiumClientSession& operator=(const QuicChromiumClientSession&) =
+      delete;
+
   ~QuicChromiumClientSession() override;
 
   void Initialize() override;
@@ -744,7 +756,7 @@ class NET_EXPORT_PRIVATE QuicChromiumClientSession
 
   // Returns a Handle to this session.
   std::unique_ptr<QuicChromiumClientSession::Handle> CreateHandle(
-      const HostPortPair& destination);
+      url::SchemeHostPort destination);
 
   // Returns the number of client hello messages that have been sent on the
   // crypto stream. If the handshake has completed then this is one greater
@@ -848,11 +860,6 @@ class NET_EXPORT_PRIVATE QuicChromiumClientSession
   const LoadTimingInfo::ConnectTiming& GetConnectTiming();
 
   quic::ParsedQuicVersion GetQuicVersion() const;
-
-  // Returns the estimate of dynamically allocated memory in bytes.
-  // See base/trace_event/memory_usage_estimator.h.
-  // TODO(xunjieli): It only tracks |packet_readers_|. Write a better estimate.
-  size_t EstimateMemoryUsage() const;
 
   // Looks for a push that matches the provided parameters.
   quic::QuicClientPromisedInfo* GetPromised(const GURL& url,
@@ -1081,8 +1088,6 @@ class NET_EXPORT_PRIVATE QuicChromiumClientSession
   base::flat_map<url::Origin, std::string> accept_ch_entries_received_via_alps_;
 
   base::WeakPtrFactory<QuicChromiumClientSession> weak_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(QuicChromiumClientSession);
 };
 
 }  // namespace net

@@ -11,7 +11,6 @@
 
 #include "base/android/scoped_java_ref.h"
 #include "base/callback.h"
-#include "base/macros.h"
 #include "base/memory/singleton.h"
 #include "base/scoped_multi_source_observation.h"
 #include "chrome/browser/download/download_manager_utils.h"
@@ -49,6 +48,10 @@ class DownloadManagerService
       download::DownloadItem* item);
 
   DownloadManagerService();
+
+  DownloadManagerService(const DownloadManagerService&) = delete;
+  DownloadManagerService& operator=(const DownloadManagerService&) = delete;
+
   ~DownloadManagerService() override;
 
   // Called to Initialize this object. If |is_profile_added| is false,
@@ -70,14 +73,17 @@ class DownloadManagerService
                          int64_t system_download_id);
 
   // Called to open a given download item.
-  void OpenDownload(download::DownloadItem* download, int source);
+  void OpenDownload(download::DownloadItem* download,
+                    int source,
+                    const JavaParamRef<jobject>& j_context);
 
   // Called to open a download item whose GUID is equal to |jdownload_guid|.
   void OpenDownload(JNIEnv* env,
                     jobject obj,
                     const JavaParamRef<jstring>& jdownload_guid,
                     const JavaParamRef<jobject>& j_profile_key,
-                    jint source);
+                    jint source,
+                    const JavaParamRef<jobject>& j_context);
 
   // Called to resume downloading the item that has GUID equal to
   // |jdownload_guid|..
@@ -296,8 +302,6 @@ class DownloadManagerService
 
   std::map<ProfileKey*, download::SimpleDownloadManagerCoordinator*>
       coordinators_;
-
-  DISALLOW_COPY_AND_ASSIGN(DownloadManagerService);
 };
 
 #endif  // CHROME_BROWSER_DOWNLOAD_ANDROID_DOWNLOAD_MANAGER_SERVICE_H_

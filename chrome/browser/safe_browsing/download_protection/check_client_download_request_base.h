@@ -21,13 +21,13 @@
 #include "chrome/browser/safe_browsing/download_protection/download_protection_util.h"
 #include "chrome/browser/safe_browsing/download_protection/download_request_maker.h"
 #include "chrome/browser/safe_browsing/download_protection/file_analyzer.h"
-#include "chrome/browser/safe_browsing/safe_browsing_navigation_observer_manager.h"
-#include "chrome/browser/safe_browsing/ui_manager.h"
 #include "chrome/services/file_util/public/cpp/sandboxed_rar_analyzer.h"
 #include "chrome/services/file_util/public/cpp/sandboxed_zip_analyzer.h"
 #include "components/history/core/browser/history_service.h"
+#include "components/safe_browsing/content/browser/safe_browsing_navigation_observer_manager.h"
+#include "components/safe_browsing/content/browser/ui_manager.h"
+#include "components/safe_browsing/core/browser/db/database_manager.h"
 #include "components/safe_browsing/core/browser/sync/safe_browsing_primary_account_token_fetcher.h"
-#include "components/safe_browsing/core/db/database_manager.h"
 #include "content/public/browser/browser_thread.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "url/gurl.h"
@@ -53,6 +53,12 @@ class CheckClientDownloadRequestBase {
       DownloadProtectionService* service,
       scoped_refptr<SafeBrowsingDatabaseManager> database_manager,
       std::unique_ptr<DownloadRequestMaker> download_request_maker);
+
+  CheckClientDownloadRequestBase(const CheckClientDownloadRequestBase&) =
+      delete;
+  CheckClientDownloadRequestBase& operator=(
+      const CheckClientDownloadRequestBase&) = delete;
+
   virtual ~CheckClientDownloadRequestBase();
 
   void Start();
@@ -78,7 +84,6 @@ class CheckClientDownloadRequestBase {
   void OnRequestBuilt(std::unique_ptr<ClientDownloadRequest> request_proto);
 
   void StartTimeout();
-  void OnCertificateAllowlistCheckDone(bool is_allowlisted);
   void SendRequest();
   void OnURLLoaderComplete(std::unique_ptr<std::string> response_body);
 
@@ -114,6 +119,7 @@ class CheckClientDownloadRequestBase {
   // If ShouldUploadBinary returns settings, actually performs the upload to
   // Safe Browsing for deep scanning.
   virtual void UploadBinary(
+      DownloadCheckResult result,
       DownloadCheckResultReason reason,
       enterprise_connectors::AnalysisSettings settings) = 0;
 
@@ -124,7 +130,6 @@ class CheckClientDownloadRequestBase {
   // Called when finishing the download, to decide whether to prompt the user
   // for deep scanning or not.
   virtual bool ShouldPromptForDeepScanning(
-      DownloadCheckResultReason reason,
       bool server_requests_prompt) const = 0;
 
   // Called when |token_fetcher_| has finished fetching the access token.
@@ -178,8 +183,6 @@ class CheckClientDownloadRequestBase {
 
   // Used to create the download request proto.
   std::unique_ptr<DownloadRequestMaker> download_request_maker_;
-
-  DISALLOW_COPY_AND_ASSIGN(CheckClientDownloadRequestBase);
 };  // namespace safe_browsing
 
 }  // namespace safe_browsing

@@ -6,7 +6,6 @@ import("//build/apple/convert_plist.gni")
 import("//build/config/chrome_build.gni")
 import("//build/config/chromeos/ui_mode.gni")
 import("//build/config/features.gni")
-import("//build/config/python.gni")
 import("//build/timestamp.gni")
 import("//build/toolchain/toolchain.gni")
 import("//components/policy/resources/policy_templates.gni")
@@ -71,7 +70,7 @@ config("component_implementation") {
 # and compiled.
 cloud_policy_proto_path = "$target_gen_dir/proto/cloud_policy.proto"
 
-# This file is used by tools/traffic_annotation/traffic_annotation.proto as it
+# This file is used by chrome/browser/privacy/traffic_annotation.proto as it
 # needs a version without LITE_RUNTIME optimization.
 cloud_policy_full_runtime_proto_path =
     "$target_gen_dir/proto/cloud_policy_full_runtime.proto"
@@ -81,7 +80,7 @@ cloud_policy_full_runtime_proto_path =
 policy_common_definitions_proto_abspath =
     "//components/policy/proto/policy_common_definitions.proto"
 
-# This file is used by tools/traffic_annotation/traffic_annotation.proto as it
+# This file is used by chrome/browser/privacy/traffic_annotation.proto as it
 # needs a version without LITE_RUNTIME optimization.
 policy_common_definitions_full_runtime_proto_path =
     "$target_gen_dir/proto/policy_common_definitions_full_runtime.proto"
@@ -90,7 +89,7 @@ policy_common_definitions_full_runtime_proto_path =
 # policy. It is also the format currently used by the server.
 chrome_settings_proto_path = "$target_gen_dir/proto/chrome_settings.proto"
 
-# This file is used by tools/traffic_annotation/traffic_annotation.proto as it
+# This file is used by chrome/browser/privacy/traffic_annotation.proto as it
 # needs a version without LITE_RUNTIME optimization.
 chrome_settings_full_runtime_proto_path =
     "$target_gen_dir/proto/chrome_settings_full_runtime.proto"
@@ -191,8 +190,7 @@ grit("translate_policy_templates") {
 }
 
 # Generate the various templates and docs (admx, doc, json, etc.)
-# TODO(crbug.com/1112471): Get this to run cleanly under Python 3.
-python2_action("policy_templates") {
+action("policy_templates") {
   script = "tools/template_writers/template_formatter.py"
   chrome_version_abspath = "//chrome/VERSION"
   chrome_version_path = rebase_path(chrome_version_abspath, root_build_dir)

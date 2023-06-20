@@ -4,8 +4,18 @@
 
 #include "ash/accelerators/accelerator_commands.h"
 
+#include "ash/components/audio/cras_audio_handler.h"
+#include "ash/constants/ash_features.h"
 #include "ash/display/display_configuration_controller.h"
+#include "ash/focus_cycler.h"
+#include "ash/frame/non_client_frame_view_ash.h"
+#include "ash/ime/ime_controller_impl.h"
+#include "ash/media/media_controller_impl.h"
+#include "ash/public/cpp/new_window_delegate.h"
+#include "ash/session/session_controller_impl.h"
+#include "ash/shelf/shelf.h"
 #include "ash/shell.h"
+#include "ash/wm/float/float_controller.h"
 #include "ash/wm/mru_window_tracker.h"
 #include "ash/wm/screen_pinning_controller.h"
 #include "ash/wm/window_cycle/window_cycle_controller.h"
@@ -13,25 +23,139 @@
 #include "ash/wm/window_util.h"
 #include "ash/wm/wm_event.h"
 #include "base/metrics/user_metrics.h"
+#include "chromeos/ui/base/window_properties.h"
 #include "ui/display/display.h"
 #include "ui/display/display_switches.h"
 #include "ui/display/manager/display_manager.h"
 #include "ui/display/manager/managed_display_info.h"
 #include "ui/display/screen.h"
 #include "ui/gfx/geometry/point.h"
+#include "ui/views/widget/widget.h"
 
 // Keep the functions in this file in alphabetical order.
 namespace ash {
 namespace accelerators {
+
+namespace {
+
+views::Widget* FindPipWidget() {
+  return Shell::Get()->focus_cycler()->FindWidget(
+      base::BindRepeating([](views::Widget* widget) {
+        return WindowState::Get(widget->GetNativeWindow())->IsPip();
+      }));
+}
+
+}  // namespace
 
 void CycleBackwardMru() {
   Shell::Get()->window_cycle_controller()->HandleCycleWindow(
       WindowCycleController::WindowCyclingDirection::kBackward);
 }
 
+void FocusPip() {
+  auto* widget = FindPipWidget();
+  if (widget)
+    Shell::Get()->focus_cycler()->FocusWidget(widget);
+}
+
 void CycleForwardMru() {
   Shell::Get()->window_cycle_controller()->HandleCycleWindow(
       WindowCycleController::WindowCyclingDirection::kForward);
+}
+
+void DisableCapsLock() {
+  Shell::Get()->ime_controller()->SetCapsLockEnabled(false);
+}
+
+void LaunchAppN(int n) {
+  Shelf::LaunchShelfItem(n);
+}
+
+void LaunchLastApp() {
+  Shelf::LaunchShelfItem(-1);
+}
+
+void LockScreen() {
+  Shell::Get()->session_controller()->LockScreen();
+}
+
+void MediaFastForward() {
+  Shell::Get()->media_controller()->HandleMediaSeekForward();
+}
+
+void MediaNextTrack() {
+  Shell::Get()->media_controller()->HandleMediaNextTrack();
+}
+
+void MediaPause() {
+  Shell::Get()->media_controller()->HandleMediaPause();
+}
+
+void MediaPlay() {
+  Shell::Get()->media_controller()->HandleMediaPlay();
+}
+
+void MediaPlayPause() {
+  Shell::Get()->media_controller()->HandleMediaPlayPause();
+}
+
+void MediaPrevTrack() {
+  Shell::Get()->media_controller()->HandleMediaPrevTrack();
+}
+void MediaRewind() {
+  Shell::Get()->media_controller()->HandleMediaSeekBackward();
+}
+
+void MediaStop() {
+  Shell::Get()->media_controller()->HandleMediaStop();
+}
+
+void MicrophoneMuteToggle() {
+  auto* const audio_handler = CrasAudioHandler::Get();
+  const bool mute = !audio_handler->IsInputMuted();
+
+  if (mute)
+    base::RecordAction(base::UserMetricsAction("Keyboard_Microphone_Muted"));
+  else
+    base::RecordAction(base::UserMetricsAction("Keyboard_Microphone_Unmuted"));
+
+  audio_handler->SetInputMute(mute);
+}
+
+void NewIncognitoWindow() {
+  NewWindowDelegate::GetPrimary()->NewWindow(
+      /*is_incognito=*/true,
+      /*should_trigger_session_restore=*/false);
+}
+
+void NewWindow() {
+  NewWindowDelegate::GetPrimary()->NewWindow(
+      /*is_incognito=*/false,
+      /*should_trigger_session_restore=*/false);
+}
+
+void OpenCalculator() {
+  NewWindowDelegate::GetInstance()->OpenCalculator();
+}
+
+void OpenCrosh() {
+  NewWindowDelegate::GetInstance()->OpenCrosh();
+}
+
+void OpenDiagnostics() {
+  NewWindowDelegate::GetInstance()->OpenDiagnostics();
+}
+
+void OpenFeedbackPage() {
+  NewWindowDelegate::GetInstance()->OpenFeedbackPage();
+}
+
+void OpenFileManager() {
+  NewWindowDelegate::GetInstance()->OpenFileManager();
+}
+
+void OpenHelp() {
+  NewWindowDelegate::GetInstance()->OpenGetHelp();
 }
 
 void ResetDisplayZoom() {
@@ -41,6 +165,10 @@ void ResetDisplayZoom() {
   display::Display display =
       display::Screen::GetScreen()->GetDisplayNearestPoint(point);
   display_manager->ResetDisplayZoom(display.id());
+}
+
+void RestoreTab() {
+  NewWindowDelegate::GetPrimary()->RestoreTab();
 }
 
 void ShiftPrimaryDisplay() {
@@ -71,6 +199,14 @@ void ShiftPrimaryDisplay() {
 
   Shell::Get()->display_configuration_controller()->SetPrimaryDisplayId(
       primary_display_iter->id(), true /* throttle */);
+}
+
+void ToggleFloating() {
+  DCHECK(features::IsWindowControlMenuEnabled());
+  aura::Window* active_window = window_util::GetActiveWindow();
+  if (!active_window)
+    return;
+  Shell::Get()->float_controller()->ToggleFloatCurrentWindow(active_window);
 }
 
 void ToggleFullscreen() {
@@ -108,6 +244,12 @@ bool ToggleMinimized() {
     return false;
   window_state->Minimize();
   return true;
+}
+
+void ToggleResizeLockMenu() {
+  aura::Window* active_window = window_util::GetActiveWindow();
+  auto* frame_view = ash::NonClientFrameViewAsh::Get(active_window);
+  frame_view->GetToggleResizeLockMenuCallback().Run();
 }
 
 void UnpinWindow() {

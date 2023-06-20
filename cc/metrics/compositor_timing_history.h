@@ -60,7 +60,6 @@ class CC_EXPORT CompositorTimingHistory {
   base::TimeDelta BeginMainFrameStartToReadyToCommitCriticalEstimate() const;
   base::TimeDelta BeginMainFrameStartToReadyToCommitNotCriticalEstimate() const;
   base::TimeDelta BeginMainFrameQueueToActivateCriticalEstimate() const;
-  base::TimeDelta BeginMainFrameQueueToActivateNotCriticalEstimate() const;
 
   // State that affects when events should be expected/recorded/reported.
   void SetRecordingEnabled(bool enabled);
@@ -87,18 +86,15 @@ class CC_EXPORT CompositorTimingHistory {
   void WillInvalidateOnImplSide();
   void SetTreePriority(TreePriority priority);
 
+  // Record the scheduler's deadline mode and send to UMA.
+  using DeadlineMode = SchedulerStateMachine::BeginImplFrameDeadlineMode;
+  void RecordDeadlineMode(DeadlineMode deadline_mode);
+
   base::TimeTicks begin_main_frame_sent_time() const {
     return begin_main_frame_sent_time_;
   }
 
   void ClearHistory();
-  size_t begin_main_frame_start_to_ready_to_commit_sample_count() const {
-    return begin_main_frame_start_to_ready_to_commit_duration_history_
-        .sample_count();
-  }
-  size_t commit_to_ready_to_activate_sample_count() const {
-    return commit_to_ready_to_activate_duration_history_.sample_count();
-  }
 
  protected:
   void DidBeginMainFrame(base::TimeTicks begin_main_frame_end_time);
@@ -129,6 +125,21 @@ class CC_EXPORT CompositorTimingHistory {
   RollingTimeDeltaHistory prepare_tiles_duration_history_;
   RollingTimeDeltaHistory activate_duration_history_;
   RollingTimeDeltaHistory draw_duration_history_;
+
+  // Used for duration estimates when enabled. Without this feature, compositor
+  // timing history collects timing history of each stage and use sum of
+  // percentile for duration estimates. With this feature, we use percentile of
+  // sum instead.
+  bool duration_estimates_enabled_;
+  RollingTimeDeltaHistory bmf_start_to_ready_to_commit_critical_history_;
+  double bmf_start_to_ready_to_commit_critical_percentile_;
+  RollingTimeDeltaHistory bmf_start_to_ready_to_commit_not_critical_history_;
+  double bmf_start_to_ready_to_commit_not_critical_percentile_;
+  RollingTimeDeltaHistory bmf_queue_to_activate_critical_history_;
+  double bmf_queue_to_activate_critical_percentile_;
+
+  base::TimeDelta begin_main_frame_queue_duration_;
+  base::TimeDelta bmf_start_to_activate_duration_;
 
   bool begin_main_frame_on_critical_path_;
   base::TimeTicks begin_main_frame_sent_time_;

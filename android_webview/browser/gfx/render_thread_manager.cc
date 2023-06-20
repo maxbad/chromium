@@ -199,6 +199,9 @@ void RenderThreadManager::DrawOnRT(bool save_restore,
   absl::optional<ScopedAppGLStateRestore> state_restore;
   if (!vulkan_context_provider_) {
     state_restore.emplace(ScopedAppGLStateRestore::MODE_DRAW, save_restore);
+    if (state_restore->skip_draw()) {
+      return;
+    }
   }
 
   if (!hardware_renderer_ && !IsInsideHardwareRelease() &&
@@ -224,14 +227,17 @@ void RenderThreadManager::RemoveOverlaysOnRT(
     hardware_renderer_->RemoveOverlays(merge_transaction);
 }
 
-void RenderThreadManager::DestroyHardwareRendererOnRT(bool save_restore) {
+void RenderThreadManager::DestroyHardwareRendererOnRT(bool save_restore,
+                                                      bool abandon_context) {
   GpuServiceWebView::GetInstance();
 
   absl::optional<ScopedAppGLStateRestore> state_restore;
-  if (!vulkan_context_provider_) {
+  if (!vulkan_context_provider_ && !abandon_context) {
     state_restore.emplace(ScopedAppGLStateRestore::MODE_RESOURCE_MANAGEMENT,
                           save_restore);
   }
+  if (abandon_context && hardware_renderer_)
+    hardware_renderer_->AbandonContext();
 
   hardware_renderer_.reset();
 }

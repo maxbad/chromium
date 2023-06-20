@@ -13,15 +13,9 @@
 #include <string>
 #include <utility>
 
-#if defined(OS_WIN)
-#include <vector>
-#endif
-
 #include "base/bind.h"
 #include "base/compiler_specific.h"
-#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
-#include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
@@ -40,7 +34,6 @@
 #include "ui/gfx/selection_model.h"
 #include "ui/gfx/text_constants.h"
 #include "ui/views/context_menu_controller.h"
-#include "ui/views/controls/focus_ring.h"
 #include "ui/views/controls/textfield/textfield_model.h"
 #include "ui/views/drag_controller.h"
 #include "ui/views/metadata/view_factory.h"
@@ -48,6 +41,10 @@
 #include "ui/views/selection_controller_delegate.h"
 #include "ui/views/view.h"
 #include "ui/views/word_lookup_client.h"
+
+#if defined(OS_WIN)
+#include <vector>
+#endif
 
 namespace base {
 class TimeDelta;
@@ -247,6 +244,8 @@ class VIEWS_EXPORT Textfield : public View,
     force_text_directionality_ = force;
   }
 
+  bool drop_cursor_visible() const { return drop_cursor_visible_; }
+
   // Gets/Sets whether to indicate the textfield has invalid content.
   bool GetInvalid() const;
   void SetInvalid(bool invalid);
@@ -342,6 +341,8 @@ class VIEWS_EXPORT Textfield : public View,
   int OnDragUpdated(const ui::DropTargetEvent& event) override;
   void OnDragExited() override;
   ui::mojom::DragOperation OnPerformDrop(
+      const ui::DropTargetEvent& event) override;
+  views::View::DropCallback GetDropCallback(
       const ui::DropTargetEvent& event) override;
   void OnDragDone() override;
   void GetAccessibleNodeData(ui::AXNodeData* node_data) override;
@@ -441,7 +442,7 @@ class VIEWS_EXPORT Textfield : public View,
   // Set whether the text should be used to improve typing suggestions.
   void SetShouldDoLearning(bool value) { should_do_learning_ = value; }
 
-#if defined(OS_WIN) || BUILDFLAG(IS_CHROMEOS_ASH)
+#if defined(OS_WIN) || defined(OS_LINUX) || defined(OS_CHROMEOS)
   bool SetCompositionFromExistingText(
       const gfx::Range& range,
       const std::vector<ui::ImeTextSpan>& ui_ime_text_spans) override;
@@ -453,10 +454,13 @@ class VIEWS_EXPORT Textfield : public View,
   bool SetAutocorrectRange(const gfx::Range& range) override;
 #endif
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) || defined(OS_CHROMEOS)
   void GetActiveTextInputControlLayoutBounds(
       absl::optional<gfx::Rect>* control_bounds,
       absl::optional<gfx::Rect>* selection_bounds) override;
+#endif
+
+#if defined(OS_WIN)
   void SetActiveCompositionForAccessibility(
       const gfx::Range& range,
       const std::u16string& active_composition_text,
@@ -636,10 +640,11 @@ class VIEWS_EXPORT Textfield : public View,
   // Textfield::GetCaretBlinkMs().
   void OnCursorBlinkTimerFired();
 
-  // Returns the color to use for the FocusRing, if one is present.
-  SkColor GetFocusRingColor() const;
-
   void OnEnabledChanged();
+
+  // Drops the dragged text.
+  void DropDraggedText(const ui::DropTargetEvent& event,
+                       ui::mojom::DragOperation& output_drag_op);
 
   // The text model.
   std::unique_ptr<TextfieldModel> model_;
@@ -739,9 +744,6 @@ class VIEWS_EXPORT Textfield : public View,
   // scrolling. If |true|, handles are shown after scrolling ends.
   bool touch_handles_hidden_due_to_scroll_ = false;
 
-  // True if this textfield should use a focus ring to indicate focus.
-  bool use_focus_ring_ = true;
-
   // Whether the user should be notified if the clipboard is restricted.
   bool show_rejection_ui_if_any_ = false;
 
@@ -765,9 +767,6 @@ class VIEWS_EXPORT Textfield : public View,
   ui::TextInputClient::FocusReason focus_reason_ =
       ui::TextInputClient::FOCUS_REASON_NONE;
 
-  // The focus ring for this TextField.
-  FocusRing* focus_ring_ = nullptr;
-
   // The password char reveal index, for testing only.
   int password_char_reveal_index_ = -1;
 
@@ -787,6 +786,9 @@ class VIEWS_EXPORT Textfield : public View,
 
   // Used to bind callback functions to this object.
   base::WeakPtrFactory<Textfield> weak_ptr_factory_{this};
+
+  // Used to bind drop callback functions to this object.
+  base::WeakPtrFactory<Textfield> drop_weak_ptr_factory_{this};
 };
 
 BEGIN_VIEW_BUILDER(VIEWS_EXPORT, Textfield, View)

@@ -16,7 +16,7 @@
 #include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace download {
-class DownloadService;
+class BackgroundDownloadService;
 }  // namespace download
 
 namespace optimization_guide {
@@ -32,7 +32,7 @@ class PredictionModel;
 class PredictionModelDownloadManager {
  public:
   PredictionModelDownloadManager(
-      download::DownloadService* download_service,
+      download::BackgroundDownloadService* download_service,
       scoped_refptr<base::SequencedTaskRunner> background_task_runner);
   virtual ~PredictionModelDownloadManager();
   PredictionModelDownloadManager(const PredictionModelDownloadManager&) =
@@ -74,7 +74,7 @@ class PredictionModelDownloadManager {
   void OnDownloadServiceUnavailable();
 
   // Invoked when the download has been accepted and persisted by the
-  // DownloadService.
+  // BackgroundDownloadService.
   void OnDownloadStarted(const std::string& guid,
                          download::DownloadParams::StartResult start_result);
 
@@ -107,8 +107,9 @@ class PredictionModelDownloadManager {
 
   // Processes the contents in |unzipped_dir_path|.
   //
-  // Must be called on the background thread, as it performs file I/O.
-  absl::optional<proto::PredictionModel> ProcessUnzippedContents(
+  // Must be called on the background thread, as it performs file I/O. This is a
+  // stateless func to avoid needing weird lifetime stuff.
+  static absl::optional<proto::PredictionModel> ProcessUnzippedContents(
       const base::FilePath& unzipped_dir_path);
 
   // Notifies |observers_| that a model is ready.
@@ -122,10 +123,7 @@ class PredictionModelDownloadManager {
   // The Download Service to schedule model downloads with.
   //
   // Guaranteed to outlive |this|.
-  download::DownloadService* download_service_;
-
-  // The directory to store verified models in.
-  absl::optional<base::FilePath> models_dir_;
+  download::BackgroundDownloadService* download_service_;
 
   // Whether the download service is available.
   bool is_available_for_downloads_;

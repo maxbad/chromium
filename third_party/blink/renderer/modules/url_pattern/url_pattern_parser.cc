@@ -5,8 +5,8 @@
 #include "third_party/blink/renderer/modules/url_pattern/url_pattern_parser.h"
 
 #include "base/notreached.h"
+#include "third_party/blink/renderer/bindings/modules/v8/v8_url_pattern_init.h"
 #include "third_party/blink/renderer/modules/url_pattern/url_pattern_component.h"
-#include "third_party/blink/renderer/modules/url_pattern/url_pattern_init.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_utf8_adaptor.h"
 #include "third_party/liburlpattern/tokenize.h"
@@ -17,6 +17,9 @@ namespace url_pattern {
 Parser::Parser(const String& input) : input_(input), utf8_(input) {}
 
 void Parser::Parse(ExceptionState& exception_state) {
+  DCHECK_EQ(state_, StringParseState::kInit);
+  DCHECK_EQ(token_index_, 0u);
+
   auto tokenize_result =
       liburlpattern::Tokenize(absl::string_view(utf8_.data(), utf8_.size()),
                               liburlpattern::TokenizePolicy::kLenient);
@@ -30,50 +33,65 @@ void Parser::Parse(ExceptionState& exception_state) {
   token_list_ = std::move(tokenize_result.value());
   result_ = MakeGarbageCollected<URLPatternInit>();
 
-  // We start in relative mode by default.  If we find a protocol `:` later,
-  // we will update the starting state to expect an absolute URL pattern.
-  DCHECK_EQ(state_, StringParseState::kPathname);
-
   // When constructing a pattern using structured input like
   // `new URLPattern({ pathname: 'foo' })` any missing components will be
-  // defaulted to wildcards.  In this case, however, we default any missing
-  // components to the empty string.  This is due to there being no way to
-  // simply "leave out" a component when writing a URL.  The behavior also
-  // matches the URL constructor.
+  // defaulted to wildcards.  In the constructor string case, however, all
+  // components are precisely defined as either empty string or a longer
+  // value.  This is due to there being no way to simply "leave out" a
+  // component when writing a URL.  The behavior also matches the URL
+  // constructor.
   //
-  // To that end we initialize components that would be set for a relative
-  // pattern to the empty string default.  We don't do this for other
-  // components right now so that any base URL value can set those components.
-  result_->setPathname(g_empty_string);
-  result_->setSearch(g_empty_string);
-  result_->setHash(g_empty_string);
-
-  // Scan for protocol `:` terminator.  This should be an invalid pattern
-  // character.  This automatically works for "https://" because a name
-  // cannot start with a `/`.  For URLs that do not include "//", however,
-  // the input string will need to escape the colon, e.g. "data\\:foo".
-  for (size_t i = 0; i < token_list_.size(); ++i) {
-    if (IsProtocolSuffix(i)) {
-      // Update the state to expect the start of an absolute URL.
-      state_ = StringParseState::kProtocol;
-
-      // Now that we are in absolute mode we know values will not be inherited
-      // from a base URL.  Therefore initialize the rest of the components to
-      // the empty string.
-      result_->setProtocol(g_empty_string);
-      result_->setUsername(g_empty_string);
-      result_->setPassword(g_empty_string);
-      result_->setHostname(g_empty_string);
-      result_->setPort(g_empty_string);
-      break;
-    }
-  }
+  // To implement this we initialize components to the empty string in advance.
+  //
+  // We can't, however, do this immediately.  We want to allow the baseURL to
+  // provide information for relative URLs, so we only want to set the default
+  // empty string values for components following the first component in the
+  // relative URL.
+  //
+  // We therefore wait to set the default component values until after we exit
+  // the kInit state and have determined if we are in relative or absolute mode.
 
   // Iterate through the list of tokens and update our state machine as we go.
-  for (token_index_ = 0; token_index_ < token_list_.size(); ++token_index_) {
+  for (; token_index_ < token_list_.size(); token_index_ += token_increment_) {
+    // Reset back to our default `token_increment_` value.
+    token_increment_ = 1;
+
     // All states must respect the end of the token list.  The liburlpattern
     // tokenizer guarantees that the last token will have the type `kEnd`.
     if (token_list_[token_index_].type == liburlpattern::TokenType::kEnd) {
+      // If we failed to find a protocol terminator then we are still in
+      // relative mode.  We now need to determine the first component of the
+      // relative URL.
+      if (state_ == StringParseState::kInit) {
+        // Reset back to the start of the input string.
+        Rewind();
+
+        // If the string begins with `?` then its a relative search component.
+        // If it starts with `#` then its a relative hash component.  Otherwise
+        // its a relative pathname.
+        //
+        // In each case we initialize any components following the initial
+        // component to be empty string.
+        if (IsHashPrefix()) {
+          ChangeState(StringParseState::kHash, Skip(1));
+        } else if (IsSearchPrefix()) {
+          ChangeState(StringParseState::kSearch, Skip(1));
+          result_->setHash(g_empty_string);
+        } else {
+          ChangeState(StringParseState::kPathname, Skip(0));
+          result_->setSearch(g_empty_string);
+          result_->setHash(g_empty_string);
+        }
+        continue;
+      }
+
+      // If we failed to find an `@`, then there is no username and password.
+      // We should rewind and process the data as a hostname.
+      else if (state_ == StringParseState::kAuthority) {
+        RewindAndSetState(StringParseState::kHostname);
+        continue;
+      }
+
       ChangeState(StringParseState::kDone, Skip(0));
       break;
     }
@@ -83,59 +101,124 @@ void Parser::Parse(ExceptionState& exception_state) {
     // past any tokens that are within `{` and `}`.  Note, the tokenizer
     // handles grouping `(` and `)` and `:foo` groups for us automatically, so
     // we don't need special code for them here.
-    if (in_group_) {
+    if (IsGroupOpen()) {
+      group_depth_ += 1;
+      continue;
+    }
+
+    if (group_depth_ > 0) {
       if (IsGroupClose())
-        in_group_ = false;
+        group_depth_ -= 1;
       else
         continue;
     }
 
-    if (IsGroupOpen()) {
-      in_group_ = true;
-      continue;
-    }
-
     switch (state_) {
-      case StringParseState::kProtocol: {
+      case StringParseState::kInit:
+        if (IsProtocolSuffix()) {
+          // We are in absolute mode and we know values will not be inherited
+          // from a base URL.  Therefore initialize the rest of the components
+          // to the empty string.
+          result_->setUsername(g_empty_string);
+          result_->setPassword(g_empty_string);
+          result_->setHostname(g_empty_string);
+          result_->setPort(g_empty_string);
+          result_->setPathname(g_empty_string);
+          result_->setSearch(g_empty_string);
+          result_->setHash(g_empty_string);
+
+          // Update the state to expect the start of an absolute URL.
+          RewindAndSetState(StringParseState::kProtocol);
+        }
+        break;
+
+      case StringParseState::kProtocol:
         // If we find the end of the protocol component...
-        if (IsProtocolSuffix(token_index_)) {
+        if (IsProtocolSuffix()) {
           // First we eagerly compile the protocol pattern and use it to
           // compute if this entire URLPattern should be treated as a
           // "standard" URL.  If any of the special schemes, like `https`,
-          // match the protocol pattern then we treat it as standard.  This
-          // also forces the default pathname to be `/` instead of the empty
-          // string.
+          // match the protocol pattern then we treat it as standard.
           ComputeShouldTreatAsStandardURL(exception_state);
           if (exception_state.HadException())
             return;
 
-          // Next, if there are authority slashes, like `https://`, then
-          // we must transition to the authority section of the URLPattern.
-          // We explicitly don't support username and password here.  We
-          // instead go straight to hostname.
-          if (NextIsAuthoritySlashes())
-            ChangeState(StringParseState::kHostname, Skip(3));
+          // Standard URLs default to `/` for the pathname.
+          if (should_treat_as_standard_url_)
+            result_->setPathname("/");
 
-          // If there are no authority slashes, but the protocol is special
-          // then we still go to the hostname as this is a "standard" URL.
-          // This differs from the above case since we don't need to skip the
-          // extra slashes.
-          else if (should_treat_as_standard_url_)
-            ChangeState(StringParseState::kHostname, Skip(1));
-
-          // Otherwise we treat this as a "cannot-be-a-base-URL" or what chrome
+          // By default we treat this as a "cannot-be-a-base-URL" or what chrome
           // calls a "path" URL.  In this case we go straight to the pathname
           // component.  The hostname and port are left with their default
           // empty string values.
-          else
-            ChangeState(StringParseState::kPathname, Skip(1));
+          StringParseState next_state = StringParseState::kPathname;
+          Skip skip = Skip(1);
+
+          // If there are authority slashes, like `https://`, then
+          // we must transition to the authority section of the URLPattern.
+          if (NextIsAuthoritySlashes()) {
+            next_state = StringParseState::kAuthority;
+            skip = Skip(3);
+          }
+
+          // If there are no authority slashes, but the protocol is special
+          // then we still go to the authority section as this is a "standard"
+          // URL.  This differs from the above case since we don't need to skip
+          // the extra slashes.
+          else if (should_treat_as_standard_url_) {
+            next_state = StringParseState::kAuthority;
+          }
+
+          ChangeState(next_state, skip);
         }
         break;
-      }
+
+      case StringParseState::kAuthority:
+        // Before going to the hostname state we must see if there is an
+        // identity of the form:
+        //
+        //  <username>:<password>@<hostname>
+        //
+        // We check for this by looking for the `@` character.  The username
+        // and password are themselves each optional, so the `:` may not be
+        // present.  If we see the `@` we just go to the username state
+        // and let it proceed until it hits either the password separator
+        // or the `@` terminator.
+        if (IsIdentityTerminator())
+          RewindAndSetState(StringParseState::kUsername);
+
+        // Stop searching for the `@` character if we see the beginning
+        // of the pathname, search, or hash components.
+        else if (IsPathnameStart() || IsSearchPrefix() || IsHashPrefix())
+          RewindAndSetState(StringParseState::kHostname);
+        break;
+
+      case StringParseState::kUsername:
+        // If we find a `:` then transition to the password component state.
+        if (IsPasswordPrefix())
+          ChangeState(StringParseState::kPassword, Skip(1));
+
+        // If we find a `@` then transition to the hostname component state.
+        else if (IsIdentityTerminator())
+          ChangeState(StringParseState::kHostname, Skip(1));
+        break;
+
+      case StringParseState::kPassword:
+        // If we find a `@` then transition to the hostname component state.
+        if (IsIdentityTerminator())
+          ChangeState(StringParseState::kHostname, Skip(1));
+        break;
 
       case StringParseState::kHostname:
+        // Track whether we are inside ipv6 address brackets.
+        if (IsIPv6Open())
+          hostname_ipv6_bracket_depth_ += 1;
+        else if (IsIPv6Close())
+          hostname_ipv6_bracket_depth_ -= 1;
+
         // If we find a `:` then we transition to the port component state.
-        if (IsPortPrefix())
+        // However, we ignore `:` when parsing an ipv6 address.
+        else if (IsPortPrefix() && !hostname_ipv6_bracket_depth_)
           ChangeState(StringParseState::kPort, Skip(1));
 
         // If we find a `/` then we transition to the pathname component state.
@@ -190,10 +273,21 @@ void Parser::ChangeState(StringParseState new_state, Skip skip) {
   // a component pattern string.  This is stored in the appropriate result
   // property based on the current `state_`.
   switch (state_) {
-    case StringParseState::kProtocol: {
+    case StringParseState::kInit:
+      // No component to set when transitioning from this state.
+      break;
+    case StringParseState::kProtocol:
       result_->setProtocol(MakeComponentString());
       break;
-    }
+    case StringParseState::kAuthority:
+      // No component to set when transitioning from this state.
+      break;
+    case StringParseState::kUsername:
+      result_->setUsername(MakeComponentString());
+      break;
+    case StringParseState::kPassword:
+      result_->setPassword(MakeComponentString());
+      break;
     case StringParseState::kHostname:
       result_->setHostname(MakeComponentString());
       break;
@@ -214,21 +308,33 @@ void Parser::ChangeState(StringParseState new_state, Skip skip) {
       break;
   }
 
-  // Next move to the new state.
+  ChangeStateWithoutSettingComponent(new_state, skip);
+}
+
+void Parser::ChangeStateWithoutSettingComponent(StringParseState new_state,
+                                                Skip skip) {
   state_ = new_state;
 
   // Now update `component_start_` to point to the new component.  The `skip`
   // argument tells us how many tokens to ignore to get to the next start.
-  component_start_ = SafeToken(token_index_ + skip.value()).index;
+  component_start_ = token_index_ + skip.value();
 
   // Next, move the `token_index_` so that the top of the loop will begin
-  // parsing the new component.  The index will be automatically incremented by
-  // the parse loop, so we move one less than the indicated `skip` amount.  This
-  // means `kNone` and `kOne` are equivalent for setting `token_index_`.  Note,
-  // however, these enums do have a different effect on setting
-  // `component_start_` above.
-  if (skip.value() > 1)
-    token_index_ += (skip.value() - 1);
+  // parsing the new component.  We adjust the `token_increment_` down to
+  // zero as the skip value already takes into account moving to the start
+  // of the next component.
+  token_index_ += skip.value();
+  token_increment_ = 0;
+}
+
+void Parser::Rewind() {
+  token_index_ = component_start_;
+  token_increment_ = 0;
+}
+
+void Parser::RewindAndSetState(StringParseState new_state) {
+  Rewind();
+  state_ = new_state;
 }
 
 const liburlpattern::Token& Parser::SafeToken(size_t index) const {
@@ -247,13 +353,21 @@ bool Parser::IsNonSpecialPatternChar(size_t index, const char* value) const {
           token.type == liburlpattern::TokenType::kInvalidChar);
 }
 
-bool Parser::IsProtocolSuffix(size_t index) const {
-  return IsNonSpecialPatternChar(index, ":");
+bool Parser::IsProtocolSuffix() const {
+  return IsNonSpecialPatternChar(token_index_, ":");
 }
 
 bool Parser::NextIsAuthoritySlashes() const {
   return IsNonSpecialPatternChar(token_index_ + 1, "/") &&
          IsNonSpecialPatternChar(token_index_ + 2, "/");
+}
+
+bool Parser::IsIdentityTerminator() const {
+  return IsNonSpecialPatternChar(token_index_, "@");
+}
+
+bool Parser::IsPasswordPrefix() const {
+  return IsNonSpecialPatternChar(token_index_, ":");
 }
 
 bool Parser::IsPortPrefix() const {
@@ -317,18 +431,28 @@ bool Parser::IsGroupClose() const {
   return token_list_[token_index_].type == liburlpattern::TokenType::kClose;
 }
 
+bool Parser::IsIPv6Open() const {
+  return IsNonSpecialPatternChar(token_index_, "[");
+}
+
+bool Parser::IsIPv6Close() const {
+  return IsNonSpecialPatternChar(token_index_, "]");
+}
+
 String Parser::MakeComponentString() const {
   DCHECK_LT(token_index_, token_list_.size());
   const auto& token = token_list_[token_index_];
 
-  DCHECK_LE(component_start_, utf8_.size());
-  DCHECK_GE(token.index, component_start_);
+  size_t component_char_start = SafeToken(component_start_).index;
+
+  DCHECK_LE(component_char_start, utf8_.size());
+  DCHECK_GE(token.index, component_char_start);
   DCHECK(token.index < utf8_.size() ||
          (token.index == utf8_.size() &&
           token.type == liburlpattern::TokenType::kEnd));
 
-  return String::FromUTF8(utf8_.data() + component_start_,
-                          token.index - component_start_);
+  return String::FromUTF8(utf8_.data() + component_char_start,
+                          token.index - component_char_start);
 }
 
 void Parser::ComputeShouldTreatAsStandardURL(ExceptionState& exception_state) {
@@ -336,10 +460,8 @@ void Parser::ComputeShouldTreatAsStandardURL(ExceptionState& exception_state) {
   protocol_component_ =
       Component::Compile(MakeComponentString(), Component::Type::kProtocol,
                          /*protocol_component=*/nullptr, exception_state);
-  if (protocol_component_ && protocol_component_->ShouldTreatAsStandardURL()) {
+  if (protocol_component_ && protocol_component_->ShouldTreatAsStandardURL())
     should_treat_as_standard_url_ = true;
-    result_->setPathname("/");
-  }
 }
 
 }  // namespace url_pattern

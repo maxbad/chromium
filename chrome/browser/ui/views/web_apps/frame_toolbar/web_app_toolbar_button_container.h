@@ -41,11 +41,11 @@ class WebAppToolbarButtonContainer : public views::View,
   // These control how long it takes for the origin text and menu button
   // highlight to fade in, pause then fade out.
   static constexpr base::TimeDelta kOriginFadeInDuration =
-      base::TimeDelta::FromMilliseconds(800);
+      base::Milliseconds(800);
   static constexpr base::TimeDelta kOriginPauseDuration =
-      base::TimeDelta::FromMilliseconds(2500);
+      base::Milliseconds(2500);
   static constexpr base::TimeDelta kOriginFadeOutDuration =
-      base::TimeDelta::FromMilliseconds(800);
+      base::Milliseconds(800);
 
   // The total duration of the origin fade animation.
   static base::TimeDelta OriginTotalDuration();
@@ -57,7 +57,9 @@ class WebAppToolbarButtonContainer : public views::View,
 
   void UpdateStatusIconsVisibility();
 
-  void SetColors(SkColor foreground_color, SkColor background_color);
+  void SetColors(SkColor foreground_color,
+                 SkColor background_color,
+                 bool color_changed);
 
   views::FlexRule GetFlexRule() const;
 
@@ -75,6 +77,10 @@ class WebAppToolbarButtonContainer : public views::View,
 
   WebAppMenuButton* web_app_menu_button() { return web_app_menu_button_; }
 
+  WindowControlsOverlayToggleButton* window_controls_overlay_toggle_button() {
+    return window_controls_overlay_toggle_button_;
+  }
+
   static void DisableAnimationForTesting();
 
  private:
@@ -82,7 +88,7 @@ class WebAppToolbarButtonContainer : public views::View,
 
   // Duration to wait before starting the opening animation.
   static constexpr base::TimeDelta kTitlebarAnimationDelay =
-      base::TimeDelta::FromMilliseconds(750);
+      base::Milliseconds(750);
 
   // PageActionIconContainer:
   void AddPageActionIcon(std::unique_ptr<views::View> icon) override;
@@ -121,11 +127,8 @@ class WebAppToolbarButtonContainer : public views::View,
   // PageActionIconView::Delegate:
   content::WebContents* GetWebContentsForPageActionIconView() override;
 
-  // views::WidgetObserver:
-  void OnWidgetVisibilityChanged(views::Widget* widget, bool visible) override;
-
-  // Whether we're waiting for the widget to become visible.
-  bool pending_widget_visibility_ = true;
+  // views::View:
+  void AddedToWidget() override;
 
   base::ScopedObservation<views::Widget, views::WidgetObserver>
       scoped_widget_observation_{this};

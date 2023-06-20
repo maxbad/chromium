@@ -19,7 +19,6 @@ namespace blocked_content {
 bool PopupBlockedMessageDelegate::ShowMessage(
     int num_popups,
     HostContentSettingsMap* settings_map,
-    base::RepeatingCallback<int(int)> resource_id_mapper,
     base::OnceClosure on_show_popups_callback) {
   if (message_ != nullptr) {  // update title only
     message_->SetTitle(l10n_util::GetPluralStringFUTF16(
@@ -31,13 +30,14 @@ bool PopupBlockedMessageDelegate::ShowMessage(
   url_ = web_contents_->GetLastCommittedURL();
   // Unretained is safe because |this| will always outlive |message_| which owns
   // the callback.
-  message_ = std::make_unique<messages::MessageWrapper>(
+  auto message = std::make_unique<messages::MessageWrapper>(
+      messages::MessageIdentifier::POPUP_BLOCKED,
       base::BindOnce(&PopupBlockedMessageDelegate::HandleClick,
                      base::Unretained(this)),
       base::BindOnce(&PopupBlockedMessageDelegate::HandleDismissCallback,
                      base::Unretained(this)));
 
-  message_->SetTitle(l10n_util::GetPluralStringFUTF16(
+  message->SetTitle(l10n_util::GetPluralStringFUTF16(
       IDS_POPUPS_BLOCKED_INFOBAR_TEXT, num_popups));
 
   map_ = settings_map;
@@ -45,21 +45,31 @@ bool PopupBlockedMessageDelegate::ShowMessage(
 
   // Don't allow the user to configure the setting in the UI if the setting
   // is managed by policy.
-  int button_text_id = allow_settings_changes_ ? IDS_SHOW_CONTENT : IDS_OK;
-  message_->SetPrimaryButtonText(l10n_util::GetStringUTF16(button_text_id));
-  message_->SetIconResourceId(
-      resource_id_mapper.Run(IDR_ANDROID_INFOBAR_BLOCKED_POPUPS));
+  int button_text_id =
+      allow_settings_changes_ ? IDS_POPUPS_BLOCKED_INFOBAR_BUTTON_SHOW : IDS_OK;
+  message->SetPrimaryButtonText(l10n_util::GetStringUTF16(button_text_id));
+  messages::MessageDispatcherBridge* message_dispatcher_bridge =
+      messages::MessageDispatcherBridge::Get();
+  message->SetIconResourceId(message_dispatcher_bridge->MapToJavaDrawableId(
+      IDR_ANDROID_INFOBAR_BLOCKED_POPUPS));
 
-  messages::MessageDispatcherBridge::Get()->EnqueueMessage(
-      message_.get(), web_contents_, messages::MessageScopeType::NAVIGATION);
+  // On rare occasions, such as the moment when activity is being recreated
+  // or destroyed, popup blocked message will not be displayed and the
+  // method will return false.
+  if (!message_dispatcher_bridge->EnqueueMessage(
+          message.get(), web_contents_, messages::MessageScopeType::NAVIGATION,
+          messages::MessagePriority::kNormal)) {
+    return false;
+  }
 
+  message_ = std::move(message);
   return true;
 }
 
 PopupBlockedMessageDelegate::~PopupBlockedMessageDelegate() {
   if (message_ != nullptr) {
     messages::MessageDispatcherBridge::Get()->DismissMessage(
-        message_.get(), web_contents_, messages::DismissReason::UNKNOWN);
+        message_.get(), messages::DismissReason::UNKNOWN);
   }
 }
 
@@ -89,6 +99,6 @@ void PopupBlockedMessageDelegate::HandleClick() {
     std::move(on_show_popups_callback_).Run();
 }
 
-WEB_CONTENTS_USER_DATA_KEY_IMPL(PopupBlockedMessageDelegate)
+WEB_CONTENTS_USER_DATA_KEY_IMPL(PopupBlockedMessageDelegate);
 
 }  // namespace blocked_content

@@ -75,7 +75,7 @@ Seat::~Seat() {
 }
 
 void Seat::SetFocusChangedCallback(FocusChangedCallback callback) {
-  focus_changed_callback_ = std::move(callback);
+  focus_changed_callbacks_.push_back(std::move(callback));
   OnWindowFocused(WMHelper::GetInstance()->GetActiveWindow(), nullptr);
 }
 
@@ -94,12 +94,19 @@ void Seat::Shutdown() {
     ui::PlatformEventSource::GetInstance()->RemovePlatformEventObserver(this);
 }
 
-void Seat::AddObserver(SeatObserver* observer) {
-  observers_.AddObserver(observer);
+void Seat::AddObserver(SeatObserver* observer, int priority) {
+#if DCHECK_IS_ON()
+  for (const auto& observer_list : priority_observer_list_)
+    DCHECK(!observer_list.HasObserver(observer));
+#endif
+  DCHECK(IsValidObserverPriority(priority));
+  priority_observer_list_[priority].AddObserver(observer);
 }
 
 void Seat::RemoveObserver(SeatObserver* observer) {
-  observers_.RemoveObserver(observer);
+  // We assume that the number of priority variations is small enough.
+  for (auto& observer_list : priority_observer_list_)
+    observer_list.RemoveObserver(observer);
 }
 
 Surface* Seat::GetFocusedSurface() {
@@ -163,7 +170,10 @@ void Seat::SetSelection(DataSource* source) {
                      data_read_callback),
       base::BindOnce(&Seat::OnFilenamesRead, weak_ptr_factory_.GetWeakPtr(),
                      endpoint_type, writer, data_read_callback),
-      DataSource::ReadFileContentsDataCallback(), data_read_callback);
+      DataSource::ReadFileContentsDataCallback(),
+      base::BindOnce(&Seat::OnWebCustomDataRead, weak_ptr_factory_.GetWeakPtr(),
+                     writer, data_read_callback),
+      data_read_callback);
 }
 
 class Seat::RefCountedScopedClipboardWriter
@@ -242,6 +252,16 @@ void Seat::OnFilenamesRead(
   std::move(callback).Run();
 }
 
+void Seat::OnWebCustomDataRead(
+    scoped_refptr<RefCountedScopedClipboardWriter> writer,
+    base::OnceClosure callback,
+    const std::string& mime_type,
+    const std::vector<uint8_t>& data) {
+  NOTREACHED()
+      << "Seat does not support custom data mime types for selections.";
+  std::move(callback).Run();
+}
+
 void Seat::OnAllReadsFinished(
     scoped_refptr<RefCountedScopedClipboardWriter> writer) {
   // We need to destroy the ScopedClipboardWriter in this call, before
@@ -269,15 +289,13 @@ void Seat::OnWindowFocused(aura::Window* gained_focus,
   Surface* const lost_focus_surface =
       GetTargetSurfaceForKeyboardFocus(lost_focus);
 
-  if (!focus_changed_callback_.is_null()) {
-    focus_changed_callback_.Run(gaining_focus_surface, lost_focus_surface,
-                                !!gained_focus);
+  for (auto& focus_changed_callback : focus_changed_callbacks_) {
+    focus_changed_callback.Run(gaining_focus_surface, lost_focus_surface,
+                               !!gained_focus);
   }
-  for (auto& observer : observers_) {
-    observer.OnSurfaceFocusing(gaining_focus_surface);
-  }
-  for (auto& observer : observers_) {
-    observer.OnSurfaceFocused(gaining_focus_surface);
+  for (auto& observer_list : priority_observer_list_) {
+    for (auto& observer : observer_list)
+      observer.OnSurfaceFocused(gaining_focus_surface);
   }
 }
 

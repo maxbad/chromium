@@ -12,10 +12,12 @@
 #include "base/memory/weak_ptr.h"
 #include "net/base/completion_once_callback.h"
 #include "net/http/http_cache.h"
+#include "net/http/http_response_info.h"
 
 namespace net {
 
 class HttpResponseInfo;
+class IOBuffer;
 class PartialData;
 
 // If multiple HttpCache::Transactions are accessing the same cache entry
@@ -53,6 +55,10 @@ class NET_EXPORT_PRIVATE HttpCache::Writers {
 
   // |cache| and |entry| must outlive this object.
   Writers(HttpCache* cache, HttpCache::ActiveEntry* entry);
+
+  Writers(const Writers&) = delete;
+  Writers& operator=(const Writers&) = delete;
+
   ~Writers();
 
   // Retrieves data from the network transaction associated with the Writers
@@ -286,7 +292,6 @@ class NET_EXPORT_PRIVATE HttpCache::Writers {
   base::OnceClosure cache_callback_;  // Callback for cache_.
 
   base::WeakPtrFactory<Writers> weak_factory_{this};
-  DISALLOW_COPY_AND_ASSIGN(Writers);
 };
 
 }  // namespace net

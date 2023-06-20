@@ -33,7 +33,7 @@
 
 #include <memory>
 
-#include "base/single_thread_task_runner.h"
+#include "base/task/single_thread_task_runner.h"
 #include "third_party/blink/public/mojom/scroll/scroll_into_view_params.mojom-blink-forward.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/dom/document.h"
@@ -90,6 +90,7 @@ struct PaintPropertyTreeBuilderFragmentContext;
 //           +- scroll_translation_node_ (scroll: scroll_node_)
 // Effect tree:
 //  parent effect state
+//  +- overscroll_elasticity_effect_node_
 //  +- horizontal_scrollbar_effect_node_
 //  +- vertical_scrollbar_effect_node_
 //
@@ -143,7 +144,7 @@ class CORE_EXPORT VisualViewport : public GarbageCollected<VisualViewport>,
 
   // Clamp the given point, in document coordinates, to the maximum/minimum
   // scroll extents of the viewport within the document.
-  IntPoint ClampDocumentOffsetAtScale(const IntPoint& offset, float scale);
+  gfx::Point ClampDocumentOffsetAtScale(const gfx::Point& offset, float scale);
 
   // FIXME: This is kind of a hack. Ideally, we would just resize the
   // viewports to account for browser controls. However, LocalFrameView includes
@@ -170,8 +171,8 @@ class CORE_EXPORT VisualViewport : public GarbageCollected<VisualViewport>,
 
   FloatPoint ViewportToRootFrame(const FloatPoint&) const;
   FloatPoint RootFrameToViewport(const FloatPoint&) const;
-  IntPoint ViewportToRootFrame(const IntPoint&) const;
-  IntPoint RootFrameToViewport(const IntPoint&) const;
+  gfx::Point ViewportToRootFrame(const gfx::Point&) const;
+  gfx::Point RootFrameToViewport(const gfx::Point&) const;
 
   // ScrollableArea implementation
   ChromeClient* GetChromeClient() const override;
@@ -227,9 +228,10 @@ class CORE_EXPORT VisualViewport : public GarbageCollected<VisualViewport>,
   mojom::blink::ColorScheme UsedColorScheme() const override;
 
   // VisualViewport scrolling may involve pinch zoom and gets routed through
-  // WebViewImpl explicitly rather than via ScrollingCoordinator::DidScroll
-  // since it needs to be set in tandem with the page scale delta.
-  void DidScroll(const FloatPoint&) final { NOTREACHED(); }
+  // WebViewImpl explicitly rather than via
+  // ScrollingCoordinator::DidCompositorScroll() since it needs to be set in
+  // tandem with the page scale delta.
+  void DidCompositorScroll(const FloatPoint&) final { NOTREACHED(); }
 
   // Visual Viewport API implementation.
   double OffsetLeft() const;
@@ -258,6 +260,7 @@ class CORE_EXPORT VisualViewport : public GarbageCollected<VisualViewport>,
 
   TransformPaintPropertyNode* GetDeviceEmulationTransformNode() const;
   TransformPaintPropertyNode* GetOverscrollElasticityTransformNode() const;
+  EffectPaintPropertyNode* GetOverscrollElasticityEffectNode() const;
   TransformPaintPropertyNode* GetPageScaleNode() const;
   TransformPaintPropertyNode* GetScrollTranslationNode() const;
   ScrollPaintPropertyNode* GetScrollNode() const;
@@ -322,6 +325,7 @@ class CORE_EXPORT VisualViewport : public GarbageCollected<VisualViewport>,
   scoped_refptr<TransformPaintPropertyNode> page_scale_node_;
   scoped_refptr<TransformPaintPropertyNode> scroll_translation_node_;
   scoped_refptr<ScrollPaintPropertyNode> scroll_node_;
+  scoped_refptr<EffectPaintPropertyNode> overscroll_elasticity_effect_node_;
   scoped_refptr<EffectPaintPropertyNode> horizontal_scrollbar_effect_node_;
   scoped_refptr<EffectPaintPropertyNode> vertical_scrollbar_effect_node_;
 
@@ -355,6 +359,8 @@ class CORE_EXPORT VisualViewport : public GarbageCollected<VisualViewport>,
   // For scrolling, on scroll_layer_, scroll_node_, and scroll element ids of
   // scrollbar layers.
   CompositorElementId scroll_element_id_;
+  // For overscroll elasticity.
+  CompositorElementId elasticity_effect_node_id_;
 
   bool needs_paint_property_update_;
 };

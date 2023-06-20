@@ -132,24 +132,18 @@ public class CastWebContentsActivity extends Activity {
         mCreatedState.map(x -> getWindow())
                 .and(mGotIntentState)
                 .subscribe(Observers.onEnter(Both.adapt((Window window, Intent intent) -> {
-                    // Set flags to both exit sleep mode when this activity starts and
-                    // avoid entering sleep mode while playing media. If an app that shouldn't turn
-                    // on the screen is launching, we don't add TURN_SCREEN_ON.
-                    if (CastWebContentsIntentUtils.shouldTurnOnScreen(intent)) turnScreenOn();
-                    window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                    // Set flag to exit sleep mode when this activity starts. If an app that
+                    // shouldn't turn on the screen is launching, we don't add TURN_SCREEN_ON.
+                    if (CastWebContentsIntentUtils.shouldTurnOnScreen(intent)) {
+                        Log.i(TAG, "Setting FLAG_TURN_SCREEN_ON.");
+                        turnScreenOn();
+                    }
                 })));
 
         // Initialize the audio manager in onCreate() if tests haven't already.
         mCreatedState.and(Observable.not(mAudioManagerState)).subscribe(Observers.onEnter(x -> {
             mAudioManagerState.set(CastAudioManager.getAudioManager(this));
         }));
-
-        // Clean up stream mute state on pause events.
-        mAudioManagerState.andThen(Observable.not(mResumedState))
-                .map(Both::getFirst)
-                .subscribe(Observers.onEnter((CastAudioManager audioManager) -> {
-                    audioManager.releaseStreamMuteIfNecessary(AudioManager.STREAM_MUSIC);
-                }));
 
         // Handle each new Intent.
         Controller<CastWebContentsSurfaceHelper.StartParams> startParamsState = new Controller<>();

@@ -9,7 +9,6 @@
 #include "ash/accelerators/accelerator_controller_impl.h"
 #include "ash/frame/header_view.h"
 #include "ash/frame/wide_frame_view.h"
-#include "ash/public/cpp/ash_switches.h"
 #include "ash/resources/vector_icons/vector_icons.h"
 #include "ash/shell.h"
 #include "ash/test/ash_test_base.h"
@@ -63,6 +62,12 @@ class NonClientFrameViewAshTestWidgetDelegate
     : public views::WidgetDelegateView {
  public:
   NonClientFrameViewAshTestWidgetDelegate() = default;
+
+  NonClientFrameViewAshTestWidgetDelegate(
+      const NonClientFrameViewAshTestWidgetDelegate&) = delete;
+  NonClientFrameViewAshTestWidgetDelegate& operator=(
+      const NonClientFrameViewAshTestWidgetDelegate&) = delete;
+
   ~NonClientFrameViewAshTestWidgetDelegate() override = default;
 
   std::unique_ptr<views::NonClientFrameView> CreateNonClientFrameView(
@@ -88,8 +93,6 @@ class NonClientFrameViewAshTestWidgetDelegate
  private:
   // Not owned.
   NonClientFrameViewAsh* non_client_frame_view_ = nullptr;
-
-  DISALLOW_COPY_AND_ASSIGN(NonClientFrameViewAshTestWidgetDelegate);
 };
 
 class TestWidgetConstraintsDelegate
@@ -99,6 +102,11 @@ class TestWidgetConstraintsDelegate
     SetCanMaximize(true);
     SetCanMinimize(true);
   }
+
+  TestWidgetConstraintsDelegate(const TestWidgetConstraintsDelegate&) = delete;
+  TestWidgetConstraintsDelegate& operator=(
+      const TestWidgetConstraintsDelegate&) = delete;
+
   ~TestWidgetConstraintsDelegate() override = default;
 
   // views::View:
@@ -136,8 +144,6 @@ class TestWidgetConstraintsDelegate
  private:
   gfx::Size minimum_size_;
   gfx::Size maximum_size_;
-
-  DISALLOW_COPY_AND_ASSIGN(TestWidgetConstraintsDelegate);
 };
 
 using NonClientFrameViewAshTest = AshTestBase;
@@ -429,6 +435,10 @@ namespace {
 class TestButtonModel : public chromeos::CaptionButtonModel {
  public:
   TestButtonModel() = default;
+
+  TestButtonModel(const TestButtonModel&) = delete;
+  TestButtonModel& operator=(const TestButtonModel&) = delete;
+
   ~TestButtonModel() override = default;
 
   void set_zoom_mode(bool zoom_mode) { zoom_mode_ = zoom_mode; }
@@ -460,8 +470,6 @@ class TestButtonModel : public chromeos::CaptionButtonModel {
   base::flat_set<views::CaptionButtonIcon> visible_buttons_;
   base::flat_set<views::CaptionButtonIcon> enabled_buttons_;
   bool zoom_mode_ = false;
-
-  DISALLOW_COPY_AND_ASSIGN(TestButtonModel);
 };
 
 }  // namespace
@@ -775,15 +783,22 @@ class NonClientFrameViewAshFrameColorTest
       public testing::WithParamInterface<bool> {
  public:
   NonClientFrameViewAshFrameColorTest() = default;
-  ~NonClientFrameViewAshFrameColorTest() override = default;
 
- private:
-  DISALLOW_COPY_AND_ASSIGN(NonClientFrameViewAshFrameColorTest);
+  NonClientFrameViewAshFrameColorTest(
+      const NonClientFrameViewAshFrameColorTest&) = delete;
+  NonClientFrameViewAshFrameColorTest& operator=(
+      const NonClientFrameViewAshFrameColorTest&) = delete;
+
+  ~NonClientFrameViewAshFrameColorTest() override = default;
 };
 
 class TestWidgetDelegate : public TestWidgetConstraintsDelegate {
  public:
   TestWidgetDelegate(bool custom) : custom_(custom) {}
+
+  TestWidgetDelegate(const TestWidgetDelegate&) = delete;
+  TestWidgetDelegate& operator=(const TestWidgetDelegate&) = delete;
+
   ~TestWidgetDelegate() override = default;
 
   // views::WidgetDelegate:
@@ -798,8 +813,6 @@ class TestWidgetDelegate : public TestWidgetConstraintsDelegate {
 
  private:
   bool custom_;
-
-  DISALLOW_COPY_AND_ASSIGN(TestWidgetDelegate);
 };
 
 }  // namespace

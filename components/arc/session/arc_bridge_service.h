@@ -5,7 +5,6 @@
 #ifndef COMPONENTS_ARC_SESSION_ARC_BRIDGE_SERVICE_H_
 #define COMPONENTS_ARC_SESSION_ARC_BRIDGE_SERVICE_H_
 
-#include "base/macros.h"
 #include "base/observer_list.h"
 #include "components/arc/session/connection_holder.h"
 
@@ -59,16 +58,21 @@ class InputMethodManagerHost;
 class InputMethodManagerInstance;
 class IntentHelperHost;
 class IntentHelperInstance;
+class KeyboardShortcutHost;
+class KeyboardShortcutInstance;
 class KeymasterHost;
 class KeymasterInstance;
 class KioskHost;
 class KioskInstance;
 class LockScreenInstance;
 class MediaSessionInstance;
+class MemoryInstance;
 class MetricsHost;
 class MetricsInstance;
 class MidisHost;
 class MidisInstance;
+class NearbyShareHost;
+class NearbyShareInstance;
 class NetHost;
 class NetInstance;
 class ObbMounterHost;
@@ -132,6 +136,10 @@ class ArcBridgeService {
   };
 
   ArcBridgeService();
+
+  ArcBridgeService(const ArcBridgeService&) = delete;
+  ArcBridgeService& operator=(const ArcBridgeService&) = delete;
+
   ~ArcBridgeService();
 
   // Adds or removes observers.
@@ -230,6 +238,11 @@ class ArcBridgeService {
   intent_helper() {
     return &intent_helper_;
   }
+  ConnectionHolder<mojom::KeyboardShortcutInstance,
+                   mojom::KeyboardShortcutHost>*
+  keyboard_shortcut() {
+    return &keyboard_shortcut_;
+  }
   ConnectionHolder<mojom::KeymasterInstance, mojom::KeymasterHost>*
   keymaster() {
     return &keymaster_;
@@ -243,11 +256,16 @@ class ArcBridgeService {
   ConnectionHolder<mojom::MediaSessionInstance>* media_session() {
     return &media_session_;
   }
+  ConnectionHolder<mojom::MemoryInstance>* memory() { return &memory_; }
   ConnectionHolder<mojom::MetricsInstance, mojom::MetricsHost>* metrics() {
     return &metrics_;
   }
   ConnectionHolder<mojom::MidisInstance, mojom::MidisHost>* midis() {
     return &midis_;
+  }
+  ConnectionHolder<mojom::NearbyShareInstance, mojom::NearbyShareHost>*
+  nearby_share() {
+    return &nearby_share_;
   }
   ConnectionHolder<mojom::NetInstance, mojom::NetHost>* net() { return &net_; }
   ConnectionHolder<mojom::ObbMounterInstance, mojom::ObbMounterHost>*
@@ -360,12 +378,17 @@ class ArcBridgeService {
       input_method_manager_;
   ConnectionHolder<mojom::IntentHelperInstance, mojom::IntentHelperHost>
       intent_helper_;
+  ConnectionHolder<mojom::KeyboardShortcutInstance, mojom::KeyboardShortcutHost>
+      keyboard_shortcut_;
   ConnectionHolder<mojom::KeymasterInstance, mojom::KeymasterHost> keymaster_;
   ConnectionHolder<mojom::KioskInstance, mojom::KioskHost> kiosk_;
   ConnectionHolder<mojom::LockScreenInstance> lock_screen_;
   ConnectionHolder<mojom::MediaSessionInstance> media_session_;
+  ConnectionHolder<mojom::MemoryInstance> memory_;
   ConnectionHolder<mojom::MetricsInstance, mojom::MetricsHost> metrics_;
   ConnectionHolder<mojom::MidisInstance, mojom::MidisHost> midis_;
+  ConnectionHolder<mojom::NearbyShareInstance, mojom::NearbyShareHost>
+      nearby_share_;
   ConnectionHolder<mojom::NetInstance, mojom::NetHost> net_;
   ConnectionHolder<mojom::ObbMounterInstance, mojom::ObbMounterHost>
       obb_mounter_;
@@ -397,7 +420,6 @@ class ArcBridgeService {
   ConnectionHolder<mojom::WakeLockInstance, mojom::WakeLockHost> wake_lock_;
   ConnectionHolder<mojom::WallpaperInstance, mojom::WallpaperHost> wallpaper_;
   ConnectionHolder<mojom::WebApkInstance> webapk_;
-  DISALLOW_COPY_AND_ASSIGN(ArcBridgeService);
 };
 
 }  // namespace arc

@@ -10,7 +10,6 @@
 #include "chrome/browser/profiles/profile_attributes_storage.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/ui_features.h"
-#include "chrome/common/chrome_features.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile_manager.h"
@@ -59,7 +58,7 @@ TEST_F(ProfilePickerTest, ShouldShowAtLaunch_MultipleProfiles_TwoActive) {
   EXPECT_TRUE(ProfilePicker::ShouldShowAtLaunch());
 
   // Should be within the activity time threshold.
-  task_environment()->FastForwardBy(base::TimeDelta::FromDays(27));
+  task_environment()->FastForwardBy(base::Days(27));
   EXPECT_TRUE(ProfilePicker::ShouldShowAtLaunch());
 }
 
@@ -110,7 +109,7 @@ TEST_F(ProfilePickerTest, ShouldShowAtLaunch_MultipleProfiles_Expired) {
       testing_profile_manager()->CreateTestingProfile("profile2");
   GetProfileAttributes(profile2)->SetActiveTimeToNow();
   // Should be outside of the activity time threshold.
-  task_environment()->FastForwardBy(base::TimeDelta::FromDays(29));
+  task_environment()->FastForwardBy(base::Days(29));
 
   EXPECT_FALSE(ProfilePicker::ShouldShowAtLaunch());
 }
@@ -126,39 +125,6 @@ TEST_F(ProfilePickerTest, ShouldShowAtLaunch_MultipleProfiles_OneActive) {
 
 TEST_F(ProfilePickerTest, ShouldShowAtLaunch_SingleProfile) {
   testing_profile_manager()->CreateTestingProfile("profile1");
-  local_state()->SetBoolean(prefs::kBrowserProfilePickerShown, true);
-
-  EXPECT_FALSE(ProfilePicker::ShouldShowAtLaunch());
-}
-
-class ProfilePickerTestEphemeralGuest : public ProfilePickerTest {
- public:
-  ProfilePickerTestEphemeralGuest() {
-    feature_list_.InitAndEnableFeature(
-        features::kEnableEphemeralGuestProfilesOnDesktop);
-  }
-
- private:
-  base::test::ScopedFeatureList feature_list_;
-};
-
-TEST_F(ProfilePickerTestEphemeralGuest,
-       ShouldShowAtLaunch_MultipleProfiles_OneGuest) {
-  TestingProfile* profile1 =
-      testing_profile_manager()->CreateTestingProfile("profile1");
-  GetProfileAttributes(profile1)->SetActiveTimeToNow();
-  testing_profile_manager()->CreateTestingProfile("profile2");
-  TestingProfile* guest_profile =
-      testing_profile_manager()->CreateGuestProfile();
-  GetProfileAttributes(guest_profile)->SetActiveTimeToNow();
-
-  EXPECT_FALSE(ProfilePicker::ShouldShowAtLaunch());
-}
-
-TEST_F(ProfilePickerTestEphemeralGuest,
-       ShouldShowAtLaunch_MultipleProfiles_OneGuest_SeenPicker) {
-  testing_profile_manager()->CreateTestingProfile("profile1");
-  testing_profile_manager()->CreateGuestProfile();
   local_state()->SetBoolean(prefs::kBrowserProfilePickerShown, true);
 
   EXPECT_FALSE(ProfilePicker::ShouldShowAtLaunch());

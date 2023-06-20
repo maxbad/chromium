@@ -68,8 +68,6 @@ class FakeSyncEngine : public SyncEngine,
 
   void SetDecryptionPassphrase(const std::string& passphrase) override;
 
-  void SetKeystoreEncryptionBootstrapToken(const std::string& token) override;
-
   void AddTrustedVaultDecryptionKeys(
       const std::vector<std::vector<uint8_t>>& keys,
       base::OnceClosure done_cb) override;
@@ -80,12 +78,11 @@ class FakeSyncEngine : public SyncEngine,
 
   void ConfigureDataTypes(ConfigureParams params) override;
 
-  void ActivateDataType(ModelType type,
-                        std::unique_ptr<DataTypeActivationResponse>) override;
-  void DeactivateDataType(ModelType type) override;
+  void ConnectDataType(ModelType type,
+                       std::unique_ptr<DataTypeActivationResponse>) override;
+  void DisconnectDataType(ModelType type) override;
 
-  void ActivateProxyDataType(ModelType type) override;
-  void DeactivateProxyDataType(ModelType type) override;
+  void SetProxyTabsDatatypeEnabled(bool enabled) override;
 
   const SyncStatus& GetDetailedStatus() const override;
 

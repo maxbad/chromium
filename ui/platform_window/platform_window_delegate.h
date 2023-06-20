@@ -35,6 +35,13 @@ enum class PlatformWindowState {
   kFullScreen,
 };
 
+enum class PlatformWindowOcclusionState {
+  kUnknown,
+  kVisible,
+  kOccluded,
+  kHidden,
+};
+
 class COMPONENT_EXPORT(PLATFORM_WINDOW) PlatformWindowDelegate {
  public:
   struct COMPONENT_EXPORT(PLATFORM_WINDOW) BoundsChange {
@@ -77,7 +84,8 @@ class COMPONENT_EXPORT(PLATFORM_WINDOW) PlatformWindowDelegate {
   virtual void OnCloseRequest() = 0;
   virtual void OnClosed() = 0;
 
-  virtual void OnWindowStateChanged(PlatformWindowState new_state) = 0;
+  virtual void OnWindowStateChanged(PlatformWindowState old_state,
+                                    PlatformWindowState new_state) = 0;
 
   virtual void OnLostCapture() = 0;
 
@@ -116,6 +124,17 @@ class COMPONENT_EXPORT(PLATFORM_WINDOW) PlatformWindowDelegate {
   // different from ui::ET_MOUSE_ENTERED which may not be generated when mouse
   // is captured either by implicitly or explicitly.
   virtual void OnMouseEnter() = 0;
+
+  // Called when the occlusion state changes, if the underlying platform
+  // is providing us with occlusion information.
+  virtual void OnOcclusionStateChanged(
+      PlatformWindowOcclusionState occlusion_state);
+
+  // Returns optional information for owned windows that require anchor for
+  // positioning. Useful for such backends as Wayland as it provides flexibility
+  // in positioning child windows, which must be repositioned if the originally
+  // intended position caused the surface to be constrained.
+  virtual absl::optional<OwnedWindowAnchor> GetOwnedWindowAnchorAndRectInPx();
 };
 
 }  // namespace ui

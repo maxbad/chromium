@@ -21,6 +21,7 @@
 #include "content/common/content_navigation_policy.h"
 #include "content/public/browser/browser_thread.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_registration.mojom.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker_registration_options.mojom.h"
 
 namespace content {
 
@@ -32,7 +33,7 @@ namespace {
 // this time ago, or the outgoing worker has had no controllees for a continuous
 // period of time exceeding this time, the outgoing worker will be removed even
 // if it has ongoing requests.
-constexpr base::TimeDelta kMaxLameDuckTime = base::TimeDelta::FromMinutes(5);
+constexpr base::TimeDelta kMaxLameDuckTime = base::Minutes(5);
 
 ServiceWorkerVersionInfo GetVersionInfo(ServiceWorkerVersion* version) {
   if (!version)
@@ -44,14 +45,11 @@ ServiceWorkerVersionInfo GetVersionInfo(ServiceWorkerVersion* version) {
 
 ServiceWorkerRegistration::ServiceWorkerRegistration(
     const blink::mojom::ServiceWorkerRegistrationOptions& options,
+    const blink::StorageKey& key,
     int64_t registration_id,
     base::WeakPtr<ServiceWorkerContextCore> context)
     : scope_(options.scope),
-      // Safe to convert GURL to Origin because service workers are restricted
-      // to secure contexts.
-      // TODO(crbug.com/1199077): Update this when
-      // ServiceWorkerRegistrationOptions implements StorageKey.
-      key_(blink::StorageKey(url::Origin::Create(options.scope))),
+      key_(key),
       update_via_cache_(options.update_via_cache),
       registration_id_(registration_id),
       status_(Status::kIntact),
@@ -60,14 +58,14 @@ ServiceWorkerRegistration::ServiceWorkerRegistration(
       resources_total_size_bytes_(0),
       context_(context),
       task_runner_(base::ThreadTaskRunnerHandle::Get()) {
-  DCHECK_CURRENTLY_ON(ServiceWorkerContext::GetCoreThreadId());
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK_NE(blink::mojom::kInvalidServiceWorkerRegistrationId, registration_id);
   DCHECK(context_);
   context_->AddLiveRegistration(this);
 }
 
 ServiceWorkerRegistration::~ServiceWorkerRegistration() {
-  DCHECK_CURRENTLY_ON(ServiceWorkerContext::GetCoreThreadId());
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(listeners_.empty());
 
   // TODO(crbug.com/1159778): Remove once the bug is fixed.
@@ -155,9 +153,9 @@ void ServiceWorkerRegistration::NotifyVersionAttributesChanged(
 }
 
 ServiceWorkerRegistrationInfo ServiceWorkerRegistration::GetInfo() {
-  DCHECK_CURRENTLY_ON(ServiceWorkerContext::GetCoreThreadId());
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   return ServiceWorkerRegistrationInfo(
-      scope(), update_via_cache(), registration_id_,
+      scope(), key(), update_via_cache(), registration_id_,
       is_deleted() ? ServiceWorkerRegistrationInfo::IS_DELETED
                    : ServiceWorkerRegistrationInfo::IS_NOT_DELETED,
       GetVersionInfo(active_version_.get()),
@@ -473,7 +471,7 @@ void ServiceWorkerRegistration::RemoveLameDuckIfNeeded() {
 }
 
 void ServiceWorkerRegistration::ActivateWaitingVersion(bool delay) {
-  DCHECK_CURRENTLY_ON(ServiceWorkerContext::GetCoreThreadId());
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(context_);
   DCHECK(IsReadyToActivate());
   should_activate_when_ready_ = false;
@@ -530,7 +528,7 @@ void ServiceWorkerRegistration::ActivateWaitingVersion(bool delay) {
         FROM_HERE,
         base::BindOnce(&ServiceWorkerRegistration::ContinueActivation, this,
                        activating_version),
-        base::TimeDelta::FromSeconds(1));
+        base::Seconds(1));
   } else {
     ContinueActivation(std::move(activating_version));
   }
@@ -559,7 +557,7 @@ void ServiceWorkerRegistration::ForceDelete() {
   scoped_refptr<ServiceWorkerRegistration> protect(this);
 
   // Abort any queued or running jobs for this registration.
-  context_->job_coordinator()->Abort(scope());
+  context_->job_coordinator()->Abort(scope(), key());
 
   // The rest of this function is similar to Clear() but is slightly different
   // because this emergency deletion isn't part of the spec and happens

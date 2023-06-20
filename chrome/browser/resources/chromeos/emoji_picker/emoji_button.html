@@ -1,22 +1,23 @@
 <style>
   :host {
     --emoji-background: transparent;
-    --emoji-hover-background: var(--cr-hover-background-color);
+    --emoji-hover-background: var(--cros-ripple-color);
     height: var(--emoji-size);
-    width: var(--emoji-size);
     position: relative;
+    width: var(--emoji-size);
   }
 
   #emoji-button {
     background: var(--emoji-background);
     border: none;
-    border-radius: 0;
+    border-radius: 50%;
     cursor: pointer;
     display: block;
     font-family: 'Noto Color Emoji';
-    font-size: 17px;
+    font-size: 19px; /*This gives emoji with height of 22px*/
     height: 100%;
     line-height: var(--emoji-size);
+    outline: none;
     padding: 0;
     text-align: center;
     user-select: none;
@@ -25,7 +26,8 @@
 
   #emoji-button:focus,
   #emoji-button:active {
-    outline-color: var(--cr-toggle-color);
+    outline-color: var(--cros-focus-ring-color);
+    outline-style: solid;
     outline-width: 2px;
   }
 
@@ -40,7 +42,6 @@
 
   #emoji-button:hover {
     background-color: var(--emoji-hover-background);
-    border-radius: 50%;
   }
 
   /* Implement has-variants as ::after so that it still works with hover
@@ -49,6 +50,8 @@
   .has-variants::after {
     /* 4px grey triangle in bottom-right.
     * 315 degrees means starting at bottom-right towards top-left.
+    * Manual color here because there isn't something easy to use, but fine for
+    * dark mode since dark mode is the same.
     */
     background: linear-gradient(
         315deg, var(--google-grey-refresh-500) 4px,
@@ -62,9 +65,9 @@
   }
 
   #tooltip {
-    --paper-tooltip-background: var(--cr-menu-background-color);
+    --paper-tooltip-background: var(--cros-tooltip-background-color);
     --paper-tooltip-opacity: 1;
-    --paper-tooltip-text-color: var(--cr-secondary-text-color);
+    --paper-tooltip-text-color: var(--cros-tooltip-label-color);
     --paper-tooltip-delay-in: 500ms;
     --paper-tooltip-delay-out: 500ms;
     --paper-tooltip-duration-in: 0;

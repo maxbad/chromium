@@ -7,7 +7,6 @@
 #include <memory>
 
 #include "ash/constants/app_types.h"
-#include "ash/public/cpp/ash_switches.h"
 #include "ash/public/cpp/shell_window_ids.h"
 #include "ash/public/cpp/window_properties.h"
 #include "ash/root_window_controller.h"
@@ -20,6 +19,7 @@
 #include "ash/wm/overview/overview_controller.h"
 #include "ash/wm/overview/overview_session.h"
 #include "ash/wm/overview/overview_utils.h"
+#include "ash/wm/splitview/split_view_constants.h"
 #include "ash/wm/splitview/split_view_controller.h"
 #include "ash/wm/splitview/split_view_utils.h"
 #include "ash/wm/tablet_mode/scoped_skip_user_session_blocked_check.h"
@@ -119,6 +119,11 @@ class ScopedObserveWindowAnimation {
           window_);
     }
   }
+
+  ScopedObserveWindowAnimation(const ScopedObserveWindowAnimation&) = delete;
+  ScopedObserveWindowAnimation& operator=(const ScopedObserveWindowAnimation&) =
+      delete;
+
   ~ScopedObserveWindowAnimation() {
     // May be null on shutdown.
     if (!Shell::Get()->tablet_mode_controller())
@@ -147,7 +152,6 @@ class ScopedObserveWindowAnimation {
   aura::Window* window_;
   TabletModeWindowManager* manager_;
   bool exiting_tablet_mode_;
-  DISALLOW_COPY_AND_ASSIGN(ScopedObserveWindowAnimation);
 };
 
 TabletModeWindowManager::TabletModeWindowManager() = default;
@@ -162,7 +166,7 @@ void TabletModeWindowManager::Init() {
     ArrangeWindowsForTabletMode();
   }
   AddWindowCreationObservers();
-  display::Screen::GetScreen()->AddObserver(this);
+  display_observer_.emplace(this);
   SplitViewController::Get(Shell::GetPrimaryRootWindow())->AddObserver(this);
   Shell::Get()->session_controller()->AddObserver(this);
   Shell::Get()->overview_controller()->AddObserver(this);
@@ -208,7 +212,7 @@ void TabletModeWindowManager::Shutdown() {
         overview_controller->overview_session()->IsEmpty()) {
       split_view_controller->EndSplitView(
           SplitViewController::EndReason::kExitTabletMode);
-      overview_controller->EndOverview();
+      overview_controller->EndOverview(OverviewEndAction::kSplitView);
     }
   }
 
@@ -218,7 +222,7 @@ void TabletModeWindowManager::Shutdown() {
   split_view_controller->RemoveObserver(this);
   Shell::Get()->session_controller()->RemoveObserver(this);
   Shell::Get()->overview_controller()->RemoveObserver(this);
-  display::Screen::GetScreen()->RemoveObserver(this);
+  display_observer_.reset();
   RemoveWindowCreationObservers();
 
   ScopedObserveWindowAnimation scoped_observe(window_util::GetTopWindow(), this,
@@ -543,10 +547,10 @@ int TabletModeWindowManager::CalculateCarryOverDividerPosition(
   if (!left_window && !right_window)
     return -1;
 
-  gfx::Rect work_area =
-      display::Screen::GetScreen()
-          ->GetDisplayNearestWindow(left_window ? left_window : right_window)
-          .work_area();
+  const display::Display display =
+      display::Screen::GetScreen()->GetDisplayNearestWindow(
+          left_window ? left_window : right_window);
+  gfx::Rect work_area = display.work_area();
   gfx::Rect left_window_bounds =
       left_window ? GetWindowBoundsInScreen(left_window, clamshell_to_tablet)
                   : gfx::Rect();
@@ -554,21 +558,34 @@ int TabletModeWindowManager::CalculateCarryOverDividerPosition(
       right_window ? GetWindowBoundsInScreen(right_window, clamshell_to_tablet)
                    : gfx::Rect();
 
-  if (SplitViewController::IsLayoutHorizontal()) {
-    if (SplitViewController::IsLayoutRightSideUp()) {
-      return left_window ? left_window_bounds.width()
-                         : work_area.width() - right_window_bounds.width();
+  const bool horizontal = SplitViewController::IsLayoutHorizontal(display);
+  const bool primary = SplitViewController::IsLayoutPrimary(display);
+
+  // We need to expand (or shrink) the width of the snapped windows by the half
+  // of the divider width when to-clamshell (or to-tablet) transition happens
+  // accordingly, because in tablet mode the "center" of the split view should
+  // be the center of the divider.
+  const int divider_padding =
+      (clamshell_to_tablet ? -1 : 1) * kSplitviewDividerShortSideLength / 2;
+  if (horizontal) {
+    if (primary) {
+      return left_window ? left_window_bounds.width() + divider_padding
+                         : work_area.width() - right_window_bounds.width() -
+                               divider_padding;
     } else {
-      return left_window ? work_area.width() - left_window_bounds.width()
-                         : right_window_bounds.width();
+      return left_window ? work_area.width() - left_window_bounds.width() -
+                               divider_padding
+                         : right_window_bounds.width() + divider_padding;
     }
   } else {
-    if (SplitViewController::IsLayoutRightSideUp()) {
-      return left_window ? left_window_bounds.height()
-                         : work_area.height() - right_window_bounds.height();
+    if (primary) {
+      return left_window ? left_window_bounds.height() + divider_padding
+                         : work_area.height() - right_window_bounds.height() -
+                               divider_padding;
     } else {
-      return left_window ? work_area.height() - left_window_bounds.height()
-                         : right_window_bounds.height();
+      return left_window ? work_area.height() - left_window_bounds.height() -
+                               divider_padding
+                         : right_window_bounds.height() + divider_padding;
     }
   }
 }

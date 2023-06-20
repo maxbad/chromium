@@ -6,7 +6,6 @@
 
 #include <memory>
 
-#include "ash/public/cpp/ash_features.h"
 #include "ash/shell.h"
 #include "ash/system/message_center/unified_message_center_view.h"
 #include "ash/system/tray/tray_constants.h"
@@ -28,6 +27,12 @@ namespace ash {
 class UnifiedMessageCenterBubbleTest : public AshTestBase {
  public:
   UnifiedMessageCenterBubbleTest() = default;
+
+  UnifiedMessageCenterBubbleTest(const UnifiedMessageCenterBubbleTest&) =
+      delete;
+  UnifiedMessageCenterBubbleTest& operator=(
+      const UnifiedMessageCenterBubbleTest&) = delete;
+
   ~UnifiedMessageCenterBubbleTest() override = default;
 
   // AshTestBase:
@@ -118,8 +123,6 @@ class UnifiedMessageCenterBubbleTest : public AshTestBase {
 
  private:
   int id_ = 0;
-
-  DISALLOW_COPY_AND_ASSIGN(UnifiedMessageCenterBubbleTest);
 };
 
 TEST_F(UnifiedMessageCenterBubbleTest, PositionedAboveSystemTray) {

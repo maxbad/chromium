@@ -9,6 +9,7 @@
 #include "base/callback.h"
 #include "base/memory/weak_ptr.h"
 #include "mojo/public/cpp/bindings/remote.h"
+#include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/mojom/url_loader_factory.mojom-blink.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/blink/public/mojom/devtools/console_message.mojom-blink.h"
@@ -52,7 +53,12 @@ class PrefetchedSignedExchangeManager::PrefetchedSignedExchangeLoader
     request_.CopyFrom(request);
   }
 
-  ~PrefetchedSignedExchangeLoader() override {}
+  PrefetchedSignedExchangeLoader(const PrefetchedSignedExchangeLoader&) =
+      delete;
+  PrefetchedSignedExchangeLoader& operator=(
+      const PrefetchedSignedExchangeLoader&) = delete;
+
+  ~PrefetchedSignedExchangeLoader() override = default;
 
   base::WeakPtr<PrefetchedSignedExchangeLoader> GetWeakPtr() {
     return weak_ptr_factory_.GetWeakPtr();
@@ -146,8 +152,6 @@ class PrefetchedSignedExchangeManager::PrefetchedSignedExchangeLoader
   std::queue<base::OnceClosure> pending_method_calls_;
 
   base::WeakPtrFactory<PrefetchedSignedExchangeLoader> weak_ptr_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(PrefetchedSignedExchangeLoader);
 };
 
 // static

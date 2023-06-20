@@ -76,6 +76,12 @@ struct FrameToken {
   bool is_local;
 };
 
+// autofill::
+struct FrameTokenWithPredecessor {
+  FrameToken token;
+  int32 predecessor;
+};
+
 // autofill::FormRendererId
 struct FormRendererId {
   uint32 id;
@@ -84,6 +90,12 @@ struct FormRendererId {
 // autofill::FieldRendererId
 struct FieldRendererId {
   uint32 id;
+};
+
+// autofill::SelectOption
+struct SelectOption {
+  mojo_base.mojom.String16 value;
+  mojo_base.mojom.String16 content;
 };
 
 // autofill::FormFieldData
@@ -145,8 +157,7 @@ struct FormFieldData {
   bool is_readonly;
   mojo_base.mojom.String16 user_input;
 
-  array<mojo_base.mojom.String16> option_values;
-  array<mojo_base.mojom.String16> option_contents;
+  array<SelectOption> options;
 
   LabelSource label_source;
 
@@ -167,15 +178,11 @@ struct FormData {
   mojo_base.mojom.String16 name_attribute;
   mojo_base.mojom.String16 name;
   array<ButtonTitleInfo> button_titles;
-  url.mojom.Url url;
-  url.mojom.Url full_url;
   url.mojom.Url action;
   bool is_action_empty;
-  url.mojom.Origin main_frame_origin;
   bool is_form_tag;
   FormRendererId unique_renderer_id;
-  array<FrameToken> child_frames;
-  array<int32> child_frame_predecessors;
+  array<FrameTokenWithPredecessor> child_frames;
   SubmissionIndicatorEvent submission_event;
   array<FormFieldData> fields;
   array<FieldRendererId> username_predictions;
@@ -184,6 +191,7 @@ struct FormData {
 
 // autofill::FormFieldDataPredictions
 struct FormFieldDataPredictions {
+  string host_form_signature;
   string signature;
   string heuristic_type;
   string server_type;
@@ -257,4 +265,10 @@ enum AutofillState {
   // There are available autocomplete suggestions for the input. Autocomplete
   // only fills in a single input.
   kAutocompleteAvailable,
+};
+
+// The possible actions that the renderer can take on receiving form data.
+enum RendererFormDataAction {
+  kFill,     // The renderer should fill the form data.
+  kPreview,  // The renderer should preview the form data.
 };

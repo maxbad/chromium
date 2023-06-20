@@ -10,12 +10,10 @@
 #include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/logging.h"
-#include "base/macros.h"
 #include "base/metrics/histogram_functions.h"
-#include "base/metrics/histogram_macros.h"
+#include "base/stl_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/thread_task_runner_handle.h"
-#include "base/timer/elapsed_timer.h"
 #include "media/base/decoder_buffer.h"
 #include "media/base/simple_sync_token_client.h"
 #include "media/base/video_decoder.h"
@@ -47,18 +45,6 @@ const char kInitializeTraceName[] = "MojoVideoDecoderService::Initialize";
 const char kDecodeTraceName[] = "MojoVideoDecoderService::Decode";
 const char kResetTraceName[] = "MojoVideoDecoderService::Reset";
 
-void RecordTimingHistogram(VideoDecoderImplementation impl,
-                           const char* method,
-                           base::TimeDelta elapsed) {
-  base::UmaHistogramTimes(
-      base::StringPrintf("Media.MojoVideoDecoderServiceTiming.%s.%s",
-                         impl == VideoDecoderImplementation::kDefault
-                             ? "Default"
-                             : "Alternate",
-                         method),
-      elapsed);
-}
-
 base::debug::CrashKeyString* GetNumVideoDecodersCrashKeyString() {
   static base::debug::CrashKeyString* codec_count_crash_key =
       base::debug::AllocateCrashKeyString("num-video-decoders",
@@ -72,6 +58,10 @@ class VideoFrameHandleReleaserImpl final
     : public mojom::VideoFrameHandleReleaser {
  public:
   VideoFrameHandleReleaserImpl() { DVLOG(3) << __func__; }
+
+  VideoFrameHandleReleaserImpl(const VideoFrameHandleReleaserImpl&) = delete;
+  VideoFrameHandleReleaserImpl& operator=(const VideoFrameHandleReleaserImpl&) =
+      delete;
 
   ~VideoFrameHandleReleaserImpl() final { DVLOG(3) << __func__; }
 
@@ -105,8 +95,6 @@ class VideoFrameHandleReleaserImpl final
  private:
   // TODO(sandersd): Also track age, so that an overall limit can be enforced.
   std::map<base::UnguessableToken, scoped_refptr<VideoFrame>> video_frames_;
-
-  DISALLOW_COPY_AND_ASSIGN(VideoFrameHandleReleaserImpl);
 };
 
 MojoVideoDecoderService::MojoVideoDecoderService(
@@ -122,7 +110,6 @@ MojoVideoDecoderService::MojoVideoDecoderService(
 
 MojoVideoDecoderService::~MojoVideoDecoderService() {
   DVLOG(1) << __func__;
-  base::ElapsedTimer elapsed;
 
   if (init_cb_) {
     OnDecoderInitialized(
@@ -144,9 +131,6 @@ MojoVideoDecoderService::~MojoVideoDecoderService() {
   // the histogram timer below.
   weak_factory_.InvalidateWeakPtrs();
   decoder_.reset();
-
-  if (implementation_)
-    RecordTimingHistogram(*implementation_, "Destruct", elapsed.Elapsed());
 }
 
 void MojoVideoDecoderService::GetSupportedConfigs(
@@ -154,18 +138,17 @@ void MojoVideoDecoderService::GetSupportedConfigs(
   DVLOG(3) << __func__;
   TRACE_EVENT0("media", "MojoVideoDecoderService::GetSupportedConfigs");
 
-  std::move(callback).Run(
-      mojo_media_client_->GetSupportedVideoDecoderConfigs());
+  std::move(callback).Run(mojo_media_client_->GetSupportedVideoDecoderConfigs(),
+                          mojo_media_client_->GetDecoderImplementationType());
 }
 
 void MojoVideoDecoderService::Construct(
     mojo::PendingAssociatedRemote<mojom::VideoDecoderClient> client,
-    mojo::PendingAssociatedRemote<mojom::MediaLog> media_log,
+    mojo::PendingRemote<mojom::MediaLog> media_log,
     mojo::PendingReceiver<mojom::VideoFrameHandleReleaser>
         video_frame_handle_releaser_receiver,
     mojo::ScopedDataPipeConsumerHandle decoder_buffer_pipe,
     mojom::CommandBufferIdPtr command_buffer_id,
-    VideoDecoderImplementation implementation,
     const gfx::ColorSpace& target_color_space) {
   DVLOG(1) << __func__;
   TRACE_EVENT0("media", "MojoVideoDecoderService::Construct");
@@ -174,9 +157,6 @@ void MojoVideoDecoderService::Construct(
     mojo::ReportBadMessage("Construct() already called");
     return;
   }
-
-  base::ElapsedTimer elapsed;
-  implementation_ = implementation;
 
   client_.Bind(std::move(client));
 
@@ -195,12 +175,9 @@ void MojoVideoDecoderService::Construct(
 
   decoder_ = mojo_media_client_->CreateVideoDecoder(
       task_runner, media_log_.get(), std::move(command_buffer_id),
-      implementation,
       base::BindRepeating(
           &MojoVideoDecoderService::OnDecoderRequestedOverlayInfo, weak_this_),
       target_color_space);
-
-  RecordTimingHistogram(*implementation_, "Construct", elapsed.Elapsed());
 }
 
 void MojoVideoDecoderService::Initialize(
@@ -297,8 +274,8 @@ void MojoVideoDecoderService::Decode(mojom::DecoderBufferPtr buffer,
   if (!is_active_instance_) {
     is_active_instance_ = true;
     g_num_active_mvd_instances++;
-    UMA_HISTOGRAM_EXACT_LINEAR("Media.MojoVideoDecoder.ActiveInstances",
-                               g_num_active_mvd_instances, 64);
+    base::UmaHistogramExactLinear("Media.MojoVideoDecoder.ActiveInstances",
+                                  g_num_active_mvd_instances, 64);
     base::debug::SetCrashKeyString(
         GetNumVideoDecodersCrashKeyString(),
         base::NumberToString(g_num_active_mvd_instances));

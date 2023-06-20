@@ -63,9 +63,14 @@ void PageLoadMetricsTestWaiter::AddSubFrameExpectation(TimingField field) {
 
 void PageLoadMetricsTestWaiter::AddWebFeatureExpectation(
     blink::mojom::WebFeature web_feature) {
-  expected_.feature_tracker_.TestAndSet(
+  AddUseCounterFeatureExpectation(
       {blink::mojom::UseCounterFeatureType::kWebFeature,
        static_cast<blink::UseCounterFeature::EnumValue>(web_feature)});
+}
+
+void PageLoadMetricsTestWaiter::AddUseCounterFeatureExpectation(
+    const blink::UseCounterFeature& feature) {
+  expected_.feature_tracker_.TestAndSet(feature);
 }
 
 void PageLoadMetricsTestWaiter::AddSubframeNavigationExpectation() {
@@ -91,7 +96,8 @@ void PageLoadMetricsTestWaiter::AddMinimumAggregateCpuTimeExpectation(
   expected_minimum_aggregate_cpu_time_ = minimum;
 }
 
-void PageLoadMetricsTestWaiter::AddMemoryUpdateExpectation(int routing_id) {
+void PageLoadMetricsTestWaiter::AddMemoryUpdateExpectation(
+    content::GlobalRenderFrameHostId routing_id) {
   expected_.memory_update_frame_ids_.insert(routing_id);
 }
 
@@ -238,8 +244,7 @@ void PageLoadMetricsTestWaiter::OnDidFinishSubFrameNavigation(
 void PageLoadMetricsTestWaiter::OnV8MemoryChanged(
     const std::vector<MemoryUpdate>& memory_updates) {
   for (const auto& update : memory_updates)
-    observed_.memory_update_frame_ids_.insert(
-        update.routing_id.frame_routing_id);
+    observed_.memory_update_frame_ids_.insert(update.routing_id);
 
   if (ExpectationsSatisfied() && run_loop_)
     run_loop_->Quit();
@@ -325,7 +330,7 @@ void PageLoadMetricsTestWaiter::OnCommit(
   AddObserver(tracker);
 }
 
-void PageLoadMetricsTestWaiter::OnRestoredFromBackForwardCache(
+void PageLoadMetricsTestWaiter::OnActivate(
     page_load_metrics::PageLoadTracker* tracker) {
   // A PageLoadMetricsWaiter should only wait for events from a single page
   // load.

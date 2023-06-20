@@ -8,17 +8,12 @@
 #include "base/component_export.h"
 #include "base/containers/flat_map.h"
 #include "base/gtest_prod_util.h"
-#include "base/macros.h"
 #include "base/timer/elapsed_timer.h"
 #include "base/timer/timer.h"
 #include "chromeos/login/login_state/login_state.h"
 #include "chromeos/network/network_connection_observer.h"
 #include "chromeos/network/network_state_handler_observer.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
-
-namespace base {
-class TickClock;
-}
 
 namespace chromeos {
 
@@ -79,6 +74,10 @@ class COMPONENT_EXPORT(CHROMEOS_NETWORK) CellularMetricsLogger
       const absl::optional<std::string>& shill_error_name = absl::nullopt);
 
   CellularMetricsLogger();
+
+  CellularMetricsLogger(const CellularMetricsLogger&) = delete;
+  CellularMetricsLogger& operator=(const CellularMetricsLogger&) = delete;
+
   ~CellularMetricsLogger() override;
 
   void Init(NetworkStateHandler* network_state_handler,
@@ -126,9 +125,6 @@ class COMPONENT_EXPORT(CHROMEOS_NETWORK) CellularMetricsLogger
   FRIEND_TEST_ALL_PREFIXES(NetworkDeviceHandlerTest, EnterPin);
   FRIEND_TEST_ALL_PREFIXES(NetworkDeviceHandlerTest, UnblockPin);
   FRIEND_TEST_ALL_PREFIXES(NetworkDeviceHandlerTest, ChangePin);
-
-  // Custom `tick_clock` could be used for tests.
-  explicit CellularMetricsLogger(const base::TickClock* tick_clock);
 
   // The amount of time after cellular device is added to device list,
   // after which cellular device is considered initialized.
@@ -240,7 +236,10 @@ class COMPONENT_EXPORT(CHROMEOS_NETWORK) CellularMetricsLogger
     kNotConnected = 12,
     kActivateFailed = 13,
     kEnabledOrDisabledWhenNotAvailable = 14,
-    kMaxValue = kEnabledOrDisabledWhenNotAvailable,
+    kErrorCellularDeviceBusy = 15,
+    kErrorConnectTimeout = 16,
+    kConnectableCellularTimeout = 17,
+    kMaxValue = kConnectableCellularTimeout,
   };
 
   // Result of state changes to a cellular network triggered by any connection
@@ -264,7 +263,9 @@ class COMPONENT_EXPORT(CHROMEOS_NETWORK) CellularMetricsLogger
     kTooManySTAs = 13,
     kBadPassphrase = 14,
     kBadWepKey = 15,
-    kMaxValue = kBadWepKey,
+    kErrorSimLocked = 16,
+    kErrorNotRegistered = 17,
+    kMaxValue = kErrorNotRegistered,
   };
 
   // Convert shill error name string to SimPinOperationResult enum.
@@ -327,6 +328,11 @@ class COMPONENT_EXPORT(CHROMEOS_NETWORK) CellularMetricsLogger
   // networks are available on the device if |is_service_count_logged_| is true.
   void CheckForCellularServiceCountMetric();
 
+  // Handles ESim Standard Feature Usage Logging metrics when the cellular usage
+  // changes for an ESim network.
+  void HandleESimFeatureUsageChange(CellularUsage last_esim_cellular_usage,
+                                    CellularUsage current_usage);
+
   // Returns the ConnectionInfo for given |cellular_network_guid|.
   ConnectionInfo* GetConnectionInfoForCellularNetwork(
       const std::string& cellular_network_guid);
@@ -379,8 +385,6 @@ class COMPONENT_EXPORT(CHROMEOS_NETWORK) CellularMetricsLogger
 
   // Tracks ESim feature usage for the Standard Feature Usage Logging Framework.
   std::unique_ptr<ESimFeatureUsageMetrics> esim_feature_usage_metrics_;
-
-  DISALLOW_COPY_AND_ASSIGN(CellularMetricsLogger);
 };
 
 }  // namespace chromeos

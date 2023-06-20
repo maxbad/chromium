@@ -67,6 +67,7 @@
 #include "content/public/test/browser_test.h"
 #include "content/public/test/test_utils.h"
 #include "extensions/browser/api_test_utils.h"
+#include "extensions/common/api/oauth2.h"
 #include "extensions/common/extension_builder.h"
 #include "extensions/common/extension_features.h"
 #include "extensions/common/manifest_handlers/oauth2_manifest_handler.h"
@@ -74,15 +75,16 @@
 #include "net/cookies/cookie_util.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
+#include "services/network/public/mojom/cookie_manager.mojom.h"
 #include "services/network/test/test_url_loader_factory.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "url/gurl.h"
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
 #include "chrome/browser/ash/login/users/mock_user_manager.h"
-#include "chrome/browser/chromeos/net/network_portal_detector_test_impl.h"
-#include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
+#include "chrome/browser/ash/net/network_portal_detector_test_impl.h"
 #include "chromeos/network/network_handler.h"
 #include "chromeos/network/network_state.h"
 #include "chromeos/network/network_state_handler.h"
@@ -101,6 +103,8 @@ namespace {
 namespace errors = identity_constants;
 namespace utils = extension_function_test_utils;
 
+using api::oauth2::OAuth2Info;
+
 const char kAccessToken[] = "auth_token";
 const char kExtensionId[] = "ext_id";
 
@@ -116,12 +120,12 @@ void InitNetwork() {
           ->network_state_handler()
           ->DefaultNetwork();
 
-  auto* portal_detector = new chromeos::NetworkPortalDetectorTestImpl();
+  auto* portal_detector = new ash::NetworkPortalDetectorTestImpl();
   portal_detector->SetDefaultNetworkForTesting(default_network->guid());
 
   portal_detector->SetDetectionResultsForTesting(
       default_network->guid(),
-      chromeos::NetworkPortalDetector::CAPTIVE_PORTAL_STATUS_ONLINE, 204);
+      ash::NetworkPortalDetector::CAPTIVE_PORTAL_STATUS_ONLINE, 204);
 
   chromeos::network_portal_detector::InitializeForTesting(portal_detector);
 }
@@ -136,10 +140,11 @@ class AsyncFunctionRunner {
                         content::BrowserContext* browser_context) {
     response_delegate_ =
         std::make_unique<api_test_utils::SendResponseHelper>(function);
-    std::unique_ptr<base::ListValue> parsed_args(utils::ParseList(args));
-    ASSERT_TRUE(parsed_args.get())
+    function->preserve_results_for_testing();
+    absl::optional<base::Value> parsed_args(utils::ParseList(args));
+    ASSERT_TRUE(parsed_args)
         << "Could not parse extension function arguments: " << args;
-    function->SetArgs(base::Value::FromUniquePtrValue(std::move(parsed_args)));
+    function->SetArgs(std::move(*parsed_args));
 
     if (!function->extension()) {
       scoped_refptr<const Extension> empty_extension(
@@ -303,7 +308,7 @@ class WaitForGURLAndCloseWindow : public content::WindowedNotificationObserver {
     content::NavigationController* web_auth_flow_controller =
         content::Source<content::NavigationController>(source).ptr();
     content::WebContents* web_contents =
-        web_auth_flow_controller->GetWebContents();
+        web_auth_flow_controller->DeprecatedGetWebContents();
 
     if (web_contents->GetLastCommittedURL() == url_) {
       // It is safe to keep the pointer here, because we know in a test, that
@@ -405,9 +410,8 @@ class FakeGetAuthTokenFunction : public IdentityGetAuthTokenFunction {
         error = GoogleServiceAuthError(
             GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS);
       }
-      OnGetAccessTokenComplete(
-          access_token, base::Time::Now() + base::TimeDelta::FromHours(1LL),
-          error);
+      OnGetAccessTokenComplete(access_token,
+                               base::Time::Now() + base::Hours(1LL), error);
     } else {
       // Make a request to the IdentityManager. The test now must tell the
       // service to issue an access token (or an error).
@@ -621,24 +625,28 @@ class IdentityGetAccountsFunctionTest : public IdentityTestWithSignin {
         ExtensionBuilder("Test").SetID(kExtensionId).Build().get());
     if (!utils::RunFunction(func.get(), std::string("[]"), browser(),
                             api_test_utils::NONE)) {
-      return GenerateFailureResult(gaia_ids, NULL)
+      return GenerateFailureResult(gaia_ids, absl::nullopt)
              << "getAccounts did not return a result.";
     }
     const base::ListValue* callback_arguments = func->GetResultList();
     if (!callback_arguments)
-      return GenerateFailureResult(gaia_ids, NULL) << "NULL result";
+      return GenerateFailureResult(gaia_ids, absl::nullopt) << "NULL result";
+    base::Value::ConstListView callback_arguments_list =
+        callback_arguments->GetList();
 
-    if (callback_arguments->GetSize() != 1) {
-      return GenerateFailureResult(gaia_ids, NULL)
-             << "Expected 1 argument but got " << callback_arguments->GetSize();
+    if (callback_arguments_list.size() != 1u) {
+      return GenerateFailureResult(gaia_ids, absl::nullopt)
+             << "Expected 1 argument but got "
+             << callback_arguments_list.size();
     }
 
-    const base::ListValue* results;
-    if (!callback_arguments->GetList(0, &results))
-      GenerateFailureResult(gaia_ids, NULL) << "Result was not an array";
+    if (!callback_arguments_list[0].is_list())
+      GenerateFailureResult(gaia_ids, absl::nullopt)
+          << "Result was not an array";
+    base::Value::ConstListView results = callback_arguments_list[0].GetList();
 
     std::set<std::string> result_ids;
-    for (const base::Value& item : results->GetList()) {
+    for (const base::Value& item : results) {
       std::unique_ptr<api::identity::AccountInfo> info =
           api::identity::AccountInfo::FromValue(item);
       if (info.get())
@@ -657,16 +665,16 @@ class IdentityGetAccountsFunctionTest : public IdentityTestWithSignin {
 
   testing::AssertionResult GenerateFailureResult(
       const ::std::vector<std::string>& gaia_ids,
-      const base::ListValue* results) {
+      absl::optional<base::Value::ConstListView> results) {
     testing::Message msg("Expected: ");
     for (const std::string& gaia_id : gaia_ids) {
       msg << gaia_id << " ";
     }
     msg << "Actual: ";
-    if (!results) {
+    if (!results.has_value()) {
       msg << "NULL";
     } else {
-      for (const auto& result : results->GetList()) {
+      for (const auto& result : results.value()) {
         std::unique_ptr<api::identity::AccountInfo> info =
             api::identity::AccountInfo::FromValue(result);
         if (info.get())
@@ -856,8 +864,7 @@ class GetAuthTokenFunctionTest
     std::string access_token = "access_token-" + account_id.ToString();
     identity_test_env()
         ->WaitForAccessTokenRequestIfNecessaryAndRespondWithToken(
-            account_id, access_token,
-            base::Time::Now() + base::TimeDelta::FromSeconds(3600));
+            account_id, access_token, base::Time::Now() + base::Seconds(3600));
     return access_token;
   }
 
@@ -880,7 +887,7 @@ class GetAuthTokenFunctionTest
   // Helper to create an extension with specific OAuth2Info fields set.
   // |fields_to_set| should be computed by using fields of Oauth2Fields enum.
   const Extension* CreateExtension(int fields_to_set) {
-    const Extension* ext;
+    const Extension* ext = nullptr;
     base::FilePath manifest_path =
         test_data_dir_.AppendASCII("platform_apps/oauth2");
     base::FilePath component_manifest_path =
@@ -889,10 +896,16 @@ class GetAuthTokenFunctionTest
       ext = LoadExtension(manifest_path);
     else
       ext = LoadExtensionAsComponent(component_manifest_path);
+
+    if (!ext) {
+      ADD_FAILURE() << "Cannot create extension";
+      return nullptr;
+    }
+
     OAuth2Info& oauth2_info =
-        const_cast<OAuth2Info&>(OAuth2Info::GetOAuth2Info(ext));
+        const_cast<OAuth2Info&>(OAuth2ManifestHandler::GetOAuth2Info(*ext));
     if ((fields_to_set & CLIENT_ID) != 0)
-      oauth2_info.client_id = "client1";
+      oauth2_info.client_id = std::make_unique<std::string>("client1");
     if ((fields_to_set & SCOPES) != 0) {
       oauth2_info.scopes.push_back("scope1");
       oauth2_info.scopes.push_back("scope2");
@@ -1100,6 +1113,9 @@ IN_PROC_BROWSER_TEST_F(GetAuthTokenFunctionTest,
       IdentityGetAuthTokenError::State::kSignInFailed, 1);
 }
 
+#if !BUILDFLAG(IS_CHROMEOS_LACROS)
+// TODO(crbug.com/1220066): Remove the lacros exclusion when DICE is disabled on
+// Lacros.
 IN_PROC_BROWSER_TEST_F(GetAuthTokenFunctionTest,
                        PRE_InteractiveNotSignedAndSigninNotAllowed) {
   // kSigninAllowed cannot be set after the profile creation. Use
@@ -1124,7 +1140,8 @@ IN_PROC_BROWSER_TEST_F(GetAuthTokenFunctionTest,
       kGetAuthTokenResultHistogramName,
       IdentityGetAuthTokenError::State::kBrowserSigninNotAllowed, 1);
 }
-#endif
+#endif  // !BUILDFLAG(IS_CHROMEOS_LACROS)
+#endif  // !BUILDFLAG(IS_CHROMEOS_ASH)
 
 IN_PROC_BROWSER_TEST_F(GetAuthTokenFunctionTest, NonInteractiveMintFailure) {
   SignIn("primary@example.com");
@@ -1777,7 +1794,7 @@ IN_PROC_BROWSER_TEST_F(GetAuthTokenFunctionTest, NonInteractiveCacheHit) {
 
   // Pre-populate the cache with a token.
   IdentityTokenCacheValue token =
-      CreateToken(kAccessToken, base::TimeDelta::FromSeconds(3600));
+      CreateToken(kAccessToken, base::Seconds(3600));
   SetCachedToken(token);
 
   // Get a token. Should not require a GAIA request.
@@ -1817,7 +1834,7 @@ IN_PROC_BROWSER_TEST_F(GetAuthTokenFunctionTest,
 
   // Pre-populate the cache with a token.
   IdentityTokenCacheValue token =
-      CreateToken(kAccessToken, base::TimeDelta::FromSeconds(3600));
+      CreateToken(kAccessToken, base::Seconds(3600));
   SetCachedTokenForAccount(account_info, token);
 
   if (id_api()->AreExtensionsRestrictedToPrimaryAccount()) {
@@ -1918,7 +1935,7 @@ IN_PROC_BROWSER_TEST_F(GetAuthTokenFunctionTest, InteractiveCacheHit) {
 
   // Populate the cache with a token while the request is blocked.
   IdentityTokenCacheValue token =
-      CreateToken(kAccessToken, base::TimeDelta::FromSeconds(3600));
+      CreateToken(kAccessToken, base::Seconds(3600));
   SetCachedToken(token);
 
   // When we wake up the request, it returns the cached token without
@@ -1948,7 +1965,7 @@ IN_PROC_BROWSER_TEST_F(GetAuthTokenFunctionTest, LoginInvalidatesTokenCache) {
 
   // Pre-populate the cache with a token.
   IdentityTokenCacheValue token =
-      CreateToken(kAccessToken, base::TimeDelta::FromSeconds(3600));
+      CreateToken(kAccessToken, base::Seconds(3600));
   SetCachedToken(token);
 
   // Because the user is not signed in, the token will be removed,
@@ -1980,9 +1997,11 @@ IN_PROC_BROWSER_TEST_F(GetAuthTokenFunctionTest, ComponentWithChromeClientId) {
   func->ignore_did_respond_for_testing();
   scoped_refptr<const Extension> extension(
       CreateExtension(SCOPES | AS_COMPONENT));
+  ASSERT_TRUE(extension.get());
   func->set_extension(extension.get());
-  const OAuth2Info& oauth2_info = OAuth2Info::GetOAuth2Info(extension.get());
-  EXPECT_TRUE(oauth2_info.client_id.empty());
+  const OAuth2Info& oauth2_info =
+      OAuth2ManifestHandler::GetOAuth2Info(*extension);
+  EXPECT_FALSE(oauth2_info.client_id);
   EXPECT_FALSE(func->GetOAuth2ClientId().empty());
   EXPECT_NE("client1", func->GetOAuth2ClientId());
 }
@@ -2713,7 +2732,7 @@ IN_PROC_BROWSER_TEST_F(GetAuthTokenFunctionTest, SubsetMatchCacheHit) {
 
   std::set<std::string> scopes = {"email", "foo", "bar"};
   IdentityTokenCacheValue token = IdentityTokenCacheValue::CreateToken(
-      kAccessToken, scopes, base::TimeDelta::FromSeconds(3600));
+      kAccessToken, scopes, base::Seconds(3600));
   SetCachedToken(token);
 
   std::string access_token;
@@ -3208,7 +3227,7 @@ IN_PROC_BROWSER_TEST_F(RemoveCachedAuthTokenFunctionTest, RemoteConsent) {
 
 IN_PROC_BROWSER_TEST_F(RemoveCachedAuthTokenFunctionTest, NonMatchingToken) {
   IdentityTokenCacheValue token =
-      CreateToken("non_matching_token", base::TimeDelta::FromSeconds(3600));
+      CreateToken("non_matching_token", base::Seconds(3600));
   SetCachedToken(token);
   EXPECT_TRUE(InvalidateDefaultToken());
   EXPECT_EQ(IdentityTokenCacheValue::CACHE_STATUS_TOKEN,
@@ -3218,7 +3237,7 @@ IN_PROC_BROWSER_TEST_F(RemoveCachedAuthTokenFunctionTest, NonMatchingToken) {
 
 IN_PROC_BROWSER_TEST_F(RemoveCachedAuthTokenFunctionTest, MatchingToken) {
   IdentityTokenCacheValue token =
-      CreateToken(kAccessToken, base::TimeDelta::FromSeconds(3600));
+      CreateToken(kAccessToken, base::Seconds(3600));
   SetCachedToken(token);
   EXPECT_EQ(IdentityTokenCacheValue::CACHE_STATUS_TOKEN,
             GetCachedToken().status());
@@ -3236,14 +3255,7 @@ class LaunchWebAuthFlowFunctionTest : public AsyncExtensionBrowserTest {
   }
 };
 
-#if defined(OS_LINUX) || defined(OS_CHROMEOS)
-// This test times out on Linux MSan Tests.
-// See https://crbug.com/831848 .
-#define MAYBE_UserCloseWindow DISABLED_UserCloseWindow
-#else
-#define MAYBE_UserCloseWindow UserCloseWindow
-#endif
-IN_PROC_BROWSER_TEST_F(LaunchWebAuthFlowFunctionTest, MAYBE_UserCloseWindow) {
+IN_PROC_BROWSER_TEST_F(LaunchWebAuthFlowFunctionTest, UserCloseWindow) {
   net::EmbeddedTestServer https_server(net::EmbeddedTestServer::TYPE_HTTPS);
   https_server.ServeFilesFromSourceDirectory(
       "chrome/test/data/extensions/api_test/identity");
@@ -3324,10 +3336,9 @@ IN_PROC_BROWSER_TEST_F(LaunchWebAuthFlowFunctionTest, NonInteractiveSuccess) {
       "\"url\": \"https://abcdefghij.chromiumapp.org/callback#test\"}]",
       browser()));
 
-  std::string url;
-  EXPECT_TRUE(value->GetAsString(&url));
+  EXPECT_TRUE(value->is_string());
   EXPECT_EQ(std::string("https://abcdefghij.chromiumapp.org/callback#test"),
-            url);
+            value->GetString());
 }
 
 IN_PROC_BROWSER_TEST_F(LaunchWebAuthFlowFunctionTest,
@@ -3345,10 +3356,9 @@ IN_PROC_BROWSER_TEST_F(LaunchWebAuthFlowFunctionTest,
       "\"url\": \"https://abcdefghij.chromiumapp.org/callback#test\"}]",
       browser()));
 
-  std::string url;
-  EXPECT_TRUE(value->GetAsString(&url));
+  EXPECT_TRUE(value->is_string());
   EXPECT_EQ(std::string("https://abcdefghij.chromiumapp.org/callback#test"),
-            url);
+            value->GetString());
 }
 
 IN_PROC_BROWSER_TEST_F(LaunchWebAuthFlowFunctionTest,
@@ -3371,10 +3381,9 @@ IN_PROC_BROWSER_TEST_F(LaunchWebAuthFlowFunctionTest,
   std::unique_ptr<base::Value> value(
       utils::RunFunctionAndReturnSingleResult(function.get(), args, browser()));
 
-  std::string url;
-  EXPECT_TRUE(value->GetAsString(&url));
+  EXPECT_TRUE(value->is_string());
   EXPECT_EQ(std::string("https://abcdefghij.chromiumapp.org/callback#test"),
-            url);
+            value->GetString());
 }
 
 class ClearAllCachedAuthTokensFunctionTest : public AsyncExtensionBrowserTest {
@@ -3417,9 +3426,8 @@ IN_PROC_BROWSER_TEST_F(ClearAllCachedAuthTokensFunctionTest,
                        EraseCachedTokens) {
   ExtensionTokenKey token_key(extension()->id(), CoreAccountInfo(), {"foo"});
   id_api()->token_cache()->SetToken(
-      token_key,
-      IdentityTokenCacheValue::CreateToken("access_token", {"foo"},
-                                           base::TimeDelta::FromSeconds(3600)));
+      token_key, IdentityTokenCacheValue::CreateToken("access_token", {"foo"},
+                                                      base::Seconds(3600)));
   EXPECT_NE(IdentityTokenCacheValue::CACHE_STATUS_NOTFOUND,
             id_api()->token_cache()->GetToken(token_key).status());
   ASSERT_TRUE(RunClearAllCachedAuthTokensFunction());

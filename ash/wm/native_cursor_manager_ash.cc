@@ -66,10 +66,6 @@ void NativeCursorManagerAsh::SetNativeCursorEnabled(bool enabled) {
   SetCursor(cursor_manager->GetCursor(), cursor_manager);
 }
 
-float NativeCursorManagerAsh::GetScale() const {
-  return cursor_loader_.scale();
-}
-
 display::Display::Rotation NativeCursorManagerAsh::GetRotation() const {
   return cursor_loader_.rotation();
 }
@@ -81,8 +77,8 @@ void NativeCursorManagerAsh::SetDisplay(
 
   const float original_scale = display.device_scale_factor();
   // And use the nearest resource scale factor.
-  const float cursor_scale =
-      ui::GetScaleForScaleFactor(ui::GetSupportedScaleFactor(original_scale));
+  const float cursor_scale = ui::GetScaleForResourceScaleFactor(
+      ui::GetSupportedResourceScaleFactor(original_scale));
 
   if (cursor_loader_.SetDisplayData(display.panel_rotation(), cursor_scale))
     SetCursor(delegate->GetCursor(), delegate);

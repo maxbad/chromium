@@ -5,6 +5,7 @@
 #ifndef GPU_IPC_COMMON_MOCK_GPU_CHANNEL_H_
 #define GPU_IPC_COMMON_MOCK_GPU_CHANNEL_H_
 
+#include "build/build_config.h"
 #include "gpu/ipc/common/gpu_channel.mojom.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
@@ -18,6 +19,7 @@ class MockGpuChannel : public mojom::GpuChannel {
   // mojom::GpuChannel:
   MOCK_METHOD0(CrashForTesting, void());
   MOCK_METHOD0(TerminateForTesting, void());
+  MOCK_METHOD1(GetChannelToken, void(GetChannelTokenCallback));
   MOCK_METHOD0(Flush, bool());
   MOCK_METHOD1(Flush, void(FlushCallback));
   MOCK_METHOD6(CreateCommandBuffer,
@@ -42,21 +44,36 @@ class MockGpuChannel : public mojom::GpuChannel {
                void(mojom::ScheduleImageDecodeParamsPtr, uint64_t));
   MOCK_METHOD1(FlushDeferredRequests,
                void(std::vector<mojom::DeferredRequestPtr>));
-  MOCK_METHOD2(CreateStreamTexture, bool(int32_t, bool*));
-  MOCK_METHOD2(CreateStreamTexture, void(int32_t, CreateStreamTextureCallback));
-  MOCK_METHOD4(WaitForTokenInRange,
-               bool(int32_t, int32_t, int32_t, CommandBuffer::State*));
+#if defined(OS_ANDROID)
+  MOCK_METHOD3(CreateStreamTexture,
+               void(int32_t,
+                    mojo::PendingAssociatedReceiver<mojom::StreamTexture>,
+                    CreateStreamTextureCallback));
+#endif  // defined(OS_ANDROID)
+#if defined(OS_WIN)
+  MOCK_METHOD3(CreateDCOMPTexture,
+               void(int32_t,
+                    mojo::PendingAssociatedReceiver<mojom::DCOMPTexture>,
+                    CreateDCOMPTextureCallback));
+#endif  // defined(OS_WIN)
   MOCK_METHOD4(WaitForTokenInRange,
                void(int32_t, int32_t, int32_t, WaitForTokenInRangeCallback));
-  MOCK_METHOD5(
-      WaitForGetOffsetInRange,
-      bool(int32_t, uint32_t, int32_t, int32_t, CommandBuffer::State*));
   MOCK_METHOD5(WaitForGetOffsetInRange,
                void(int32_t,
                     uint32_t,
                     int32_t,
                     int32_t,
                     WaitForGetOffsetInRangeCallback));
+#if defined(OS_FUCHSIA)
+  MOCK_METHOD5(RegisterSysmemBufferCollection,
+               void(const base::UnguessableToken&,
+                    mojo::PlatformHandle,
+                    gfx::BufferFormat,
+                    gfx::BufferUsage,
+                    bool));
+  MOCK_METHOD1(ReleaseSysmemBufferCollection,
+               void(const base::UnguessableToken&));
+#endif  // defined(OS_FUCHSIA)
 };
 
 }  // namespace gpu

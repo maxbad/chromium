@@ -1051,14 +1051,14 @@ void GLES2DecoderTestBase::SetupShaderForUniform(GLenum uniform_type) {
     { "bar", 1, uniform_type, 0, 2, -1, },
     { "car", 4, uniform_type, 1, 1, -1, },
   };
-  const GLuint kClientVertexShaderId = 5001;
-  const GLuint kServiceVertexShaderId = 6001;
-  const GLuint kClientFragmentShaderId = 5002;
-  const GLuint kServiceFragmentShaderId = 6002;
+  const GLuint kTestClientVertexShaderId = 5001;
+  const GLuint kTestServiceVertexShaderId = 6001;
+  const GLuint kTestClientFragmentShaderId = 5002;
+  const GLuint kTestServiceFragmentShaderId = 6002;
   SetupShader(attribs, base::size(attribs), uniforms, base::size(uniforms),
-              client_program_id_, kServiceProgramId, kClientVertexShaderId,
-              kServiceVertexShaderId, kClientFragmentShaderId,
-              kServiceFragmentShaderId);
+              client_program_id_, kServiceProgramId, kTestClientVertexShaderId,
+              kTestServiceVertexShaderId, kTestClientFragmentShaderId,
+              kTestServiceFragmentShaderId);
 
   EXPECT_CALL(*gl_, UseProgram(kServiceProgramId))
       .Times(1)
@@ -1556,6 +1556,14 @@ void GLES2DecoderTestBase::DoCopyTexImage2D(
     GLsizei width,
     GLsizei height,
     GLint border) {
+  GLenum translated_internal_format = internal_format;
+  if (group_->feature_info()->IsWebGL2OrES3Context()) {
+    if (internal_format == GL_RGB) {
+      translated_internal_format = GL_RGB8;
+    } else if (internal_format == GL_RGBA) {
+      translated_internal_format = GL_RGBA8;
+    }
+  }
   // For GL_BGRA_EXT, we have to fall back to TexImage2D and
   // CopyTexSubImage2D, since GL_BGRA_EXT is not accepted by CopyTexImage2D.
   // In some cases this fallback further triggers set and restore of
@@ -1588,14 +1596,15 @@ void GLES2DecoderTestBase::DoCopyTexImage2D(
       EXPECT_CALL(*gl_, TexParameteri(target, GL_TEXTURE_SWIZZLE_A, _))
           .Times(testing::AtLeast(1));
     } else {
-      EXPECT_CALL(*gl_, CopyTexImage2D(target, level, internal_format, 0, 0,
-                                       width, height, border))
+      EXPECT_CALL(
+          *gl_, CopyTexImage2D(target, level, translated_internal_format, 0, 0,
+                               width, height, border))
           .Times(1)
           .RetiresOnSaturation();
     }
   } else {
-    EXPECT_CALL(*gl_, CopyTexImage2D(target, level, internal_format, 0, 0,
-                                     width, height, border))
+    EXPECT_CALL(*gl_, CopyTexImage2D(target, level, translated_internal_format,
+                                     0, 0, width, height, border))
         .Times(1)
         .RetiresOnSaturation();
   }

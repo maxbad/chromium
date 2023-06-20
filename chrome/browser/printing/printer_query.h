@@ -8,9 +8,7 @@
 #include <memory>
 
 #include "base/callback.h"
-#include "base/macros.h"
 #include "base/values.h"
-#include "build/chromeos_buildflags.h"
 #include "printing/mojom/print.mojom.h"
 #include "printing/print_settings.h"
 #include "printing/printing_context.h"
@@ -34,6 +32,10 @@ class PrinterQuery {
 
   // Can only be called on the IO thread.
   PrinterQuery(int render_process_id, int render_frame_id);
+
+  PrinterQuery(const PrinterQuery&) = delete;
+  PrinterQuery& operator=(const PrinterQuery&) = delete;
+
   virtual ~PrinterQuery();
 
   // Detach the PrintJobWorker associated to this object. Virtual so that tests
@@ -64,7 +66,7 @@ class PrinterQuery {
   virtual void SetSettings(base::Value new_settings,
                            base::OnceClosure callback);
 
-#if BUILDFLAG(IS_CHROMEOS_ASH)
+#if defined(OS_CHROMEOS)
   // Updates the current settings with |new_settings|.
   // Caller has to ensure that |this| is alive until |callback| is run.
   void SetSettingsFromPOD(std::unique_ptr<PrintSettings> new_settings,
@@ -75,7 +77,7 @@ class PrinterQuery {
   virtual void StopWorker();
 
   int cookie() const;
-  PrintingContext::Result last_status() const { return last_status_; }
+  mojom::ResultCode last_status() const { return last_status_; }
 
   // Returns if a worker thread is still associated to this instance.
   bool is_valid() const;
@@ -87,11 +89,11 @@ class PrinterQuery {
   // Virtual so that tests can override.
   virtual void GetSettingsDone(base::OnceClosure callback,
                                std::unique_ptr<PrintSettings> new_settings,
-                               PrintingContext::Result result);
+                               mojom::ResultCode result);
 
   void PostSettingsDoneToIO(base::OnceClosure callback,
                             std::unique_ptr<PrintSettings> new_settings,
-                            PrintingContext::Result result);
+                            mojom::ResultCode result);
 
   void SetSettingsForTest(std::unique_ptr<PrintSettings> settings);
 
@@ -109,14 +111,12 @@ class PrinterQuery {
   int cookie_;
 
   // Results from the last GetSettingsDone() callback.
-  PrintingContext::Result last_status_ = PrintingContext::FAILED;
+  mojom::ResultCode last_status_ = mojom::ResultCode::kFailed;
 
   // All the UI is done in a worker thread because many Win32 print functions
   // are blocking and enters a message loop without your consent. There is one
   // worker thread per print job.
   std::unique_ptr<PrintJobWorker> worker_;
-
-  DISALLOW_COPY_AND_ASSIGN(PrinterQuery);
 };
 
 }  // namespace printing

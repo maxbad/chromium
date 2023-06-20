@@ -15,8 +15,8 @@
 #include "base/memory/weak_ptr.h"
 #include "base/memory/writable_shared_memory_region.h"
 #include "base/process/process.h"
-#include "base/single_thread_task_runner.h"
 #include "base/synchronization/waitable_event_watcher.h"
+#include "base/task/single_thread_task_runner.h"
 #include "build/build_config.h"
 #include "content/browser/child_process_launcher.h"
 #include "content/browser/tracing/tracing_service_controller.h"
@@ -69,11 +69,6 @@ class CONTENT_EXPORT BrowserChildProcessHostImpl
   // Terminates all child processes and deletes each BrowserChildProcessHost
   // instance.
   static void TerminateAll();
-
-  // Copies kEnableFeatures and kDisableFeatures to the command line. Generates
-  // them from the FeatureList override state, to take into account overrides
-  // from FieldTrials.
-  static void CopyFeatureAndFieldTrialFlags(base::CommandLine* cmd_line);
 
   // Appends kTraceStartup and kTraceRecordMode flags to the command line, if
   // needed.
@@ -151,6 +146,8 @@ class CONTENT_EXPORT BrowserChildProcessHostImpl
   friend class BrowserChildProcessHostIterator;
   friend class BrowserChildProcessObserver;
 
+  void OnProcessConnected();
+
   static BrowserChildProcessList* GetIterator();
 
   static void AddObserver(BrowserChildProcessObserver* observer);
@@ -218,9 +215,8 @@ class CONTENT_EXPORT BrowserChildProcessHostImpl
   // transferred to the child process.
   base::WritableSharedMemoryRegion metrics_shared_region_;
 
-  IPC::Channel* channel_ = nullptr;
-  bool is_channel_connected_;
-  bool notify_child_disconnected_;
+  bool has_legacy_ipc_channel_ = false;
+  bool notify_child_connection_status_ = true;
 
 #if defined(OS_ANDROID)
   // whether the child process can use pre-warmed up connection for better

@@ -22,7 +22,7 @@ interface DisplayPrivate {
 
   // Attempts to immediately swap a frame with the current size if possible,
   // then will no longer swap until Resize() is called with a non-empty size.
-  [EnableIf=is_win, Sync, NoInterrupt]
+  [EnableIf=is_win, Sync]
   DisableSwapUntilResize() => ();
 
   // Resizes the display.
@@ -67,6 +67,10 @@ interface DisplayPrivate {
   // destruction.
   [EnableIf=is_android]
   PreserveChildSurfaceControls();
+
+  // Lets client control whether it wants `DidCompleteSwapWithSize` callbacks.
+  [EnableIf=is_android]
+  SetSwapCompletionCallbackEnabled(bool enable);
 
   // Adds an observer that gets notified about vsync parameter changes. See
   // VSyncParameterObserver for details.

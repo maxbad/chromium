@@ -5,14 +5,13 @@
 #ifndef COMPONENTS_SECURITY_INTERSTITIALS_CONTENT_CERT_REPORT_HELPER_H_
 #define COMPONENTS_SECURITY_INTERSTITIALS_CONTENT_CERT_REPORT_HELPER_H_
 
-#include "base/macros.h"
 #include "components/security_interstitials/content/certificate_error_report.h"
 #include "components/security_interstitials/core/controller_client.h"
 #include "net/ssl/ssl_info.h"
 #include "url/gurl.h"
 
 namespace base {
-class DictionaryValue;
+class Value;
 }
 
 namespace content {
@@ -51,6 +50,9 @@ class CertReportHelper {
       bool can_show_enhanced_protection_message,
       security_interstitials::MetricsHelper* metrics_helper);
 
+  CertReportHelper(const CertReportHelper&) = delete;
+  CertReportHelper& operator=(const CertReportHelper&) = delete;
+
   virtual ~CertReportHelper();
 
   // This method can be called by tests to fake an official build (reports are
@@ -59,11 +61,11 @@ class CertReportHelper {
 
   // Populates data that JavaScript code on the interstitial uses to show
   // the checkbox.
-  void PopulateExtendedReportingOption(base::DictionaryValue* load_time_data);
+  void PopulateExtendedReportingOption(base::Value* load_time_data);
 
   // Populates data that JavaScript code on the interstitial uses to show
   // the enhanced protection message.
-  void PopulateEnhancedProtectionMessage(base::DictionaryValue* load_time_data);
+  void PopulateEnhancedProtectionMessage(base::Value* load_time_data);
 
   // Allows tests to inject a mock reporter.
   void SetSSLCertReporterForTesting(
@@ -132,8 +134,6 @@ class CertReportHelper {
   // taking an action on the interstitial is counted as not proceeding.
   CertificateErrorReport::ProceedDecision user_action_ =
       CertificateErrorReport::USER_DID_NOT_PROCEED;
-
-  DISALLOW_COPY_AND_ASSIGN(CertReportHelper);
 };
 
 #endif  // COMPONENTS_SECURITY_INTERSTITIALS_CONTENT_CERT_REPORT_HELPER_H_

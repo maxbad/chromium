@@ -46,6 +46,11 @@ using TerminateGpuCallback = base::OnceCallback<void(std::string)>;
 class MockPlatformWindowDelegate : public ui::PlatformWindowDelegate {
  public:
   MockPlatformWindowDelegate() = default;
+
+  MockPlatformWindowDelegate(const MockPlatformWindowDelegate&) = delete;
+  MockPlatformWindowDelegate& operator=(const MockPlatformWindowDelegate&) =
+      delete;
+
   ~MockPlatformWindowDelegate() = default;
 
   MOCK_METHOD1(OnBoundsChanged, void(const BoundsChange& change));
@@ -53,7 +58,9 @@ class MockPlatformWindowDelegate : public ui::PlatformWindowDelegate {
   MOCK_METHOD1(DispatchEvent, void(ui::Event* event));
   MOCK_METHOD0(OnCloseRequest, void());
   MOCK_METHOD0(OnClosed, void());
-  MOCK_METHOD1(OnWindowStateChanged, void(ui::PlatformWindowState new_state));
+  MOCK_METHOD2(OnWindowStateChanged,
+               void(ui::PlatformWindowState old_state,
+                    ui::PlatformWindowState new_state));
   MOCK_METHOD0(OnLostCapture, void());
   MOCK_METHOD1(OnAcceleratedWidgetAvailable,
                void(gfx::AcceleratedWidget widget));
@@ -61,9 +68,6 @@ class MockPlatformWindowDelegate : public ui::PlatformWindowDelegate {
   MOCK_METHOD0(OnAcceleratedWidgetDestroyed, void());
   MOCK_METHOD1(OnActivationChanged, void(bool active));
   MOCK_METHOD0(OnMouseEnter, void());
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(MockPlatformWindowDelegate);
 };
 
 struct Environment {
@@ -117,6 +121,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   CHECK(connection->Initialize());
 
   auto screen = connection->wayland_output_manager()->CreateWaylandScreen();
+  connection->wayland_output_manager()->InitWaylandScreen(screen.get());
 
   MockPlatformWindowDelegate delegate;
   gfx::AcceleratedWidget widget = gfx::kNullAcceleratedWidget;

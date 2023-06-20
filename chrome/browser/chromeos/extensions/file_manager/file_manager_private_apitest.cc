@@ -17,21 +17,21 @@
 #include "chrome/browser/ash/crostini/crostini_pref_names.h"
 #include "chrome/browser/ash/crostini/fake_crostini_features.h"
 #include "chrome/browser/ash/drive/drivefs_test_support.h"
+#include "chrome/browser/ash/file_manager/file_watcher.h"
+#include "chrome/browser/ash/file_manager/mount_test_util.h"
+#include "chrome/browser/ash/file_manager/path_util.h"
 #include "chrome/browser/ash/file_system_provider/icon_set.h"
 #include "chrome/browser/ash/file_system_provider/provided_file_system_info.h"
 #include "chrome/browser/chromeos/extensions/file_manager/event_router.h"
 #include "chrome/browser/chromeos/extensions/file_manager/event_router_factory.h"
 #include "chrome/browser/chromeos/extensions/file_manager/private_api_misc.h"
-#include "chrome/browser/chromeos/file_manager/file_watcher.h"
-#include "chrome/browser/chromeos/file_manager/mount_test_util.h"
-#include "chrome/browser/chromeos/file_manager/path_util.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/extensions/extension_function_test_utils.h"
 #include "chrome/browser/signin/identity_manager_factory.h"
 #include "chrome/common/chrome_features.h"
 #include "chrome/common/extensions/api/file_system_provider_capabilities/file_system_provider_capabilities_handler.h"
 #include "chromeos/dbus/concierge/concierge_service.pb.h"
-#include "chromeos/dbus/cros_disks_client.h"
+#include "chromeos/dbus/cros_disks/cros_disks_client.h"
 #include "chromeos/disks/disk.h"
 #include "chromeos/disks/mock_disk_mount_manager.h"
 #include "components/drive/drive_pref_names.h"
@@ -40,7 +40,7 @@
 #include "content/public/test/browser_test.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/install_warning.h"
-#include "google_apis/drive/test_util.h"
+#include "google_apis/common/test_util.h"
 #include "storage/browser/file_system/external_mount_points.h"
 
 using ::testing::_;
@@ -354,7 +354,7 @@ class FileManagerPrivateApiTest : public extensions::ExtensionApiTest {
 };
 
 IN_PROC_BROWSER_TEST_F(FileManagerPrivateApiTest, Mount) {
-  using chromeos::file_system_provider::IconSet;
+  using ash::file_system_provider::IconSet;
   profile()->GetPrefs()->SetBoolean(drive::prefs::kDisableDrive, true);
 
   // Add a provided file system, to test passing the |configurable| and
@@ -364,8 +364,8 @@ IN_PROC_BROWSER_TEST_F(FileManagerPrivateApiTest, Mount) {
                    GURL("chrome://resources/testing-provider-id-16.jpg"));
   icon_set.SetIcon(IconSet::IconSize::SIZE_32x32,
                    GURL("chrome://resources/testing-provider-id-32.jpg"));
-  chromeos::file_system_provider::ProvidedFileSystemInfo info(
-      "testing-provider-id", chromeos::file_system_provider::MountOptions(),
+  ash::file_system_provider::ProvidedFileSystemInfo info(
+      "testing-provider-id", ash::file_system_provider::MountOptions(),
       base::FilePath(), true /* configurable */, false /* watchable */,
       extensions::SOURCE_NETWORK, icon_set);
 

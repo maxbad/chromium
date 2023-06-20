@@ -41,7 +41,7 @@ absl::optional<std::vector<uint8_t>> EcdsaSha256TrustTokenRequestSigner::Sign(
 
   std::vector<uint8_t> signature;
 
-  if (!sig_creator->Sign(data.data(), data.size(), &signature))
+  if (!sig_creator->Sign(data, &signature))
     return absl::nullopt;
 
   return signature;
@@ -83,8 +83,8 @@ bool EcdsaSha256TrustTokenRequestSigner::Verify(
                           data.data(), data.size());
 }
 
-std::string EcdsaSha256TrustTokenRequestSigner::GetAlgorithmIdentifier() {
-  return "EcdsaSha256TrustTokenRequestSigner";
+std::string EcdsaSha256TrustTokenRequestSigner::GetAlgorithmIdentifier() const {
+  return "ecdsa_secp256r1_sha256";
 }
 
 }  // namespace network

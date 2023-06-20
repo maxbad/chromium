@@ -54,18 +54,6 @@ void ObservableWebView::DidFinishLoad(
     delegate_->OnWebContentsFinishedLoad();
 }
 
-void ObservableWebView::ResourceLoadComplete(
-    content::RenderFrameHost* render_frame_host,
-    const content::GlobalRequestID& request_id,
-    const blink::mojom::ResourceLoadInfo& resource_load_info) {
-  // Only listen to the main frame.
-  if (render_frame_host->GetParent())
-    return;
-
-  if (delegate_)
-    delegate_->OnMainFrameResourceLoadComplete(resource_load_info);
-}
-
 void ObservableWebView::ResetDelegate() {
   delegate_ = nullptr;
 }
@@ -359,7 +347,7 @@ bool WebDialogView::ShouldShowCloseButton() const {
 }
 
 bool WebDialogView::HandleContextMenu(
-    content::RenderFrameHost* render_frame_host,
+    content::RenderFrameHost& render_frame_host,
     const content::ContextMenuParams& params) {
   if (delegate_)
     return delegate_->HandleContextMenu(render_frame_host, params);

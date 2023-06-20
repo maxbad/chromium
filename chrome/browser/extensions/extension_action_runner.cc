@@ -13,7 +13,7 @@
 #include "base/containers/contains.h"
 #include "base/location.h"
 #include "base/metrics/histogram_macros.h"
-#include "base/single_thread_task_runner.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "chrome/browser/extensions/active_tab_permission_granter.h"
 #include "chrome/browser/extensions/api/extension_action/extension_action_api.h"
@@ -482,7 +482,10 @@ void ExtensionActionRunner::DidFinishNavigation(
   declarative_net_request::RulesMonitorService* rules_monitor_service =
       declarative_net_request::RulesMonitorService::Get(browser_context_);
 
-  const bool is_main_frame = navigation_handle->IsInMainFrame();
+  // TODO(https://crbug.com/1218946): With MPArch there may be multiple main
+  // frames. This caller was converted automatically to the primary main frame
+  // to preserve its semantics. Follow up to confirm correctness.
+  const bool is_main_frame = navigation_handle->IsInPrimaryMainFrame();
   const bool has_committed = navigation_handle->HasCommitted();
 
   if (is_main_frame && !has_committed && rules_monitor_service) {

@@ -5,6 +5,7 @@
 #include "components/metrics/test/test_metrics_service_client.h"
 
 #include <memory>
+#include <utility>
 
 #include "base/callback.h"
 #include "base/containers/contains.h"
@@ -16,14 +17,8 @@ namespace metrics {
 // static
 const char TestMetricsServiceClient::kBrandForTesting[] = "brand_for_testing";
 
-TestMetricsServiceClient::TestMetricsServiceClient()
-    : version_string_("5.0.322.0-64-devel"),
-      product_(ChromeUserMetricsExtension::CHROME),
-      reporting_is_managed_(false),
-      enable_default_(EnableMetricsDefault::DEFAULT_UNKNOWN),
-      storage_limits_(MetricsServiceClient::GetStorageLimits()) {}
-
-TestMetricsServiceClient::~TestMetricsServiceClient() {}
+TestMetricsServiceClient::TestMetricsServiceClient() = default;
+TestMetricsServiceClient::~TestMetricsServiceClient() = default;
 
 metrics::MetricsService* TestMetricsServiceClient::GetMetricsService() {
   return nullptr;
@@ -51,12 +46,17 @@ bool TestMetricsServiceClient::GetBrand(std::string* brand_code) {
   return true;
 }
 
+const network_time::NetworkTimeTracker*
+TestMetricsServiceClient::GetNetworkTimeTracker() {
+  return nullptr;
+}
+
 SystemProfileProto::Channel TestMetricsServiceClient::GetChannel() {
   return SystemProfileProto::CHANNEL_BETA;
 }
 
 bool TestMetricsServiceClient::IsExtendedStableChannel() {
-  return false;
+  return is_extended_stable_channel_;
 }
 
 std::string TestMetricsServiceClient::GetVersionString() {
@@ -79,7 +79,7 @@ std::unique_ptr<MetricsLogUploader> TestMetricsServiceClient::CreateUploader(
 }
 
 base::TimeDelta TestMetricsServiceClient::GetStandardUploadInterval() {
-  return base::TimeDelta::FromMinutes(5);
+  return base::Minutes(5);
 }
 
 bool TestMetricsServiceClient::IsReportingPolicyManaged() {
@@ -91,7 +91,7 @@ TestMetricsServiceClient::GetMetricsReportingDefaultState() {
   return enable_default_;
 }
 
-std::string TestMetricsServiceClient::GetAppPackageName() {
+std::string TestMetricsServiceClient::GetAppPackageNameIfLoggable() {
   return "test app";
 }
 

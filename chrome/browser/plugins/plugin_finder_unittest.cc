@@ -15,8 +15,8 @@ TEST(PluginFinderTest, JsonSyntax) {
   std::unique_ptr<base::DictionaryValue> plugin_list =
       PluginFinder::LoadBuiltInPluginList();
   ASSERT_TRUE(plugin_list);
-  std::unique_ptr<base::Value> version;
-  ASSERT_TRUE(plugin_list->Remove("x-version", &version));
+  absl::optional<base::Value> version = plugin_list->ExtractKey("x-version");
+  ASSERT_TRUE(version.has_value());
   EXPECT_EQ(base::Value::Type::INTEGER, version->type());
 
   for (base::DictionaryValue::Iterator plugin_it(*plugin_list);
@@ -57,9 +57,9 @@ TEST(PluginFinderTest, JsonSyntax) {
     if (!plugin->GetList("versions", &versions))
       continue;
 
-    for (const auto& version : versions->GetList()) {
+    for (const auto& version_value : versions->GetList()) {
       const base::DictionaryValue* version_dict = nullptr;
-      ASSERT_TRUE(version.GetAsDictionary(&version_dict));
+      ASSERT_TRUE(version_value.GetAsDictionary(&version_dict));
       EXPECT_TRUE(version_dict->GetString("version", &dummy_str));
       std::string status_str;
       EXPECT_TRUE(version_dict->GetString("status", &status_str));

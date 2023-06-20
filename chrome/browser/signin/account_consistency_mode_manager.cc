@@ -27,7 +27,7 @@
 #endif
 
 #if BUILDFLAG(IS_CHROMEOS_LACROS)
-#include "chrome/browser/lacros/account_manager_util.h"
+#include "chrome/browser/lacros/account_manager/account_manager_util.h"
 #endif
 
 using signin::AccountConsistencyMethod;
@@ -39,9 +39,6 @@ namespace {
 bool g_ignore_missing_oauth_client_for_testing = false;
 
 #if BUILDFLAG(ENABLE_DICE_SUPPORT)
-// Preference indicating that the Dice migraton has happened.
-const char kDiceMigrationCompletePref[] = "signin.DiceMigrationComplete";
-
 const char kAllowBrowserSigninArgument[] = "allow-browser-signin";
 
 bool IsBrowserSigninAllowedByCommandLine() {
@@ -90,7 +87,12 @@ AccountConsistencyModeManager::AccountConsistencyModeManager(Profile* profile)
   DCHECK(profile_);
   DCHECK(ShouldBuildServiceForProfile(profile));
 
-#if BUILDFLAG(ENABLE_DICE_SUPPORT)
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+  // Lacros doesn't support account inconsistency.
+  // TODO(crbug.com/1220066): Remove this section when Lacros stops building
+  // with DICE.
+  profile->GetPrefs()->SetBoolean(prefs::kSigninAllowed, true);
+#elif BUILDFLAG(ENABLE_DICE_SUPPORT)
   PrefService* prefs = profile->GetPrefs();
   // Propagate settings changes from the previous launch to the signin-allowed
   // pref.
@@ -102,14 +104,6 @@ AccountConsistencyModeManager::AccountConsistencyModeManager(Profile* profile)
 #endif
 
   account_consistency_ = ComputeAccountConsistencyMethod(profile_);
-
-#if BUILDFLAG(ENABLE_DICE_SUPPORT)
-  // New profiles don't need Dice migration. Old profiles may need it if they
-  // were created before Dice.
-  if (profile_->IsNewProfile())
-    SetDiceMigrationCompleted();
-#endif
-
   DCHECK_EQ(account_consistency_, ComputeAccountConsistencyMethod(profile_));
   account_consistency_initialized_ = true;
 }
@@ -119,9 +113,6 @@ AccountConsistencyModeManager::~AccountConsistencyModeManager() {}
 // static
 void AccountConsistencyModeManager::RegisterProfilePrefs(
     user_prefs::PrefRegistrySyncable* registry) {
-#if BUILDFLAG(ENABLE_DICE_SUPPORT)
-  registry->RegisterBooleanPref(kDiceMigrationCompletePref, false);
-#endif
   registry->RegisterBooleanPref(prefs::kSigninAllowedOnNextStartup, true);
 }
 
@@ -141,16 +132,6 @@ bool AccountConsistencyModeManager::IsDiceEnabledForProfile(Profile* profile) {
 }
 
 #if BUILDFLAG(ENABLE_DICE_SUPPORT)
-void AccountConsistencyModeManager::SetDiceMigrationCompleted() {
-  VLOG(1) << "Dice migration completed.";
-  profile_->GetPrefs()->SetBoolean(kDiceMigrationCompletePref, true);
-}
-
-// static
-bool AccountConsistencyModeManager::IsDiceMigrationCompleted(Profile* profile) {
-  return profile->GetPrefs()->GetBoolean(kDiceMigrationCompletePref);
-}
-
 // static
 bool AccountConsistencyModeManager::IsDiceSignInAllowed() {
   return CanEnableDiceForBuild() && IsBrowserSigninAllowedByCommandLine();
@@ -171,7 +152,7 @@ void AccountConsistencyModeManager::SetIgnoreMissingOAuthClientForTesting() {
 // static
 bool AccountConsistencyModeManager::ShouldBuildServiceForProfile(
     Profile* profile) {
-  return profile->IsRegularProfile() || profile->IsEphemeralGuestProfile();
+  return profile->IsRegularProfile();
 }
 
 AccountConsistencyMethod

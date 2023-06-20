@@ -4,7 +4,6 @@
 
 #include "ash/system/message_center/message_center_utils.h"
 
-#include "ash/public/cpp/ash_features.h"
 #include "ash/public/cpp/vm_camera_mic_constants.h"
 #include "ui/message_center/message_center.h"
 
@@ -21,12 +20,15 @@ bool CompareNotifications(message_center::Notification* n1,
   return message_center::CompareTimestampSerial()(n1, n2);
 }
 
-std::vector<message_center::Notification*> GetSortedVisibleNotifications() {
+std::vector<message_center::Notification*> GetSortedNotificationsWithOwnView() {
   auto visible_notifications =
       message_center::MessageCenter::Get()->GetVisibleNotifications();
   std::vector<message_center::Notification*> sorted_notifications;
-  std::copy(visible_notifications.begin(), visible_notifications.end(),
-            std::back_inserter(sorted_notifications));
+  std::copy_if(visible_notifications.begin(), visible_notifications.end(),
+               std::back_inserter(sorted_notifications),
+               [](message_center::Notification* notification) {
+                 return !notification->group_child();
+               });
   std::sort(sorted_notifications.begin(), sorted_notifications.end(),
             CompareNotifications);
   return sorted_notifications;
@@ -40,6 +42,11 @@ size_t GetNotificationCount() {
     // Don't count these notifications since we have `CameraMicTrayItemView` to
     // show indicators on the systray.
     if (notifier == kVmCameraMicNotifierId)
+      continue;
+
+    // Don't count group child notifications since they're contained in a single
+    // parent view.
+    if (notification->group_child())
       continue;
 
     ++count;

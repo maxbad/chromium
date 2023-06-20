@@ -15,7 +15,6 @@
 #include "ash/app_list/model/app_list_model_export.h"
 #include "ash/public/cpp/app_list/app_list_types.h"
 #include "ash/public/cpp/shelf_types.h"
-#include "base/macros.h"
 #include "base/observer_list.h"
 #include "components/sync/model/string_ordinal.h"
 #include "ui/gfx/image/image_skia.h"
@@ -35,6 +34,10 @@ class APP_LIST_MODEL_EXPORT AppListItem {
   using AppListItemMetadata = ash::AppListItemMetadata;
 
   explicit AppListItem(const std::string& id);
+
+  AppListItem(const AppListItem&) = delete;
+  AppListItem& operator=(const AppListItem&) = delete;
+
   virtual ~AppListItem();
 
   void SetIcon(AppListConfigType config_type, const gfx::ImageSkia& icon);
@@ -45,6 +48,14 @@ class APP_LIST_MODEL_EXPORT AppListItem {
   // for the config has not been set using `SetIcon()`.
   void SetDefaultIcon(const gfx::ImageSkia& icon);
   const gfx::ImageSkia& GetDefaultIcon() const;
+
+  // Sets an number to represent the current icon version. It is used so that
+  // the data provider side (AppService) only marks an icon change without
+  // actually loading the icon. When AppLIteItem is added to UI, UI code
+  // observes this icon version number and calls back into data provider to
+  // perform the actual icon loading. When the icon is loaded, SetIcon is called
+  // and UI would be updated since it also observe ItemIconChanged.
+  void SetIconVersion(int icon_version);
 
   void SetNotificationBadgeColor(const SkColor color);
 
@@ -83,6 +94,9 @@ class APP_LIST_MODEL_EXPORT AppListItem {
 
   // Returns the number of child items if it has any (e.g. is a folder) or 0.
   virtual size_t ChildItemCount() const;
+
+  // Returns whether the item is a folder with max allowed children.
+  bool IsFolderFull() const;
 
   std::string ToDebugString() const;
 
@@ -149,7 +163,7 @@ class APP_LIST_MODEL_EXPORT AppListItem {
   // Contains icons for AppListConfigTypes different than kShared. For kShared
   // config type, the item will always use the icon provided by |metadata_|.
   // This is currently used for folder icons only (which are all generated in
-  // ash), when app_list_features::kScalableAppList feature is enabled.
+  // ash).
   std::map<AppListConfigType, gfx::ImageSkia> per_config_icons_;
 
   // A shortened name for the item, used for display.
@@ -159,8 +173,6 @@ class APP_LIST_MODEL_EXPORT AppListItem {
   bool has_notification_badge_ = false;
 
   base::ObserverList<AppListItemObserver> observers_;
-
-  DISALLOW_COPY_AND_ASSIGN(AppListItem);
 };
 
 }  // namespace ash

@@ -8,55 +8,111 @@
 #include <memory>
 
 #include "base/callback_forward.h"
+#include "base/cancelable_callback.h"
+#include "base/scoped_multi_source_observation.h"
+#include "components/arc/compat_mode/resize_util.h"
+#include "ui/aura/window.h"
+#include "ui/aura/window_observer.h"
+#include "ui/views/controls/button/button.h"
+#include "ui/views/widget/widget.h"
+#include "ui/views/widget/widget_observer.h"
 
 namespace gfx {
 class Rect;
+struct VectorIcon;
 }  // namespace gfx
 
 namespace views {
 class BubbleDialogDelegateView;
-class Button;
-class Widget;
+class ImageView;
+class Label;
 }  // namespace views
 
 namespace arc {
 
 class ArcResizeLockPrefDelegate;
 
-class ResizeToggleMenu {
+class ResizeToggleMenu : public views::WidgetObserver,
+                         public aura::WindowObserver {
  public:
-  enum class CommandId {
-    kResizePhone,
-    kResizeTablet,
-    kResizeDesktop,
-    kOpenSettings,
+  class MenuButtonView : public views::Button {
+   public:
+    MenuButtonView(PressedCallback callback,
+                   const gfx::VectorIcon& icon,
+                   int title_string_id);
+    MenuButtonView(const MenuButtonView&) = delete;
+    MenuButtonView& operator=(const MenuButtonView&) = delete;
+    ~MenuButtonView() override;
+
+    void SetSelected(bool is_selected);
+
+   private:
+    // views::View:
+    void OnThemeChanged() override;
+    gfx::Size CalculatePreferredSize() const override;
+
+    void UpdateColors();
+    void UpdateState();
+
+    // Owned by views hierarchy.
+    views::ImageView* icon_view_{nullptr};
+    views::Label* title_{nullptr};
+
+    const gfx::VectorIcon& icon_;
+    bool is_selected_{false};
   };
 
   ResizeToggleMenu(views::Widget* widget,
                    ArcResizeLockPrefDelegate* pref_delegate);
   ResizeToggleMenu(const ResizeToggleMenu&) = delete;
   ResizeToggleMenu& operator=(const ResizeToggleMenu&) = delete;
-  ~ResizeToggleMenu();
+  ~ResizeToggleMenu() override;
+
+  // views::WidgetObserver:
+  void OnWidgetClosing(views::Widget* widget) override;
+  void OnWidgetBoundsChanged(views::Widget* widget,
+                             const gfx::Rect& new_bounds) override;
+
+  // aura::WindowObserver:
+  void OnWindowPropertyChanged(aura::Window* window,
+                               const void* key,
+                               intptr_t old) override;
+  void OnWindowDestroying(aura::Window* window) override;
 
  private:
   friend class ResizeToggleMenuTest;
 
-  void ExecuteCommand(CommandId command_id);
+  void UpdateSelectedButton();
+
+  void ApplyResizeCompatMode(ResizeCompatMode mode);
+
+  gfx::Rect GetAnchorRect() const;
 
   std::unique_ptr<views::BubbleDialogDelegateView> MakeBubbleDelegateView(
       views::Widget* parent,
       gfx::Rect anchor_rect,
-      base::RepeatingCallback<void(CommandId)> command_handler);
+      base::RepeatingCallback<void(ResizeCompatMode)> command_handler);
+
+  void CloseBubble();
 
   views::Widget* widget_;
 
   ArcResizeLockPrefDelegate* pref_delegate_;
 
+  base::ScopedMultiSourceObservation<views::Widget, views::WidgetObserver>
+      widget_observations_{this};
+  base::ScopedObservation<aura::Window, aura::WindowObserver>
+      window_observation_{this};
+
+  base::CancelableOnceClosure auto_close_closure_;
+
   // Store only for testing.
   views::Widget* bubble_widget_{nullptr};
-  views::Button* phone_button_{nullptr};
-  views::Button* tablet_button_{nullptr};
-  views::Button* desktop_button_{nullptr};
+  MenuButtonView* phone_button_{nullptr};
+  MenuButtonView* tablet_button_{nullptr};
+  MenuButtonView* resizable_button_{nullptr};
+
+  base::WeakPtrFactory<ResizeToggleMenu> weak_ptr_factory_{this};
 };
 
 }  // namespace arc

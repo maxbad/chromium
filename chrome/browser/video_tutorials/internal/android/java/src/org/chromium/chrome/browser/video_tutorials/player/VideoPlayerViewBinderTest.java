@@ -25,7 +25,6 @@ import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.MockitoAnnotations;
 
-import org.chromium.base.test.BaseActivityTestRule;
 import org.chromium.base.test.UiThreadTest;
 import org.chromium.base.test.util.ApplicationTestUtils;
 import org.chromium.chrome.browser.video_tutorials.PlaybackStateObserver.WatchStateInfo.State;
@@ -36,6 +35,7 @@ import org.chromium.content_public.browser.test.util.TestThreadUtils;
 import org.chromium.ui.modelutil.PropertyModel;
 import org.chromium.ui.modelutil.PropertyModelChangeProcessor;
 import org.chromium.ui.test.util.DummyUiActivity;
+import org.chromium.ui.test.util.ThemedDummyUiActivityTestRule;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -45,8 +45,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @RunWith(ChromeJUnit4ClassRunner.class)
 public class VideoPlayerViewBinderTest {
     @Rule
-    public BaseActivityTestRule<DummyUiActivity> mActivityTestRule =
-            new BaseActivityTestRule<>(DummyUiActivity.class);
+    public ThemedDummyUiActivityTestRule<DummyUiActivity> mActivityTestRule =
+            new ThemedDummyUiActivityTestRule<>(
+                    DummyUiActivity.class, R.style.ColorOverlay_ChromiumAndroid);
 
     private Activity mActivity;
     private VideoPlayerView mVideoPlayerView;
@@ -63,12 +64,13 @@ public class VideoPlayerViewBinderTest {
     @Before
     public void setUp() throws Exception {
         MockitoAnnotations.initMocks(this);
-        mModel = new PropertyModel(VideoPlayerProperties.ALL_KEYS);
         mActivityTestRule.launchActivity(null);
         ApplicationTestUtils.waitForActivityState(mActivityTestRule.getActivity(), Stage.RESUMED);
         mActivity = mActivityTestRule.getActivity();
 
         TestThreadUtils.runOnUiThreadBlocking(() -> {
+            mModel = new PropertyModel(VideoPlayerProperties.ALL_KEYS);
+
             FrameLayout thinWebViewLayout = new FrameLayout(mActivity);
             Mockito.when(mThinWebView.getView()).thenReturn(thinWebViewLayout);
 
@@ -89,8 +91,10 @@ public class VideoPlayerViewBinderTest {
 
     @After
     public void tearDown() throws Exception {
-        mMCP.destroy();
-        mVideoPlayerView.destroy();
+        TestThreadUtils.runOnUiThreadBlocking(() -> {
+            mMCP.destroy();
+            mVideoPlayerView.destroy();
+        });
     }
 
     @Test

@@ -8,7 +8,6 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
-#include "base/macros.h"
 #include "base/memory/ptr_util.h"
 #include "base/run_loop.h"
 #include "base/threading/thread_task_runner_handle.h"
@@ -28,6 +27,8 @@
 #include "net/base/network_isolation_key.h"
 #include "net/cookies/cookie_store.h"
 #include "net/http/http_auth.h"
+#include "net/http/http_auth_cache.h"
+#include "net/http/http_network_session.h"
 #include "net/http/http_transaction_factory.h"
 #include "net/url_request/url_request_context.h"
 #include "services/cert_verifier/public/mojom/cert_verifier_service_factory.mojom.h"
@@ -36,10 +37,10 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
 
-namespace chromeos {
+namespace ash {
 namespace login {
-
 namespace {
+
 constexpr char kEmbedderUrl[] = "http://www.whatever.com/";
 
 void StorePartitionNameAndQuitLoop(base::RunLoop* loop,
@@ -75,6 +76,11 @@ void IsEntryInHttpAuthCache(network::NetworkContext* network_context,
 }  // namespace
 
 class SigninPartitionManagerTest : public ChromeRenderViewHostTestHarness {
+ public:
+  SigninPartitionManagerTest(const SigninPartitionManagerTest&) = delete;
+  SigninPartitionManagerTest& operator=(const SigninPartitionManagerTest&) =
+      delete;
+
  protected:
   SigninPartitionManagerTest() {}
   ~SigninPartitionManagerTest() override {}
@@ -221,8 +227,6 @@ class SigninPartitionManagerTest : public ChromeRenderViewHostTestHarness {
 
   std::vector<std::pair<content::StoragePartition*, base::OnceClosure>>
       pending_clear_tasks_;
-
-  DISALLOW_COPY_AND_ASSIGN(SigninPartitionManagerTest);
 };
 
 TEST_F(SigninPartitionManagerTest, TestSubsequentAttempts) {
@@ -293,4 +297,4 @@ TEST_F(SigninPartitionManagerTest, HttpAuthCacheTransferred) {
 }
 
 }  // namespace login
-}  // namespace chromeos
+}  // namespace ash

@@ -14,11 +14,12 @@
 #include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
-#include "base/task_runner.h"
+#include "base/task/task_runner.h"
 #include "base/threading/thread_checker.h"
 #include "components/sync/base/invalidation_interface.h"
 #include "components/sync/base/model_type.h"
 #include "components/sync/base/weak_handle.h"
+#include "components/sync/engine/active_devices_invalidation_info.h"
 #include "components/sync/engine/configure_reason.h"
 #include "components/sync/engine/connection_status.h"
 #include "components/sync/engine/engine_components_factory.h"
@@ -132,7 +133,7 @@ class SyncManager {
 
   virtual ModelTypeSet InitialSyncEndedTypes() = 0;
 
-  virtual ModelTypeSet GetEnabledTypes() = 0;
+  virtual ModelTypeSet GetConnectedTypes() = 0;
 
   // Update tokens that we're using in Sync. Email must stay the same.
   virtual void UpdateCredentials(const SyncCredentials& credentials) = 0;
@@ -221,12 +222,9 @@ class SyncManager {
   // Updates invalidation client id.
   virtual void UpdateInvalidationClientId(const std::string& client_id) = 0;
 
-  // Notifies SyncManager that there are no other known active devices.
-  virtual void UpdateSingleClientStatus(bool single_client) = 0;
-
-  // Updates the list of known active device FCM registration tokens.
-  virtual void UpdateActiveDeviceFCMRegistrationTokens(
-      std::vector<std::string> fcm_registration_tokens) = 0;
+  // Updates the invalidation information from known active devices.
+  virtual void UpdateActiveDevicesInvalidationInfo(
+      ActiveDevicesInvalidationInfo active_devices_invalidation_info) = 0;
 };
 
 }  // namespace syncer

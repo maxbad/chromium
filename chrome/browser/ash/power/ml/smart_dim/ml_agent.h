@@ -12,7 +12,7 @@
 #include "chrome/browser/ash/power/ml/smart_dim/smart_dim_worker.h"
 #include "chrome/browser/ash/power/ml/user_activity_event.pb.h"
 
-namespace chromeos {
+namespace ash {
 namespace power {
 namespace ml {
 
@@ -28,6 +28,9 @@ using DimDecisionCallback =
 class SmartDimMlAgent {
  public:
   static SmartDimMlAgent* GetInstance();
+
+  SmartDimMlAgent(const SmartDimMlAgent&) = delete;
+  SmartDimMlAgent& operator=(const SmartDimMlAgent&) = delete;
 
   // Post a request to determine whether an upcoming dim should go ahead based
   // on input |features|. When a decision is arrived at, runs the callback. If
@@ -64,12 +67,10 @@ class SmartDimMlAgent {
       dim_decision_callback_;
 
   SEQUENCE_CHECKER(sequence_checker_);
-
-  DISALLOW_COPY_AND_ASSIGN(SmartDimMlAgent);
 };
 
 }  // namespace ml
 }  // namespace power
-}  // namespace chromeos
+}  // namespace ash
 
 #endif  // CHROME_BROWSER_ASH_POWER_ML_SMART_DIM_ML_AGENT_H_

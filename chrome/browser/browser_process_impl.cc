@@ -5,6 +5,7 @@
 #include "chrome/browser/browser_process_impl.h"
 
 #include <stddef.h>
+#include <stdio.h>
 
 #include <algorithm>
 #include <map>
@@ -18,13 +19,12 @@
 #include "base/debug/leak_annotations.h"
 #include "base/files/file_path.h"
 #include "base/location.h"
-#include "base/macros.h"
 #include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/path_service.h"
 #include "base/run_loop.h"
-#include "base/single_thread_task_runner.h"
 #include "base/synchronization/waitable_event.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/task/task_traits.h"
 #include "base/task/thread_pool.h"
 #include "base/threading/thread.h"
@@ -35,6 +35,7 @@
 #include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
+#include "chrome/browser/accessibility/soda_installer_impl.h"
 #include "chrome/browser/battery/battery_metrics.h"
 #include "chrome/browser/browser_process_platform_part.h"
 #include "chrome/browser/chrome_browser_main.h"
@@ -87,6 +88,11 @@
 #include "chrome/common/url_constants.h"
 #include "chrome/grit/chromium_strings.h"
 #include "chrome/installer/util/google_update_settings.h"
+#include "components/breadcrumbs/core/application_breadcrumbs_logger.h"
+#include "components/breadcrumbs/core/breadcrumb_manager.h"
+#include "components/breadcrumbs/core/breadcrumb_persistent_storage_manager.h"
+#include "components/breadcrumbs/core/breadcrumb_util.h"
+#include "components/breadcrumbs/core/features.h"
 #include "components/component_updater/component_updater_service.h"
 #include "components/component_updater/timer_update_scheduler.h"
 #include "components/crash/core/common/crash_key.h"
@@ -104,7 +110,7 @@
 #include "components/prefs/json_pref_store.h"
 #include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/pref_service.h"
-#include "components/safe_browsing/core/safe_browsing_service_interface.h"
+#include "components/safe_browsing/content/browser/safe_browsing_service_interface.h"
 #include "components/sessions/core/session_id_generator.h"
 #include "components/subresource_filter/content/browser/ruleset_service.h"
 #include "components/translate/core/browser/translate_download_manager.h"
@@ -149,6 +155,10 @@
 #include "ui/message_center/message_center.h"
 #endif
 
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+#include "components/soda/soda_installer_impl_chromeos.h"
+#endif
+
 #if defined(OS_ANDROID)
 #include "chrome/browser/flags/android/chrome_feature_list.h"
 #include "chrome/browser/ssl/chrome_security_state_client.h"
@@ -188,9 +198,12 @@
 #include "content/public/browser/plugin_service.h"
 #endif
 
+#if BUILDFLAG(ENABLE_SESSION_SERVICE)
+#include "chrome/browser/sessions/exit_type_service.h"
+#endif
+
 #if !defined(OS_ANDROID) && !BUILDFLAG(IS_CHROMEOS_ASH)
 #include "chrome/browser/first_run/upgrade_util.h"
-#include "chrome/browser/notifications/notification_ui_manager.h"
 #include "chrome/browser/ui/profile_picker.h"
 #include "components/enterprise/browser/controller/chrome_browser_cloud_management_controller.h"
 #endif
@@ -199,19 +212,26 @@
 #include "chrome/browser/error_reporting/chrome_js_error_report_processor.h"  // nogncheck
 #endif
 
+#if BUILDFLAG(ENABLE_CHROME_NOTIFICATIONS)
+#include "chrome/browser/notifications/notification_ui_manager.h"
+#endif
+
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+#include "chrome/browser/chromeos/extensions/telemetry/chromeos_telemetry_extensions_browser_api_provider.h"
+#endif
+
 #if defined(OS_WIN) || (defined(OS_LINUX) || BUILDFLAG(IS_CHROMEOS_LACROS))
 // How often to check if the persistent instance of Chrome needs to restart
 // to install an update.
 static const int kUpdateCheckIntervalHours = 6;
 #endif
 
-#if defined(USE_X11) || defined(OS_WIN) || defined(USE_OZONE)
+#if defined(OS_WIN) || defined(USE_OZONE)
 // How long to wait for the File thread to complete during EndSession, on Linux
 // and Windows. We have a timeout here because we're unable to run the UI
 // messageloop and there's some deadlock risk. Our only option is to exit
 // anyway.
-static constexpr base::TimeDelta kEndSessionTimeout =
-    base::TimeDelta::FromSeconds(10);
+static constexpr base::TimeDelta kEndSessionTimeout = base::Seconds(10);
 #endif
 
 using content::BrowserThread;
@@ -275,9 +295,16 @@ void BrowserProcessImpl::Init() {
   extensions_browser_client_->AddAPIProvider(
       std::make_unique<chrome_apps::ChromeAppsBrowserAPIProvider>());
   extensions::ExtensionsBrowserClient::Set(extensions_browser_client_.get());
-#endif
 
-#if !BUILDFLAG(IS_CHROMEOS_ASH)
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+  extensions_browser_client_->AddAPIProvider(
+      std::make_unique<
+          chromeos::ChromeOSTelemetryExtensionsBrowserAPIProvider>());
+#endif  // BUILDFLAG(IS_CHROMEOS_ASH)
+
+#endif  // BUILDFLAG(ENABLE_EXTENSIONS)
+
+#if BUILDFLAG(ENABLE_CHROME_NOTIFICATIONS)
   message_center::MessageCenter::Initialize();
   // Set the system notification source display name ("Google Chrome" or
   // "Chromium").
@@ -388,7 +415,7 @@ void BrowserProcessImpl::StartTearDown() {
 
   system_notification_helper_.reset();
 
-#if !BUILDFLAG(IS_CHROMEOS_ASH)
+#if BUILDFLAG(ENABLE_CHROME_NOTIFICATIONS)
   // Need to clear the desktop notification balloons before the IO thread and
   // before the profiles, since if there are any still showing we will access
   // those things during teardown.
@@ -426,7 +453,7 @@ void BrowserProcessImpl::StartTearDown() {
   storage_monitor::StorageMonitor::Destroy();
 #endif
 
-#if !BUILDFLAG(IS_CHROMEOS_ASH)
+#if BUILDFLAG(ENABLE_CHROME_NOTIFICATIONS)
   if (message_center::MessageCenter::Get())
     message_center::MessageCenter::Shutdown();
 #endif
@@ -461,6 +488,11 @@ void BrowserProcessImpl::StartTearDown() {
 
   // This expects to be destroyed before the task scheduler is torn down.
   SystemNetworkContextManager::DeleteInstance();
+
+  // The ApplicationBreadcrumbsLogger logs a shutdown event via a task when it
+  // is destroyed, so it should be destroyed before the task scheduler is torn
+  // down.
+  application_breadcrumbs_logger_.reset();
 }
 
 void BrowserProcessImpl::PostDestroyThreads() {
@@ -491,6 +523,9 @@ class RundownTaskCounter :
  public:
   RundownTaskCounter();
 
+  RundownTaskCounter(const RundownTaskCounter&) = delete;
+  RundownTaskCounter& operator=(const RundownTaskCounter&) = delete;
+
   // Increments |count_| and returns a closure bound to Decrement(). All
   // closures returned by this RundownTaskCounter's GetRundownClosure() method
   // must be invoked for TimedWait() to complete its wait without timing
@@ -513,8 +548,6 @@ class RundownTaskCounter :
   // until TimedWait is called.
   base::AtomicRefCount count_{1};
   base::WaitableEvent waitable_event_;
-
-  DISALLOW_COPY_AND_ASSIGN(RundownTaskCounter);
 };
 
 RundownTaskCounter::RundownTaskCounter() = default;
@@ -572,12 +605,15 @@ void BrowserProcessImpl::FlushLocalStateAndReply(base::OnceClosure reply) {
 void BrowserProcessImpl::EndSession() {
   // Mark all the profiles as clean.
   ProfileManager* pm = profile_manager();
-  std::vector<Profile*> profiles(pm->GetLoadedProfiles());
   scoped_refptr<RundownTaskCounter> rundown_counter =
       base::MakeRefCounted<RundownTaskCounter>();
-  for (size_t i = 0; i < profiles.size(); ++i) {
-    Profile* profile = profiles[i];
-    profile->SetExitType(Profile::EXIT_SESSION_ENDED);
+  for (Profile* profile : pm->GetLoadedProfiles()) {
+#if BUILDFLAG(ENABLE_SESSION_SERVICE)
+    ExitTypeService* exit_type_service =
+        ExitTypeService::GetInstanceForProfile(profile);
+    if (exit_type_service)
+      exit_type_service->SetCurrentSessionExitType(ExitType::kForcedShutdown);
+#endif
     if (profile->GetPrefs()) {
       profile->GetPrefs()->CommitPendingWrite(
           base::OnceClosure(), rundown_counter->GetRundownClosure());
@@ -608,7 +644,7 @@ void BrowserProcessImpl::EndSession() {
   //
   // If you change the condition here, be sure to also change
   // ProfileBrowserTests to match.
-#if defined(USE_X11) || defined(OS_WIN) || defined(USE_OZONE)
+#if defined(OS_WIN) || defined(USE_OZONE)
   // Do a best-effort wait on the successful countdown of rundown tasks. Note
   // that if we don't complete "quickly enough", Windows will terminate our
   // process.
@@ -708,14 +744,12 @@ BrowserProcessImpl::extension_event_router_forwarder() {
 
 NotificationUIManager* BrowserProcessImpl::notification_ui_manager() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-// TODO(miguelg) return nullptr for MAC as well once system notifications
-// are enabled by default.
-#if defined(OS_ANDROID) || BUILDFLAG(IS_CHROMEOS_ASH)
-  return nullptr;
-#else
+#if BUILDFLAG(ENABLE_CHROME_NOTIFICATIONS)
   if (!created_notification_ui_manager_)
     CreateNotificationUIManager();
   return notification_ui_manager_.get();
+#else
+  return nullptr;
 #endif
 }
 
@@ -759,6 +793,14 @@ void BrowserProcessImpl::CreateDevToolsProtocolHandler() {
   // StartupBrowserCreator::LaunchBrowser can be run multiple times when browser
   // is started with several profiles or existing browser process is reused.
   if (!remote_debugging_server_) {
+    if (!local_state_->GetBoolean(prefs::kDevToolsRemoteDebuggingAllowed)) {
+      // Follow content/browser/devtools/devtools_http_handler.cc that reports
+      // its remote debugging port on stderr for symmetry.
+      fputs("\nDevTools remote debugging is disallowed by the system admin.\n",
+            stderr);
+      fflush(stderr);
+      return;
+    }
     remote_debugging_server_ = std::make_unique<RemoteDebuggingServer>();
   }
 #endif
@@ -917,6 +959,14 @@ BuildState* BrowserProcessImpl::GetBuildState() {
 #endif
 }
 
+breadcrumbs::BreadcrumbPersistentStorageManager*
+BrowserProcessImpl::GetBreadcrumbPersistentStorageManager() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  return application_breadcrumbs_logger_
+             ? application_breadcrumbs_logger_->GetPersistentStorageManager()
+             : nullptr;
+}
+
 // static
 void BrowserProcessImpl::RegisterPrefs(PrefRegistrySimple* registry) {
   registry->RegisterBooleanPref(prefs::kDefaultBrowserSettingEnabled,
@@ -944,6 +994,7 @@ void BrowserProcessImpl::RegisterPrefs(PrefRegistrySimple* registry) {
 
   registry->RegisterBooleanPref(metrics::prefs::kMetricsReportingEnabled,
                                 GoogleUpdateSettings::GetCollectStatsConsent());
+  registry->RegisterBooleanPref(prefs::kDevToolsRemoteDebuggingAllowed, true);
 }
 
 DownloadRequestLimiter* BrowserProcessImpl::download_request_limiter() {
@@ -1011,10 +1062,8 @@ StartupData* BrowserProcessImpl::startup_data() {
 // complete.
 #if defined(OS_WIN) || (defined(OS_LINUX) || BUILDFLAG(IS_CHROMEOS_LACROS))
 void BrowserProcessImpl::StartAutoupdateTimer() {
-  autoupdate_timer_.Start(FROM_HERE,
-      base::TimeDelta::FromHours(kUpdateCheckIntervalHours),
-      this,
-      &BrowserProcessImpl::OnAutoupdateTimer);
+  autoupdate_timer_.Start(FROM_HERE, base::Hours(kUpdateCheckIntervalHours),
+                          this, &BrowserProcessImpl::OnAutoupdateTimer);
 }
 #endif
 
@@ -1167,6 +1216,33 @@ void BrowserProcessImpl::PreMainMessageLoopRun() {
   // SecurityStateModel code is called.
   security_state::SetSecurityStateClient(new ChromeSecurityStateClient());
 #endif
+
+// Create the global SodaInstaller instance.
+#if !defined(OS_ANDROID) && !BUILDFLAG(IS_CHROMEOS_ASH)
+  soda_installer_impl_ = std::make_unique<speech::SodaInstallerImpl>();
+#endif  // !defined(OS_ANDROID) && !BUILDFLAG(IS_CHROMEOS_ASH)
+
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+  soda_installer_impl_ = std::make_unique<speech::SodaInstallerImplChromeOS>();
+#endif  // BUILDFLAG(IS_CHROMEOS_ASH)
+
+  if (base::FeatureList::IsEnabled(breadcrumbs::kLogBreadcrumbs)) {
+    breadcrumb_manager_ = std::make_unique<breadcrumbs::BreadcrumbManager>(
+        breadcrumbs::GetStartTime());
+    application_breadcrumbs_logger_ =
+        std::make_unique<breadcrumbs::ApplicationBreadcrumbsLogger>(
+            breadcrumb_manager_.get());
+
+    base::FilePath storage_dir;
+    bool result = base::PathService::Get(chrome::DIR_USER_DATA, &storage_dir);
+    DCHECK(result);
+
+    auto breadcrumb_persistent_storage_manager =
+        std::make_unique<breadcrumbs::BreadcrumbPersistentStorageManager>(
+            storage_dir);
+    application_breadcrumbs_logger_->SetPersistentStorageManager(
+        std::move(breadcrumb_persistent_storage_manager));
+  }
 }
 
 void BrowserProcessImpl::CreateIconManager() {
@@ -1184,9 +1260,7 @@ void BrowserProcessImpl::CreateNotificationPlatformBridge() {
 }
 
 void BrowserProcessImpl::CreateNotificationUIManager() {
-// Android and Chrome OS do not use the NotificationUIManager anymore.
-// All notification traffic is routed through NotificationPlatformBridge.
-#if !defined(OS_ANDROID) && !BUILDFLAG(IS_CHROMEOS_ASH)
+#if BUILDFLAG(ENABLE_CHROME_NOTIFICATIONS)
   DCHECK(!notification_ui_manager_);
   notification_ui_manager_ = NotificationUIManager::Create();
   created_notification_ui_manager_ = !!notification_ui_manager_;

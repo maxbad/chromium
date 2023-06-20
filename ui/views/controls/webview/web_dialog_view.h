@@ -12,7 +12,6 @@
 #include <vector>
 
 #include "base/gtest_prod_util.h"
-#include "base/macros.h"
 #include "ui/base/metadata/metadata_header_macros.h"
 #include "ui/gfx/geometry/size.h"
 #include "ui/views/controls/webview/unhandled_keyboard_event_handler.h"
@@ -26,7 +25,6 @@
 namespace content {
 class BrowserContext;
 class RenderFrameHost;
-struct GlobalRequestID;
 }  // namespace content
 
 namespace views {
@@ -45,10 +43,6 @@ class ObservableWebView : public WebView {
   // content::WebContentsObserver
   void DidFinishLoad(content::RenderFrameHost* render_frame_host,
                      const GURL& validated_url) override;
-  void ResourceLoadComplete(
-      content::RenderFrameHost* render_frame_host,
-      const content::GlobalRequestID& request_id,
-      const blink::mojom::ResourceLoadInfo& resource_load_info) override;
 
   // Resets the delegate. The delegate will no longer receive calls after this
   // point.
@@ -131,7 +125,7 @@ class WEBVIEW_EXPORT WebDialogView : public ClientView,
                        bool* out_close_dialog) override;
   bool ShouldShowDialogTitle() const override;
   bool ShouldCenterDialogTitleText() const override;
-  bool HandleContextMenu(content::RenderFrameHost* render_frame_host,
+  bool HandleContextMenu(content::RenderFrameHost& render_frame_host,
                          const content::ContextMenuParams& params) override;
 
   // content::WebContentsDelegate:

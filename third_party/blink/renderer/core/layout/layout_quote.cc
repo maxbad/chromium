@@ -23,7 +23,7 @@
 
 #include <algorithm>
 
-#include "base/stl_util.h"
+#include "base/cxx17_backports.h"
 #include "third_party/blink/renderer/core/dom/pseudo_element.h"
 #include "third_party/blink/renderer/core/layout/layout_text_fragment.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
@@ -48,6 +48,13 @@ LayoutQuote::~LayoutQuote() {
   DCHECK(!attached_);
   DCHECK(!next_);
   DCHECK(!previous_);
+}
+
+void LayoutQuote::Trace(Visitor* visitor) const {
+  visitor->Trace(next_);
+  visitor->Trace(previous_);
+  visitor->Trace(owning_pseudo_);
+  LayoutInline::Trace(visitor);
 }
 
 void LayoutQuote::WillBeDestroyed() {

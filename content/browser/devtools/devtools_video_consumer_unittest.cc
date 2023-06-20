@@ -8,9 +8,11 @@
 #include "base/bind.h"
 #include "base/memory/read_only_shared_memory_region.h"
 #include "base/test/task_environment.h"
+#include "components/viz/common/surfaces/region_capture_bounds.h"
 #include "content/browser/devtools/devtools_video_consumer.h"
 #include "content/public/test/test_utils.h"
 #include "media/base/limits.h"
+#include "media/capture/mojom/video_capture_buffer.mojom.h"
 #include "media/capture/mojom/video_capture_types.mojom.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
@@ -84,7 +86,7 @@ class MockFrameSinkVideoCapturer : public viz::mojom::FrameSinkVideoCapturer {
   // This is never called.
   MOCK_METHOD1(SetAutoThrottlingEnabled, void(bool));
   void ChangeTarget(const absl::optional<viz::FrameSinkId>& frame_sink_id,
-                    const viz::SubtreeCaptureId& subtree_capture_id) final {
+                    viz::mojom::SubTargetPtr sub_target) final {
     frame_sink_id_ = frame_sink_id ? *frame_sink_id : viz::FrameSinkId();
     MockChangeTarget(frame_sink_id_);
   }

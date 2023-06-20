@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "base/command_line.h"
+#include "base/metrics/field_trial_params.h"
 #include "base/no_destructor.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "build/branding_buildflags.h"
@@ -15,6 +16,7 @@
 #include "components/services/storage/public/mojom/storage_service.mojom.h"
 #include "components/services/storage/storage_service_impl.h"
 #include "content/child/child_process.h"
+#include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/utility/content_utility_client.h"
 #include "content/public/utility/utility_thread.h"
@@ -37,15 +39,18 @@
 #include "base/mac/mach_logging.h"
 #include "sandbox/mac/system_services.h"
 #include "sandbox/policy/sandbox.h"
+#elif defined(OS_ANDROID)
+#include "content/common/android/cpu_affinity_setter.h"
 #endif
 
 #if BUILDFLAG(ENABLE_LIBRARY_CDMS)
-#include "media/cdm/cdm_adapter_factory.h"          // nogncheck
-#include "media/mojo/mojom/cdm_service.mojom.h"     // nogncheck
+#include "media/cdm/cdm_adapter_factory.h"                   // nogncheck
+#include "media/mojo/mojom/cdm_service.mojom.h"              // nogncheck
 #include "media/mojo/mojom/frame_interface_factory.mojom.h"  // nogncheck
-#include "media/mojo/services/cdm_service.h"        // nogncheck
-#include "media/mojo/services/mojo_cdm_helper.h"    // nogncheck
-#include "media/mojo/services/mojo_media_client.h"  // nogncheck
+#include "media/mojo/services/cdm_service.h"                 // nogncheck
+#include "media/mojo/services/cdm_service_broker.h"          // nogncheck
+#include "media/mojo/services/mojo_cdm_helper.h"             // nogncheck
+#include "media/mojo/services/mojo_media_client.h"           // nogncheck
 #if BUILDFLAG(ENABLE_CDM_HOST_VERIFICATION)
 #include "media/cdm/cdm_host_file.h"
 #endif  // BUILDFLAG(ENABLE_CDM_HOST_VERIFICATION)
@@ -64,6 +69,7 @@ extern sandbox::TargetServices* g_utility_target_services;
 
 #if defined(OS_LINUX) || defined(OS_CHROMEOS)
 #include "sandbox/linux/services/libc_interceptor.h"
+#include "sandbox/policy/mojom/sandbox.mojom.h"
 #include "sandbox/policy/sandbox_type.h"
 #endif  // defined(OS_LINUX) || defined(OS_CHROMEOS)
 
@@ -74,7 +80,7 @@ extern sandbox::TargetServices* g_utility_target_services;
 
 #if defined(OS_WIN)
 #include "media/mojo/mojom/media_foundation_service.mojom.h"  // nogncheck
-#include "media/mojo/services/media_foundation_service.h"     // nogncheck
+#include "media/mojo/services/media_foundation_service_broker.h"  // nogncheck
 #endif  // defined(OS_WIN)
 
 namespace content {
@@ -140,6 +146,14 @@ class UtilityThreadVideoCaptureServiceImpl final
 
 auto RunNetworkService(
     mojo::PendingReceiver<network::mojom::NetworkService> receiver) {
+#if defined(OS_ANDROID)
+  if (base::GetFieldTrialParamByFeatureAsBool(
+          features::kBigLittleScheduling,
+          features::kBigLittleSchedulingNetworkMainBigParam, false)) {
+    SetCpuAffinityForCurrentThread(base::CpuAffinityMode::kBigCoresOnly);
+  }
+#endif
+
   auto binders = std::make_unique<service_manager::BinderRegistry>();
   GetContentClient()->utility()->RegisterNetworkBinders(binders.get());
   return std::make_unique<network::NetworkService>(
@@ -187,7 +201,7 @@ auto RunAudio(mojo::PendingReceiver<audio::mojom::AudioService> receiver) {
 #if defined(OS_LINUX) || defined(OS_CHROMEOS)
   auto* command_line = base::CommandLine::ForCurrentProcess();
   if (sandbox::policy::SandboxTypeFromCommandLine(*command_line) ==
-      sandbox::policy::SandboxType::kNoSandbox) {
+      sandbox::mojom::Sandbox::kNoSandbox) {
     // This is necessary to avoid crashes in certain environments.
     // See https://crbug.com/1109346
     sandbox::InitLibcLocaltimeFunctions();
@@ -215,8 +229,9 @@ auto RunShapeDetectionService(
 #endif
 
 #if BUILDFLAG(ENABLE_LIBRARY_CDMS)
-auto RunCdmService(mojo::PendingReceiver<media::mojom::CdmService> receiver) {
-  return std::make_unique<media::CdmService>(
+auto RunCdmServiceBroker(
+    mojo::PendingReceiver<media::mojom::CdmServiceBroker> receiver) {
+  return std::make_unique<media::CdmServiceBroker>(
       std::make_unique<ContentCdmServiceClient>(), std::move(receiver));
 }
 #endif
@@ -229,16 +244,12 @@ auto RunDataDecoder(
 }
 
 #if defined(OS_WIN)
-std::unique_ptr<media::MediaFoundationService> RunMediaFoundationService(
-    mojo::PendingReceiver<media::mojom::MediaFoundationService> receiver) {
-  base::FilePath user_data;
-  if (!GetContentClient()->utility()->GetDefaultUserDataDirectory(&user_data)) {
-    receiver.ResetWithReason(0, "Cannot get user data directory!");
-    return nullptr;
-  }
-
-  return std::make_unique<media::MediaFoundationService>(
-      std::move(receiver), user_data, base::BindOnce(&EnsureSandboxedWin));
+std::unique_ptr<media::MediaFoundationServiceBroker>
+RunMediaFoundationServiceBroker(
+    mojo::PendingReceiver<media::mojom::MediaFoundationServiceBroker>
+        receiver) {
+  return std::make_unique<media::MediaFoundationServiceBroker>(
+      std::move(receiver), base::BindOnce(&EnsureSandboxedWin));
 }
 #endif  // defined(OS_WIN)
 
@@ -292,11 +303,11 @@ void RegisterMainThreadServices(mojo::ServiceFactory& services) {
 #endif
 
 #if BUILDFLAG(ENABLE_LIBRARY_CDMS)
-  services.Add(RunCdmService);
+  services.Add(RunCdmServiceBroker);
 #endif
 
 #if defined(OS_WIN)
-  services.Add(RunMediaFoundationService);
+  services.Add(RunMediaFoundationServiceBroker);
 #endif  // defined(OS_WIN)
 
 #if BUILDFLAG(ENABLE_VR) && !defined(OS_ANDROID)

@@ -9,7 +9,9 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/callback_helpers.h"
-#include "base/test/scoped_feature_list.h"
+#include "base/feature_list.h"
+#include "build/buildflag.h"
+#include "build/chromeos_buildflags.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/profile_attributes_entry.h"
 #include "chrome/browser/profiles/profile_attributes_storage.h"
@@ -69,7 +71,6 @@ class MultiProfileCredentialsFilterTest : public BrowserWithTestWindowTest {
  public:
   MultiProfileCredentialsFilterTest()
       : sync_filter_(&test_password_manager_client_, GetSyncServiceCallback()) {
-    feature_list_.InitAndEnableFeature(kDiceWebSigninInterceptionFeature);
   }
 
   password_manager::SyncCredentialsFilter::SyncServiceFactoryFunction
@@ -114,6 +115,13 @@ class MultiProfileCredentialsFilterTest : public BrowserWithTestWindowTest {
     identity_test_env()->SetTestURLLoaderFactory(&test_url_loader_factory_);
     dice_web_signin_interceptor_ = std::make_unique<DiceWebSigninInterceptor>(
         profile(), std::make_unique<TestDiceWebSigninInterceptorDelegate>());
+
+// TODO(crbug.com/1198523): Remove this once Lacros no longer supports DICE.
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+    if (base::FeatureList::IsEnabled(kMultiProfileAccountConsistency))
+      GTEST_SKIP();
+#endif
+
     test_password_manager_client_.set_identity_manager(
         identity_test_env()->identity_manager());
 
@@ -146,7 +154,6 @@ class MultiProfileCredentialsFilterTest : public BrowserWithTestWindowTest {
  protected:
   const syncer::SyncService* sync_service() { return &sync_service_; }
 
-  base::test::ScopedFeatureList feature_list_;
   network::TestURLLoaderFactory test_url_loader_factory_;
   TestPasswordManagerClient test_password_manager_client_;
   std::unique_ptr<IdentityTestEnvironmentProfileAdaptor>

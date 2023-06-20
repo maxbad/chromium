@@ -6,7 +6,6 @@
 #define CONTENT_BROWSER_FEATURE_OBSERVER_H_
 
 #include "base/containers/stack_container.h"
-#include "base/macros.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/global_routing_id.h"
 #include "mojo/public/cpp/bindings/receiver_set.h"
@@ -22,7 +21,7 @@ class FeatureObserverClient;
 class CONTENT_EXPORT FeatureObserver : public blink::mojom::FeatureObserver {
  public:
   // |client_| must outlive FeatureObserver.
-  FeatureObserver(FeatureObserverClient* client, GlobalFrameRoutingId id);
+  FeatureObserver(FeatureObserverClient* client, GlobalRenderFrameHostId id);
   ~FeatureObserver() override;
 
   FeatureObserver(const FeatureObserver&) = delete;
@@ -46,7 +45,7 @@ class CONTENT_EXPORT FeatureObserver : public blink::mojom::FeatureObserver {
       [static_cast<int>(blink::mojom::ObservedFeatureType::kMaxValue) + 1];
 
   FeatureObserverClient* const client_;
-  const GlobalFrameRoutingId id_;
+  const GlobalRenderFrameHostId id_;
 };
 
 }  // namespace content

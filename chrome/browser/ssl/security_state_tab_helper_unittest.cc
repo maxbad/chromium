@@ -28,6 +28,12 @@ class SecurityStateTabHelperHistogramTest
     : public ChromeRenderViewHostTestHarness {
  public:
   SecurityStateTabHelperHistogramTest() : helper_(nullptr) {}
+
+  SecurityStateTabHelperHistogramTest(
+      const SecurityStateTabHelperHistogramTest&) = delete;
+  SecurityStateTabHelperHistogramTest& operator=(
+      const SecurityStateTabHelperHistogramTest&) = delete;
+
   ~SecurityStateTabHelperHistogramTest() override {}
 
   void SetUp() override {
@@ -48,7 +54,7 @@ class SecurityStateTabHelperHistogramTest
                          content::RenderFrameHost* render_frame_host)
         : content::MockNavigationHandle(url, render_frame_host) {}
 
-    bool IsInMainFrame() override { return is_in_main_frame_; }
+    bool IsInMainFrame() const override { return is_in_main_frame_; }
 
     void set_is_in_main_frame(bool is_in_main_frame) {
       is_in_main_frame_ = is_in_main_frame;
@@ -59,8 +65,8 @@ class SecurityStateTabHelperHistogramTest
   };
 
   void StartNavigation(bool is_form, bool is_main_frame) {
-    MockNavigationHandle handle(GURL("http://example.test"),
-                                web_contents()->GetMainFrame());
+    testing::NiceMock<MockNavigationHandle> handle(
+        GURL("http://example.test"), web_contents()->GetMainFrame());
     handle.set_is_form_submission(is_form);
     handle.set_is_in_main_frame(is_main_frame);
     helper_->DidStartNavigation(&handle);
@@ -74,7 +80,6 @@ class SecurityStateTabHelperHistogramTest
 
  private:
   SecurityStateTabHelper* helper_;
-  DISALLOW_COPY_AND_ASSIGN(SecurityStateTabHelperHistogramTest);
 };
 
 TEST_F(SecurityStateTabHelperHistogramTest, FormSubmissionHistogram) {

@@ -19,8 +19,6 @@ let lastChanged = null;
 let lastFocused = null;
 const restartButton = $('experiment-restart-button');
 
-let pageLoadOnResetAllFlags = false;
-
 /** @type {?function():void} */
 let experimentalFeaturesResolver = null;
 
@@ -128,6 +126,10 @@ function renderTemplate(experimentalFeaturesData) {
   }
 
   $('experiment-reset-all').onclick = resetAllFlags;
+  const crosUrlFlagsRedirectButton = $('os-link-href');
+  if (crosUrlFlagsRedirectButton) {
+    crosUrlFlagsRedirectButton.onclick = crosUrlFlagsRedirect;
+  }
 
   highlightReferencedFlag();
   const search = FlagSearch.getInstance();
@@ -151,16 +153,6 @@ function registerFocusEvents(el) {
   el.addEventListener('blur', function() {
     lastChanged = null;
   });
-}
-
-/**
- * Set focus on the element associated with the page's location's hash.
- */
-function setFocusOnReferencedFlag() {
-  const anchor = window.location.hash;
-  if (anchor != '') {
-    $(anchor.substr(1) + '_name').focus();
-  }
 }
 
 /**
@@ -224,7 +216,10 @@ function resetAllFlags() {
   announceStatus(loadTimeData.getString("reset-acknowledged"));
   showRestartToast(true);
   requestExperimentalFeaturesData();
-  pageLoadOnResetAllFlags = true;
+}
+
+function crosUrlFlagsRedirect() {
+  chrome.send('crosUrlFlagsRedirect');
 }
 
 /**
@@ -262,7 +257,8 @@ let Feature;
  *  needsRestart: boolean,
  *  showBetaChannelPromotion: boolean,
  *  showDevChannelPromotion: boolean,
- *  showOwnerWarning: boolean
+ *  showOwnerWarning: boolean,
+ *  showSystemFlagsLink: boolean
  * }}
  */
 let ExperimentalFeaturesData;
@@ -304,7 +300,8 @@ let ExperimentalFeaturesData;
  *     needsRestart: false,
  *     showBetaChannelPromotion: false,
  *     showDevChannelPromotion: false,
- *     showOwnerWarning: false
+ *     showOwnerWarning: false,
+ *     showSystemFlagsLink: false
  *   }
  */
 function returnExperimentalFeatures(experimentalFeaturesData) {
@@ -326,8 +323,9 @@ function returnExperimentalFeatures(experimentalFeaturesData) {
     ownerWarningDiv.hidden = !experimentalFeaturesData.showOwnerWarning;
   }
 
-  if (!pageLoadOnResetAllFlags) {
-    setFocusOnReferencedFlag();
+  const systemFlagsLinkDiv = $('os-link-container');
+  if (systemFlagsLinkDiv && !experimentalFeaturesData.showSystemFlagsLink) {
+    systemFlagsLinkDiv.style.display = 'none';
   }
 
   experimentalFeaturesResolver();
@@ -365,8 +363,9 @@ function handleEnableExperimentalFeature(node, enable) {
   if (!node.internal_name) {
     return;
   }
-  chrome.send('enableExperimentalFeature', [String(node.internal_name),
-                                            String(enable)]);
+  chrome.send(
+      'enableExperimentalFeature',
+      [String(node.internal_name), String(enable)]);
   experimentChangesUiUpdates(node, enable ? 1 : 0);
 }
 
@@ -394,8 +393,9 @@ function handleSelectExperimentalFeatureChoice(node, index) {
   if (!node.internal_name) {
     return;
   }
-  chrome.send('enableExperimentalFeature',
-              [String(node.internal_name) + '@' + index, 'true']);
+  chrome.send(
+      'enableExperimentalFeature',
+      [String(node.internal_name) + '@' + index, 'true']);
   experimentChangesUiUpdates(node, index);
 }
 
@@ -480,8 +480,8 @@ FlagSearch.prototype = {
     if (!this.initialized) {
       this.searchBox_.addEventListener('input', this.debounceSearch.bind(this));
 
-      document.querySelector('.clear-search').addEventListener('click',
-          this.clearSearch.bind(this));
+      document.querySelector('.clear-search')
+          .addEventListener('click', this.clearSearch.bind(this));
 
       window.addEventListener('keyup', function(e) {
         if (document.activeElement.nodeName === 'TEXTAREA') {
@@ -579,29 +579,31 @@ FlagSearch.prototype = {
     let matches = 0;
     for (let i = 0, j = searchContent.link.length; i < j; i++) {
       if (this.highlightMatchInElement(searchTerm, searchContent.title[i])) {
-        this.resetHighlights(searchContent.description[i],
+        this.resetHighlights(
+            searchContent.description[i],
             searchContent.description[i].textContent);
-        this.resetHighlights(searchContent.link[i],
-            searchContent.link[i].textContent);
+        this.resetHighlights(
+            searchContent.link[i], searchContent.link[i].textContent);
         matches++;
         continue;
       }
-      if (this.highlightMatchInElement(searchTerm,
-          searchContent.description[i])) {
-        this.resetHighlights(searchContent.title[i],
-            searchContent.title[i].textContent);
-        this.resetHighlights(searchContent.link[i],
-            searchContent.link[i].textContent);
+      if (this.highlightMatchInElement(
+              searchTerm, searchContent.description[i])) {
+        this.resetHighlights(
+            searchContent.title[i], searchContent.title[i].textContent);
+        this.resetHighlights(
+            searchContent.link[i], searchContent.link[i].textContent);
         matches++;
         continue;
       }
       // Match links, replace spaces with hyphens as flag names don't
       // have spaces.
-      if (this.highlightMatchInElement(searchTerm.replace(/\s/, '-'),
-          searchContent.link[i])) {
-        this.resetHighlights(searchContent.title[i],
-            searchContent.title[i].textContent);
-        this.resetHighlights(searchContent.description[i],
+      if (this.highlightMatchInElement(
+              searchTerm.replace(/\s/, '-'), searchContent.link[i])) {
+        this.resetHighlights(
+            searchContent.title[i], searchContent.title[i].textContent);
+        this.resetHighlights(
+            searchContent.description[i],
             searchContent.description[i].textContent);
         matches++;
       }
@@ -666,8 +668,8 @@ FlagSearch.prototype = {
     if (this.searchIntervalId_) {
       clearTimeout(this.searchIntervalId_);
     }
-    this.searchIntervalId_ = setTimeout(this.doSearch.bind(this),
-        FlagSearch.SEARCH_DEBOUNCE_TIME_MS);
+    this.searchIntervalId_ = setTimeout(
+        this.doSearch.bind(this), FlagSearch.SEARCH_DEBOUNCE_TIME_MS);
   }
 };
 
@@ -696,5 +698,3 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // Update the highlighted flag when the hash changes.
 window.addEventListener('hashchange', highlightReferencedFlag);
-// Set focus on referenced flag when the hash changes.
-window.addEventListener('hashchange', setFocusOnReferencedFlag);

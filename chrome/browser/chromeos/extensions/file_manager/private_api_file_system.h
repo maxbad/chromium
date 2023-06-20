@@ -15,12 +15,10 @@
 #include <string>
 #include <vector>
 
+#include "ash/components/drivefs/mojom/drivefs.mojom-forward.h"
 #include "base/callback_forward.h"
-#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
-#include "chrome/browser/chromeos/extensions/file_manager/file_stream_string_converter.h"
-#include "chrome/browser/chromeos/extensions/file_manager/files_extension_function.h"
-#include "chrome/browser/chromeos/extensions/file_manager/private_api_base.h"
+#include "chrome/browser/chromeos/extensions/file_manager/logged_extension_function.h"
 #include "components/drive/file_errors.h"
 #include "extensions/browser/extension_function.h"
 #include "services/device/public/mojom/mtp_storage_info.mojom-forward.h"
@@ -74,9 +72,14 @@ class FileManagerPrivateEnableExternalFileSchemeFunction
 
 // Grants R/W permissions to profile-specific directories (Drive, Downloads)
 // from other profiles.
-class FileManagerPrivateGrantAccessFunction : public FilesExtensionFunction {
+class FileManagerPrivateGrantAccessFunction : public ExtensionFunction {
  public:
   FileManagerPrivateGrantAccessFunction();
+
+  FileManagerPrivateGrantAccessFunction(
+      const FileManagerPrivateGrantAccessFunction&) = delete;
+  FileManagerPrivateGrantAccessFunction& operator=(
+      const FileManagerPrivateGrantAccessFunction&) = delete;
 
   DECLARE_EXTENSION_FUNCTION("fileManagerPrivate.grantAccess",
                              FILEMANAGERPRIVATE_GRANTACCESS)
@@ -86,7 +89,6 @@ class FileManagerPrivateGrantAccessFunction : public FilesExtensionFunction {
 
  private:
   ExtensionFunction::ResponseAction Run() override;
-  DISALLOW_COPY_AND_ASSIGN(FileManagerPrivateGrantAccessFunction);
 };
 
 // Base class for FileManagerPrivateInternalAddFileWatchFunction and
@@ -194,6 +196,9 @@ class FileManagerPrivateGetSizeStatsFunction : public LoggedExtensionFunction {
                                             const uint64_t available_bytes,
                                             const uint64_t capacity_bytes);
 
+  void OnGetDriveQuotaUsage(drive::FileError error,
+                            drivefs::mojom::QuotaUsagePtr usage);
+
   void OnGetSizeStats(const uint64_t* total_size,
                       const uint64_t* remaining_size);
 };
@@ -259,33 +264,6 @@ class FileManagerPrivateRenameVolumeFunction : public LoggedExtensionFunction {
   ResponseAction Run() override;
 };
 
-// Implements the chrome.fileManagerPrivateInternal.copyImageToClipboard method.
-class FileManagerPrivateInternalCopyImageToClipboardFunction
-    : public LoggedExtensionFunction {
- public:
-  FileManagerPrivateInternalCopyImageToClipboardFunction();
-
-  DECLARE_EXTENSION_FUNCTION("fileManagerPrivateInternal.copyImageToClipboard",
-                             FILEMANAGERPRIVATEINTERNAL_COPYIMAGETOCLIPBOARD)
-
- protected:
-  ~FileManagerPrivateInternalCopyImageToClipboardFunction() override;
-
-  // ExtensionFunction overrides.
-  ResponseAction Run() override;
-
- private:
-  // `is_on_clipboard` specifies whether or not the image was copied to the
-  // clipboard.
-  void RespondWith(bool is_on_clipboard);
-  void MoveBytesToClipboard(scoped_refptr<base::RefCountedString> bytes);
-
-  std::unique_ptr<storage::FileStreamStringConverter> converter_;
-  // Stores the clipboard copy sequence number to validate the clipboard did not
-  // change during an async operation.
-  uint64_t clipboard_sequence_ = 0;
-};
-
 // Implements the chrome.fileManagerPrivate.startCopy method.
 class FileManagerPrivateInternalStartCopyFunction
     : public LoggedExtensionFunction {
@@ -312,7 +290,7 @@ class FileManagerPrivateInternalStartCopyFunction
 
   // Part of RunAsync(). Called after FreeDiskSpaceIfNeededFor() is completed on
   // IO thread.
-  void RunAfterFreeDiskSpace(bool available);
+  void RunAfterFreeDiskSpace(bool available, int64_t space_needed);
 
   // Part of RunAsync(). Called after Copy() is started on IO thread.
   void RunAfterStartCopy(int operation_id);
@@ -373,7 +351,7 @@ class FileManagerPrivateInternalComputeChecksumFunction
   ResponseAction Run() override;
 
  private:
-  std::unique_ptr<drive::util::FileStreamMd5Digester> digester_;
+  scoped_refptr<drive::util::FileStreamMd5Digester> digester_;
 
   void RespondWith(std::string hash);
 };
@@ -437,6 +415,33 @@ class FileManagerPrivateInternalGetDirectorySizeFunction
   ~FileManagerPrivateInternalGetDirectorySizeFunction() override = default;
 
   void OnDirectorySizeRetrieved(int64_t size);
+
+  // ExtensionFunction overrides
+  ResponseAction Run() override;
+};
+
+// Implements the chrome.fileManagerPrivate.startIOTask method.
+class FileManagerPrivateInternalStartIOTaskFunction
+    : public LoggedExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("fileManagerPrivateInternal.startIOTask",
+                             FILEMANAGERPRIVATEINTERNAL_STARTIOTASK)
+
+ protected:
+  ~FileManagerPrivateInternalStartIOTaskFunction() override = default;
+
+  // ExtensionFunction overrides
+  ResponseAction Run() override;
+};
+
+// Implements the chrome.fileManagerPrivate.cancelIOTask method.
+class FileManagerPrivateCancelIOTaskFunction : public LoggedExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("fileManagerPrivate.cancelIOTask",
+                             FILEMANAGERPRIVATE_CANCELIOTASK)
+
+ protected:
+  ~FileManagerPrivateCancelIOTaskFunction() override = default;
 
   // ExtensionFunction overrides
   ResponseAction Run() override;

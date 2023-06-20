@@ -11,7 +11,6 @@
 #include "base/callback_helpers.h"
 #include "base/containers/contains.h"
 #include "base/containers/flat_set.h"
-#include "base/macros.h"
 #include "base/strings/string_util.h"
 #include "base/test/bind.h"
 #include "base/test/task_environment.h"
@@ -53,18 +52,23 @@ class MockDialogModelObserver
  public:
   MockDialogModelObserver() = default;
 
+  MockDialogModelObserver(const MockDialogModelObserver&) = delete;
+  MockDialogModelObserver& operator=(const MockDialogModelObserver&) = delete;
+
   MOCK_METHOD1(OnModelDestroyed, void(AuthenticatorRequestDialogModel*));
   MOCK_METHOD0(OnStepTransition, void());
   MOCK_METHOD0(OnCancelRequest, void());
   MOCK_METHOD0(OnBluetoothPoweredStateChanged, void());
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(MockDialogModelObserver);
 };
 
 class BluetoothAdapterPowerOnCallbackReceiver {
  public:
   BluetoothAdapterPowerOnCallbackReceiver() = default;
+
+  BluetoothAdapterPowerOnCallbackReceiver(
+      const BluetoothAdapterPowerOnCallbackReceiver&) = delete;
+  BluetoothAdapterPowerOnCallbackReceiver& operator=(
+      const BluetoothAdapterPowerOnCallbackReceiver&) = delete;
 
   base::RepeatingClosure GetCallback() {
     return base::BindRepeating(
@@ -81,8 +85,6 @@ class BluetoothAdapterPowerOnCallbackReceiver {
   }
 
   bool was_called_ = false;
-
-  DISALLOW_COPY_AND_ASSIGN(BluetoothAdapterPowerOnCallbackReceiver);
 };
 
 base::StringPiece RequestTypeToString(RequestType req_type) {
@@ -130,12 +132,14 @@ class AuthenticatorRequestDialogModelTest : public ::testing::Test {
 
   AuthenticatorRequestDialogModelTest() = default;
 
+  AuthenticatorRequestDialogModelTest(
+      const AuthenticatorRequestDialogModelTest&) = delete;
+  AuthenticatorRequestDialogModelTest& operator=(
+      const AuthenticatorRequestDialogModelTest&) = delete;
+
  protected:
   base::test::TaskEnvironment task_environment_{
       base::test::TaskEnvironment::TimeSource::MOCK_TIME};
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(AuthenticatorRequestDialogModelTest);
 };
 
 TEST_F(AuthenticatorRequestDialogModelTest, Mechanisms) {
@@ -294,6 +298,93 @@ TEST_F(AuthenticatorRequestDialogModelTest, NoAvailableTransports) {
   testing::Mock::VerifyAndClearExpectations(&mock_observer);
 
   EXPECT_CALL(mock_observer, OnModelDestroyed(&model));
+}
+
+TEST_F(AuthenticatorRequestDialogModelTest, Cable2ndFactorFlows) {
+  enum class BLEPower {
+    ON,
+    OFF,
+  };
+  enum class Profile {
+    NORMAL,
+    INCOGNITO,
+  };
+
+  const auto mc = RequestType::kMakeCredential;
+  const auto ga = RequestType::kGetAssertion;
+  const auto on_ = BLEPower::ON;
+  const auto off = BLEPower::OFF;
+  const auto normal = Profile::NORMAL;
+  const auto otr___ = Profile::INCOGNITO;
+  const auto activate = Step::kCableActivate;
+  const auto interstitial = Step::kOffTheRecordInterstitial;
+  const auto power = Step::kBlePowerOnAutomatic;
+
+  const struct {
+    RequestType request_type;
+    BLEPower ble_power;
+    Profile profile;
+    std::vector<Step> steps;
+  } kTests[] = {
+      //               | Expected UI steps in order.
+      {mc, on_, normal, {activate}},
+      {mc, on_, otr___, {interstitial, activate}},
+      {mc, off, normal, {power, activate}},
+      {mc, off, otr___, {interstitial, power, activate}},
+      {ga, on_, normal, {activate}},
+      {ga, on_, otr___, {activate}},
+      {ga, off, normal, {power, activate}},
+      {ga, off, otr___, {power, activate}},
+  };
+
+  unsigned test_num = 0;
+  for (const auto& test : kTests) {
+    SCOPED_TRACE(test_num++);
+
+    TransportAvailabilityInfo transports_info;
+    transports_info.is_ble_powered = test.ble_power == BLEPower::ON;
+    transports_info.can_power_on_ble_adapter = true;
+    transports_info.request_type = test.request_type;
+    transports_info.available_transports = {
+        AuthenticatorTransport::kCloudAssistedBluetoothLowEnergy};
+    transports_info.is_off_the_record_context =
+        test.profile == Profile::INCOGNITO;
+
+    AuthenticatorRequestDialogModel model(/*relying_party_id=*/"example.com");
+
+    std::array<uint8_t, device::kP256X962Length> public_key = {0};
+    std::vector<AuthenticatorRequestDialogModel::PairedPhone> phones(
+        {{"phone", /*contact_id=*/0, public_key}});
+    model.set_cable_transport_info(/*extension_is_v2=*/absl::nullopt,
+                                   std::move(phones), base::DoNothing(),
+                                   absl::nullopt);
+
+    model.StartFlow(std::move(transports_info),
+                    /*use_location_bar_bubble=*/false);
+    ASSERT_EQ(model.mechanisms().size(), 1u);
+
+    for (const auto step : test.steps) {
+      ASSERT_EQ(step, model.current_step())
+          << static_cast<int>(step)
+          << " != " << static_cast<int>(model.current_step());
+
+      switch (step) {
+        case Step::kBlePowerOnAutomatic:
+          model.OnBluetoothPoweredStateChanged(/*powered=*/true);
+          break;
+
+        case Step::kOffTheRecordInterstitial:
+          model.OnOffTheRecordInterstitialAccepted();
+          break;
+
+        case Step::kCableActivate:
+          break;
+
+        default:
+          NOTREACHED();
+      }
+    }
+  }
 }
 
 TEST_F(AuthenticatorRequestDialogModelTest, AwaitingAcknowledgement) {
@@ -564,9 +655,9 @@ TEST_F(AuthenticatorRequestDialogModelTest, ConditionalUIRecognizedCredential) {
   EXPECT_TRUE(model.should_dialog_be_hidden());
   EXPECT_EQ(num_called, 0);
 
-  // After selecting an account, the request should be dispatched to the
+  // After preselecting an account, the request should be dispatched to the
   // platform authenticator.
-  model.OnAccountSelected(0);
+  model.OnAccountPreselected({1, 2, 3, 4});
   task_environment_.FastForwardUntilNoTasksRemain();
   EXPECT_EQ(num_called, 1);
 

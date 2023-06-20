@@ -11,18 +11,18 @@
 #include "base/files/file_util.h"
 #include "base/location.h"
 #include "base/metrics/histogram_macros.h"
-#include "base/sequenced_task_runner.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/threading/sequenced_task_runner_handle.h"
 #include "components/invalidation/impl/invalidation_switches.h"
 #include "components/invalidation/public/invalidation_util.h"
 #include "components/sync/base/invalidation_adapter.h"
 #include "components/sync/base/legacy_directory_deletion.h"
-#include "components/sync/base/sync_base_switches.h"
 #include "components/sync/driver/configure_context.h"
 #include "components/sync/driver/glue/sync_engine_impl.h"
 #include "components/sync/driver/model_type_controller.h"
 #include "components/sync/driver/sync_driver_switches.h"
 #include "components/sync/engine/cycle/sync_cycle_snapshot.h"
+#include "components/sync/engine/data_type_activation_response.h"
 #include "components/sync/engine/engine_components_factory.h"
 #include "components/sync/engine/events/protocol_event.h"
 #include "components/sync/engine/net/http_post_provider_factory.h"
@@ -214,10 +214,8 @@ void SyncEngineBackend::DoInitialize(
   sync_encryption_handler_ = std::make_unique<NigoriSyncBridgeImpl>(
       std::move(nigori_processor),
       std::make_unique<NigoriStorageImpl>(
-          sync_data_folder_.Append(kNigoriStorageFilename), &encryptor_),
-      &encryptor_, base::BindRepeating(&Nigori::GenerateScryptSalt),
-      params.encryption_bootstrap_token,
-      restored_local_transport_data.keystore_encryption_bootstrap_token);
+          sync_data_folder_.Append(kNigoriStorageFilename)),
+      params.encryption_bootstrap_token);
 
   sync_manager_ = params.sync_manager_factory->CreateSyncManager(name_);
   sync_manager_->AddObserver(this);
@@ -357,7 +355,7 @@ void SyncEngineBackend::DoShutdown(ShutdownReason reason) {
     sync_manager_.reset();
   }
 
-  if (reason == DISABLE_SYNC) {
+  if (reason == ShutdownReason::DISABLE_SYNC_AND_CLEAR_DATA) {
     DeleteLegacyDirectoryFilesAndNigoriStorage(sync_data_folder_);
   }
 
@@ -377,7 +375,8 @@ void SyncEngineBackend::DoPurgeDisabledTypes(const ModelTypeSet& to_purge) {
     // There's no "purging" logic for any other data type, so likely it's not
     // necessary for NIGORI either.
     sync_manager_->GetModelTypeConnector()->DisconnectDataType(NIGORI);
-    nigori_controller_->Stop(ShutdownReason::DISABLE_SYNC, base::DoNothing());
+    nigori_controller_->Stop(ShutdownReason::DISABLE_SYNC_AND_CLEAR_DATA,
+                             base::DoNothing());
     LoadAndConnectNigoriController();
   }
 }
@@ -400,22 +399,22 @@ void SyncEngineBackend::DoConfigureSyncer(
 }
 
 void SyncEngineBackend::DoFinishConfigureDataTypes(
-    ModelTypeSet types_to_config,
+    ModelTypeSet types_to_download,
     base::OnceCallback<void(ModelTypeSet, ModelTypeSet)> ready_task) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   // Update the enabled types for the bridge and sync manager.
-  // TODO(crbug.com/1140938): track |enabled_types| directly in SyncEngineImpl.
-  ModelTypeSet enabled_types = sync_manager_->GetEnabledTypes();
-  enabled_types.RemoveAll(ProxyTypes());
+  const ModelTypeSet enabled_types = sync_manager_->GetConnectedTypes();
+  DCHECK(Difference(enabled_types, ProtocolTypes()).Empty());
 
-  const ModelTypeSet failed_configuration_types =
-      Difference(types_to_config, sync_manager_->InitialSyncEndedTypes());
-  const ModelTypeSet succeeded_configuration_types =
-      Difference(types_to_config, failed_configuration_types);
-  host_.Call(FROM_HERE, &SyncEngineImpl::FinishConfigureDataTypesOnFrontendLoop,
-             enabled_types, succeeded_configuration_types,
-             failed_configuration_types, std::move(ready_task));
+  const ModelTypeSet failed_types =
+      Difference(types_to_download, sync_manager_->InitialSyncEndedTypes());
+  const ModelTypeSet succeeded_types =
+      Difference(types_to_download, failed_types);
+  host_.Call(
+      FROM_HERE, &SyncEngineImpl::FinishConfigureDataTypesOnFrontendLoop,
+      enabled_types,
+      base::BindOnce(std::move(ready_task), succeeded_types, failed_types));
 }
 
 void SyncEngineBackend::SendBufferedProtocolEventsAndEnableForwarding() {
@@ -453,11 +452,6 @@ void SyncEngineBackend::DoOnCookieJarChanged(bool account_mismatch,
 
 void SyncEngineBackend::DoOnInvalidatorClientIdChange(
     const std::string& client_id) {
-  if (base::FeatureList::IsEnabled(switches::kSyncE2ELatencyMeasurement)) {
-    // Don't populate the ID, if client participates in latency measurement
-    // experiment.
-    return;
-  }
   sync_manager_->UpdateInvalidationClientId(client_id);
 }
 
@@ -488,15 +482,9 @@ void SyncEngineBackend::DoOnInvalidationReceived(const std::string& payload) {
 }
 
 void SyncEngineBackend::DoOnActiveDevicesChanged(
-    size_t active_devices,
-    std::vector<std::string> fcm_registration_tokens) {
-  // If |active_devices| is 0, then current client doesn't know if there are any
-  // other devices. It's safer to consider that there are some other active
-  // devices.
-  const bool single_client = active_devices == 1;
-  sync_manager_->UpdateSingleClientStatus(single_client);
-  sync_manager_->UpdateActiveDeviceFCMRegistrationTokens(
-      std::move(fcm_registration_tokens));
+    ActiveDevicesInvalidationInfo active_devices_invalidation_info) {
+  sync_manager_->UpdateActiveDevicesInvalidationInfo(
+      std::move(active_devices_invalidation_info));
 }
 
 void SyncEngineBackend::GetNigoriNodeForDebugging(AllNodesCallback callback) {
@@ -524,7 +512,7 @@ void SyncEngineBackend::LoadAndConnectNigoriController() {
   DCHECK_EQ(nigori_controller_->state(), DataTypeController::MODEL_LOADED);
   // TODO(crbug.com/922900): Do we need to call RegisterDataType() for Nigori?
   sync_manager_->GetModelTypeConnector()->ConnectDataType(
-      NIGORI, nigori_controller_->ActivateManuallyForNigori());
+      NIGORI, nigori_controller_->Connect());
 }
 
 }  // namespace syncer

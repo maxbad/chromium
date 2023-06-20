@@ -15,11 +15,11 @@
 #include "base/containers/contains.h"
 #include "base/location.h"
 #include "base/logging.h"
-#include "base/single_thread_task_runner.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "chromeos/dbus/constants/dbus_switches.h"
 #include "chromeos/dbus/shill/fake_shill_device_client.h"
@@ -69,9 +69,10 @@ bool GetString(const base::Value& dict, const char* key, std::string* result) {
   // Note: FindPath uses path expansion which is currently required for the
   // fake shill implementations.
   const base::Value* v = dict.FindPathOfType(key, base::Value::Type::STRING);
-  if (!v)
+  if (!v || !v->is_string())
     return false;
-  return v->GetAsString(result);
+  *result = v->GetString();
+  return true;
 }
 
 std::string GetStringValue(const base::Value& dict, const char* key) {
@@ -478,6 +479,14 @@ void FakeShillManagerClient::ConnectToBestServices(
                                      std::move(error_callback));
 }
 
+void FakeShillManagerClient::AddPasspointCredentials(
+    const dbus::ObjectPath& profile_path,
+    const base::Value& properties,
+    ObjectPathCallback callback,
+    ErrorCallback error_callback) {
+  return;
+}
+
 ShillManagerClient::TestInterface* FakeShillManagerClient::GetTestInterface() {
   return this;
 }
@@ -500,7 +509,7 @@ void FakeShillManagerClient::RemoveDevice(const std::string& device_path) {
 }
 
 void FakeShillManagerClient::ClearDevices() {
-  GetListProperty(shill::kDevicesProperty)->Clear();
+  GetListProperty(shill::kDevicesProperty)->ClearList();
   CallNotifyObserversPropertyChanged(shill::kDevicesProperty);
 }
 
@@ -623,7 +632,7 @@ void FakeShillManagerClient::RemoveManagerService(
 
 void FakeShillManagerClient::ClearManagerServices() {
   VLOG(1) << "ClearManagerServices";
-  GetListProperty(shill::kServiceCompleteListProperty)->Clear();
+  GetListProperty(shill::kServiceCompleteListProperty)->ClearList();
   CallNotifyObserversPropertyChanged(shill::kServiceCompleteListProperty);
 }
 
@@ -813,8 +822,8 @@ void FakeShillManagerClient::SetupDefaultEnvironment() {
     SetInitialDeviceProperty("/device/eth1", shill::kAddressProperty,
                              base::Value("0123456789ab"));
     base::ListValue eth_ip_configs;
-    eth_ip_configs.AppendString("ipconfig_v4_path");
-    eth_ip_configs.AppendString("ipconfig_v6_path");
+    eth_ip_configs.Append("ipconfig_v4_path");
+    eth_ip_configs.Append("ipconfig_v6_path");
     SetInitialDeviceProperty("/device/eth1", shill::kIPConfigsProperty,
                              eth_ip_configs);
     const std::string kFakeEthernetNetworkPath = "/service/eth1";
@@ -837,8 +846,8 @@ void FakeShillManagerClient::SetupDefaultEnvironment() {
     SetInitialDeviceProperty("/device/wifi1", shill::kAddressProperty,
                              base::Value("23456789abcd"));
     base::ListValue wifi_ip_configs;
-    wifi_ip_configs.AppendString("ipconfig_v4_path");
-    wifi_ip_configs.AppendString("ipconfig_v6_path");
+    wifi_ip_configs.Append("ipconfig_v4_path");
+    wifi_ip_configs.Append("ipconfig_v6_path");
     SetInitialDeviceProperty("/device/wifi1", shill::kIPConfigsProperty,
                              wifi_ip_configs);
 
@@ -1158,7 +1167,7 @@ base::Value FakeShillManagerClient::GetEnabledServiceList() const {
 }
 
 void FakeShillManagerClient::ClearProfiles() {
-  if (GetListProperty(shill::kProfilesProperty)->empty()) {
+  if (GetListProperty(shill::kProfilesProperty)->GetList().empty()) {
     return;
   }
   GetListProperty(shill::kProfilesProperty)->ClearList();
@@ -1208,7 +1217,7 @@ bool FakeShillManagerClient::ParseOption(const std::string& arg0,
     int seconds = 3;
     if (!arg1.empty())
       base::StringToInt(arg1, &seconds);
-    interactive_delay_ = base::TimeDelta::FromSeconds(seconds);
+    interactive_delay_ = base::Seconds(seconds);
     return true;
   } else if (arg0 == "sim_lock") {
     bool locked = (arg1 == "1");

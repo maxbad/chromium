@@ -55,15 +55,15 @@ js_library("audio_player") {
   deps = [
     "//third_party/polymer/v3_0/components-chromium/polymer:polymer_bundled",
     "//ui/file_manager/audio_player/elements:audio_player",
-    "//ui/file_manager/file_manager/common/js:app_util.m",
-    "//ui/file_manager/file_manager/common/js:async_util.m",
-    "//ui/file_manager/file_manager/common/js:filtered_volume_manager.m",
-    "//ui/file_manager/file_manager/common/js:mediasession_types.m",
-    "//ui/file_manager/file_manager/common/js:util.m",
-    "//ui/file_manager/file_manager/common/js:volume_manager_types.m",
-    "//ui/file_manager/file_manager/externs:volume_manager.m",
-    "//ui/file_manager/file_manager/foreground/js/metadata:content_metadata_provider.m",
-    "//ui/file_manager/file_manager/foreground/js/metadata:metadata_model.m",
+    "//ui/file_manager/file_manager/common/js:app_util",
+    "//ui/file_manager/file_manager/common/js:async_util",
+    "//ui/file_manager/file_manager/common/js:filtered_volume_manager",
+    "//ui/file_manager/file_manager/common/js:mediasession_types",
+    "//ui/file_manager/file_manager/common/js:util",
+    "//ui/file_manager/file_manager/common/js:volume_manager_types",
+    "//ui/file_manager/file_manager/externs:volume_manager",
+    "//ui/file_manager/file_manager/foreground/js/metadata:content_metadata_provider",
+    "//ui/file_manager/file_manager/foreground/js/metadata:metadata_model",
     "//ui/webui/resources/js:load_time_data.m",
   ]
 
@@ -75,10 +75,10 @@ js_library("audio_player") {
 
 js_library("background") {
   deps = [
-    "//ui/file_manager/file_manager/background/js:app_window_wrapper.m",
-    "//ui/file_manager/file_manager/background/js:background_base.m",
-    "//ui/file_manager/file_manager/common/js:file_type.m",
-    "//ui/file_manager/file_manager/common/js:util.m",
+    "//ui/file_manager/file_manager/background/js:app_window_wrapper",
+    "//ui/file_manager/file_manager/background/js:background_base",
+    "//ui/file_manager/file_manager/common/js:file_type",
+    "//ui/file_manager/file_manager/common/js:util",
   ]
 }
 
@@ -86,13 +86,15 @@ js_library("error_util") {
 }
 
 js_library("metadata_worker") {
-  deps = [ "//ui/file_manager/file_manager/foreground/js/metadata:metadata_dispatcher.m" ]
+  deps = [
+    "//ui/file_manager/file_manager/foreground/js/metadata:metadata_dispatcher",
+  ]
 }
 
 js_library("test_util") {
   deps = [
     ":background",
-    "//ui/file_manager/file_manager/background/js:test_util_base.m",
+    "//ui/file_manager/file_manager/background/js:test_util_base",
   ]
 }
 
@@ -163,9 +165,16 @@ optimize_webui("build_background") {
   host = "audio_player"
 
   input = preprocess_folder
-  js_module_in_files = [ "main_background.js" ]
+  js_module_in_files = [
+    "main_background.js",
+    "../../file_manager/background/js/runtime_loaded_test_util.js",
+  ]
 
-  js_out_files = [ "main_background.rollup.js" ]
+  js_out_files = [
+    "main_background.rollup.js",
+    "runtime_loaded_test_util.rollup.js",
+    "shared.m.rollup.js",
+  ]
 
   external_paths = [
     "chrome-extension://hhaomjibdihmijegdhdafkllkbggdgoj|$files_app_path",

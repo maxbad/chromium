@@ -61,9 +61,13 @@ void TtsExtensionEngineChromeOS::Speak(content::TtsUtterance* utterance,
   std::unique_ptr<base::ListValue> args = BuildSpeakArgs(utterance, voice);
   if (!RefreshAudioStreamOptionsForExtension(engine_id, profile) &&
       playback_tts_stream_) {
-    Play(event_router, std::move(args), engine_id, profile);
+    Play(std::move(args), engine_id, profile);
     return;
   }
+
+  // Reset any previously bound connections since we want to initialize with new
+  // audio params.
+  playback_tts_stream_.reset();
 
   TtsEngineExtensionObserverChromeOS::GetInstance(profile)
       ->BindPlaybackTtsStream(
@@ -79,7 +83,7 @@ void TtsExtensionEngineChromeOS::Speak(content::TtsUtterance* utterance,
                 // singleton.
                 DCHECK(audio_parameters);
                 owner->UpdateAudioStreamOptions(std::move(audio_parameters));
-                owner->Play(event_router, std::move(args), engine_id, profile);
+                owner->Play(std::move(args), engine_id, profile);
               },
               event_router, std::move(args), engine_id, profile, this));
 
@@ -128,7 +132,7 @@ bool TtsExtensionEngineChromeOS::IsBuiltInTtsEngineInitialized(
     return true;
 
   std::vector<content::VoiceData> voices;
-  GetVoices(browser_context, &voices);
+  GetVoices(browser_context, GURL(), &voices);
   bool saw_google_tts = false;
   bool saw_espeak = false;
   for (const auto& voice : voices) {
@@ -209,8 +213,7 @@ bool TtsExtensionEngineChromeOS::RefreshAudioStreamOptionsForExtension(
   return true;
 }
 
-void TtsExtensionEngineChromeOS::Play(extensions::EventRouter* event_router,
-                                      std::unique_ptr<base::ListValue> args,
+void TtsExtensionEngineChromeOS::Play(std::unique_ptr<base::ListValue> args,
                                       const std::string& engine_id,
                                       Profile* profile) {
   // This function can be called from a callback where args are bound, so the
@@ -218,6 +221,8 @@ void TtsExtensionEngineChromeOS::Play(extensions::EventRouter* event_router,
   // destruction, making most of these args pending deletion.
   if (!current_utterance_profile_observer_.IsObservingSource(profile))
     return;
+
+  extensions::EventRouter* event_router = extensions::EventRouter::Get(profile);
 
   // Add audio stream options.
   DCHECK(audio_parameters_);
@@ -249,5 +254,5 @@ void TtsExtensionEngineChromeOS::Play(extensions::EventRouter* event_router,
       engine_id, std::make_unique<extensions::Event>(
                      extensions::events::TTS_ENGINE_ON_SPEAK_WITH_AUDIO_STREAM,
                      tts_engine_events::kOnSpeakWithAudioStream,
-                     args->TakeList(), profile));
+                     std::move(*args).TakeList(), profile));
 }

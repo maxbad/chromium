@@ -13,7 +13,6 @@
 #include "base/containers/flat_map.h"
 #include "cc/cc_export.h"
 #include "cc/metrics/frame_sequence_metrics.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace gfx {
 struct PresentationFeedback;
@@ -85,7 +84,8 @@ class CC_EXPORT FrameSequenceTrackerCollection {
   void NotifyBeginMainFrame(const viz::BeginFrameArgs& args);
   void NotifyMainFrameProcessed(const viz::BeginFrameArgs& args);
   void NotifyImplFrameCausedNoDamage(const viz::BeginFrameAck& ack);
-  void NotifyMainFrameCausedNoDamage(const viz::BeginFrameArgs& args);
+  void NotifyMainFrameCausedNoDamage(const viz::BeginFrameArgs& args,
+                                     bool aborted);
   void NotifyPauseFrameProduction();
   void NotifySubmitFrame(uint32_t frame_token,
                          bool has_missing_content,

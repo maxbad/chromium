@@ -16,7 +16,6 @@
 #import "ios/web/common/crw_content_view.h"
 #include "ios/web/common/features.h"
 #include "ios/web/common/url_util.h"
-#import "ios/web/js_messaging/crw_js_injector.h"
 #import "ios/web/js_messaging/web_view_js_utils.h"
 #import "ios/web/navigation/crw_error_page_helper.h"
 #import "ios/web/navigation/navigation_context_impl.h"
@@ -85,7 +84,6 @@ WebStateImpl::WebStateImpl(const CreateParams& params,
       is_loading_(false),
       is_being_destroyed_(false),
       web_controller_(nil),
-      web_frames_manager_(*this),
       created_with_opener_(params.created_with_opener),
       user_agent_type_(features::UseWebClientDefaultUserAgent()
                            ? UserAgentType::AUTOMATIC
@@ -147,6 +145,14 @@ void WebStateImpl::SetDelegate(WebStateDelegate* delegate) {
   if (delegate_) {
     delegate_->Attach(this);
   }
+}
+
+bool WebStateImpl::IsRealized() const {
+  return true;
+}
+
+WebState* WebStateImpl::ForceRealized() {
+  return this;
 }
 
 void WebStateImpl::AddObserver(WebStateObserver* observer) {
@@ -298,14 +304,17 @@ WebFramesManagerImpl& WebStateImpl::GetWebFramesManagerImpl() {
   return web_frames_manager_;
 }
 
-const SessionCertificatePolicyCacheImpl&
+const SessionCertificatePolicyCacheImpl*
 WebStateImpl::GetSessionCertificatePolicyCacheImpl() const {
-  return *certificate_policy_cache_;
+  return certificate_policy_cache_.get();
 }
 
-SessionCertificatePolicyCacheImpl&
-WebStateImpl::GetSessionCertificatePolicyCacheImpl() {
-  return *certificate_policy_cache_;
+void WebStateImpl::SetSessionCertificatePolicyCacheImpl(
+    std::unique_ptr<SessionCertificatePolicyCacheImpl>
+        certificate_policy_cache) {
+  DCHECK(!certificate_policy_cache_);
+  DCHECK(certificate_policy_cache);
+  certificate_policy_cache_ = std::move(certificate_policy_cache);
 }
 
 void WebStateImpl::CreateWebUI(const GURL& url) {
@@ -465,17 +474,28 @@ void WebStateImpl::SetContentsMimeType(const std::string& mime_type) {
   mime_type_ = mime_type;
 }
 
-WebStatePolicyDecider::PolicyDecision WebStateImpl::ShouldAllowRequest(
+void WebStateImpl::ShouldAllowRequest(
     NSURLRequest* request,
-    const WebStatePolicyDecider::RequestInfo& request_info) {
+    WebStatePolicyDecider::RequestInfo request_info,
+    WebStatePolicyDecider::PolicyDecisionCallback callback) {
+  auto request_state_tracker =
+      std::make_unique<PolicyDecisionStateTracker>(std::move(callback));
+  PolicyDecisionStateTracker* request_state_tracker_ptr =
+      request_state_tracker.get();
+  auto policy_decider_callback = base::BindRepeating(
+      &PolicyDecisionStateTracker::OnSinglePolicyDecisionReceived,
+      base::Owned(std::move(request_state_tracker)));
+  int num_decisions_requested = 0;
   for (auto& policy_decider : policy_deciders_) {
-    WebStatePolicyDecider::PolicyDecision result =
-        policy_decider.ShouldAllowRequest(request, request_info);
-    if (result.ShouldCancelNavigation()) {
-      return result;
-    }
+    policy_decider.ShouldAllowRequest(request, request_info,
+                                      policy_decider_callback);
+    num_decisions_requested++;
+    if (request_state_tracker_ptr->DeterminedFinalResult())
+      break;
   }
-  return WebStatePolicyDecider::PolicyDecision::Allow();
+
+  request_state_tracker_ptr->FinishedRequestingDecisions(
+      num_decisions_requested);
 }
 
 bool WebStateImpl::ShouldAllowErrorPageToBeDisplayed(NSURLResponse* response,
@@ -491,8 +511,8 @@ bool WebStateImpl::ShouldAllowErrorPageToBeDisplayed(NSURLResponse* response,
 
 void WebStateImpl::ShouldAllowResponse(
     NSURLResponse* response,
-    bool for_main_frame,
-    base::OnceCallback<void(WebStatePolicyDecider::PolicyDecision)> callback) {
+    WebStatePolicyDecider::ResponseInfo response_info,
+    WebStatePolicyDecider::PolicyDecisionCallback callback) {
   auto response_state_tracker =
       std::make_unique<PolicyDecisionStateTracker>(std::move(callback));
   PolicyDecisionStateTracker* response_state_tracker_ptr =
@@ -502,7 +522,7 @@ void WebStateImpl::ShouldAllowResponse(
       base::Owned(std::move(response_state_tracker)));
   int num_decisions_requested = 0;
   for (auto& policy_decider : policy_deciders_) {
-    policy_decider.ShouldAllowResponse(response, for_main_frame,
+    policy_decider.ShouldAllowResponse(response, response_info,
                                        policy_decider_callback);
     num_decisions_requested++;
     if (response_state_tracker_ptr->DeterminedFinalResult())
@@ -511,23 +531,6 @@ void WebStateImpl::ShouldAllowResponse(
 
   response_state_tracker_ptr->FinishedRequestingDecisions(
       num_decisions_requested);
-}
-
-bool WebStateImpl::ShouldPreviewLink(const GURL& link_url) {
-  return delegate_ && delegate_->ShouldPreviewLink(this, link_url);
-}
-
-UIViewController* WebStateImpl::GetPreviewingViewController(
-    const GURL& link_url) {
-  return delegate_ ? delegate_->GetPreviewingViewController(this, link_url)
-                   : nil;
-}
-
-void WebStateImpl::CommitPreviewingViewController(
-    UIViewController* previewing_view_controller) {
-  if (delegate_) {
-    delegate_->CommitPreviewingViewController(this, previewing_view_controller);
-  }
 }
 
 UIView* WebStateImpl::GetWebViewContainer() {
@@ -550,14 +553,34 @@ WebState::InterfaceBinder* WebStateImpl::GetInterfaceBinderForMainFrame() {
 
 #pragma mark - WebFrame management
 
-void WebStateImpl::OnWebFrameAvailable(web::WebFrame* frame) {
-  for (auto& observer : observers_)
-    observer.WebFrameDidBecomeAvailable(this, frame);
+void WebStateImpl::RemoveAllWebFrames() {
+  for (WebFrame* frame : GetWebFramesManager()->GetAllWebFrames()) {
+    NotifyObserversAndRemoveWebFrame(frame);
+  }
 }
 
-void WebStateImpl::OnWebFrameUnavailable(web::WebFrame* frame) {
+void WebStateImpl::WebFrameBecameAvailable(std::unique_ptr<WebFrame> frame) {
+  WebFrame* frame_ptr = frame.get();
+  GetWebFramesManagerImpl().AddFrame(std::move(frame));
+
+  for (auto& observer : observers_)
+    observer.WebFrameDidBecomeAvailable(this, frame_ptr);
+}
+
+void WebStateImpl::WebFrameBecameUnavailable(const std::string& frame_id) {
+  WebFrame* frame = GetWebFramesManager()->GetFrameWithId(frame_id);
+  if (!frame) {
+    return;
+  }
+
+  NotifyObserversAndRemoveWebFrame(frame);
+}
+
+void WebStateImpl::NotifyObserversAndRemoveWebFrame(WebFrame* frame) {
   for (auto& observer : observers_)
     observer.WebFrameWillBecomeUnavailable(this, frame);
+
+  GetWebFramesManagerImpl().RemoveFrameWithId(frame->GetFrameId());
 }
 
 #pragma mark - WebState implementation
@@ -643,12 +666,12 @@ WebFramesManager* WebStateImpl::GetWebFramesManager() {
 
 const SessionCertificatePolicyCache*
 WebStateImpl::GetSessionCertificatePolicyCache() const {
-  return &GetSessionCertificatePolicyCacheImpl();
+  return certificate_policy_cache_.get();
 }
 
 SessionCertificatePolicyCache*
 WebStateImpl::GetSessionCertificatePolicyCache() {
-  return &GetSessionCertificatePolicyCacheImpl();
+  return certificate_policy_cache_.get();
 }
 
 CRWSessionStorage* WebStateImpl::BuildSessionStorage() {
@@ -674,33 +697,26 @@ void WebStateImpl::LoadData(NSData* data,
 }
 
 CRWJSInjectionReceiver* WebStateImpl::GetJSInjectionReceiver() const {
-  return [web_controller_.jsInjector JSInjectionReceiver];
+  return [web_controller_ jsInjectionReceiver];
 }
 
 void WebStateImpl::ExecuteJavaScript(const std::u16string& javascript) {
-  [web_controller_.jsInjector
-      executeJavaScript:base::SysUTF16ToNSString(javascript)
-      completionHandler:nil];
+  [web_controller_ executeJavaScript:base::SysUTF16ToNSString(javascript)
+                   completionHandler:nil];
 }
 
 void WebStateImpl::ExecuteJavaScript(const std::u16string& javascript,
                                      JavaScriptResultCallback callback) {
   __block JavaScriptResultCallback stack_callback = std::move(callback);
-  [web_controller_.jsInjector
+  [web_controller_
       executeJavaScript:base::SysUTF16ToNSString(javascript)
       completionHandler:^(id value, NSError* error) {
-        if (error) {
-          DLOG(WARNING) << "Script execution failed with error: "
-                        << base::SysNSStringToUTF16(
-                               error.userInfo[NSLocalizedDescriptionKey]);
-        }
         std::move(stack_callback).Run(ValueResultFromWKResult(value).get());
       }];
 }
 
 void WebStateImpl::ExecuteUserJavaScript(NSString* javaScript) {
-  [web_controller_.jsInjector executeUserJavaScript:javaScript
-                                  completionHandler:nil];
+  [web_controller_ executeUserJavaScript:javaScript completionHandler:nil];
 }
 
 const std::string& WebStateImpl::GetContentsMimeType() const {
@@ -730,20 +746,7 @@ GURL WebStateImpl::GetCurrentURL(URLVerificationTrustLevel* trust_level) const {
 
   web::NavigationItemImpl* item =
       navigation_manager_->GetLastCommittedItemImpl();
-  GURL lastCommittedURL;
-  if (item) {
-    if (!base::FeatureList::IsEnabled(web::features::kUseJSForErrorPage) &&
-        (wk_navigation_util::IsPlaceholderUrl(item->GetURL()) ||
-         item->error_retry_state_machine().state() ==
-             ErrorRetryState::kReadyToDisplayError)) {
-      // When webView.URL is a placeholder URL, |currentURLWithTrustLevel:|
-      // returns virtual URL if one is available.
-      lastCommittedURL = item->GetVirtualURL();
-    } else {
-      // Otherwise document URL is returned.
-      lastCommittedURL = item->GetURL();
-    }
-  }
+  GURL lastCommittedURL = item ? item->GetURL() : GURL();
 
   bool equalOrigins;
   if (result.SchemeIs(url::kAboutScheme) &&
@@ -753,7 +756,8 @@ GURL WebStateImpl::GetCurrentURL(URLVerificationTrustLevel* trust_level) const {
     // an origin to compare, only a path.
     equalOrigins = result.path() == lastCommittedURL.path();
   } else {
-    equalOrigins = result.GetOrigin() == lastCommittedURL.GetOrigin();
+    equalOrigins = result.DeprecatedGetOriginAsURL() ==
+                   lastCommittedURL.DeprecatedGetOriginAsURL();
   }
   UMA_HISTOGRAM_BOOLEAN("Web.CurrentOriginEqualsLastCommittedOrigin",
                         equalOrigins);
@@ -818,10 +822,7 @@ void WebStateImpl::CreateFullPagePdf(
 void WebStateImpl::OnNavigationStarted(web::NavigationContextImpl* context) {
   // Navigation manager loads internal URLs to restore session history and
   // create back-forward entries for WebUI. Do not trigger external callbacks.
-  if ((!base::FeatureList::IsEnabled(web::features::kUseJSForErrorPage) &&
-       context->IsPlaceholderNavigation()) ||
-      (base::FeatureList::IsEnabled(web::features::kUseJSForErrorPage) &&
-       [CRWErrorPageHelper isErrorPageFileURL:context->GetUrl()]) ||
+  if ([CRWErrorPageHelper isErrorPageFileURL:context->GetUrl()] ||
       wk_navigation_util::IsRestoreSessionUrl(context->GetUrl())) {
     return;
   }
@@ -838,10 +839,7 @@ void WebStateImpl::OnNavigationRedirected(web::NavigationContextImpl* context) {
 void WebStateImpl::OnNavigationFinished(web::NavigationContextImpl* context) {
   // Navigation manager loads internal URLs to restore session history and
   // create back-forward entries for WebUI. Do not trigger external callbacks.
-  if ((!base::FeatureList::IsEnabled(web::features::kUseJSForErrorPage) &&
-       context->IsPlaceholderNavigation()) ||
-      (base::FeatureList::IsEnabled(web::features::kUseJSForErrorPage) &&
-       [CRWErrorPageHelper isErrorPageFileURL:context->GetUrl()]) ||
+  if ([CRWErrorPageHelper isErrorPageFileURL:context->GetUrl()] ||
       wk_navigation_util::IsRestoreSessionUrl(context->GetUrl())) {
     return;
   }
@@ -939,7 +937,17 @@ void WebStateImpl::RestoreSessionStorage(CRWSessionStorage* session_storage) {
 }
 
 bool WebStateImpl::SetSessionStateData(NSData* data) {
-  return [web_controller_ setSessionStateData:data];
+  bool state_set = [web_controller_ setSessionStateData:data];
+  if (!state_set)
+    return false;
+  for (int i = 0; i < navigation_manager_->GetItemCount(); i++) {
+    web::NavigationItem* item = navigation_manager_->GetItemAtIndex(i);
+    if ([CRWErrorPageHelper isErrorPageFileURL:item->GetURL()]) {
+      item->SetVirtualURL([CRWErrorPageHelper
+          failedNavigationURLFromErrorPageFileURL:item->GetURL()]);
+    }
+  }
+  return true;
 }
 
 NSData* WebStateImpl::SessionStateData() {

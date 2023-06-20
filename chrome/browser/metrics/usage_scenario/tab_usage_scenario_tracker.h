@@ -43,7 +43,7 @@ class TabUsageScenarioTracker : public TabStatsObserver,
   void OnTabIsAudibleChanged(content::WebContents* web_contents) override;
   void OnMediaEffectivelyFullscreenChanged(content::WebContents* web_contents,
                                            bool is_fullscreen) override;
-  void OnMainFrameNavigationCommitted(
+  void OnPrimaryMainFrameNavigationCommitted(
       content::WebContents* web_contents) override;
   void OnVideoStartedPlaying(content::WebContents* web_contents) override;
   void OnVideoStoppedPlaying(content::WebContents* web_contents) override;
@@ -87,6 +87,8 @@ class TabUsageScenarioTracker : public TabStatsObserver,
 
   // WebContents currently playing video fullscreen, nullptr if there's none.
   content::WebContents* content_with_media_playing_fullscreen_ = nullptr;
+
+  display::ScopedDisplayObserver display_observer_{this};
 
   // Used to verify that all access to |usage_scenario_data_store_| goes through
   // the same sequence as the one that created this object.

@@ -119,6 +119,7 @@ VULKAN_DEVICE_FUNCTIONS = [
       'vkCmdBeginRenderPass',
       'vkCmdCopyBuffer',
       'vkCmdCopyBufferToImage',
+      'vkCmdCopyImageToBuffer',
       'vkCmdEndRenderPass',
       'vkCmdExecuteCommands',
       'vkCmdNextSubpass',
@@ -231,12 +232,12 @@ VULKAN_DEVICE_FUNCTIONS = [
   },
   {
     'ifdef': 'defined(OS_FUCHSIA)',
-    'extension': 'VK_FUCHSIA_BUFFER_COLLECTION_EXTENSION_NAME',
+    'extension': 'VK_FUCHSIA_BUFFER_COLLECTION_X_EXTENSION_NAME',
     'functions': [
-      'vkCreateBufferCollectionFUCHSIA',
-      'vkSetBufferCollectionConstraintsFUCHSIA',
-      'vkGetBufferCollectionPropertiesFUCHSIA',
-      'vkDestroyBufferCollectionFUCHSIA',
+      'vkCreateBufferCollectionFUCHSIAX',
+      'vkSetBufferCollectionConstraintsFUCHSIAX',
+      'vkGetBufferCollectionPropertiesFUCHSIAX',
+      'vkDestroyBufferCollectionFUCHSIAX',
     ]
   },
   {

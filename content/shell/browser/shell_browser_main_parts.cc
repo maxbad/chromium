@@ -19,6 +19,7 @@
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
 #include "cc/base/switches.h"
+#include "components/performance_manager/embedder/graph_features.h"
 #include "components/performance_manager/embedder/performance_manager_lifetime.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/devtools_agent_host.h"
@@ -48,24 +49,20 @@
 #include "net/base/network_change_notifier.h"
 #endif
 
-#if defined(USE_OZONE) || defined(USE_X11)
-#include "ui/base/ui_base_features.h"
-#endif
-#if defined(USE_X11)
-#include "ui/base/x/x11_util.h"  // nogncheck
-#endif
-#if defined(USE_AURA) && defined(USE_X11)
-#include "ui/events/devices/x11/touch_factory_x11.h"  // nogncheck
-#endif
 #if defined(USE_AURA) && (defined(OS_LINUX) || BUILDFLAG(IS_CHROMEOS_LACROS))
 #include "ui/base/ime/init/input_method_initializer.h"
 #endif
+
 #if BUILDFLAG(IS_CHROMEOS_ASH)
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "device/bluetooth/dbus/bluez_dbus_manager.h"
 #elif defined(OS_LINUX) || BUILDFLAG(IS_CHROMEOS_LACROS)
 #include "device/bluetooth/dbus/dbus_bluez_manager_wrapper_linux.h"
 #endif  // #elif (defined(OS_LINUX) || BUILDFLAG(IS_CHROMEOS_LACROS))
+
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+#include "chromeos/lacros/lacros_dbus_thread_manager.h"
+#endif
 
 #if BUILDFLAG(USE_GTK)
 #include "ui/gtk/gtk_ui_factory.h"
@@ -112,20 +109,10 @@ scoped_refptr<base::RefCountedMemory> PlatformResourceProvider(int key) {
 
 }  // namespace
 
-ShellBrowserMainParts::ShellBrowserMainParts(
-    const MainFunctionParams& parameters)
-    : parameters_(parameters), run_message_loop_(true) {}
+ShellBrowserMainParts::ShellBrowserMainParts(MainFunctionParams parameters)
+    : parameters_(std::move(parameters)) {}
 
 ShellBrowserMainParts::~ShellBrowserMainParts() = default;
-
-#if !defined(OS_MAC)
-void ShellBrowserMainParts::PreCreateMainMessageLoop() {
-#if defined(USE_AURA) && defined(USE_X11)
-  if (!features::IsUsingOzonePlatform())
-    ui::TouchFactory::SetTouchDeviceListFromCommandLine();
-#endif
-}
-#endif
 
 void ShellBrowserMainParts::PostCreateMainMessageLoop() {
 #if BUILDFLAG(IS_CHROMEOS_ASH)
@@ -133,6 +120,9 @@ void ShellBrowserMainParts::PostCreateMainMessageLoop() {
   bluez::BluezDBusManager::InitializeFake();
 #elif defined(OS_LINUX) || BUILDFLAG(IS_CHROMEOS_LACROS)
   bluez::DBusBluezManagerWrapperLinux::Initialize();
+#endif
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+  chromeos::LacrosDBusThreadManager::Initialize();
 #endif
 }
 
@@ -186,7 +176,7 @@ int ShellBrowserMainParts::PreCreateThreads() {
 void ShellBrowserMainParts::PostCreateThreads() {
   performance_manager_lifetime_ =
       std::make_unique<performance_manager::PerformanceManagerLifetime>(
-          performance_manager::Decorators::kMinimal, base::DoNothing());
+          performance_manager::GraphFeatures::WithMinimal(), base::DoNothing());
 }
 
 int ShellBrowserMainParts::PreMainMessageLoopRun() {
@@ -195,25 +185,16 @@ int ShellBrowserMainParts::PreMainMessageLoopRun() {
   net::NetModule::SetResourceProvider(PlatformResourceProvider);
   ShellDevToolsManagerDelegate::StartHttpHandler(browser_context_.get());
   InitializeMessageLoopContext();
-
-  if (parameters_.ui_task) {
-    std::move(*parameters_.ui_task).Run();
-    delete parameters_.ui_task;
-    run_message_loop_ = false;
-  }
-
   return 0;
 }
 
 void ShellBrowserMainParts::WillRunMainMessageLoop(
     std::unique_ptr<base::RunLoop>& run_loop) {
-  if (run_message_loop_)
-    Shell::SetMainMessageLoopQuitClosure(run_loop->QuitClosure());
-  else
-    run_loop.reset();
+  Shell::SetMainMessageLoopQuitClosure(run_loop->QuitClosure());
 }
 
 void ShellBrowserMainParts::PostMainMessageLoopRun() {
+  DCHECK_EQ(Shell::windows().size(), 0u);
   ShellDevToolsManagerDelegate::StopHttpHandler();
   browser_context_.reset();
   off_the_record_browser_context_.reset();
@@ -224,6 +205,9 @@ void ShellBrowserMainParts::PostMainMessageLoopRun() {
 }
 
 void ShellBrowserMainParts::PostDestroyThreads() {
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+  chromeos::LacrosDBusThreadManager::Shutdown();
+#endif
 #if BUILDFLAG(IS_CHROMEOS_ASH)
   device::BluetoothAdapterFactory::Shutdown();
   bluez::BluezDBusManager::Shutdown();

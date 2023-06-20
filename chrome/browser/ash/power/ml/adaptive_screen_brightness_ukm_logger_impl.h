@@ -5,11 +5,10 @@
 #ifndef CHROME_BROWSER_ASH_POWER_ML_ADAPTIVE_SCREEN_BRIGHTNESS_UKM_LOGGER_IMPL_H_
 #define CHROME_BROWSER_ASH_POWER_ML_ADAPTIVE_SCREEN_BRIGHTNESS_UKM_LOGGER_IMPL_H_
 
-#include "base/macros.h"
 #include "chrome/browser/ash/power/ml/adaptive_screen_brightness_ukm_logger.h"
 #include "services/metrics/public/cpp/ukm_source_id.h"
 
-namespace chromeos {
+namespace ash {
 namespace power {
 namespace ml {
 
@@ -17,9 +16,15 @@ class AdaptiveScreenBrightnessUkmLoggerImpl
     : public AdaptiveScreenBrightnessUkmLogger {
  public:
   AdaptiveScreenBrightnessUkmLoggerImpl() = default;
+
+  AdaptiveScreenBrightnessUkmLoggerImpl(
+      const AdaptiveScreenBrightnessUkmLoggerImpl&) = delete;
+  AdaptiveScreenBrightnessUkmLoggerImpl& operator=(
+      const AdaptiveScreenBrightnessUkmLoggerImpl&) = delete;
+
   ~AdaptiveScreenBrightnessUkmLoggerImpl() override;
 
-  // chromeos::power::ml::AdaptiveScreenBrightnessUkmLogger overrides:
+  // ash::power::ml::AdaptiveScreenBrightnessUkmLogger overrides:
   void LogActivity(const ScreenBrightnessEvent& screen_brightness_event,
                    ukm::SourceId tab_id,
                    bool has_form_entry) override;
@@ -28,12 +33,10 @@ class AdaptiveScreenBrightnessUkmLoggerImpl
   // This ID is incremented each time a ScreenBrightessEvent is logged to UKM.
   // Event index resets when a new user session starts.
   int next_sequence_id_ = 1;
-
-  DISALLOW_COPY_AND_ASSIGN(AdaptiveScreenBrightnessUkmLoggerImpl);
 };
 
 }  // namespace ml
 }  // namespace power
-}  // namespace chromeos
+}  // namespace ash
 
 #endif  // CHROME_BROWSER_ASH_POWER_ML_ADAPTIVE_SCREEN_BRIGHTNESS_UKM_LOGGER_IMPL_H_

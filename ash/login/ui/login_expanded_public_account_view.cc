@@ -8,13 +8,13 @@
 #include <utility>
 #include <vector>
 
+#include "ash/constants/ash_pref_names.h"
 #include "ash/login/login_screen_controller.h"
 #include "ash/login/ui/arrow_button_view.h"
 #include "ash/login/ui/login_button.h"
 #include "ash/login/ui/login_user_view.h"
 #include "ash/login/ui/public_account_monitoring_info_dialog.h"
 #include "ash/login/ui/views_utils.h"
-#include "ash/public/cpp/ash_pref_names.h"
 #include "ash/public/cpp/login_types.h"
 #include "ash/resources/vector_icons/vector_icons.h"
 #include "ash/shell.h"
@@ -31,6 +31,7 @@
 #include "ui/compositor/layer.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/paint_vector_icon.h"
+#include "ui/views/animation/ink_drop.h"
 #include "ui/views/border.h"
 #include "ui/views/controls/image_view.h"
 #include "ui/views/controls/label.h"
@@ -94,6 +95,12 @@ class LoginExpandedPublicAccountEventHandler : public ui::EventHandler {
       : view_(view) {
     Shell::Get()->AddPreTargetHandler(this);
   }
+
+  LoginExpandedPublicAccountEventHandler(
+      const LoginExpandedPublicAccountEventHandler&) = delete;
+  LoginExpandedPublicAccountEventHandler& operator=(
+      const LoginExpandedPublicAccountEventHandler&) = delete;
+
   ~LoginExpandedPublicAccountEventHandler() override {
     Shell::Get()->RemovePreTargetHandler(this);
   }
@@ -113,8 +120,6 @@ class LoginExpandedPublicAccountEventHandler : public ui::EventHandler {
   void OnKeyEvent(ui::KeyEvent* event) override { view_->OnKeyEvent(event); }
 
   LoginExpandedPublicAccountView* view_;
-
-  DISALLOW_COPY_AND_ASSIGN(LoginExpandedPublicAccountEventHandler);
 };
 
 }  // namespace
@@ -124,11 +129,12 @@ class SelectionButtonView : public LoginButton {
  public:
   SelectionButtonView(PressedCallback callback, const std::u16string& text)
       : LoginButton(std::move(callback)) {
+    SetAccessibleName(text);
     SetPaintToLayer();
     layer()->SetFillsBoundsOpaquely(false);
     SetFocusBehavior(FocusBehavior::ALWAYS);
     SetLayoutManager(std::make_unique<views::FillLayout>());
-    ink_drop()->SetMode(views::InkDropHost::InkDropMode::OFF);
+    views::InkDrop::Get(this)->SetMode(views::InkDropHost::InkDropMode::OFF);
 
     auto add_horizontal_margin = [&](int width,
                                      views::View* parent) -> views::View* {
@@ -168,6 +174,9 @@ class SelectionButtonView : public LoginButton {
     icon_container->AddChildView(icon_);
     right_margin_view_ = add_horizontal_margin(right_margin_, icon_container);
   }
+
+  SelectionButtonView(const SelectionButtonView&) = delete;
+  SelectionButtonView& operator=(const SelectionButtonView&) = delete;
 
   ~SelectionButtonView() override = default;
 
@@ -209,8 +218,6 @@ class SelectionButtonView : public LoginButton {
   views::ImageView* icon_ = nullptr;
   views::View* left_margin_view_ = nullptr;
   views::View* right_margin_view_ = nullptr;
-
-  DISALLOW_COPY_AND_ASSIGN(SelectionButtonView);
 };
 
 // Container for the device monitoring warning.
@@ -255,6 +262,9 @@ class MonitoringWarningView : public NonAccessibleView {
     UpdateLabel();
   }
 
+  MonitoringWarningView(const MonitoringWarningView&) = delete;
+  MonitoringWarningView& operator=(const MonitoringWarningView&) = delete;
+
   ~MonitoringWarningView() override = default;
 
  private:
@@ -285,8 +295,6 @@ class MonitoringWarningView : public NonAccessibleView {
   absl::optional<std::string> device_manager_;
   views::ImageView* image_;
   views::Label* label_;
-
-  DISALLOW_COPY_AND_ASSIGN(MonitoringWarningView);
 };
 
 // Implements the right part of the expanded public session view.
@@ -415,6 +423,9 @@ class RightPaneView : public NonAccessibleView {
         IDS_ASH_LOGIN_PUBLIC_ACCOUNT_LOG_IN_BUTTON_ACCESSIBLE_NAME));
     AddChildView(submit_button_);
   }
+
+  RightPaneView(const RightPaneView&) = delete;
+  RightPaneView& operator=(const RightPaneView&) = delete;
 
   ~RightPaneView() override = default;
 
@@ -666,8 +677,6 @@ class RightPaneView : public NonAccessibleView {
   bool language_changed_by_user_ = false;
 
   base::WeakPtrFactory<RightPaneView> weak_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(RightPaneView);
 };
 
 LoginExpandedPublicAccountView::TestApi::TestApi(

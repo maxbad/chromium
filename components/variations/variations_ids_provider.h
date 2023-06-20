@@ -13,9 +13,7 @@
 
 #include "base/component_export.h"
 #include "base/gtest_prod_util.h"
-#include "base/macros.h"
 #include "base/metrics/field_trial.h"
-#include "base/no_destructor.h"
 #include "base/observer_list.h"
 #include "base/synchronization/lock.h"
 #include "components/variations/proto/study.pb.h"
@@ -57,7 +55,27 @@ class COMPONENT_EXPORT(VARIATIONS) VariationsIdsProvider
     virtual ~Observer() {}
   };
 
+  enum class Mode {
+    // Indicates the signed-in parameter supplied to GetClientDataHeaders() is
+    // honored.
+    kUseSignedInState,
+
+    // Indicates the signed-in parameter supplied to GetClientDataHeaders() is
+    // treated as true, regardless of what is supplied. This is intended for
+    // embedders (such as WebLayer) that do not have the notion of signed-in.
+    kIgnoreSignedInState,
+  };
+
+  // Creates the VariationsIdsProvider instance. This must be called before
+  // GetInstance(). Only one instance of VariationsIdsProvider may be created.
+  static VariationsIdsProvider* Create(Mode mode);
+
   static VariationsIdsProvider* GetInstance();
+
+  VariationsIdsProvider(const VariationsIdsProvider&) = delete;
+  VariationsIdsProvider& operator=(const VariationsIdsProvider&) = delete;
+
+  Mode mode() const { return mode_; }
 
   // Returns the X-Client-Data headers corresponding to |is_signed_in|: a header
   // that may be sent in first-party requests and a header that may be sent in
@@ -66,7 +84,9 @@ class COMPONENT_EXPORT(VARIATIONS) VariationsIdsProvider
   //
   // If |is_signed_in| is false, VariationIDs that should be sent for only
   // signed in users (i.e. GOOGLE_WEB_PROPERTIES_SIGNED_IN entries) are not
-  // included. Also, computes and caches the header if necessary.
+  // included. Also, computes and caches the header if necessary. |is_signed_in|
+  // is impacted by the Mode supplied when VariationsIdsProvider is created.
+  // See Mode for details.
   variations::mojom::VariationsHeadersPtr GetClientDataHeaders(
       bool is_signed_in);
 
@@ -129,9 +149,9 @@ class COMPONENT_EXPORT(VARIATIONS) VariationsIdsProvider
   void ResetForTesting();
 
  private:
-  friend class base::NoDestructor<VariationsIdsProvider>;
-
   typedef std::pair<VariationID, IDCollectionKey> VariationIDEntry;
+
+  friend class ScopedVariationsIdsProvider;
 
   FRIEND_TEST_ALL_PREFIXES(VariationsIdsProviderTest, ForceVariationIds_Valid);
   FRIEND_TEST_ALL_PREFIXES(VariationsIdsProviderTest,
@@ -156,8 +176,11 @@ class COMPONENT_EXPORT(VARIATIONS) VariationsIdsProvider
                            GetVariationsVectorForWebPropertiesKeys);
   FRIEND_TEST_ALL_PREFIXES(VariationsIdsProviderTest, GetVariationsVectorImpl);
 
-  VariationsIdsProvider();
+  explicit VariationsIdsProvider(Mode mode);
   ~VariationsIdsProvider() override;
+
+  static void CreateInstanceForTesting(Mode mode);
+  static void DestroyInstanceForTesting();
 
   // Returns a space-separated string containing the list of current active
   // variations (as would be reported in the |variation_id| repeated field of
@@ -221,6 +244,8 @@ class COMPONENT_EXPORT(VARIATIONS) VariationsIdsProvider
   std::vector<VariationID> GetVariationsVectorImpl(
       const std::set<IDCollectionKey>& key);
 
+  const Mode mode_;
+
   // Guards access to variables below.
   base::Lock lock_;
 
@@ -260,8 +285,6 @@ class COMPONENT_EXPORT(VARIATIONS) VariationsIdsProvider
   base::ObserverList<Observer>::Unchecked observer_list_;
 
   const VariationsClient* variations_client_ = nullptr;
-
-  DISALLOW_COPY_AND_ASSIGN(VariationsIdsProvider);
 };
 
 }  // namespace variations

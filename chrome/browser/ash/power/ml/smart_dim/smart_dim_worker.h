@@ -16,7 +16,7 @@ namespace assist_ranker {
 class ExamplePreprocessorConfig;
 }  // namespace assist_ranker
 
-namespace chromeos {
+namespace ash {
 namespace power {
 namespace ml {
 
@@ -31,6 +31,10 @@ namespace ml {
 class SmartDimWorker {
  public:
   SmartDimWorker();
+
+  SmartDimWorker(const SmartDimWorker&) = delete;
+  SmartDimWorker& operator=(const SmartDimWorker&) = delete;
+
   virtual ~SmartDimWorker();
 
   // Gets model score threshold above which the screen dim is recommended.
@@ -63,13 +67,10 @@ class SmartDimWorker {
   // Remotes used to execute functions in the ML service side.
   mojo::Remote<chromeos::machine_learning::mojom::Model> model_;
   mojo::Remote<chromeos::machine_learning::mojom::GraphExecutor> executor_;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(SmartDimWorker);
 };
 
 }  // namespace ml
 }  // namespace power
-}  // namespace chromeos
+}  // namespace ash
 
 #endif  // CHROME_BROWSER_ASH_POWER_ML_SMART_DIM_SMART_DIM_WORKER_H_

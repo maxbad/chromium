@@ -16,10 +16,6 @@
 #include "extensions/common/api/feedback_private.h"
 #include "ui/gfx/geometry/rect.h"
 
-namespace feedback {
-class FeedbackData;
-}  // namespace feedback
-
 namespace extensions {
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
@@ -29,9 +25,13 @@ class LogSourceAccessManager;
 class FeedbackPrivateAPI : public BrowserContextKeyedAPI {
  public:
   explicit FeedbackPrivateAPI(content::BrowserContext* context);
+
+  FeedbackPrivateAPI(const FeedbackPrivateAPI&) = delete;
+  FeedbackPrivateAPI& operator=(const FeedbackPrivateAPI&) = delete;
+
   ~FeedbackPrivateAPI() override;
 
-  FeedbackService* GetService() const;
+  scoped_refptr<FeedbackService> GetService() const;
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
   LogSourceAccessManager* GetLogSourceAccessManager() const;
@@ -47,6 +47,7 @@ class FeedbackPrivateAPI : public BrowserContextKeyedAPI {
       api::feedback_private::FeedbackFlow flow,
       bool from_assistant,
       bool include_bluetooth_logs,
+      bool show_questionnaire,
       bool from_chrome_labs_or_kaleidoscope);
 
   void RequestFeedbackForFlow(const std::string& description_template,
@@ -57,6 +58,7 @@ class FeedbackPrivateAPI : public BrowserContextKeyedAPI {
                               api::feedback_private::FeedbackFlow flow,
                               bool from_assistant = false,
                               bool include_bluetooth_logs = false,
+                              bool show_questionnaire = false,
                               bool from_chrome_labs_or_kaleidoscope = false);
 
   // BrowserContextKeyedAPI implementation.
@@ -64,8 +66,8 @@ class FeedbackPrivateAPI : public BrowserContextKeyedAPI {
   GetFactoryInstance();
 
   // Use a custom FeedbackService implementation for tests.
-  void SetFeedbackServiceForTesting(std::unique_ptr<FeedbackService> service) {
-    service_ = std::move(service);
+  void SetFeedbackServiceForTesting(scoped_refptr<FeedbackService> service) {
+    service_ = service;
   }
 
  private:
@@ -77,13 +79,11 @@ class FeedbackPrivateAPI : public BrowserContextKeyedAPI {
   static const bool kServiceHasOwnInstanceInIncognito = true;
 
   content::BrowserContext* const browser_context_;
-  std::unique_ptr<FeedbackService> service_;
+  scoped_refptr<FeedbackService> service_;
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
   std::unique_ptr<LogSourceAccessManager> log_source_access_manager_;
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
-
-  DISALLOW_COPY_AND_ASSIGN(FeedbackPrivateAPI);
 };
 
 // Feedback strings.
@@ -158,26 +158,7 @@ class FeedbackPrivateSendFeedbackFunction : public ExtensionFunction {
  protected:
   ~FeedbackPrivateSendFeedbackFunction() override {}
   ResponseAction Run() override;
-
- private:
-  void OnAllLogsFetched(bool send_histograms,
-                        bool send_bluetooth_logs,
-                        bool send_tab_titles,
-                        scoped_refptr<feedback::FeedbackData> feedback_data);
   void OnCompleted(api::feedback_private::LandingPageType type, bool success);
-
-#if BUILDFLAG(IS_CHROMEOS_ASH)
-  void OnAshLogsFetched(bool send_histograms,
-                        bool send_bluetooth_logs,
-                        bool send_tab_titles,
-                        scoped_refptr<feedback::FeedbackData> feedback_data);
-  void OnLacrosHistogramsFetched(
-      bool send_histograms,
-      bool send_bluetooth_logs,
-      bool send_tab_titles,
-      scoped_refptr<feedback::FeedbackData> feedback_data,
-      const std::string& compressed_histograms);
-#endif  // BUILDFLAG(IS_CHROMEOS_ASH)
 };
 
 class FeedbackPrivateLoginFeedbackCompleteFunction : public ExtensionFunction {

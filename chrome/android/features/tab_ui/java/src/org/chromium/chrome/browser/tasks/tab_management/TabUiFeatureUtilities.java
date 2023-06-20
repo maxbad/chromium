@@ -4,14 +4,12 @@
 
 package org.chromium.chrome.browser.tasks.tab_management;
 
-import static org.chromium.chrome.browser.preferences.ChromePreferenceKeys.CONTEXT_MENU_OPEN_NEW_TAB_IN_GROUP_ITEM_FIRST;
-
+import android.content.Context;
 import android.os.Build;
 import android.text.TextUtils;
 
 import androidx.annotation.Nullable;
 
-import org.chromium.base.ContextUtils;
 import org.chromium.base.Log;
 import org.chromium.base.SysUtils;
 import org.chromium.chrome.browser.device.DeviceClassManager;
@@ -21,12 +19,9 @@ import org.chromium.chrome.browser.flags.ChromeFeatureList;
 import org.chromium.chrome.browser.flags.DoubleCachedFieldTrialParameter;
 import org.chromium.chrome.browser.flags.IntCachedFieldTrialParameter;
 import org.chromium.chrome.browser.flags.StringCachedFieldTrialParameter;
-import org.chromium.chrome.browser.preferences.SharedPreferencesManager;
 import org.chromium.chrome.browser.tasks.ConditionalTabStripUtils;
-import org.chromium.chrome.features.start_surface.StartSurfaceConfiguration;
+import org.chromium.chrome.browser.tasks.ReturnToChromeExperimentsUtil;
 import org.chromium.ui.base.DeviceFormFactor;
-
-import java.util.Random;
 
 /**
  * A class to handle the state of flags for tab_management.
@@ -56,16 +51,6 @@ public class TabUiFeatureUtilities {
             new BooleanCachedFieldTrialParameter(
                     ChromeFeatureList.TAB_GRID_LAYOUT_ANDROID, SEARCH_CHIP_PARAM, false);
 
-    private static final String PRICE_TRACKING_PARAM = "enable_price_tracking";
-    public static final BooleanCachedFieldTrialParameter ENABLE_PRICE_TRACKING =
-            new BooleanCachedFieldTrialParameter(
-                    ChromeFeatureList.TAB_GRID_LAYOUT_ANDROID, PRICE_TRACKING_PARAM, false);
-
-    private static final String PRICE_NOTIFICATION_PARAM = "enable_price_notification";
-    public static final BooleanCachedFieldTrialParameter ENABLE_PRICE_NOTIFICATION =
-            new BooleanCachedFieldTrialParameter(
-                    ChromeFeatureList.TAB_GRID_LAYOUT_ANDROID, PRICE_NOTIFICATION_PARAM, false);
-
     private static final String SEARCH_CHIP_ADAPTIVE_PARAM =
             "enable_search_term_chip_adaptive_icon";
     public static final BooleanCachedFieldTrialParameter ENABLE_SEARCH_CHIP_ADAPTIVE =
@@ -75,12 +60,12 @@ public class TabUiFeatureUtilities {
     private static final String LAUNCH_BUG_FIX_PARAM = "enable_launch_bug_fix";
     public static final BooleanCachedFieldTrialParameter ENABLE_LAUNCH_BUG_FIX =
             new BooleanCachedFieldTrialParameter(
-                    ChromeFeatureList.TAB_GRID_LAYOUT_ANDROID, LAUNCH_BUG_FIX_PARAM, false);
+                    ChromeFeatureList.TAB_GROUPS_CONTINUATION_ANDROID, LAUNCH_BUG_FIX_PARAM, false);
 
     private static final String LAUNCH_POLISH_PARAM = "enable_launch_polish";
     public static final BooleanCachedFieldTrialParameter ENABLE_LAUNCH_POLISH =
             new BooleanCachedFieldTrialParameter(
-                    ChromeFeatureList.TAB_GRID_LAYOUT_ANDROID, LAUNCH_POLISH_PARAM, false);
+                    ChromeFeatureList.TAB_GROUPS_CONTINUATION_ANDROID, LAUNCH_POLISH_PARAM, false);
 
     // Field trial parameter for the minimum Android SDK version to enable zooming animation.
     private static final String MIN_SDK_PARAM = "zooming-min-sdk-version";
@@ -100,6 +85,20 @@ public class TabUiFeatureUtilities {
     public static final BooleanCachedFieldTrialParameter ENABLE_TAB_GROUP_AUTO_CREATION =
             new BooleanCachedFieldTrialParameter(
                     ChromeFeatureList.TAB_GRID_LAYOUT_ANDROID, TAB_GROUP_AUTO_CREATION_PARAM, true);
+
+    // Field trial parameter for configuring the "Open in new tab" and "Open in new tab in group"
+    // item order in the context menu.
+    private static final String SHOW_OPEN_IN_TAB_GROUP_MENU_ITEM_FIRST_PARAM =
+            "show_open_in_tab_group_menu_item_first";
+
+    public static final BooleanCachedFieldTrialParameter SHOW_OPEN_IN_TAB_GROUP_MENU_ITEM_FIRST =
+            new BooleanCachedFieldTrialParameter(ChromeFeatureList.TAB_GRID_LAYOUT_ANDROID,
+                    SHOW_OPEN_IN_TAB_GROUP_MENU_ITEM_FIRST_PARAM, false);
+
+    private static final String TAB_GROUP_SHARING_PARAM = "enable_tab_group_sharing";
+    public static final BooleanCachedFieldTrialParameter ENABLE_TAB_GROUP_SHARING =
+            new BooleanCachedFieldTrialParameter(ChromeFeatureList.TAB_GROUPS_CONTINUATION_ANDROID,
+                    TAB_GROUP_SHARING_PARAM, false);
 
     private static Boolean sTabManagementModuleSupportedForTesting;
 
@@ -123,39 +122,40 @@ public class TabUiFeatureUtilities {
 
     /**
      * @return Whether the Grid Tab Switcher UI is enabled and available for use.
+     * @param context The activity context.
      */
-    public static boolean isGridTabSwitcherEnabled() {
+    public static boolean isGridTabSwitcherEnabled(Context context) {
         // Disable grid tab switcher for tablet.
-        if (DeviceFormFactor.isNonMultiDisplayContextOnTablet(
-                    ContextUtils.getApplicationContext())) {
+        if (DeviceFormFactor.isNonMultiDisplayContextOnTablet(context)) {
             return false;
         }
 
         // Having Tab Groups or Start implies Grid Tab Switcher.
-        return isTabManagementModuleSupported() || isTabGroupsAndroidEnabled()
-                || StartSurfaceConfiguration.isStartSurfaceEnabled();
+        return isTabManagementModuleSupported() || isTabGroupsAndroidEnabled(context)
+                || ReturnToChromeExperimentsUtil.isStartSurfaceEnabled(context);
     }
 
     /**
      * @return Whether the tab group feature is enabled and available for use.
+     * @param context The activity context.
      */
-    public static boolean isTabGroupsAndroidEnabled() {
+    public static boolean isTabGroupsAndroidEnabled(Context context) {
         // Disable tab group for tablet.
-        if (DeviceFormFactor.isNonMultiDisplayContextOnTablet(
-                    ContextUtils.getApplicationContext())) {
+        if (DeviceFormFactor.isNonMultiDisplayContextOnTablet(context)) {
             return false;
         }
 
-        return !DeviceClassManager.enableAccessibilityLayout()
+        return !DeviceClassManager.enableAccessibilityLayout(context)
                 && CachedFeatureFlags.isEnabled(ChromeFeatureList.TAB_GROUPS_ANDROID)
                 && isTabManagementModuleSupported();
     }
 
     /**
      * @return Whether the tab group continuation feature is enabled and available for use.
+     * @param context The activity context.
      */
-    public static boolean isTabGroupsAndroidContinuationEnabled() {
-        return isTabGroupsAndroidEnabled()
+    public static boolean isTabGroupsAndroidContinuationEnabled(Context context) {
+        return isTabGroupsAndroidEnabled(context)
                 && CachedFeatureFlags.isEnabled(ChromeFeatureList.TAB_GROUPS_CONTINUATION_ANDROID);
     }
 
@@ -163,8 +163,9 @@ public class TabUiFeatureUtilities {
      * @return Whether the conditional tab strip feature is enabled and available for use.
      */
     public static boolean isConditionalTabStripEnabled() {
+        // TODO(crbug.com/1222946): Deprecate this feature.
         return CachedFeatureFlags.isEnabled(ChromeFeatureList.CONDITIONAL_TAB_STRIP_ANDROID)
-                && !isGridTabSwitcherEnabled() && isTabManagementModuleSupported()
+                && isTabManagementModuleSupported()
                 && !ConditionalTabStripUtils.getOptOutIndicator();
     }
 
@@ -187,15 +188,14 @@ public class TabUiFeatureUtilities {
         Log.d(TAG, "GTS.MinMemoryMB = " + ZOOMING_MIN_MEMORY.getValue());
         return CachedFeatureFlags.isEnabled(ChromeFeatureList.TAB_TO_GTS_ANIMATION)
                 && Build.VERSION.SDK_INT >= ZOOMING_MIN_SDK.getValue()
-                && SysUtils.amountOfPhysicalMemoryKB() / 1024 >= ZOOMING_MIN_MEMORY.getValue()
-                && !StartSurfaceConfiguration.isStartSurfaceSinglePaneEnabled();
+                && SysUtils.amountOfPhysicalMemoryKB() / 1024 >= ZOOMING_MIN_MEMORY.getValue();
     }
 
     /**
      * @return Whether the instant start is supported.
      */
-    public static boolean supportInstantStart(boolean isTablet) {
-        return !DeviceClassManager.enableAccessibilityLayout()
+    public static boolean supportInstantStart(boolean isTablet, Context context) {
+        return !DeviceClassManager.enableAccessibilityLayout(context)
                 && CachedFeatureFlags.isEnabled(ChromeFeatureList.INSTANT_START) && !isTablet
                 && !SysUtils.isLowEndDevice();
     }
@@ -215,32 +215,12 @@ public class TabUiFeatureUtilities {
     }
 
     /**
-     * @return Whether the price tracking feature is enabled and available for use.
-     */
-    public static boolean isPriceTrackingEnabled() {
-        // TODO(crbug.com/1152925): Now PriceTracking feature is broken if StartSurface is enabled,
-        // we need to remove !StartSurfaceConfiguration.isStartSurfaceEnabled() when the bug is
-        // fixed.
-        return (ENABLE_PRICE_TRACKING.getValue() || ENABLE_PRICE_NOTIFICATION.getValue())
-                && !StartSurfaceConfiguration.isStartSurfaceEnabled();
-    }
-
-    /**
      * @return Whether the "Open in new tab in group" context menu item should show before the
      * "Open in new tab" item.
      */
     public static boolean showContextMenuOpenNewTabInGroupItemFirst() {
         assert !ENABLE_TAB_GROUP_AUTO_CREATION.getValue();
 
-        SharedPreferencesManager sharedPreferencesManager = SharedPreferencesManager.getInstance();
-
-        if (!sharedPreferencesManager.contains(CONTEXT_MENU_OPEN_NEW_TAB_IN_GROUP_ITEM_FIRST)) {
-            Random random = new Random();
-            sharedPreferencesManager.writeBoolean(
-                    CONTEXT_MENU_OPEN_NEW_TAB_IN_GROUP_ITEM_FIRST, random.nextBoolean());
-        }
-
-        return sharedPreferencesManager.readBoolean(
-                CONTEXT_MENU_OPEN_NEW_TAB_IN_GROUP_ITEM_FIRST, false);
+        return SHOW_OPEN_IN_TAB_GROUP_MENU_ITEM_FIRST.getValue();
     }
 }

@@ -15,7 +15,7 @@
 #include "services/metrics/public/cpp/ukm_source_id.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace chromeos {
+namespace ash {
 namespace power {
 namespace ml {
 
@@ -23,6 +23,11 @@ class AdaptiveScreenBrightnessUkmLoggerImplTest
     : public ChromeRenderViewHostTestHarness {
  public:
   AdaptiveScreenBrightnessUkmLoggerImplTest() {}
+
+  AdaptiveScreenBrightnessUkmLoggerImplTest(
+      const AdaptiveScreenBrightnessUkmLoggerImplTest&) = delete;
+  AdaptiveScreenBrightnessUkmLoggerImplTest& operator=(
+      const AdaptiveScreenBrightnessUkmLoggerImplTest&) = delete;
 
   void LogActivity(const ScreenBrightnessEvent& screen_brightness_event,
                    ukm::SourceId tab_id,
@@ -36,8 +41,6 @@ class AdaptiveScreenBrightnessUkmLoggerImplTest
 
  private:
   AdaptiveScreenBrightnessUkmLoggerImpl screen_brightness_ukm_logger_impl_;
-
-  DISALLOW_COPY_AND_ASSIGN(AdaptiveScreenBrightnessUkmLoggerImplTest);
 };
 
 TEST_F(AdaptiveScreenBrightnessUkmLoggerImplTest, Basic) {
@@ -197,4 +200,4 @@ TEST_F(AdaptiveScreenBrightnessUkmLoggerImplTest, AccessibilityOff) {
 
 }  // namespace ml
 }  // namespace power
-}  // namespace chromeos
+}  // namespace ash

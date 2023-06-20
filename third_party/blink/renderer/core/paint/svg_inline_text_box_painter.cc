@@ -5,6 +5,8 @@
 #include "third_party/blink/renderer/core/paint/svg_inline_text_box_painter.h"
 
 #include <memory>
+
+#include "base/stl_util.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/blink/renderer/core/editing/editor.h"
 #include "third_party/blink/renderer/core/editing/markers/document_marker_controller.h"
@@ -19,6 +21,7 @@
 #include "third_party/blink/renderer/core/layout/svg/svg_resources.h"
 #include "third_party/blink/renderer/core/paint/highlight_painting_utils.h"
 #include "third_party/blink/renderer/core/paint/inline_text_box_painter.h"
+#include "third_party/blink/renderer/core/paint/paint_auto_dark_mode.h"
 #include "third_party/blink/renderer/core/paint/paint_info.h"
 #include "third_party/blink/renderer/core/paint/paint_timing.h"
 #include "third_party/blink/renderer/core/paint/paint_timing_detector.h"
@@ -133,7 +136,7 @@ void SVGInlineTextBoxPainter::Paint(const PaintInfo& paint_info,
           paint_info.context, svg_inline_text_box_, paint_info.phase)) {
     DrawingRecorder recorder(
         paint_info.context, svg_inline_text_box_, paint_info.phase,
-        EnclosingIntRect(
+        gfx::ToEnclosingRect(
             parent_layout_object.VisualRectInLocalSVGCoordinates()));
     InlineTextBoxPainter text_painter(svg_inline_text_box_);
     const DocumentMarkerVector& markers_to_paint =
@@ -162,8 +165,7 @@ void SVGInlineTextBoxPainter::PaintTextFragments(
   const ComputedStyle* selection_style = &style;
   bool should_paint_selection = ShouldPaintSelection(paint_info);
   if (should_paint_selection) {
-    selection_style =
-        parent_layout_object.GetCachedPseudoElementStyle(kPseudoIdSelection);
+    selection_style = parent_layout_object.GetSelectionStyle();
     if (selection_style) {
       if (!has_fill)
         has_fill = selection_style->HasFill();
@@ -278,7 +280,8 @@ void SVGInlineTextBoxPainter::PaintSelectionBackground(
         svg_inline_text_box_.SelectionRectForTextFragment(
             fragment, fragment_with_range.start_position,
             fragment_with_range.end_position, style),
-        background_color);
+        background_color,
+        PaintAutoDarkMode(style, DarkModeFilter::ElementRole::kSVG));
   }
 }
 
@@ -373,6 +376,9 @@ void SVGInlineTextBoxPainter::PaintDecoration(const PaintInfo& paint_info,
       FloatRect(decoration_origin,
                 FloatSize(fragment.width, thickness / scaling_factor)));
 
+  AutoDarkMode auto_dark_mode(
+      PaintAutoDarkMode(decoration_style, DarkModeFilter::ElementRole::kSVG));
+
   for (int i = 0; i < 3; i++) {
     switch (decoration_style.PaintOrderType(i)) {
       case PT_FILL:
@@ -386,7 +392,8 @@ void SVGInlineTextBoxPainter::PaintDecoration(const PaintInfo& paint_info,
             break;
           }
           fill_flags.setAntiAlias(true);
-          paint_info.context.DrawPath(path.GetSkPath(), fill_flags);
+          paint_info.context.DrawPath(path.GetSkPath(), fill_flags,
+                                      auto_dark_mode);
         }
         break;
       case PT_STROKE:
@@ -412,7 +419,8 @@ void SVGInlineTextBoxPainter::PaintDecoration(const PaintInfo& paint_info,
             stroke_data.SetThickness(stroke_data.Thickness() *
                                      stroke_scale_factor);
           stroke_data.SetupPaint(&stroke_flags);
-          paint_info.context.DrawPath(path.GetSkPath(), stroke_flags);
+          paint_info.context.DrawPath(path.GetSkPath(), stroke_flags,
+                                      auto_dark_mode);
         }
         break;
       case PT_MARKERS:
@@ -508,7 +516,9 @@ void SVGInlineTextBoxPainter::PaintText(const PaintInfo& paint_info,
   text_run_paint_info.to = end_position;
 
   context.DrawText(scaled_font, text_run_paint_info, text_origin, flags,
-                   text_layout_object.EnsureNodeId());
+                   text_layout_object.EnsureNodeId(),
+                   PaintAutoDarkMode(text_layout_object.StyleRef(),
+                                     DarkModeFilter::ElementRole::kSVG));
   // TODO(npm): Check that there are non-whitespace characters. See
   // crbug.com/788444.
   context.GetPaintController().SetTextPainted();
@@ -516,7 +526,7 @@ void SVGInlineTextBoxPainter::PaintText(const PaintInfo& paint_info,
   if (!scaled_font.ShouldSkipDrawing()) {
     PaintTiming& timing = PaintTiming::From(text_layout_object.GetDocument());
     timing.MarkFirstContentfulPaint();
-    PaintTimingDetector::NotifyTextPaint(EnclosingIntRect(
+    PaintTimingDetector::NotifyTextPaint(gfx::ToEnclosingRect(
         InlineLayoutObject().VisualRectInLocalSVGCoordinates()));
   }
 }
@@ -687,11 +697,7 @@ void SVGInlineTextBoxPainter::PaintTextMarkerForeground(
     return;
 
   Color text_color = LayoutTheme::GetTheme().PlatformTextSearchColor(
-      marker.IsActiveMatch(),
-      svg_inline_text_box_.GetLineLayoutItem()
-          .GetDocument()
-          .InForcedColorsMode(),
-      style.UsedColorScheme());
+      marker.IsActiveMatch(), style.UsedColorScheme());
 
   PaintFlags fill_flags;
   fill_flags.setColor(text_color.Rgb());
@@ -734,11 +740,7 @@ void SVGInlineTextBoxPainter::PaintTextMarkerBackground(
     return;
 
   Color color = LayoutTheme::GetTheme().PlatformTextSearchHighlightColor(
-      marker.IsActiveMatch(),
-      svg_inline_text_box_.GetLineLayoutItem()
-          .GetDocument()
-          .InForcedColorsMode(),
-      style.UsedColorScheme());
+      marker.IsActiveMatch(), style.UsedColorScheme());
   for (const SVGTextFragmentWithRange& text_match_info : text_match_info_list) {
     const SVGTextFragment& fragment = text_match_info.fragment;
 
@@ -751,7 +753,9 @@ void SVGInlineTextBoxPainter::PaintTextMarkerBackground(
         fragment, text_match_info.start_position, text_match_info.end_position,
         style);
     paint_info.context.SetFillColor(color);
-    paint_info.context.FillRect(fragment_rect);
+    paint_info.context.FillRect(
+        fragment_rect,
+        PaintAutoDarkMode(style, DarkModeFilter::ElementRole::kSVG));
   }
 }
 

@@ -5,10 +5,9 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_SCHEDULER_WORKER_WORKER_SCHEDULER_PROXY_H_
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_SCHEDULER_WORKER_WORKER_SCHEDULER_PROXY_H_
 
-#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
-#include "base/single_thread_task_runner.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/threading/thread_checker.h"
 #include "services/metrics/public/cpp/ukm_source_id.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
@@ -34,6 +33,8 @@ class PLATFORM_EXPORT WorkerSchedulerProxy
     : public FrameOrWorkerScheduler::Observer {
  public:
   explicit WorkerSchedulerProxy(FrameOrWorkerScheduler* scheduler);
+  WorkerSchedulerProxy(const WorkerSchedulerProxy&) = delete;
+  WorkerSchedulerProxy& operator=(const WorkerSchedulerProxy&) = delete;
   ~WorkerSchedulerProxy() override;
 
   void OnWorkerSchedulerCreated(
@@ -85,8 +86,6 @@ class PLATFORM_EXPORT WorkerSchedulerProxy
   ukm::SourceId ukm_source_id_ = ukm::kInvalidSourceId;
 
   THREAD_CHECKER(parent_thread_checker_);
-
-  DISALLOW_COPY_AND_ASSIGN(WorkerSchedulerProxy);
 };
 
 }  // namespace scheduler

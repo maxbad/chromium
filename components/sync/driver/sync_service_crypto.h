@@ -43,6 +43,10 @@ class SyncServiceCrypto : public SyncEncryptionHandler::Observer,
   // outlive this object.
   SyncServiceCrypto(Delegate* delegate,
                     TrustedVaultClient* trusted_vault_client);
+
+  SyncServiceCrypto(const SyncServiceCrypto&) = delete;
+  SyncServiceCrypto& operator=(const SyncServiceCrypto&) = delete;
+
   ~SyncServiceCrypto() override;
 
   void Reset();
@@ -78,8 +82,7 @@ class SyncServiceCrypto : public SyncEncryptionHandler::Observer,
   void OnPassphraseAccepted() override;
   void OnTrustedVaultKeyRequired() override;
   void OnTrustedVaultKeyAccepted() override;
-  void OnBootstrapTokenUpdated(const std::string& bootstrap_token,
-                               BootstrapTokenType type) override;
+  void OnBootstrapTokenUpdated(const std::string& bootstrap_token) override;
   void OnEncryptedTypesChanged(ModelTypeSet encrypted_types,
                                bool encrypt_everything) override;
   void OnCryptographerStateChanged(Cryptographer* cryptographer,
@@ -94,8 +97,6 @@ class SyncServiceCrypto : public SyncEncryptionHandler::Observer,
   // TrustedVaultClient::Observer implementation.
   void OnTrustedVaultKeysChanged() override;
   void OnTrustedVaultRecoverabilityChanged() override;
-
-  bool encryption_pending() const { return state_.encryption_pending; }
 
  private:
   enum class RequiredUserAction {
@@ -174,11 +175,6 @@ class SyncServiceCrypto : public SyncEncryptionHandler::Observer,
     // Whether we want to encrypt everything.
     bool encrypt_everything = false;
 
-    // Whether we're waiting for an attempt to encryption all sync data to
-    // complete. We track this at this layer in order to allow the user to
-    // cancel if they e.g. don't remember their explicit passphrase.
-    bool encryption_pending = false;
-
     // We cache the cryptographer's pending keys whenever
     // NotifyPassphraseRequired is called. This way, before the UI calls
     // SetDecryptionPassphrase on the syncer, it can avoid the overhead of an
@@ -214,9 +210,9 @@ class SyncServiceCrypto : public SyncEncryptionHandler::Observer,
 
   SEQUENCE_CHECKER(sequence_checker_);
 
-  base::WeakPtrFactory<SyncServiceCrypto> weak_factory_{this};
+  bool initial_trusted_vault_recoverability_logged_to_uma_ = false;
 
-  DISALLOW_COPY_AND_ASSIGN(SyncServiceCrypto);
+  base::WeakPtrFactory<SyncServiceCrypto> weak_factory_{this};
 };
 
 }  // namespace syncer

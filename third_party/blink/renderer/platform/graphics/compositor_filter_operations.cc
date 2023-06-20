@@ -5,7 +5,9 @@
 #include "third_party/blink/renderer/platform/graphics/compositor_filter_operations.h"
 
 #include "third_party/blink/renderer/platform/geometry/int_rect.h"
+#include "third_party/blink/renderer/platform/graphics/color.h"
 #include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/rect_conversions.h"
 
 namespace blink {
 
@@ -66,10 +68,10 @@ void CompositorFilterOperations::AppendBlurFilter(float amount,
       cc::FilterOperation::CreateBlurFilter(amount, tile_mode));
 }
 
-void CompositorFilterOperations::AppendDropShadowFilter(IntPoint offset,
+void CompositorFilterOperations::AppendDropShadowFilter(gfx::Point offset,
                                                         float std_deviation,
-                                                        Color color) {
-  gfx::Point gfx_offset(offset.X(), offset.Y());
+                                                        const Color& color) {
+  gfx::Point gfx_offset(offset.x(), offset.y());
   filter_operations_.Append(cc::FilterOperation::CreateDropShadowFilter(
       gfx_offset, std_deviation, color.Rgb()));
 }
@@ -105,11 +107,10 @@ bool CompositorFilterOperations::IsEmpty() const {
   return filter_operations_.IsEmpty();
 }
 
-FloatRect CompositorFilterOperations::MapRect(
-    const FloatRect& input_rect) const {
-  gfx::Rect result =
-      filter_operations_.MapRect(EnclosingIntRect(input_rect), SkMatrix::I());
-  return FloatRect(result.x(), result.y(), result.width(), result.height());
+gfx::RectF CompositorFilterOperations::MapRect(
+    const gfx::RectF& input_rect) const {
+  return gfx::RectF(filter_operations_.MapRect(gfx::ToEnclosingRect(input_rect),
+                                               SkMatrix::I()));
 }
 
 bool CompositorFilterOperations::HasFilterThatMovesPixels() const {

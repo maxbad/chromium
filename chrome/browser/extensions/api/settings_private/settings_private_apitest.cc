@@ -5,7 +5,6 @@
 #include <memory>
 
 #include "base/command_line.h"
-#include "base/macros.h"
 #include "base/memory/ptr_util.h"
 #include "base/run_loop.h"
 #include "base/task/current_thread.h"
@@ -50,23 +49,23 @@ using ContextType = ExtensionBrowserTest::ContextType;
 class SettingsPrivateApiTest : public ExtensionApiTest,
                                public testing::WithParamInterface<ContextType> {
  public:
-  SettingsPrivateApiTest() {}
-  ~SettingsPrivateApiTest() override {}
+  SettingsPrivateApiTest() : ExtensionApiTest(GetParam()) {}
+  ~SettingsPrivateApiTest() override = default;
+  SettingsPrivateApiTest(const SettingsPrivateApiTest&) = delete;
+  SettingsPrivateApiTest& operator=(const SettingsPrivateApiTest&) = delete;
 
   void SetUpInProcessBrowserTestFixture() override {
-    ON_CALL(provider_, IsInitializationComplete(_)).WillByDefault(Return(true));
-    ON_CALL(provider_, IsFirstPolicyLoadComplete(_))
-        .WillByDefault(Return(true));
+    provider_.SetDefaultReturns(
+        /*is_initialization_complete_return=*/true,
+        /*is_first_policy_load_complete_return=*/true);
     policy::BrowserPolicyConnector::SetPolicyProviderForTesting(&provider_);
     ExtensionApiTest::SetUpInProcessBrowserTestFixture();
   }
 
  protected:
   bool RunSettingsSubtest(const std::string& subtest) {
-    return RunExtensionTest(
-        "settings_private", {.custom_arg = subtest.c_str()},
-        {.load_as_service_worker = GetParam() == ContextType::kServiceWorker,
-         .load_as_component = true});
+    return RunExtensionTest("settings_private", {.custom_arg = subtest.c_str()},
+                            {.load_as_component = true});
   }
 
   void SetPrefPolicy(const std::string& key, policy::PolicyLevel level) {
@@ -85,8 +84,6 @@ class SettingsPrivateApiTest : public ExtensionApiTest,
 #if BUILDFLAG(IS_CHROMEOS_ASH)
   ash::ScopedTestingCrosSettings scoped_testing_cros_settings_;
 #endif
-
-  DISALLOW_COPY_AND_ASSIGN(SettingsPrivateApiTest);
 };
 
 INSTANTIATE_TEST_SUITE_P(PersistentBackground,

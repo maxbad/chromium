@@ -7,7 +7,6 @@
 #include <algorithm>
 
 #include "base/location.h"
-#include "base/macros.h"
 #include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/browser/ui/views/chrome_layout_provider.h"
 #include "chrome/grit/generated_resources.h"
@@ -23,12 +22,10 @@
 #include "ui/views/layout/fill_layout.h"
 #include "ui/views/widget/widget.h"
 
-namespace chromeos {
+namespace ash {
 
 namespace {
-
 const int kCountdownUpdateIntervalMs = 1000;  // 1 second.
-
 }  // namespace
 
 IdleActionWarningDialogView::IdleActionWarningDialogView(
@@ -57,9 +54,8 @@ IdleActionWarningDialogView::IdleActionWarningDialogView(
                                             nullptr /* parent */)
       ->Show();
 
-  update_timer_.Start(
-      FROM_HERE, base::TimeDelta::FromMilliseconds(kCountdownUpdateIntervalMs),
-      this, &IdleActionWarningDialogView::UpdateTitle);
+  update_timer_.Start(FROM_HERE, base::Milliseconds(kCountdownUpdateIntervalMs),
+                      this, &IdleActionWarningDialogView::UpdateTitle);
   chrome::RecordDialogCreation(chrome::DialogIdentifier::IDLE_ACTION_WARNING);
 }
 
@@ -91,4 +87,4 @@ void IdleActionWarningDialogView::UpdateTitle() {
 BEGIN_METADATA(IdleActionWarningDialogView, views::DialogDelegateView)
 END_METADATA
 
-}  // namespace chromeos
+}  // namespace ash

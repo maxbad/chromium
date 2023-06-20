@@ -13,7 +13,6 @@
 
 #include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
-#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "components/viz/common/surfaces/surface_id.h"
 #include "components/viz/host/hit_test/hit_test_query.h"
@@ -23,15 +22,18 @@
 #include "content/browser/renderer_host/render_widget_host_view_base_observer.h"
 #include "content/browser/renderer_host/render_widget_targeter.h"
 #include "content/common/content_export.h"
+#include "mojo/public/cpp/bindings/remote.h"
 #include "third_party/blink/public/mojom/input/input_event_result.mojom-shared.h"
+#include "ui/gfx/geometry/transform.h"
 #include "ui/gfx/geometry/vector2d_conversions.h"
-#include "ui/gfx/transform.h"
+#include "ui/gfx/mojom/delegated_ink_point_renderer.mojom.h"
 
 namespace blink {
 class WebGestureEvent;
 class WebInputEvent;
 class WebMouseEvent;
 class WebMouseWheelEvent;
+class WebPointerProperties;
 class WebTouchEvent;
 }
 
@@ -76,6 +78,12 @@ class CONTENT_EXPORT RenderWidgetHostInputEventRouter final
       public viz::HitTestRegionObserver {
  public:
   RenderWidgetHostInputEventRouter();
+
+  RenderWidgetHostInputEventRouter(const RenderWidgetHostInputEventRouter&) =
+      delete;
+  RenderWidgetHostInputEventRouter& operator=(
+      const RenderWidgetHostInputEventRouter&) = delete;
+
   ~RenderWidgetHostInputEventRouter() final;
 
   void OnRenderWidgetHostViewBaseDestroyed(
@@ -161,6 +169,7 @@ class CONTENT_EXPORT RenderWidgetHostInputEventRouter final
   void StopFling();
 
   // Returns true if |view| is currently registered in the router's owners map.
+  // Returns false if |view| is null.
   bool IsViewInMap(const RenderWidgetHostViewBase* view) const;
   bool ViewMapIsEmpty() const;
 
@@ -332,10 +341,22 @@ class CONTENT_EXPORT RenderWidgetHostInputEventRouter final
   void SetTouchscreenGestureTarget(RenderWidgetHostViewBase* target,
                                    bool moved_recently = false);
 
+  void ForwardDelegatedInkPoint(
+      RenderWidgetHostViewBase* target_view,
+      RenderWidgetHostViewBase* root_view,
+      const blink::WebInputEvent& input_event,
+      const blink::WebPointerProperties& pointer_properties,
+      bool hovering);
+
+  void FlushForTest() { delegated_ink_point_renderer_.FlushForTesting(); }
+  bool IsDelegatedInkRendererBoundForTest() {
+    return delegated_ink_point_renderer_.is_bound();
+  }
+
   FrameSinkIdOwnerMap owner_map_;
   TargetMap touchscreen_gesture_target_map_;
   RenderWidgetHostViewBase* touch_target_ = nullptr;
-  RenderWidgetHostViewBase* touchscreen_gesture_target_ = nullptr;
+  base::WeakPtr<RenderWidgetHostViewBase> touchscreen_gesture_target_;
   bool touchscreen_gesture_target_moved_recently_ = false;
   RenderWidgetHostViewBase* touchpad_gesture_target_ = nullptr;
   RenderWidgetHostViewBase* bubbling_gesture_scroll_target_ = nullptr;
@@ -429,10 +450,20 @@ class CONTENT_EXPORT RenderWidgetHostInputEventRouter final
   // Used to prevent multiple dumps.
   bool has_dumped_ = false;
 
+  // Remote end of the connection for sending delegated ink points to viz to
+  // support the delegated ink trails feature.
+  mojo::Remote<gfx::mojom::DelegatedInkPointRenderer>
+      delegated_ink_point_renderer_;
+  // Used to know if we have already told viz to reset prediction because the
+  // final point of the delegated ink trail has been sent. True when prediction
+  // has already been reset for the most recent trail, false otherwise. This
+  // flag helps make sure that we don't send more IPCs than necessary to viz to
+  // reset prediction. Sending extra IPCs wouldn't impact correctness, but can
+  // impact performance due to the IPC overhead.
+  bool ended_delegated_ink_trail_ = false;
+
   base::WeakPtrFactory<RenderWidgetHostInputEventRouter> weak_ptr_factory_{
       this};
-
-  DISALLOW_COPY_AND_ASSIGN(RenderWidgetHostInputEventRouter);
   friend class RenderWidgetHostInputEventRouterTest;
   FRIEND_TEST_ALL_PREFIXES(SitePerProcessHitTestBrowserTest,
                            CacheCoordinateTransformUponMouseDown);
@@ -450,6 +481,8 @@ class CONTENT_EXPORT RenderWidgetHostInputEventRouter final
                            InputEventRouterWheelTargetTest);
   FRIEND_TEST_ALL_PREFIXES(SitePerProcessMacBrowserTest,
                            InputEventRouterTouchpadGestureTargetTest);
+  FRIEND_TEST_ALL_PREFIXES(SitePerProcessDelegatedInkBrowserTest,
+                           MetadataAndPointGoThroughOOPIF);
 };
 
 }  // namespace content

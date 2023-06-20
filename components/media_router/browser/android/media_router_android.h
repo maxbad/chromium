@@ -11,7 +11,6 @@
 #include <unordered_map>
 
 #include "base/containers/id_map.h"
-#include "base/macros.h"
 #include "base/observer_list.h"
 #include "components/media_router/browser/android/media_router_android_bridge.h"
 #include "components/media_router/browser/media_router_base.h"
@@ -25,6 +24,10 @@ namespace media_router {
 class MediaRouterAndroid : public MediaRouterBase {
  public:
   MediaRouterAndroid();
+
+  MediaRouterAndroid(const MediaRouterAndroid&) = delete;
+  MediaRouterAndroid& operator=(const MediaRouterAndroid&) = delete;
+
   ~MediaRouterAndroid() override;
 
   const MediaRoute* FindRouteBySource(const MediaSource::Id& source_id) const;
@@ -51,7 +54,7 @@ class MediaRouterAndroid : public MediaRouterBase {
                              MediaRouteResponseCallback callback,
                              base::TimeDelta timeout,
                              bool incognito) override;
-  void DetachRoute(const MediaRoute::Id& route_id) override;
+  void DetachRoute(MediaRoute::Id route_id) override;
   void TerminateRoute(const MediaRoute::Id& route_id) override;
   void SendRouteMessage(const MediaRoute::Id& route_id,
                         const std::string& message) override;
@@ -101,6 +104,11 @@ class MediaRouterAndroid : public MediaRouterBase {
 
     PresentationConnectionProxy(MediaRouterAndroid* media_router_android,
                                 const MediaRoute::Id& route_id);
+
+    PresentationConnectionProxy(const PresentationConnectionProxy&) = delete;
+    PresentationConnectionProxy& operator=(const PresentationConnectionProxy&) =
+        delete;
+
     ~PresentationConnectionProxy() override;
 
     // Initializes the connection binding and interface request and returns that
@@ -130,8 +138,6 @@ class MediaRouterAndroid : public MediaRouterBase {
     // |media_router_android_| owns |this|, so it will outlive |this|.
     MediaRouterAndroid* media_router_android_;
     MediaRoute::Id route_id_;
-
-    DISALLOW_COPY_AND_ASSIGN(PresentationConnectionProxy);
   };
 
   // Removes the route with the given id from |active_routes_| and updates the
@@ -150,8 +156,9 @@ class MediaRouterAndroid : public MediaRouterBase {
   void OnRouteRequestError(
       const std::string& error_text,
       int route_request_id,
-      base::OnceCallback<void(MediaRouteProviderId,
-                              RouteRequestResult::ResultCode)> callback);
+      base::OnceCallback<void(RouteRequestResult::ResultCode,
+                              absl::optional<mojom::MediaRouteProviderId>)>
+          callback);
 
   void SetMediaRouterBridgeForTest(MediaRouterAndroidBridge* bridge) {
     bridge_.reset(bridge);
@@ -188,8 +195,6 @@ class MediaRouterAndroid : public MediaRouterBase {
   std::unordered_map<MediaRoute::Id,
                      std::vector<std::unique_ptr<PresentationConnectionProxy>>>
       presentation_connections_;
-
-  DISALLOW_COPY_AND_ASSIGN(MediaRouterAndroid);
 };
 
 }  // namespace media_router

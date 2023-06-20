@@ -8,7 +8,6 @@
 #include "base/timer/timer.h"
 #include "cc/input/browser_controls_state.h"
 #include "content/public/browser/web_contents_observer.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace weblayer {
 
@@ -48,7 +47,8 @@ class BrowserControlsNavigationStateHandler
                    const GURL& validated_url,
                    int error_code) override;
   void DidChangeVisibleSecurityState() override;
-  void RenderProcessGone(base::TerminationStatus status) override;
+  void PrimaryMainFrameRenderProcessGone(
+      base::TerminationStatus status) override;
   void OnRendererUnresponsive(
       content::RenderProcessHost* render_process_host) override;
   void OnRendererResponsive(

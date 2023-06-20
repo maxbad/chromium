@@ -8,11 +8,26 @@
 namespace accuracy_tips {
 
 // Represents the different results of the accuracy check.
+// These values are persisted to logs. Entries should not be renumbered and
+// numeric values should never be reused.
 enum class AccuracyTipStatus {
   // No accuracy information for the site.
   kNone = 0,
-  // Site classified as being misleading.
-  kMisinformation = 1,
+  // Site is eligible for showing an accuracy tip.
+  kShowAccuracyTip = 1,
+  // The user recently saw an accuracy tip. Accuracy tip elegibility was not
+  // checked.
+  kRateLimited = 2,
+  // The user disabled accuracy tips. Accuracy tip elegibility was not checked.
+  kOptOut = 3,
+  // The site is eligible for showing an accuracy tip but the tip wasn't shown
+  // as the site previously had high engagement from the user.
+  kHighEnagagement = 4,
+  // The site is eligible for showing an accuracy tip but the tip wasn't shown
+  // as the site security state wasn't secure.
+  kNotSecure = 5,
+
+  kMaxValue = kNotSecure,
 };
 
 }  // namespace accuracy_tips

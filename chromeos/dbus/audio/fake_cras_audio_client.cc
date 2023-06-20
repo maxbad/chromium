@@ -200,12 +200,23 @@ void FakeCrasAudioClient::SetInputMute(bool mute_on) {
     observer.InputMuteChanged(volume_state_.input_mute);
 }
 
+void FakeCrasAudioClient::SetNoiseCancellationSupported(
+    bool noise_cancellation_supported) {
+  noise_cancellation_supported_ = noise_cancellation_supported;
+}
+
 void FakeCrasAudioClient::SetNoiseCancellationEnabled(
-    bool noise_cancellation_on) {}
+    bool noise_cancellation_on) {
+  ++noise_cancellation_enabled_counter_;
+}
 
 void FakeCrasAudioClient::GetNoiseCancellationSupported(
     DBusMethodCallback<bool> callback) {
-  std::move(callback).Run(false);
+  std::move(callback).Run(noise_cancellation_supported_);
+}
+
+uint32_t FakeCrasAudioClient::GetNoiseCancellationEnabledCount() {
+  return noise_cancellation_enabled_counter_;
 }
 
 void FakeCrasAudioClient::SetActiveOutputNode(uint64_t node_id) {
@@ -244,6 +255,8 @@ void FakeCrasAudioClient::SetHotwordModel(uint64_t node_id,
 
 void FakeCrasAudioClient::SetFixA2dpPacketSize(bool enabled) {}
 
+void FakeCrasAudioClient::SetFlossEnabled(bool enabled) {}
+
 void FakeCrasAudioClient::AddActiveInputNode(uint64_t node_id) {
   for (size_t i = 0; i < node_list_.size(); ++i) {
     if (node_list_[i].id == node_id)
@@ -259,6 +272,9 @@ void FakeCrasAudioClient::RemoveActiveInputNode(uint64_t node_id) {
 }
 
 void FakeCrasAudioClient::SwapLeftRight(uint64_t node_id, bool swap) {}
+
+void FakeCrasAudioClient::SetDisplayRotation(uint64_t node_id,
+                                             cras::DisplayRotation rotation) {}
 
 void FakeCrasAudioClient::SetGlobalOutputChannelRemix(
     int32_t channels,

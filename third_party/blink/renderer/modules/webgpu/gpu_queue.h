@@ -20,6 +20,7 @@ class GPUCommandBuffer;
 class GPUImageCopyImageBitmap;
 class GPUImageCopyExternalImage;
 class GPUImageCopyTexture;
+class GPUImageCopyTextureTagged;
 class GPUImageDataLayout;
 class ScriptPromiseResolver;
 class ScriptState;
@@ -30,6 +31,9 @@ class GPUQueue : public DawnObject<WGPUQueue> {
 
  public:
   explicit GPUQueue(GPUDevice* device, WGPUQueue queue);
+
+  GPUQueue(const GPUQueue&) = delete;
+  GPUQueue& operator=(const GPUQueue&) = delete;
 
   // gpu_queue.idl
   void submit(const HeapVector<Member<GPUCommandBuffer>>& buffers);
@@ -67,7 +71,7 @@ class GPUQueue : public DawnObject<WGPUQueue> {
                     const V8GPUExtent3D* write_size,
                     ExceptionState& exception_state);
   void copyExternalImageToTexture(GPUImageCopyExternalImage* copyImage,
-                                  GPUImageCopyTexture* destination,
+                                  GPUImageCopyTextureTagged* destination,
                                   const V8GPUExtent3D* copySize,
                                   ExceptionState& exception_state);
   void copyImageBitmapToTexture(GPUImageCopyImageBitmap* source,
@@ -82,12 +86,17 @@ class GPUQueue : public DawnObject<WGPUQueue> {
   bool CopyContentFromCPU(StaticBitmapImage* image,
                           const WGPUOrigin3D& origin,
                           const WGPUExtent3D& copy_size,
-                          const WGPUTextureCopyView& destination,
-                          const WGPUTextureFormat dest_texture_format);
+                          const WGPUImageCopyTexture& destination,
+                          const WGPUTextureFormat dest_texture_format,
+                          bool premultiplied_alpha,
+                          bool flipY = false);
   bool CopyContentFromGPU(StaticBitmapImage* image,
                           const WGPUOrigin3D& origin,
                           const WGPUExtent3D& copy_size,
-                          const WGPUTextureCopyView& destination);
+                          const WGPUImageCopyTexture& destination,
+                          const WGPUTextureFormat dest_texture_format,
+                          bool premultiplied_alpha,
+                          bool flipY = false);
   void WriteBufferImpl(GPUBuffer* buffer,
                        uint64_t buffer_offset,
                        uint64_t data_byte_length,
@@ -102,8 +111,6 @@ class GPUQueue : public DawnObject<WGPUQueue> {
                         GPUImageDataLayout* data_layout,
                         const V8GPUExtent3D* write_size,
                         ExceptionState& exception_state);
-
-  DISALLOW_COPY_AND_ASSIGN(GPUQueue);
 };
 
 }  // namespace blink

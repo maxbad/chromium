@@ -41,6 +41,7 @@ struct COMPONENT_EXPORT(ASH_COMPONENTS_AUDIO) AudioDevice {
   AudioDevice();
   explicit AudioDevice(const chromeos::AudioNode& node);
   AudioDevice(const AudioDevice& other);
+  AudioDevice& operator=(const AudioDevice& other);
   std::string ToString() const;
 
   // Converts between the string type sent via D-Bus and AudioDeviceType.
@@ -101,6 +102,7 @@ struct COMPONENT_EXPORT(ASH_COMPONENTS_AUDIO) AudioDevice {
   bool active = false;
   uint64_t plugged_time = 0;
   uint32_t max_supported_channels = 0;
+  uint32_t audio_effect = 0;
 };
 
 typedef std::vector<AudioDevice> AudioDeviceList;

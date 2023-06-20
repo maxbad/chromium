@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 #include "ash/public/cpp/clipboard_history_controller.h"
-#include "base/macros.h"
 #include "base/path_service.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/test/base/ui_test_utils.h"
@@ -39,7 +38,7 @@ void CopyFileItem() {
   {
     ui::ScopedClipboardWriter scw(ui::ClipboardBuffer::kCopyPaste);
     scw.WritePickledData(input_data_pickle,
-                         ui::ClipboardFormatType::GetWebCustomDataType());
+                         ui::ClipboardFormatType::WebCustomDataType());
   }
   base::RunLoop().RunUntilIdle();
 }
@@ -63,8 +62,8 @@ class VirtualKeyboardPrivateApiTest : public extensions::ExtensionApiTest {
  protected:
   void CopyHtmlItem() {
     // Load the web page which contains images and text.
-    ui_test_utils::NavigateToURL(
-        browser(), embedded_test_server()->GetURL("/image-and-text.html"));
+    ASSERT_TRUE(ui_test_utils::NavigateToURL(
+        browser(), embedded_test_server()->GetURL("/image-and-text.html")));
 
     // Select one part of the web page. Wait until the selection region updates.
     // Then copy the selected part to clipboard.
@@ -83,7 +82,7 @@ IN_PROC_BROWSER_TEST_F(VirtualKeyboardPrivateApiTest, Multipaste) {
   CopyBitmapItem();
   CopyFileItem();
 
-  ASSERT_TRUE(RunExtensionTest({.name = "virtual_keyboard_private"},
+  ASSERT_TRUE(RunExtensionTest("virtual_keyboard_private", {},
                                {.load_as_component = true}))
       << message_;
 }

@@ -12,7 +12,7 @@
 #include "url/gurl.h"
 
 namespace base {
-class DictionaryValue;
+class Value;
 }
 
 namespace web {
@@ -27,6 +27,11 @@ class IOSSecurityInterstitialPage {
   IOSSecurityInterstitialPage(web::WebState* web_state,
                               const GURL& request_url,
                               IOSBlockingPageControllerClient* client);
+
+  IOSSecurityInterstitialPage(const IOSSecurityInterstitialPage&) = delete;
+  IOSSecurityInterstitialPage& operator=(const IOSSecurityInterstitialPage&) =
+      delete;
+
   virtual ~IOSSecurityInterstitialPage();
 
   // Returns the HTML that should be displayed in the page
@@ -49,7 +54,7 @@ class IOSSecurityInterstitialPage {
 
   // Populates the strings used to generate the HTML from the template.
   virtual void PopulateInterstitialStrings(
-      base::DictionaryValue* load_time_data) const = 0;
+      base::Value* load_time_data) const = 0;
 
   // Returns the formatted host name for the request url.
   std::u16string GetFormattedHostName() const;
@@ -67,8 +72,6 @@ class IOSSecurityInterstitialPage {
   // Used to interact with the embedder. Unowned pointer; must outlive |this|
   // instance.
   IOSBlockingPageControllerClient* const client_ = nullptr;
-
-  DISALLOW_COPY_AND_ASSIGN(IOSSecurityInterstitialPage);
 };
 
 }  // namespace security_interstitials

@@ -7,16 +7,13 @@
 
 #include <stdint.h>
 
-#include <map>
 #include <memory>
 #include <string>
 #include <vector>
 
-#include "base/memory/ref_counted.h"
 #include "build/build_config.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/global_request_id.h"
-#include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/navigation_ui_data.h"
 #include "content/public/browser/reload_type.h"
 #include "content/public/browser/render_frame_host.h"
@@ -25,21 +22,24 @@
 #include "content/public/browser/site_instance.h"
 #include "content/public/common/child_process_host.h"
 #include "content/public/common/referrer.h"
-#include "content/public/common/was_activated_option.mojom.h"
+#include "net/base/net_errors.h"
 #include "services/network/public/cpp/resource_request_body.h"
-#include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/blink/public/common/navigation/impression.h"
+#include "third_party/blink/public/common/navigation/navigation_policy.h"
 #include "third_party/blink/public/common/tokens/tokens.h"
+#include "third_party/blink/public/mojom/navigation/was_activated_option.mojom.h"
 #include "ui/base/page_transition_types.h"
 #include "url/gurl.h"
 #include "url/origin.h"
 
 namespace base {
-
 class RefCountedString;
-
 }  // namespace base
+
+namespace network {
+class SharedURLLoaderFactory;
+}  // namespace network
 
 namespace content {
 
@@ -48,13 +48,28 @@ class BrowserContext;
 class NavigationEntry;
 class RenderFrameHost;
 class WebContents;
+class NavigationHandle;
 struct OpenURLParams;
 
-// A NavigationController maintains the back-forward list for a WebContents and
-// manages all navigation within that list.
+// A NavigationController manages session history, i.e., a back-forward list
+// of navigation entries.
 //
-// Each NavigationController belongs to one WebContents; each WebContents has
-// exactly one NavigationController.
+// FOR CONTENT EMBEDDERS: You can think of each WebContents as having one
+// NavigationController. Technically, this is the NavigationController for
+// the primary frame tree of the WebContents. See the comments for
+// WebContents::GetPrimaryPage() for more about primary vs non-primary frame
+// trees. This NavigationController is retrievable by
+// WebContents::GetController(). It is the only one that affects the actual
+// user-exposed session history list (e.g., via back/forward buttons). It is
+// not intended to expose other NavigationControllers to the content/public
+// API.
+//
+// FOR CONTENT INTERNALS: Be aware that NavigationControllerImpl is 1:1 with a
+// FrameTree. With MPArch there can be multiple FrameTrees associated with a
+// WebContents, so there can be multiple NavigationControllers associated with
+// a WebContents. However only the primary one, and the
+// NavigationEntries/events originating from it, is exposed to //content
+// embedders.
 class NavigationController {
  public:
   using DeletionPredicate =
@@ -124,7 +139,8 @@ class NavigationController {
     // fields that are present in both structs (some properties are ignored
     // because they are unique to LoadURLParams or OpenURLParams).
     explicit LoadURLParams(const OpenURLParams& open_url_params);
-
+    LoadURLParams(const LoadURLParams&) = delete;
+    LoadURLParams& operator=(const LoadURLParams&) = delete;
     ~LoadURLParams();
 
     // The url to load. This field is required.
@@ -258,8 +274,8 @@ class NavigationController {
 
     // Set to |kYes| if the navigation should propagate user activation. This
     // is used by embedders where the activation has occurred outside the page.
-    mojom::WasActivatedOption was_activated =
-        mojom::WasActivatedOption::kUnknown;
+    blink::mojom::WasActivatedOption was_activated =
+        blink::mojom::WasActivatedOption::kUnknown;
 
     // If this navigation was initiated from a link that specified the
     // hrefTranslate attribute, this contains the attribute's value (a BCP47
@@ -273,7 +289,11 @@ class NavigationController {
     // for navigations originating from a link click.
     absl::optional<blink::Impression> impression;
 
-    DISALLOW_COPY_AND_ASSIGN(LoadURLParams);
+    // Download policy to be applied if this navigation turns into a download.
+    blink::NavigationDownloadPolicy download_policy;
+
+    // Indicates that this navigation is for PDF content in a renderer.
+    bool is_pdf = false;
   };
 
   // Disables checking for a repost and prompting the user. This is used during
@@ -284,7 +304,10 @@ class NavigationController {
 
   // Returns the web contents associated with this controller. It can never be
   // nullptr.
-  virtual WebContents* GetWebContents() = 0;
+  //
+  // TODO(crbug.com/1225205): Remove this. It is a layering violation as it is
+  // implemented in renderer_host/ which cannot depend on WebContents.
+  virtual WebContents* DeprecatedGetWebContents() = 0;
 
   // Get the browser context for this controller. It can never be nullptr.
   virtual BrowserContext* GetBrowserContext() = 0;
@@ -395,14 +418,18 @@ class NavigationController {
   // Navigates directly to an error page in response to an event on the last
   // committed page (e.g., triggered by a subresource), with |error_page_html|
   // as the contents and |url| as the URL.
-
+  //
   // The error page will create a NavigationEntry that temporarily replaces the
   // original page's entry. The original entry will be put back into the entry
   // list after any other navigation.
-  virtual void LoadPostCommitErrorPage(RenderFrameHost* render_frame_host,
-                                       const GURL& url,
-                                       const std::string& error_page_html,
-                                       net::Error error) = 0;
+  //
+  // Returns the handle to the navigation for the error page, which may be null
+  // if the navigation is immediately canceled.
+  virtual base::WeakPtr<NavigationHandle> LoadPostCommitErrorPage(
+      RenderFrameHost* render_frame_host,
+      const GURL& url,
+      const std::string& error_page_html,
+      net::Error error) = 0;
 
   // Renavigation --------------------------------------------------------------
 
@@ -413,7 +440,8 @@ class NavigationController {
   virtual void GoBack() = 0;
   virtual void GoForward() = 0;
 
-  // Navigates to the specified absolute index.
+  // Navigates to the specified absolute index. Should only be used for
+  // browser-initiated navigations.
   virtual void GoToIndex(int index) = 0;
 
   // Navigates to the specified offset from the "current entry". Does nothing if

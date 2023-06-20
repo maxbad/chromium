@@ -145,6 +145,9 @@ class SharedImageBackingAHB : public SharedImageBackingAndroid {
                         bool is_thread_safe,
                         base::ScopedFD initial_upload_fd);
 
+  SharedImageBackingAHB(const SharedImageBackingAHB&) = delete;
+  SharedImageBackingAHB& operator=(const SharedImageBackingAHB&) = delete;
+
   ~SharedImageBackingAHB() override;
 
   void Update(std::unique_ptr<gfx::GpuFence> in_fence) override;
@@ -183,8 +186,6 @@ class SharedImageBackingAHB : public SharedImageBackingAndroid {
   // mode.
   gles2::Texture* legacy_texture_ = nullptr;
   scoped_refptr<OverlayImage> overlay_image_ GUARDED_BY(lock_);
-
-  DISALLOW_COPY_AND_ASSIGN(SharedImageBackingAHB);
 };
 
 // Vk backed Skia representation of SharedImageBackingAHB.
@@ -399,8 +400,14 @@ SharedImageBackingAHB::ProduceSkia(
   // Check whether we are in Vulkan mode OR GL mode and accordingly create
   // Skia representation.
   if (context_state->GrContextIsVulkan()) {
+    uint32_t queue_family = VK_QUEUE_FAMILY_EXTERNAL;
+    if (usage() & SHARED_IMAGE_USAGE_SCANOUT) {
+      // Any Android API that consume or produce buffers (e.g SurfaceControl)
+      // requires a foreign queue.
+      queue_family = VK_QUEUE_FAMILY_FOREIGN_EXT;
+    }
     auto vulkan_image = CreateVkImageFromAhbHandle(
-        GetAhbHandle(), context_state.get(), size(), format());
+        GetAhbHandle(), context_state.get(), size(), format(), queue_family);
 
     if (!vulkan_image)
       return nullptr;
@@ -739,7 +746,8 @@ bool SharedImageBackingFactoryAHB::IsSupported(
     bool thread_safe,
     gfx::GpuMemoryBufferType gmb_type,
     GrContextType gr_context_type,
-    bool* allow_legacy_mailbox) {
+    bool* allow_legacy_mailbox,
+    bool is_pixel_used) {
   if (gmb_type != gfx::EMPTY_BUFFER && !CanImportGpuMemoryBuffer(gmb_type)) {
     return false;
   }

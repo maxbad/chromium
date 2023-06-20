@@ -16,7 +16,6 @@
 namespace base {
 namespace sequence_manager {
 class SequenceManager;
-class TimeDomain;
 }  // namespace sequence_manager
 }  // namespace base
 
@@ -64,7 +63,16 @@ class CONTENT_EXPORT BrowserTaskQueues {
     // system) but they are not an immediate response to a user interaction.
     kUserVisible,
 
-    kMaxValue = kUserVisible
+    // For tasks directly related to handling input events. This also changes
+    // the priority of yielding to native (to get the user input events faster).
+    // This is higher priority than kUserBlocking.
+    kUserInput,
+
+    // For tasks processing navigation network request's response from the
+    // network service.
+    kNavigationNetworkResponse,
+
+    kMaxValue = kNavigationNetworkResponse
   };
 
   static constexpr size_t kNumQueueTypes =
@@ -139,11 +147,10 @@ class CONTENT_EXPORT BrowserTaskQueues {
         browser_task_runners_;
   };
 
-  // |sequence_manager| and |time_domain| must outlive this instance.
+  // |sequence_manager| must outlive this instance.
   explicit BrowserTaskQueues(
       BrowserThread::ID thread_id,
-      base::sequence_manager::SequenceManager* sequence_manager,
-      base::sequence_manager::TimeDomain* time_domain);
+      base::sequence_manager::SequenceManager* sequence_manager);
 
   // Destroys all queues.
   ~BrowserTaskQueues();

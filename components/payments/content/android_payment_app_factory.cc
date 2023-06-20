@@ -25,7 +25,7 @@
 #include "components/payments/core/payment_request_data_util.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/browser/render_document_host_user_data.h"
+#include "content/public/browser/document_user_data.h"
 #include "content/public/browser/web_contents.h"
 
 namespace payments {
@@ -193,7 +193,7 @@ class AppFinder : public base::SupportsUserData::Data {
           delegate_->GetTopOrigin(), delegate_->GetFrameOrigin(),
           delegate_->GetSpec()->details().id.value(),
           std::move(app_description), communication_,
-          delegate_->GetInitiatorRenderFrameHost()->GetGlobalFrameRoutingId()));
+          delegate_->GetInitiatorRenderFrameHost()->GetGlobalId()));
     }
 
     if (--number_of_pending_is_ready_to_pay_queries_ == 0)

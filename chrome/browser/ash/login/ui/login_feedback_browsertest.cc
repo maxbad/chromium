@@ -7,7 +7,6 @@
 #include <memory>
 
 #include "apps/test/app_window_waiter.h"
-#include "base/macros.h"
 #include "base/run_loop.h"
 #include "chrome/browser/ash/login/login_manager_test.h"
 #include "chrome/browser/ash/login/test/login_manager_mixin.h"
@@ -24,18 +23,21 @@
 #include "ui/aura/client/focus_client.h"
 #include "ui/base/base_window.h"
 
-namespace chromeos {
+namespace ash {
 
 class LoginFeedbackTest : public LoginManagerTest {
  public:
   LoginFeedbackTest() : LoginManagerTest() {
     login_mixin_.AppendRegularUsers(2);
   }
+
+  LoginFeedbackTest(const LoginFeedbackTest&) = delete;
+  LoginFeedbackTest& operator=(const LoginFeedbackTest&) = delete;
+
   ~LoginFeedbackTest() override {}
 
  private:
   LoginManagerMixin login_mixin_{&mixin_host_};
-  DISALLOW_COPY_AND_ASSIGN(LoginFeedbackTest);
 };
 
 void TestFeedback() {
@@ -73,4 +75,4 @@ IN_PROC_BROWSER_TEST_F(OobeBaseTest, FeedbackBasic) {
   TestFeedback();
 }
 
-}  // namespace chromeos
+}  // namespace ash

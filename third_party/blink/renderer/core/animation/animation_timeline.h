@@ -63,6 +63,10 @@ class CORE_EXPORT AnimationTimeline : public ScriptWrappable {
   // Changing scroll-linked animation start_time initialization is under
   // consideration here: https://github.com/w3c/csswg-drafts/issues/2075.
   virtual absl::optional<base::TimeDelta> InitialStartTimeForAnimations() = 0;
+  virtual AnimationTimeDelta CalculateIntrinsicIterationDuration(
+      const Timing&) {
+    return AnimationTimeDelta();
+  }
   Document* GetDocument() { return document_; }
   virtual void AnimationAttached(Animation*);
   virtual void AnimationDetached(Animation*);
@@ -74,7 +78,7 @@ class CORE_EXPORT AnimationTimeline : public ScriptWrappable {
   // Schedules animation timing update on next frame.
   virtual void ScheduleServiceOnNextFrame();
 
-  Animation* Play(AnimationEffect*);
+  Animation* Play(AnimationEffect*, ExceptionState& = ASSERT_NO_EXCEPTION);
 
   virtual bool NeedsAnimationTimingUpdate();
   virtual bool HasAnimations() const { return !animations_.IsEmpty(); }
@@ -84,9 +88,7 @@ class CORE_EXPORT AnimationTimeline : public ScriptWrappable {
   void SetOutdatedAnimation(Animation*);
   void ClearOutdatedAnimation(Animation*);
 
-  virtual wtf_size_t AnimationsNeedingUpdateCount() const {
-    return animations_needing_update_.size();
-  }
+  virtual wtf_size_t AnimationsNeedingUpdateCount() const;
   const HeapHashSet<WeakMember<Animation>>& GetAnimations() const {
     return animations_;
   }
@@ -110,6 +112,10 @@ class CORE_EXPORT AnimationTimeline : public ScriptWrappable {
       ReplaceableAnimationsMap* replaceable_animation_set);
 
   void Trace(Visitor*) const override;
+
+  virtual absl::optional<AnimationTimeDelta> GetDuration() const {
+    return absl::nullopt;
+  }
 
  protected:
   virtual PhaseAndTime CurrentPhaseAndTime() = 0;

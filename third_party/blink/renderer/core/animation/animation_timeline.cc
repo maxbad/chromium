@@ -87,6 +87,17 @@ void AnimationTimeline::ClearOutdatedAnimation(Animation* animation) {
   outdated_animation_count_--;
 }
 
+wtf_size_t AnimationTimeline::AnimationsNeedingUpdateCount() const {
+  wtf_size_t count = 0;
+  for (const auto& animation : animations_needing_update_) {
+    // This function is for frame sequence tracking for animations. Exclude
+    // no-effect animations which don't generate frames.
+    if (!animation->AnimationHasNoEffect())
+      count++;
+  }
+  return count;
+}
+
 bool AnimationTimeline::NeedsAnimationTimingUpdate() {
   PhaseAndTime current_phase_and_time = CurrentPhaseAndTime();
   if (current_phase_and_time == last_current_phase_and_time_)
@@ -175,12 +186,14 @@ void AnimationTimeline::ScheduleServiceOnNextFrame() {
     document_->View()->ScheduleAnimation();
 }
 
-Animation* AnimationTimeline::Play(AnimationEffect* child) {
-  Animation* animation = Animation::Create(child, this);
-  DCHECK(animations_.Contains(animation));
-
-  animation->play();
-  DCHECK(animations_needing_update_.Contains(animation));
+Animation* AnimationTimeline::Play(AnimationEffect* child,
+                                   ExceptionState& exception_state) {
+  Animation* animation = Animation::Create(child, this, exception_state);
+  if (animation) {
+    DCHECK(animations_.Contains(animation));
+    animation->play();
+    DCHECK(animations_needing_update_.Contains(animation));
+  }
 
   return animation;
 }

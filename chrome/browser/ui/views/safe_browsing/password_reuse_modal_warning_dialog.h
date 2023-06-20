@@ -39,9 +39,7 @@ class PasswordReuseModalWarningDialog
   ~PasswordReuseModalWarningDialog() override;
 
   void CreateSavedPasswordReuseModalWarningDialog(
-      const std::u16string message_body,
-      std::vector<std::u16string> placeholders,
-      std::vector<size_t> placeholder_offsets);
+      const std::u16string message_body);
   void CreateGaiaPasswordReuseModalWarningDialog(
       views::Label* message_body_label);
 
@@ -49,7 +47,7 @@ class PasswordReuseModalWarningDialog
   gfx::Size CalculatePreferredSize() const override;
   std::u16string GetWindowTitle() const override;
   bool ShouldShowCloseButton() const override;
-  gfx::ImageSkia GetWindowIcon() override;
+  ui::ImageModel GetWindowIcon() override;
 
   // ChromePasswordProtectionService::Observer:
   void OnGaiaPasswordChanged() override;

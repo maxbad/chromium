@@ -28,12 +28,11 @@ import org.chromium.base.SysUtils;
 import org.chromium.base.task.PostTask;
 import org.chromium.base.task.TaskTraits;
 import org.chromium.chrome.R;
-import org.chromium.chrome.browser.IntentHandler;
 import org.chromium.chrome.browser.browserservices.intents.BrowserServicesIntentDataProvider.CustomTabsUiType;
 import org.chromium.chrome.browser.customtabs.CustomTabIntentDataProvider;
 import org.chromium.chrome.browser.document.ChromeLauncherActivity;
 import org.chromium.chrome.browser.flags.ChromeFeatureList;
-import org.chromium.chrome.browser.night_mode.GlobalNightModeStateProviderHolder;
+import org.chromium.ui.util.ColorUtils;
 
 import java.util.Locale;
 
@@ -57,10 +56,8 @@ public class MediaViewerUtils {
      *                                 app.
      * @return Intent that can be fired to open the file.
      */
-    public static Intent getMediaViewerIntent(
-            Uri displayUri, Uri contentUri, String mimeType, boolean allowExternalAppHandlers) {
-        Context context = ContextUtils.getApplicationContext();
-
+    public static Intent getMediaViewerIntent(Uri displayUri, Uri contentUri, String mimeType,
+            boolean allowExternalAppHandlers, Context context) {
         Bitmap closeIcon = BitmapFactory.decodeResource(
                 context.getResources(), R.drawable.ic_arrow_back_white_24dp);
         Bitmap shareIcon = BitmapFactory.decodeResource(
@@ -70,7 +67,7 @@ public class MediaViewerUtils {
         builder.setToolbarColor(Color.BLACK);
         builder.setCloseButtonIcon(closeIcon);
         builder.setShowTitle(true);
-        builder.setColorScheme(GlobalNightModeStateProviderHolder.getInstance().isInNightMode()
+        builder.setColorScheme(ColorUtils.inNightMode(context)
                         ? CustomTabsIntent.COLOR_SCHEME_DARK
                         : CustomTabsIntent.COLOR_SCHEME_LIGHT);
 
@@ -120,7 +117,7 @@ public class MediaViewerUtils {
         intent.putExtra(CustomTabIntentDataProvider.EXTRA_INITIAL_BACKGROUND_COLOR, mediaColor);
         intent.putExtra(CustomTabsIntent.EXTRA_TOOLBAR_COLOR, mediaColor);
         intent.putExtra(Browser.EXTRA_APPLICATION_ID, context.getPackageName());
-        IntentHandler.addTrustedIntentExtras(intent);
+        IntentUtils.addTrustedIntentExtras(intent);
 
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         intent.setClass(context, ChromeLauncherActivity.class);

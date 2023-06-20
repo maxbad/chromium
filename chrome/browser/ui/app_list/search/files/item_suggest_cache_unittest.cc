@@ -26,6 +26,7 @@
 #include "services/data_decoder/public/cpp/test_support/in_process_data_decoder.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "services/network/public/cpp/weak_wrapper_shared_url_loader_factory.h"
+#include "services/network/public/mojom/url_response_head.mojom.h"
 #include "services/network/test/test_url_loader_factory.h"
 #include "services/network/test/test_utils.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -153,6 +154,13 @@ TEST_F(ItemSuggestCacheTest, ConvertJsonSuccess) {
     })");
   ResultsMatch(ItemSuggestCache::ConvertJsonForTest(&empty_items),
                "the suggestion id", {});
+
+  const base::Value no_items = Parse(R"(
+    {
+      "suggestionSessionId": "the suggestion id"
+    })");
+  ResultsMatch(ItemSuggestCache::ConvertJsonForTest(&no_items),
+               "the suggestion id", {});
 }
 
 TEST_F(ItemSuggestCacheTest, ConvertJsonFailure) {
@@ -190,12 +198,6 @@ TEST_F(ItemSuggestCacheTest, ConvertJsonFailure) {
     })");
   EXPECT_FALSE(
       ItemSuggestCache::ConvertJsonForTest(&no_session_id).has_value());
-
-  const base::Value no_items = Parse(R"(
-    {
-      "suggestionSessionId": "the suggestion id"
-    })");
-  EXPECT_FALSE(ItemSuggestCache::ConvertJsonForTest(&no_items).has_value());
 }
 
 TEST_F(ItemSuggestCacheTest, UpdateCacheDisabledByExperiment) {
@@ -481,7 +483,7 @@ TEST_F(ItemSuggestCacheTest, UpdateCacheSmallTimeBetweenUpdates) {
   ResultsMatch(itemSuggestCache->GetResults(), "suggestion id 1",
                {{"item id 1", "display text 1"}});
 
-  task_environment_.AdvanceClock(base::TimeDelta::FromMinutes(2));
+  task_environment_.AdvanceClock(base::Minutes(2));
 
   url_loader_factory_.AddResponse(kRequestUrl,
                                   R"(

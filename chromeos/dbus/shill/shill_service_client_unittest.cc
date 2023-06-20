@@ -291,6 +291,29 @@ TEST_F(ShillServiceClientTest, GetWiFiPassphrase) {
   base::RunLoop().RunUntilIdle();
 }
 
+TEST_F(ShillServiceClientTest, GetEapPassphrase) {
+  const char kPassphrase[] = "passphrase";
+
+  // Create response.
+  std::unique_ptr<dbus::Response> response(dbus::Response::CreateEmpty());
+  dbus::MessageWriter writer(response.get());
+  writer.AppendString(kPassphrase);
+
+  // Set expectations.
+  PrepareForMethodCall(shill::kGetEapPassphraseFunction,
+                       base::BindRepeating(&ExpectNoArgument), response.get());
+  // Call method.
+  base::MockCallback<base::OnceCallback<void(const std::string&)>> mock_closure;
+  base::MockCallback<ShillServiceClient::ErrorCallback> mock_error_callback;
+  client_->GetEapPassphrase(dbus::ObjectPath(kExampleServicePath),
+                            mock_closure.Get(), mock_error_callback.Get());
+  EXPECT_CALL(mock_closure, Run(kPassphrase)).Times(1);
+  EXPECT_CALL(mock_error_callback, Run(_, _)).Times(0);
+
+  // Run the message loop.
+  base::RunLoop().RunUntilIdle();
+}
+
 TEST_F(ShillServiceClientTest, RequestTrafficCounters) {
   // Set up value of response.
   base::Value traffic_counters(base::Value::Type::LIST);
@@ -317,17 +340,19 @@ TEST_F(ShillServiceClientTest, RequestTrafficCounters) {
                        base::BindRepeating(&ExpectNoArgument), response.get());
 
   // Call method.
-  base::MockCallback<ShillServiceClient::ListValueCallback>
-      mock_list_value_callback;
-  base::MockCallback<ShillServiceClient::ErrorCallback> mock_error_callback;
-  client_->RequestTrafficCounters(dbus::ObjectPath(kExampleServicePath),
-                                  mock_list_value_callback.Get(),
-                                  mock_error_callback.Get());
-  EXPECT_CALL(mock_list_value_callback, Run(_)).Times(1);
-  EXPECT_CALL(mock_error_callback, Run(_, _)).Times(0);
-
-  // Run the message loop.
-  base::RunLoop().RunUntilIdle();
+  base::RunLoop run_loop;
+  client_->RequestTrafficCounters(
+      dbus::ObjectPath(kExampleServicePath),
+      base::BindOnce(
+          [](base::Value* expected_traffic_counters,
+             base::OnceClosure quit_closure,
+             absl::optional<base::Value> actual_traffic_counters) {
+            ASSERT_TRUE(actual_traffic_counters);
+            EXPECT_EQ(*expected_traffic_counters, *actual_traffic_counters);
+            std::move(quit_closure).Run();
+          },
+          &traffic_counters, run_loop.QuitClosure()));
+  run_loop.Run();
 }
 
 TEST_F(ShillServiceClientTest, ResetTrafficCounters) {

@@ -29,9 +29,10 @@
 
 #include <memory>
 
+#include "base/gtest_prod_util.h"
 #include "base/memory/scoped_refptr.h"
-#include "base/single_thread_task_runner.h"
 #include "base/synchronization/waitable_event.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/thread_annotations.h"
 #include "base/unguessable_token.h"
 #include "services/network/public/mojom/fetch_api.mojom-blink-forward.h"
@@ -151,14 +152,6 @@ class CORE_EXPORT WorkerThread : public Thread::TaskObserver {
   // synchronously call EnsureScriptExecutionTerminates() to ensure the thread
   // is quickly terminated. Called on the main thread.
   virtual void TerminateForTesting();
-
-  // Called on the main thread for the leak detector. Forcibly terminates the
-  // script execution and waits by *blocking* the calling thread until the
-  // workers are shut down. Please be careful when using this function, because
-  // after the synchronous termination any V8 APIs may suddenly start to return
-  // empty handles and it may cause crashes.
-  // WARNING: This is not safe if a nested worker is running.
-  static void TerminateAllWorkersForTesting();
 
   // Thread::TaskObserver.
   void WillProcessTask(const base::PendingTask&, bool) override;

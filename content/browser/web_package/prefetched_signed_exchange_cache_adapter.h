@@ -8,7 +8,6 @@
 #include "content/browser/web_package/prefetched_signed_exchange_cache.h"
 #include "content/public/browser/browser_context.h"
 #include "mojo/public/cpp/system/data_pipe.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 
 class GURL;
 
@@ -30,6 +29,12 @@ class PrefetchedSignedExchangeCacheAdapter {
       BrowserContext::BlobContextGetter blob_context_getter,
       const GURL& request_url,
       PrefetchURLLoader* prefetch_url_loader);
+
+  PrefetchedSignedExchangeCacheAdapter(
+      const PrefetchedSignedExchangeCacheAdapter&) = delete;
+  PrefetchedSignedExchangeCacheAdapter& operator=(
+      const PrefetchedSignedExchangeCacheAdapter&) = delete;
+
   ~PrefetchedSignedExchangeCacheAdapter();
 
   void OnReceiveSignedExchange(
@@ -86,8 +91,6 @@ class PrefetchedSignedExchangeCacheAdapter {
 
   base::WeakPtrFactory<PrefetchedSignedExchangeCacheAdapter> weak_factory_{
       this};
-
-  DISALLOW_COPY_AND_ASSIGN(PrefetchedSignedExchangeCacheAdapter);
 };
 
 }  // namespace content

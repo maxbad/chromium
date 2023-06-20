@@ -11,7 +11,6 @@
 #include <vector>
 
 #include "base/files/file_path.h"
-#include "base/macros.h"
 #include "base/memory/memory_pressure_listener.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/sequence_checker.h"
@@ -26,7 +25,6 @@
 #include "content/public/browser/browser_thread.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "mojo/public/cpp/bindings/remote_set.h"
-#include "storage/browser/quota/quota_client.h"
 #include "third_party/blink/public/common/storage_key/storage_key.h"
 
 namespace base {
@@ -56,6 +54,10 @@ class CONTENT_EXPORT LegacyCacheStorageManager : public CacheStorageManager {
   static scoped_refptr<LegacyCacheStorageManager> CreateForTesting(
       LegacyCacheStorageManager* old_manager);
 
+  LegacyCacheStorageManager(const LegacyCacheStorageManager&) = delete;
+  LegacyCacheStorageManager& operator=(const LegacyCacheStorageManager&) =
+      delete;
+
   // Map a database identifier (computed from a storage key) to the path.
   static base::FilePath ConstructStorageKeyPath(
       const base::FilePath& root_path,
@@ -71,23 +73,26 @@ class CONTENT_EXPORT LegacyCacheStorageManager : public CacheStorageManager {
 
   void GetAllStorageKeysUsage(
       storage::mojom::CacheStorageOwner owner,
-      storage::mojom::CacheStorageControl::GetAllOriginsInfoCallback callback)
-      override;
+      storage::mojom::CacheStorageControl::GetAllStorageKeysInfoCallback
+          callback) override;
   void GetStorageKeyUsage(
       const blink::StorageKey& storage_key,
       storage::mojom::CacheStorageOwner owner,
-      storage::mojom::QuotaClient::GetOriginUsageCallback callback) override;
-  void GetStorageKeys(
-      storage::mojom::CacheStorageOwner owner,
-      storage::mojom::QuotaClient::GetOriginsForTypeCallback callback) override;
+      storage::mojom::QuotaClient::GetStorageKeyUsageCallback callback)
+      override;
+  void GetStorageKeys(storage::mojom::CacheStorageOwner owner,
+                      storage::mojom::QuotaClient::GetStorageKeysForTypeCallback
+                          callback) override;
   void GetStorageKeysForHost(
       const std::string& host,
       storage::mojom::CacheStorageOwner owner,
-      storage::mojom::QuotaClient::GetOriginsForHostCallback callback) override;
+      storage::mojom::QuotaClient::GetStorageKeysForHostCallback callback)
+      override;
   void DeleteStorageKeyData(
       const blink::StorageKey& storage_key,
       storage::mojom::CacheStorageOwner owner,
-      storage::mojom::QuotaClient::DeleteOriginDataCallback callback) override;
+      storage::mojom::QuotaClient::DeleteStorageKeyDataCallback callback)
+      override;
   void DeleteStorageKeyData(const blink::StorageKey& storage_key,
                             storage::mojom::CacheStorageOwner owner) override;
   void AddObserver(mojo::PendingRemote<storage::mojom::CacheStorageObserver>
@@ -124,13 +129,14 @@ class CONTENT_EXPORT LegacyCacheStorageManager : public CacheStorageManager {
   ~LegacyCacheStorageManager() override;
 
   void GetAllStorageKeysUsageGetSizes(
-      storage::mojom::CacheStorageControl::GetAllOriginsInfoCallback callback,
+      storage::mojom::CacheStorageControl::GetAllStorageKeysInfoCallback
+          callback,
       std::vector<storage::mojom::StorageUsageInfoPtr> usage_info);
 
   void DeleteStorageKeyDidClose(
       const blink::StorageKey& storage_key,
       storage::mojom::CacheStorageOwner owner,
-      storage::mojom::QuotaClient::DeleteOriginDataCallback callback,
+      storage::mojom::QuotaClient::DeleteStorageKeyDataCallback callback,
       std::unique_ptr<LegacyCacheStorage> cache_storage,
       int64_t origin_size);
 
@@ -165,8 +171,6 @@ class CONTENT_EXPORT LegacyCacheStorageManager : public CacheStorageManager {
   std::unique_ptr<base::MemoryPressureListener> memory_pressure_listener_;
 
   SEQUENCE_CHECKER(sequence_checker_);
-
-  DISALLOW_COPY_AND_ASSIGN(LegacyCacheStorageManager);
 };
 
 }  // namespace content

@@ -81,9 +81,9 @@ HRESULT AXPlatformNodeTextProviderWin::GetSelection(SAFEARRAY** selection) {
     return S_OK;
 
   AXNodePosition::AXPositionInstance start =
-      anchor_object->GetDelegate()->CreateTextPositionAt(start_offset);
+      anchor_object->GetDelegate()->CreatePositionAt(start_offset);
   AXNodePosition::AXPositionInstance end =
-      focus_object->GetDelegate()->CreateTextPositionAt(end_offset);
+      focus_object->GetDelegate()->CreatePositionAt(end_offset);
 
   DCHECK(!start->IsNullPosition());
   DCHECK(!end->IsNullPosition());
@@ -302,7 +302,13 @@ ITextRangeProvider* AXPlatformNodeTextProviderWin::GetRangeFromChild(
   AXNodePosition::AXPositionInstance end;
   if (descendant->IsPlatformDocument()) {
     // Fast path for getting the range of the web or PDF root.
-    end = start->CreatePositionAtEndOfContent();
+    // If the last position is ignored, we need to get an unignored position
+    // otherwise future comparisons can end up with null positions (which in
+    // turn might collapse the range). Note that we move backwards, since there
+    // is no position after the end-of-content position (i.e. moving forward
+    // results in a null position).
+    end = start->CreatePositionAtEndOfContent()->AsUnignoredPosition(
+        AXPositionAdjustmentBehavior::kMoveBackward);
   } else if (descendant->GetChildCount() == 0) {
     end = descendant->GetDelegate()
               ->CreateTextPositionAt(0)

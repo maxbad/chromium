@@ -15,7 +15,6 @@
 #include "base/check_op.h"
 #include "base/containers/contains.h"
 #include "base/files/file_path.h"
-#include "base/macros.h"
 #include "base/memory/ptr_util.h"
 #include "base/no_destructor.h"
 #include "base/notreached.h"
@@ -87,16 +86,19 @@ bool IsRegisteredInstance(const Clipboard* clipboard) {
 class ClipboardInternal {
  public:
   ClipboardInternal() = default;
-
+  ClipboardInternal(const ClipboardInternal&) = delete;
+  ClipboardInternal& operator=(const ClipboardInternal&) = delete;
   ~ClipboardInternal() = default;
 
   void Clear() {
-    ++sequence_number_;
+    sequence_number_ = ClipboardSequenceNumberToken();
     data_.reset();
     ClipboardMonitor::GetInstance()->NotifyClipboardDataChanged();
   }
 
-  uint64_t sequence_number() const { return sequence_number_; }
+  const ClipboardSequenceNumberToken& sequence_number() const {
+    return sequence_number_;
+  }
 
   // Returns the current clipboard data, which may be nullptr if nothing has
   // been written since the last Clear().
@@ -187,21 +189,6 @@ class ClipboardInternal {
     return GetData()->png();
   }
 
-  // Reads image from the ClipboardData.
-  SkBitmap ReadImage() const {
-    SkBitmap img;
-    if (!HasFormat(ClipboardInternalFormat::kPng))
-      return img;
-
-    // A shallow copy should be fine here, but just to be safe...
-    const SkBitmap& clipboard_bitmap = GetData()->bitmap();
-    if (img.tryAllocPixels(clipboard_bitmap.info())) {
-      clipboard_bitmap.readPixels(img.info(), img.getPixels(), img.rowBytes(),
-                                  0, 0);
-    }
-    return img;
-  }
-
   // Reads data of type |type| from the ClipboardData.
   void ReadCustomData(const std::u16string& type,
                       std::u16string* result) const {
@@ -250,7 +237,7 @@ class ClipboardInternal {
     DCHECK(data);
     std::unique_ptr<ClipboardData> previous_data = std::move(data_);
     data_ = std::move(data);
-    ++sequence_number_;
+    sequence_number_ = ClipboardSequenceNumberToken();
     ClipboardMonitor::GetInstance()->NotifyClipboardDataChanged();
     return previous_data;
   }
@@ -261,7 +248,8 @@ class ClipboardInternal {
     auto* data = GetData();
     if (!policy_controller || !data)
       return true;
-    return policy_controller->IsClipboardReadAllowed(data->source(), data_dst);
+    return policy_controller->IsClipboardReadAllowed(data->source(), data_dst,
+                                                     data->size());
   }
 
  private:
@@ -275,9 +263,7 @@ class ClipboardInternal {
   std::unique_ptr<ClipboardData> data_;
 
   // Sequence number uniquely identifying clipboard state.
-  uint64_t sequence_number_ = 0;
-
-  DISALLOW_COPY_AND_ASSIGN(ClipboardInternal);
+  ClipboardSequenceNumberToken sequence_number_;
 };
 
 // Helper class to build a ClipboardData object and write it to clipboard.
@@ -414,7 +400,8 @@ DataTransferEndpoint* ClipboardNonBacked::GetSource(
   return data ? data->source() : nullptr;
 }
 
-uint64_t ClipboardNonBacked::GetSequenceNumber(ClipboardBuffer buffer) const {
+const ClipboardSequenceNumberToken& ClipboardNonBacked::GetSequenceNumber(
+    ClipboardBuffer buffer) const {
   DCHECK(CalledOnValidThread());
   return clipboard_internal_->sequence_number();
 }
@@ -429,28 +416,27 @@ bool ClipboardNonBacked::IsFormatAvailable(
   if (!clipboard_internal_->IsReadAllowed(data_dst))
     return false;
 
-  if (format == ClipboardFormatType::GetPlainTextType() ||
-      format == ClipboardFormatType::GetUrlType())
+  if (format == ClipboardFormatType::PlainTextType() ||
+      format == ClipboardFormatType::UrlType())
     return clipboard_internal_->IsFormatAvailable(
         ClipboardInternalFormat::kText);
-  if (format == ClipboardFormatType::GetHtmlType())
+  if (format == ClipboardFormatType::HtmlType())
     return clipboard_internal_->IsFormatAvailable(
         ClipboardInternalFormat::kHtml);
-  if (format == ClipboardFormatType::GetSvgType())
+  if (format == ClipboardFormatType::SvgType())
     return clipboard_internal_->IsFormatAvailable(
         ClipboardInternalFormat::kSvg);
-  if (format == ClipboardFormatType::GetRtfType())
+  if (format == ClipboardFormatType::RtfType())
     return clipboard_internal_->IsFormatAvailable(
         ClipboardInternalFormat::kRtf);
-  if (format == ClipboardFormatType::GetPngType() ||
-      format == ClipboardFormatType::GetBitmapType())
+  if (format == ClipboardFormatType::PngType() ||
+      format == ClipboardFormatType::BitmapType())
     return clipboard_internal_->IsFormatAvailable(
         ClipboardInternalFormat::kPng);
-  if (format == ClipboardFormatType::GetWebKitSmartPasteType())
+  if (format == ClipboardFormatType::WebKitSmartPasteType())
     return clipboard_internal_->IsFormatAvailable(
         ClipboardInternalFormat::kWeb);
-  // Only support filenames if chrome://flags#clipboard-filenames is enabled.
-  if (format == ClipboardFormatType::GetFilenamesType())
+  if (format == ClipboardFormatType::FilenamesType())
     return clipboard_internal_->IsFormatAvailable(
         ClipboardInternalFormat::kFilenames);
   const ClipboardData* data = clipboard_internal_->GetData();
@@ -461,6 +447,29 @@ void ClipboardNonBacked::Clear(ClipboardBuffer buffer) {
   DCHECK(CalledOnValidThread());
   DCHECK(IsSupportedClipboardBuffer(buffer));
   clipboard_internal_->Clear();
+}
+
+std::vector<std::u16string> ClipboardNonBacked::GetStandardFormats(
+    ClipboardBuffer buffer,
+    const DataTransferEndpoint* data_dst) const {
+  std::vector<std::u16string> types;
+  if (IsFormatAvailable(ClipboardFormatType::PlainTextType(), buffer, data_dst))
+    types.push_back(
+        base::UTF8ToUTF16(ClipboardFormatType::PlainTextType().GetName()));
+  if (IsFormatAvailable(ClipboardFormatType::HtmlType(), buffer, data_dst))
+    types.push_back(
+        base::UTF8ToUTF16(ClipboardFormatType::HtmlType().GetName()));
+  if (IsFormatAvailable(ClipboardFormatType::SvgType(), buffer, data_dst))
+    types.push_back(
+        base::UTF8ToUTF16(ClipboardFormatType::SvgType().GetName()));
+  if (IsFormatAvailable(ClipboardFormatType::RtfType(), buffer, data_dst))
+    types.push_back(
+        base::UTF8ToUTF16(ClipboardFormatType::RtfType().GetName()));
+  if (IsFormatAvailable(ClipboardFormatType::BitmapType(), buffer, data_dst))
+    types.push_back(base::UTF8ToUTF16(kMimeTypePNG));
+  if (IsFormatAvailable(ClipboardFormatType::FilenamesType(), buffer, data_dst))
+    types.push_back(base::UTF8ToUTF16(kMimeTypeURIList));
+  return types;
 }
 
 void ClipboardNonBacked::ReadAvailableTypes(
@@ -474,21 +483,7 @@ void ClipboardNonBacked::ReadAvailableTypes(
     return;
 
   types->clear();
-  if (IsFormatAvailable(ClipboardFormatType::GetPlainTextType(), buffer,
-                        data_dst))
-    types->push_back(
-        base::UTF8ToUTF16(ClipboardFormatType::GetPlainTextType().GetName()));
-  if (IsFormatAvailable(ClipboardFormatType::GetHtmlType(), buffer, data_dst))
-    types->push_back(
-        base::UTF8ToUTF16(ClipboardFormatType::GetHtmlType().GetName()));
-  if (IsFormatAvailable(ClipboardFormatType::GetRtfType(), buffer, data_dst))
-    types->push_back(
-        base::UTF8ToUTF16(ClipboardFormatType::GetRtfType().GetName()));
-  if (IsFormatAvailable(ClipboardFormatType::GetBitmapType(), buffer, data_dst))
-    types->push_back(base::UTF8ToUTF16(kMimeTypePNG));
-  if (IsFormatAvailable(ClipboardFormatType::GetFilenamesType(), buffer,
-                        data_dst))
-    types->push_back(base::UTF8ToUTF16(kMimeTypeURIList));
+  *types = GetStandardFormats(buffer, data_dst);
 
   if (clipboard_internal_->IsFormatAvailable(
           ClipboardInternalFormat::kCustom) &&
@@ -497,39 +492,6 @@ void ClipboardNonBacked::ReadAvailableTypes(
         clipboard_internal_->GetData()->custom_data_data().c_str(),
         clipboard_internal_->GetData()->custom_data_data().size(), types);
   }
-}
-
-std::vector<std::u16string>
-ClipboardNonBacked::ReadAvailablePlatformSpecificFormatNames(
-    ClipboardBuffer buffer,
-    const DataTransferEndpoint* data_dst) const {
-  DCHECK(CalledOnValidThread());
-
-  std::vector<std::u16string> types;
-
-  if (!clipboard_internal_->IsReadAllowed(data_dst))
-    return types;
-
-  // Includes all non-pickled AvailableTypes.
-  if (IsFormatAvailable(ClipboardFormatType::GetPlainTextType(), buffer,
-                        data_dst)) {
-    types.push_back(
-        base::UTF8ToUTF16(ClipboardFormatType::GetPlainTextType().GetName()));
-  }
-  if (IsFormatAvailable(ClipboardFormatType::GetHtmlType(), buffer, data_dst)) {
-    types.push_back(
-        base::UTF8ToUTF16(ClipboardFormatType::GetHtmlType().GetName()));
-  }
-  if (IsFormatAvailable(ClipboardFormatType::GetRtfType(), buffer, data_dst)) {
-    types.push_back(
-        base::UTF8ToUTF16(ClipboardFormatType::GetRtfType().GetName()));
-  }
-  if (IsFormatAvailable(ClipboardFormatType::GetBitmapType(), buffer,
-                        data_dst)) {
-    types.push_back(base::UTF8ToUTF16(kMimeTypePNG));
-  }
-
-  return types;
 }
 
 void ClipboardNonBacked::ReadText(ClipboardBuffer buffer,
@@ -629,24 +591,6 @@ void ClipboardNonBacked::ReadPng(ClipboardBuffer buffer,
 #endif
 }
 
-void ClipboardNonBacked::ReadImage(ClipboardBuffer buffer,
-                                   const DataTransferEndpoint* data_dst,
-                                   ReadImageCallback callback) const {
-  DCHECK(CalledOnValidThread());
-
-  if (!clipboard_internal_->IsReadAllowed(data_dst)) {
-    std::move(callback).Run(SkBitmap());
-    return;
-  }
-
-  RecordRead(ClipboardFormatMetric::kImage);
-  std::move(callback).Run(clipboard_internal_->ReadImage());
-
-#if BUILDFLAG(IS_CHROMEOS_ASH)
-  ClipboardMonitor::GetInstance()->NotifyClipboardDataRead();
-#endif
-}
-
 void ClipboardNonBacked::ReadCustomData(ClipboardBuffer buffer,
                                         const std::u16string& type,
                                         const DataTransferEndpoint* data_dst,
@@ -723,26 +667,17 @@ bool ClipboardNonBacked::IsSelectionBufferAvailable() const {
 }
 #endif  // defined(USE_OZONE)
 
-void ClipboardNonBacked::WritePortableRepresentations(
+void ClipboardNonBacked::WritePortableAndPlatformRepresentations(
     ClipboardBuffer buffer,
     const ObjectMap& objects,
-    std::unique_ptr<DataTransferEndpoint> data_src) {
-  DCHECK(CalledOnValidThread());
-  DCHECK(IsSupportedClipboardBuffer(buffer));
-  for (const auto& object : objects)
-    DispatchPortableRepresentation(object.first, object.second);
-  ClipboardDataBuilder::CommitToClipboard(clipboard_internal_.get(),
-                                          std::move(data_src));
-}
-
-void ClipboardNonBacked::WritePlatformRepresentations(
-    ClipboardBuffer buffer,
     std::vector<Clipboard::PlatformRepresentation> platform_representations,
     std::unique_ptr<DataTransferEndpoint> data_src) {
   DCHECK(CalledOnValidThread());
   DCHECK(IsSupportedClipboardBuffer(buffer));
 
   DispatchPlatformRepresentations(std::move(platform_representations));
+  for (const auto& object : objects)
+    DispatchPortableRepresentation(object.first, object.second);
 
   ClipboardDataBuilder::CommitToClipboard(clipboard_internal_.get(),
                                           std::move(data_src));

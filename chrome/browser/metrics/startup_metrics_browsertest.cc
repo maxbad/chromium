@@ -31,7 +31,6 @@ constexpr const char* kStartupMetrics[] = {
     "Startup.LoadTime.ProcessCreateToApplicationStart",
 
 #if defined(OS_WIN)
-    "Startup.BrowserMessageLoopStartHardFaultCount",
     "Startup.Temperature",
 #endif
 };
@@ -40,10 +39,6 @@ constexpr const char* kStartupMetrics[] = {
 
 // Verify that startup histograms are logged on browser startup.
 IN_PROC_BROWSER_TEST_F(StartupMetricsTest, ReportsValues) {
-  // This is usually done from ChromeBrowserMainParts::MainMessageLoopRun().
-  startup_metric_utils::RecordBrowserMainMessageLoopStart(
-      base::TimeTicks::Now(), false /* is_first_run */);
-
   // Wait for all histograms to be recorded. The test will hit a RunLoop timeout
   // if a histogram is not recorded.
   for (auto* const histogram : kStartupMetrics) {
@@ -55,12 +50,12 @@ IN_PROC_BROWSER_TEST_F(StartupMetricsTest, ReportsValues) {
 
     // Else, wait until the histogram is recorded.
     base::RunLoop run_loop;
-    base::StatisticsRecorder::SetCallback(
+    auto histogram_observer = std::make_unique<
+        base::StatisticsRecorder::ScopedHistogramSampleObserver>(
         histogram,
         base::BindLambdaForTesting(
             [&](const char* histogram_name, uint64_t name_hash,
                 base::HistogramBase::Sample sample) { run_loop.Quit(); }));
     run_loop.Run();
-    base::StatisticsRecorder::ClearCallback(histogram);
   }
 }

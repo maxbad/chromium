@@ -484,8 +484,10 @@ void InstallUtil::AppendModeAndChannelSwitches(
     command_line->AppendSwitch(install_details.install_switch());
   if (install_details.channel_origin() ==
       install_static::ChannelOrigin::kPolicy) {
+    // Use channel_override rather than simply channel so that extended stable
+    // is differentiated from regular.
     command_line->AppendSwitchNative(installer::switches::kChannel,
-                                     install_details.channel());
+                                     install_details.channel_override());
   }
 }
 
@@ -588,6 +590,32 @@ InstallUtil::GetCloudManagementDmTokenLocation(
   }
 
   return {std::move(key), L"dmtoken"};
+}
+
+// static
+std::tuple<base::win::RegKey, std::wstring, std::wstring>
+InstallUtil::GetDeviceTrustSigningKeyLocation(ReadOnly read_only) {
+  // The location dictates the path and WoW bit.
+  std::wstring key_path = L"SOFTWARE\\";
+  install_static::AppendChromeInstallSubDirectory(
+      install_static::InstallDetails::Get().mode(), /*include_suffix=*/false,
+      &key_path)
+      .append(L"\\DeviceTrust");
+  base::win::RegKey key;
+  if (read_only) {
+    key.Open(HKEY_LOCAL_MACHINE, key_path.c_str(),
+             KEY_QUERY_VALUE | KEY_WOW64_64KEY);
+  } else {
+    auto result = key.Create(HKEY_LOCAL_MACHINE, key_path.c_str(),
+                             KEY_SET_VALUE | KEY_WOW64_64KEY);
+    if (result != ERROR_SUCCESS) {
+      ::SetLastError(result);
+      PLOG(ERROR) << "Failed to create/open registry key HKLM\\" << key_path
+                  << " for writing";
+    }
+  }
+
+  return {std::move(key), L"signing_key", L"trust_level"};
 }
 
 // static

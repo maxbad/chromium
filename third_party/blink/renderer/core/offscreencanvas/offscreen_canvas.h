@@ -20,6 +20,7 @@
 #include "third_party/blink/renderer/platform/geometry/int_size.h"
 #include "third_party/blink/renderer/platform/graphics/canvas_resource_dispatcher.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
+#include "third_party/blink/renderer/platform/heap/prefinalizer.h"
 
 namespace blink {
 
@@ -50,14 +51,15 @@ class CORE_EXPORT OffscreenCanvas final
 
   bool IsOffscreenCanvas() const override { return true; }
   // IDL attributes
-  unsigned width() const { return size_.Width(); }
-  unsigned height() const { return size_.Height(); }
+  unsigned width() const { return size_.width(); }
+  unsigned height() const { return size_.height(); }
   void setWidth(unsigned);
   void setHeight(unsigned);
 
   // CanvasResourceDispatcherClient
   bool BeginFrame() override;
-  void SetFilterQualityInResource(SkFilterQuality filter_quality) override;
+  void SetFilterQualityInResource(
+      cc::PaintFlags::FilterQuality filter_quality) override;
 
   // API Methods
   ImageBitmap* transferToImageBitmap(ScriptState*, ExceptionState&);
@@ -113,8 +115,8 @@ class CORE_EXPORT OffscreenCanvas final
   bool PushFrameIfNeeded();
   bool PushFrame(scoped_refptr<CanvasResource> frame,
                  const SkIRect& damage_rect) override;
-  void DidDraw(const FloatRect&) override;
-  void DidDraw() override;
+  void DidDraw(const SkIRect&) override;
+  using CanvasRenderingContextHost::DidDraw;
   void Commit(scoped_refptr<CanvasResource> bitmap_image,
               const SkIRect& damage_rect) override;
   bool ShouldAccelerate2dContext() const override;
@@ -122,10 +124,11 @@ class CORE_EXPORT OffscreenCanvas final
   UkmParameters GetUkmParameters() override;
 
   // Partial CanvasResourceHost implementation
-  void NotifyGpuContextLost() override {}
+  void NotifyGpuContextLost() override;
   void SetNeedsCompositingUpdate() override {}
   // TODO(fserb): Merge this with HTMLCanvasElement::UpdateMemoryUsage
   void UpdateMemoryUsage() override;
+  size_t GetMemoryUsage() const override;
 
   // EventTarget implementation
   const AtomicString& InterfaceName() const final {

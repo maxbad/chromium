@@ -10,7 +10,6 @@
 #include "base/json/json_file_value_serializer.h"
 #include "base/json/json_reader.h"
 #include "base/logging.h"
-#include "base/macros.h"
 #include "base/notreached.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/values.h"
@@ -139,17 +138,14 @@ TEST(ONCResolveServerCertRefs, ResolveServerCertRefs) {
     const base::ListValue* expected_resolved_onc = NULL;
     test_case->GetList("WithResolvedRefs", &expected_resolved_onc);
 
-    bool expected_success = (networks_with_cert_refs->GetSize() ==
-                             expected_resolved_onc->GetSize());
+    bool expected_success = (networks_with_cert_refs->GetList().size() ==
+                             expected_resolved_onc->GetList().size());
 
-    std::unique_ptr<base::ListValue> actual_resolved_onc(
-        networks_with_cert_refs->DeepCopy());
-
-    bool success =
-        ResolveServerCertRefsInNetworks(certs, actual_resolved_onc.get());
+    base::Value actual_resolved_onc(networks_with_cert_refs->Clone());
+    bool success = ResolveServerCertRefsInNetworks(certs, &actual_resolved_onc);
     EXPECT_EQ(expected_success, success);
     EXPECT_TRUE(
-        test_utils::Equals(expected_resolved_onc, actual_resolved_onc.get()));
+        test_utils::Equals(expected_resolved_onc, &actual_resolved_onc));
   }
 }
 

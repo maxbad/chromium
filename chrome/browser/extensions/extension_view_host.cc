@@ -6,7 +6,6 @@
 
 #include "base/strings/string_piece.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/browser_extension_window_controller.h"
 #include "chrome/browser/extensions/extension_view.h"
 #include "chrome/browser/extensions/window_controller.h"
@@ -14,20 +13,17 @@
 #include "chrome/browser/platform_util.h"
 #include "chrome/browser/ui/autofill/chrome_autofill_client.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/color_chooser.h"
 #include "components/autofill/content/browser/content_autofill_driver_factory.h"
 #include "components/autofill/core/browser/browser_autofill_manager.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "content/public/browser/color_chooser.h"
 #include "content/public/browser/file_select_listener.h"
 #include "content/public/browser/keyboard_event_processing_result.h"
-#include "content/public/browser/notification_source.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host.h"
 #include "content/public/browser/web_contents.h"
-#include "extensions/browser/extension_system.h"
-#include "extensions/browser/runtime_data.h"
+#include "extensions/browser/process_util.h"
 #include "third_party/blink/public/common/input/web_input_event.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/events/keycodes/keyboard_codes.h"
@@ -134,12 +130,12 @@ void ExtensionViewHost::OnDidStopFirstLoad() {
 }
 
 void ExtensionViewHost::LoadInitialURL() {
-  if (!ExtensionSystem::Get(browser_context())->
-          runtime_data()->IsBackgroundPageReady(extension())) {
+  if (process_util::GetPersistentBackgroundPageState(*extension(),
+                                                     browser_context()) ==
+      process_util::PersistentBackgroundPageState::kNotReady) {
     // Make sure the background page loads before any others.
-    registrar_.Add(this,
-                   extensions::NOTIFICATION_EXTENSION_BACKGROUND_PAGE_READY,
-                   content::Source<Extension>(extension()));
+    host_registry_observation_.Observe(
+        ExtensionHostRegistry::Get(browser_context()));
     return;
   }
 
@@ -179,7 +175,7 @@ content::WebContents* ExtensionViewHost::OpenURLFromTab(
   }
 }
 
-bool ExtensionViewHost::ShouldTransferNavigation(
+bool ExtensionViewHost::ShouldAllowRendererInitiatedCrossProcessNavigation(
     bool is_main_frame_navigation) {
   // Block navigations that cause main frame of an extension pop-up (or
   // background page) to navigate to non-extension content (i.e. to web
@@ -216,16 +212,6 @@ bool ExtensionViewHost::PreHandleGestureEvent(
   return blink::WebInputEvent::IsPinchGestureEventType(event.GetType());
 }
 
-std::unique_ptr<content::ColorChooser> ExtensionViewHost::OpenColorChooser(
-    content::WebContents* web_contents,
-    SkColor initial_color,
-    const std::vector<blink::mojom::ColorSuggestionPtr>& suggestions) {
-  // Similar to the file chooser below, opening a color chooser requires a
-  // visible <input> element to click on. Therefore this code only exists for
-  // extensions with a view.
-  return chrome::ShowColorChooser(web_contents, initial_color);
-}
-
 void ExtensionViewHost::RunFileChooser(
     content::RenderFrameHost* render_frame_host,
     scoped_refptr<content::FileSelectListener> listener,
@@ -234,6 +220,12 @@ void ExtensionViewHost::RunFileChooser(
   // element to click on, so this code only exists for extensions with a view.
   FileSelectHelper::RunFileChooser(render_frame_host, std::move(listener),
                                    params);
+}
+
+std::unique_ptr<content::EyeDropper> ExtensionViewHost::OpenEyeDropper(
+    content::RenderFrameHost* frame,
+    content::EyeDropperListener* listener) {
+  return browser_ ? browser_->OpenEyeDropper(frame, listener) : nullptr;
 }
 
 void ExtensionViewHost::ResizeDueToAutoResize(content::WebContents* source,
@@ -297,13 +289,22 @@ content::WebContents* ExtensionViewHost::GetVisibleWebContents() const {
              : nullptr;
 }
 
-void ExtensionViewHost::Observe(int type,
-                                const content::NotificationSource& source,
-                                const content::NotificationDetails& details) {
-  DCHECK_EQ(type, extensions::NOTIFICATION_EXTENSION_BACKGROUND_PAGE_READY);
-  DCHECK(ExtensionSystem::Get(browser_context())
-             ->runtime_data()
-             ->IsBackgroundPageReady(extension()));
+void ExtensionViewHost::OnExtensionHostDocumentElementAvailable(
+    content::BrowserContext* host_browser_context,
+    ExtensionHost* extension_host) {
+  DCHECK(extension_host->extension());
+  if (host_browser_context != browser_context() ||
+      extension_host->extension() != extension() ||
+      extension_host->extension_host_type() !=
+          mojom::ViewType::kExtensionBackgroundPage) {
+    return;
+  }
+
+  DCHECK_EQ(process_util::PersistentBackgroundPageState::kReady,
+            process_util::GetPersistentBackgroundPageState(*extension(),
+                                                           browser_context()));
+  // We only needed to wait for the background page to load, so stop observing.
+  host_registry_observation_.Reset();
   LoadInitialURL();
 }
 

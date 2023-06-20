@@ -1,5 +1,5 @@
 This is a testharness.js-based test.
-Found 413 tests; 255 PASS, 158 FAIL, 0 TIMEOUT, 0 NOTRUN.
+Found 435 tests; 265 PASS, 170 FAIL, 0 TIMEOUT, 0 NOTRUN.
 PASS Loading data…
 PASS <a>: Setting <a://example.net>.protocol = '' The empty string is not a valid scheme. Setter leaves the URL unchanged.
 PASS <area>: Setting <a://example.net>.protocol = '' The empty string is not a valid scheme. Setter leaves the URL unchanged.
@@ -215,6 +215,10 @@ FAIL <a>: Setting <sc://test@test/>.host = '' assert_equals: expected "test" but
 FAIL <area>: Setting <sc://test@test/>.host = '' assert_equals: expected "test" but got ""
 FAIL <a>: Setting <sc://test:12/>.host = '' assert_equals: expected "test:12" but got ""
 FAIL <area>: Setting <sc://test:12/>.host = '' assert_equals: expected "test:12" but got ""
+PASS <a>: Setting <http://example.com/>.host = '///bad.com' Leading / is not stripped
+PASS <area>: Setting <http://example.com/>.host = '///bad.com' Leading / is not stripped
+FAIL <a>: Setting <sc://example.com/>.host = '///bad.com' Leading / is not stripped assert_equals: expected "sc:///" but got "sc://example.com/"
+FAIL <area>: Setting <sc://example.com/>.host = '///bad.com' Leading / is not stripped assert_equals: expected "sc:///" but got "sc://example.com/"
 FAIL <a>: Setting <sc://x/>.hostname = '\0' Non-special scheme assert_equals: expected "x" but got ""
 FAIL <area>: Setting <sc://x/>.hostname = '\0' Non-special scheme assert_equals: expected "x" but got ""
 FAIL <a>: Setting <sc://x/>.hostname = '	' assert_equals: expected "sc:///" but got "sc://x/"
@@ -289,6 +293,10 @@ FAIL <a>: Setting <non-spec:/.//p>.hostname = 'h' Drop /. from path assert_equal
 FAIL <area>: Setting <non-spec:/.//p>.hostname = 'h' Drop /. from path assert_equals: expected "non-spec://h//p" but got "non-spec:/.//p"
 FAIL <a>: Setting <non-spec:/.//p>.hostname = '' assert_equals: expected "non-spec:////p" but got "non-spec:/.//p"
 FAIL <area>: Setting <non-spec:/.//p>.hostname = '' assert_equals: expected "non-spec:////p" but got "non-spec:/.//p"
+PASS <a>: Setting <http://example.com/>.hostname = '///bad.com' Leading / is not stripped
+PASS <area>: Setting <http://example.com/>.hostname = '///bad.com' Leading / is not stripped
+FAIL <a>: Setting <sc://example.com/>.hostname = '///bad.com' Leading / is not stripped assert_equals: expected "sc:///" but got "sc://example.com/"
+FAIL <area>: Setting <sc://example.com/>.hostname = '///bad.com' Leading / is not stripped assert_equals: expected "sc:///" but got "sc://example.com/"
 PASS <a>: Setting <http://example.net>.port = '8080'
 PASS <area>: Setting <http://example.net>.port = '8080'
 PASS <a>: Setting <http://example.net:8080>.port = '' Port number is removed if empty is the new value
@@ -333,6 +341,16 @@ FAIL <a>: Setting <javascript://x/>.port = '12' assert_equals: expected "javascr
 FAIL <area>: Setting <javascript://x/>.port = '12' assert_equals: expected "javascript://x:12/" but got "javascript://x/"
 PASS <a>: Setting <mailto:me@example.net>.pathname = '/foo' Cannot-be-a-base don’t have a path
 PASS <area>: Setting <mailto:me@example.net>.pathname = '/foo' Cannot-be-a-base don’t have a path
+PASS <a>: Setting <file:///some/path>.pathname = '' Special URLs cannot have their paths erased
+PASS <area>: Setting <file:///some/path>.pathname = '' Special URLs cannot have their paths erased
+FAIL <a>: Setting <foo://somehost/some/path>.pathname = '' Non-special URLs can have their paths erased assert_equals: expected "foo://somehost" but got "foo://somehost/some/path"
+FAIL <area>: Setting <foo://somehost/some/path>.pathname = '' Non-special URLs can have their paths erased assert_equals: expected "foo://somehost" but got "foo://somehost/some/path"
+FAIL <a>: Setting <foo:///some/path>.pathname = '' Non-special URLs with an empty host can have their paths erased assert_equals: expected "foo://" but got "foo:///some/path"
+FAIL <area>: Setting <foo:///some/path>.pathname = '' Non-special URLs with an empty host can have their paths erased assert_equals: expected "foo://" but got "foo:///some/path"
+FAIL <a>: Setting <foo:/some/path>.pathname = '' Path-only URLs cannot have their paths erased assert_equals: expected "foo:/" but got "foo:/some/path"
+FAIL <area>: Setting <foo:/some/path>.pathname = '' Path-only URLs cannot have their paths erased assert_equals: expected "foo:/" but got "foo:/some/path"
+FAIL <a>: Setting <foo:/some/path>.pathname = 'test' Path-only URLs always have an initial slash assert_equals: expected "foo:/test" but got "foo:/some/path"
+FAIL <area>: Setting <foo:/some/path>.pathname = 'test' Path-only URLs always have an initial slash assert_equals: expected "foo:/test" but got "foo:/some/path"
 FAIL <a>: Setting <unix:/run/foo.socket?timeout=10>.pathname = '/var/log/../run/bar.socket' assert_equals: expected "unix:/var/run/bar.socket?timeout=10" but got "unix:/run/foo.socket?timeout=10"
 FAIL <area>: Setting <unix:/run/foo.socket?timeout=10>.pathname = '/var/log/../run/bar.socket' assert_equals: expected "unix:/var/run/bar.socket?timeout=10" but got "unix:/run/foo.socket?timeout=10"
 PASS <a>: Setting <https://example.net#nav>.pathname = 'home'
@@ -357,6 +375,10 @@ FAIL <a>: Setting <sc://example.net>.pathname = '?' ? needs to be encoded, non-s
 FAIL <area>: Setting <sc://example.net>.pathname = '?' ? needs to be encoded, non-special scheme assert_equals: expected "sc://example.net/%3F" but got "sc://example.net"
 FAIL <a>: Setting <sc://example.net>.pathname = '#' # needs to be encoded, non-special scheme assert_equals: expected "sc://example.net/%23" but got "sc://example.net"
 FAIL <area>: Setting <sc://example.net>.pathname = '#' # needs to be encoded, non-special scheme assert_equals: expected "sc://example.net/%23" but got "sc://example.net"
+PASS <a>: Setting <http://example.net>.pathname = '/?é' ? doesn't mess up encoding
+PASS <area>: Setting <http://example.net>.pathname = '/?é' ? doesn't mess up encoding
+PASS <a>: Setting <http://example.net>.pathname = '/#é' # doesn't mess up encoding
+PASS <area>: Setting <http://example.net>.pathname = '/#é' # doesn't mess up encoding
 PASS <a>: Setting <file://monkey/>.pathname = '\\' File URLs and (back)slashes
 PASS <area>: Setting <file://monkey/>.pathname = '\\' File URLs and (back)slashes
 FAIL <a>: Setting <file:///unicorn>.pathname = '//\/' File URLs and (back)slashes assert_equals: expected "file://////" but got "file:///"
@@ -388,9 +410,9 @@ PASS <area>: Setting <https://example.net?lang=en-US>.search = ''
 PASS <a>: Setting <https://example.net>.search = ''
 PASS <area>: Setting <https://example.net>.search = ''
 FAIL <a>: Setting <a:/>.search = '\0	
-\r !"#$%&'()*+,-./09:;<=>?@AZ[\]^_`az{|}~Éé' UTF-8 percent encoding with the query encode set. Tabs and newlines are removed. assert_equals: expected "a:/?%00%01%1F%20!%22%23$%&'()*+,-./09:;%3C=%3E?@AZ[\\]^_`az{|}~%7F%C2%80%C2%81%C3%89%C3%A9" but got "a:/?%00%01%1F !\"#$%&'()*+,-./09:;%3C=%3E?@AZ[\\]^_%60az{|}~%7F%C2%80%C2%81%C3%89%C3%A9"
+\r !"#$%&'()*+,-./09:;<=>?@AZ[\]^_`az{|}~Éé' UTF-8 percent encoding with the query encode set. Tabs and newlines are removed. assert_equals: expected "a:/?%00%01%1F%20!%22%23$%&'()*+,-./09:;%3C=%3E?@AZ[\\]^_`az{|}~%7F%C2%80%C2%81%C3%89%C3%A9" but got "a:/?%00%01%1F%20!%22%23$%&%27()*+,-./09:;%3C=%3E?@AZ[\\]^_`az{|}~%7F%C2%80%C2%81%C3%89%C3%A9"
 FAIL <area>: Setting <a:/>.search = '\0	
-\r !"#$%&'()*+,-./09:;<=>?@AZ[\]^_`az{|}~Éé' UTF-8 percent encoding with the query encode set. Tabs and newlines are removed. assert_equals: expected "a:/?%00%01%1F%20!%22%23$%&'()*+,-./09:;%3C=%3E?@AZ[\\]^_`az{|}~%7F%C2%80%C2%81%C3%89%C3%A9" but got "a:/?%00%01%1F !\"#$%&'()*+,-./09:;%3C=%3E?@AZ[\\]^_%60az{|}~%7F%C2%80%C2%81%C3%89%C3%A9"
+\r !"#$%&'()*+,-./09:;<=>?@AZ[\]^_`az{|}~Éé' UTF-8 percent encoding with the query encode set. Tabs and newlines are removed. assert_equals: expected "a:/?%00%01%1F%20!%22%23$%&'()*+,-./09:;%3C=%3E?@AZ[\\]^_`az{|}~%7F%C2%80%C2%81%C3%89%C3%A9" but got "a:/?%00%01%1F%20!%22%23$%&%27()*+,-./09:;%3C=%3E?@AZ[\\]^_`az{|}~%7F%C2%80%C2%81%C3%89%C3%A9"
 PASS <a>: Setting <http://example.net>.search = '%c3%89té' Bytes already percent-encoded are left as-is
 PASS <area>: Setting <http://example.net>.search = '%c3%89té' Bytes already percent-encoded are left as-is
 PASS <a>: Setting <https://example.net>.hash = 'main'

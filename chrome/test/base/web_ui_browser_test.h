@@ -125,12 +125,6 @@ class BaseWebUIBrowserTest : public JavaScriptBrowserTest {
   // handler mocking.
   virtual void BrowsePreload(const GURL& browse_to);
 
-  // Called by javascript-generated test bodies to browse to a page and preload
-  // the javascript for the given |preload_test_fixture| and
-  // |preload_test_name|. chrome.send will be overridden to allow javascript
-  // handler mocking.
-  void BrowsePrintPreload(const GURL& browse_to);
-
  protected:
   // URL to dummy WebUI page for testing framework.
   static const std::string kDummyURL;
@@ -194,8 +188,8 @@ class BaseWebUIBrowserTest : public JavaScriptBrowserTest {
 
   // Tracks the frames for which we've preloaded libraries.
   //
-  // We use `GlobalFrameRoutingId` because in certain cases, e.g. COOP/COEP, the
-  // frame gets swapped during the navigation and we get two calls to
+  // We use `GlobalRenderFrameHostId` because in certain cases, e.g. COOP/COEP,
+  // the frame gets swapped during the navigation and we get two calls to
   // `WebContentsObserver::RenderFrameCreated()` (where we preload libraries).
   //
   // In the COOP/COEP case, `RenderFrameCreated()` is called for a speculative
@@ -204,7 +198,7 @@ class BaseWebUIBrowserTest : public JavaScriptBrowserTest {
   // we'll create a different RFH for that SiteInstance and dispatch
   // `RenderFrameCreated()` for that RFH (and throw away the old speculative
   // RFH).
-  std::set<content::GlobalFrameRoutingId> libraries_preloaded_for_frames_;
+  std::set<content::GlobalRenderFrameHostId> libraries_preloaded_for_frames_;
 
   // Saves the states of |test_fixture| and |test_name| for calling
   // PreloadJavascriptLibraries().

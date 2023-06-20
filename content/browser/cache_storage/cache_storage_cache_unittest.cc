@@ -14,7 +14,6 @@
 #include "base/callback_helpers.h"
 #include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
-#include "base/macros.h"
 #include "base/memory/ptr_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/notreached.h"
@@ -163,13 +162,6 @@ class DelayableBackend : public disk_cache::Backend {
     return backend_->OnExternalCacheHit(key);
   }
 
-  size_t DumpMemoryStats(
-      base::trace_event::ProcessMemoryDump* pmd,
-      const std::string& parent_absolute_name) const override {
-    NOTREACHED();
-    return 0u;
-  }
-
   int64_t MaxFileSize() const override { return backend_->MaxFileSize(); }
 
   // Call to continue a delayed call to OpenEntry.
@@ -245,11 +237,11 @@ class FailableCacheEntry : public disk_cache::Entry {
                       CompletionOnceCallback callback) override {
     return entry_->WriteSparseData(offset, buf, buf_len, std::move(callback));
   }
-  int GetAvailableRange(int64_t offset,
-                        int len,
-                        int64_t* start,
-                        CompletionOnceCallback callback) override {
-    return entry_->GetAvailableRange(offset, len, start, std::move(callback));
+  disk_cache::RangeResult GetAvailableRange(
+      int64_t offset,
+      int len,
+      disk_cache::RangeResultCallback callback) override {
+    return entry_->GetAvailableRange(offset, len, std::move(callback));
   }
   bool CouldBeSparse() const override { return entry_->CouldBeSparse(); }
   void CancelSparseIO() override { entry_->CancelSparseIO(); }
@@ -342,12 +334,6 @@ class FailableBackend : public disk_cache::Backend {
   }
   void OnExternalCacheHit(const std::string& key) override {
     return backend_->OnExternalCacheHit(key);
-  }
-  size_t DumpMemoryStats(
-      base::trace_event::ProcessMemoryDump* pmd,
-      const std::string& parent_absolute_name) const override {
-    NOTREACHED();
-    return 0u;
   }
   int64_t MaxFileSize() const override { return backend_->MaxFileSize(); }
 
@@ -451,6 +437,9 @@ class TestCacheStorageCache : public LegacyCacheStorageCache {
                                 0 /* cache_padding */),
         delay_backend_creation_(false) {}
 
+  TestCacheStorageCache(const TestCacheStorageCache&) = delete;
+  TestCacheStorageCache& operator=(const TestCacheStorageCache&) = delete;
+
   ~TestCacheStorageCache() override { base::RunLoop().RunUntilIdle(); }
 
   void CreateBackend(ErrorCallback callback) override {
@@ -501,8 +490,6 @@ class TestCacheStorageCache : public LegacyCacheStorageCache {
  private:
   bool delay_backend_creation_;
   ErrorCallback backend_creation_callback_;
-
-  DISALLOW_COPY_AND_ASSIGN(TestCacheStorageCache);
 };
 
 class MockLegacyCacheStorage : public LegacyCacheStorage {
@@ -680,7 +667,8 @@ class CacheStorageCacheTest : public testing::Test {
         net::HttpResponseInfo::CONNECTION_INFO_UNKNOWN,
         /*alpn_negotiated_protocol=*/"unknown",
         /*was_fetched_via_spdy=*/false, /*has_range_requested=*/false,
-        /*auth_challenge_info=*/absl::nullopt);
+        /*auth_challenge_info=*/absl::nullopt,
+        /*request_include_credentials=*/true);
   }
 
   void CopySideDataToResponse(const std::string& uuid,
@@ -982,8 +970,9 @@ class CacheStorageCacheTest : public testing::Test {
   virtual bool MemoryOnly() { return false; }
 
   void SetQuota(uint64_t quota) {
-    mock_quota_manager_->SetQuota(url::Origin::Create(kTestUrl),
-                                  blink::mojom::StorageType::kTemporary, quota);
+    mock_quota_manager_->SetQuota(
+        blink::StorageKey(url::Origin::Create(kTestUrl)),
+        blink::mojom::StorageType::kTemporary, quota);
   }
 
   void SetMaxQuerySizeBytes(size_t max_bytes) {
@@ -1985,8 +1974,7 @@ TEST_P(CacheStorageCacheTestP, WriteSideData_DifferentTimeStamp) {
       base::MakeRefCounted<net::IOBuffer>(kSize);
   memset(buffer->data(), 0, kSize);
   EXPECT_FALSE(WriteSideData(no_body_request_->url,
-                             response_time + base::TimeDelta::FromSeconds(1),
-                             buffer, kSize));
+                             response_time + base::Seconds(1), buffer, kSize));
   EXPECT_EQ(CacheStorageError::kErrorNotFound, callback_error_);
   ASSERT_TRUE(Delete(no_body_request_));
 }
@@ -2774,13 +2762,6 @@ TEST_P(CacheStorageCacheTestP, PutFailWriteHeaders) {
             /*error_count*/ mock_quota_manager_->write_error_tracker()
                 .begin()
                 ->second);
-}
-
-TEST_F(CacheStorageCacheTest, OriginInUse) {
-  EXPECT_TRUE(quota_manager_proxy_->OriginInUse(url::Origin::Create(kTestUrl)));
-  cache_ = nullptr;
-  EXPECT_FALSE(
-      quota_manager_proxy_->OriginInUse(url::Origin::Create(kTestUrl)));
 }
 
 INSTANTIATE_TEST_SUITE_P(CacheStorageCacheTest,

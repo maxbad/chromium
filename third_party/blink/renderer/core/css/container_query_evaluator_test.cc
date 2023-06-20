@@ -9,6 +9,7 @@
 #include "third_party/blink/renderer/core/css/css_test_helpers.h"
 #include "third_party/blink/renderer/core/css/style_engine.h"
 #include "third_party/blink/renderer/core/dom/document.h"
+#include "third_party/blink/renderer/core/dom/dom_token_list.h"
 #include "third_party/blink/renderer/core/dom/element.h"
 #include "third_party/blink/renderer/core/testing/page_test_base.h"
 #include "third_party/blink/renderer/platform/testing/runtime_enabled_features_test_helpers.h"
@@ -35,7 +36,9 @@ class ContainerQueryEvaluatorTest : public PageTestBase,
             PhysicalAxes contained_axes) {
     ContainerQuery* container_query = ParseContainer(query);
     DCHECK(container_query);
-    auto* evaluator = MakeGarbageCollected<ContainerQueryEvaluator>(
+    auto* evaluator = MakeGarbageCollected<ContainerQueryEvaluator>();
+    evaluator->ContainerChanged(
+        GetDocument(), GetDocument().ComputedStyleRef(),
         PhysicalSize(LayoutUnit(width), LayoutUnit(height)), contained_axes);
     return evaluator->Eval(*container_query);
   }
@@ -43,7 +46,8 @@ class ContainerQueryEvaluatorTest : public PageTestBase,
   bool ContainerChanged(ContainerQueryEvaluator* evaluator,
                         PhysicalSize size,
                         PhysicalAxes axes) {
-    return evaluator->ContainerChanged(size, axes) !=
+    return evaluator->ContainerChanged(
+               GetDocument(), GetDocument().ComputedStyleRef(), size, axes) !=
            ContainerQueryEvaluator::Change::kNone;
   }
 
@@ -92,28 +96,31 @@ TEST_F(ContainerQueryEvaluatorTest, ContainerChanged) {
   ASSERT_TRUE(container_query_100);
   ASSERT_TRUE(container_query_200);
 
-  auto* evaluator =
-      MakeGarbageCollected<ContainerQueryEvaluator>(size_100, horizontal);
+  auto* evaluator = MakeGarbageCollected<ContainerQueryEvaluator>();
+  evaluator->ContainerChanged(GetDocument(), GetDocument().ComputedStyleRef(),
+                              size_100, horizontal);
   ASSERT_TRUE(evaluator);
 
-  EXPECT_TRUE(evaluator->EvalAndAdd(*container_query_100));
-  EXPECT_FALSE(evaluator->EvalAndAdd(*container_query_200));
+  MatchResult dummy_result;
+
+  EXPECT_TRUE(evaluator->EvalAndAdd(*container_query_100, dummy_result));
+  EXPECT_FALSE(evaluator->EvalAndAdd(*container_query_200, dummy_result));
 
   EXPECT_FALSE(ContainerChanged(evaluator, size_100, horizontal));
-  EXPECT_TRUE(evaluator->EvalAndAdd(*container_query_100));
-  EXPECT_FALSE(evaluator->EvalAndAdd(*container_query_200));
+  EXPECT_TRUE(evaluator->EvalAndAdd(*container_query_100, dummy_result));
+  EXPECT_FALSE(evaluator->EvalAndAdd(*container_query_200, dummy_result));
 
   EXPECT_TRUE(ContainerChanged(evaluator, size_200, horizontal));
-  EXPECT_TRUE(evaluator->EvalAndAdd(*container_query_100));
-  EXPECT_TRUE(evaluator->EvalAndAdd(*container_query_200));
+  EXPECT_TRUE(evaluator->EvalAndAdd(*container_query_100, dummy_result));
+  EXPECT_TRUE(evaluator->EvalAndAdd(*container_query_200, dummy_result));
 
   EXPECT_FALSE(ContainerChanged(evaluator, size_200, horizontal));
-  EXPECT_TRUE(evaluator->EvalAndAdd(*container_query_100));
-  EXPECT_TRUE(evaluator->EvalAndAdd(*container_query_200));
+  EXPECT_TRUE(evaluator->EvalAndAdd(*container_query_100, dummy_result));
+  EXPECT_TRUE(evaluator->EvalAndAdd(*container_query_200, dummy_result));
 
   EXPECT_TRUE(ContainerChanged(evaluator, size_200, vertical));
-  EXPECT_FALSE(evaluator->EvalAndAdd(*container_query_100));
-  EXPECT_FALSE(evaluator->EvalAndAdd(*container_query_200));
+  EXPECT_FALSE(evaluator->EvalAndAdd(*container_query_100, dummy_result));
+  EXPECT_FALSE(evaluator->EvalAndAdd(*container_query_200, dummy_result));
 }
 
 TEST_F(ContainerQueryEvaluatorTest, SizeInvalidation) {
@@ -185,11 +192,14 @@ TEST_F(ContainerQueryEvaluatorTest, DependentQueries) {
   ContainerQuery* query_max_300px = ParseContainer("(max-width: 300px)");
   ASSERT_TRUE(query_min_200px);
 
-  auto* evaluator =
-      MakeGarbageCollected<ContainerQueryEvaluator>(size_100, horizontal);
+  auto* evaluator = MakeGarbageCollected<ContainerQueryEvaluator>();
+  evaluator->ContainerChanged(GetDocument(), GetDocument().ComputedStyleRef(),
+                              size_100, horizontal);
 
-  evaluator->EvalAndAdd(*query_min_200px);
-  evaluator->EvalAndAdd(*query_max_300px);
+  MatchResult dummy_result;
+
+  evaluator->EvalAndAdd(*query_min_200px, dummy_result);
+  evaluator->EvalAndAdd(*query_max_300px, dummy_result);
   // Updating with the same size as we initially had should not invalidate
   // any query results.
   EXPECT_FALSE(ContainerChanged(evaluator, size_100, horizontal));
@@ -200,8 +210,8 @@ TEST_F(ContainerQueryEvaluatorTest, DependentQueries) {
   // (min-width: 200px) becomes true:
   EXPECT_TRUE(ContainerChanged(evaluator, size_200, horizontal));
 
-  evaluator->EvalAndAdd(*query_min_200px);
-  evaluator->EvalAndAdd(*query_max_300px);
+  evaluator->EvalAndAdd(*query_min_200px, dummy_result);
+  evaluator->EvalAndAdd(*query_max_300px, dummy_result);
   EXPECT_FALSE(ContainerChanged(evaluator, size_200, horizontal));
 
   // Makes no difference for either of (min-width: 200px), (max-width: 300px):
@@ -211,7 +221,7 @@ TEST_F(ContainerQueryEvaluatorTest, DependentQueries) {
   EXPECT_TRUE(ContainerChanged(evaluator, size_400, horizontal));
 }
 
-TEST_F(ContainerQueryEvaluatorTest, EvaluatorOnDetachLayoutTree) {
+TEST_F(ContainerQueryEvaluatorTest, EvaluatorDisplayNone) {
   SetBodyInnerHTML(R"HTML(
     <style>
       main {
@@ -220,36 +230,50 @@ TEST_F(ContainerQueryEvaluatorTest, EvaluatorOnDetachLayoutTree) {
         width: 500px;
         height: 500px;
       }
+      main.none {
+        display: none;
+      }
       @container (min-width: 500px) {
         div { --x:test; }
       }
     </style>
-    <main id=container1>
-      <div></div>
-    </main>
-    <main id=container2>
-      <div></div>
+    <main id=outer>
+      <div>
+        <main id=inner>
+          <div></div>
+        </main>
+      </div>
     </main>
   )HTML");
 
-  Element* container1 = GetDocument().getElementById("container1");
-  ASSERT_TRUE(container1);
-  ASSERT_TRUE(container1->GetContainerQueryEvaluator());
+  // Inner container
+  Element* inner = GetDocument().getElementById("inner");
+  ASSERT_TRUE(inner);
+  EXPECT_TRUE(inner->GetContainerQueryEvaluator());
 
-  // DetachLayoutTree with performing_reattach=false:
-  container1->remove();
+  inner->classList().Add("none");
   UpdateAllLifecyclePhasesForTest();
-  EXPECT_FALSE(container1->GetContainerQueryEvaluator())
-      << "ContainerQueryEvaluator should be removed";
+  EXPECT_FALSE(inner->GetContainerQueryEvaluator());
 
-  // DetachLayoutTree with performing_reattach=true:
-  Element* container2 = GetDocument().getElementById("container2");
-  ASSERT_TRUE(container2);
-  ASSERT_TRUE(container2->GetContainerQueryEvaluator());
-  container2->SetInlineStyleProperty(CSSPropertyID::kDisplay, "none");
+  inner->classList().Remove("none");
   UpdateAllLifecyclePhasesForTest();
-  EXPECT_TRUE(container2->GetContainerQueryEvaluator())
-      << "ContainerQueryEvaluator should persist";
+  ASSERT_TRUE(inner->GetContainerQueryEvaluator());
+
+  // Outer container
+  Element* outer = GetDocument().getElementById("outer");
+  ASSERT_TRUE(outer);
+  EXPECT_TRUE(outer->GetContainerQueryEvaluator());
+  EXPECT_TRUE(inner->GetContainerQueryEvaluator());
+
+  outer->classList().Add("none");
+  UpdateAllLifecyclePhasesForTest();
+  EXPECT_FALSE(outer->GetContainerQueryEvaluator());
+  EXPECT_FALSE(inner->GetContainerQueryEvaluator());
+
+  outer->classList().Remove("none");
+  UpdateAllLifecyclePhasesForTest();
+  EXPECT_TRUE(outer->GetContainerQueryEvaluator());
+  EXPECT_TRUE(inner->GetContainerQueryEvaluator());
 }
 
 }  // namespace blink

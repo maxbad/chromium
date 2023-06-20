@@ -4,7 +4,11 @@
 
 #include "cc/paint/paint_shader.h"
 
+#include <utility>
+
 #include "base/atomic_sequence_num.h"
+#include "base/stl_util.h"
+#include "cc/paint/image_provider.h"
 #include "cc/paint/paint_image_builder.h"
 #include "cc/paint/paint_op_writer.h"
 #include "cc/paint/paint_record.h"
@@ -318,10 +322,10 @@ sk_sp<PaintShader> PaintShader::CreatePaintWorkletRecord(
 
 sk_sp<PaintShader> PaintShader::CreateDecodedImage(
     const SkMatrix& ctm,
-    SkFilterQuality quality,
+    PaintFlags::FilterQuality quality,
     ImageProvider* image_provider,
     uint32_t* transfer_cache_entry_id,
-    SkFilterQuality* raster_quality,
+    PaintFlags::FilterQuality* raster_quality,
     bool* needs_mips,
     gpu::Mailbox* mailbox) const {
   DCHECK_EQ(shader_type_, Type::kImage);
@@ -375,7 +379,8 @@ sk_sp<PaintShader> PaintShader::CreateDecodedImage(
   return PaintShader::MakeImage(decoded_paint_image, tx_, ty_, &final_matrix);
 }
 
-sk_sp<SkShader> PaintShader::GetSkShader(SkFilterQuality quality) const {
+sk_sp<SkShader> PaintShader::GetSkShader(
+    PaintFlags::FilterQuality quality) const {
   SkSamplingOptions sampling(
       PaintFlags::FilterQualityToSkSamplingOptions(quality));
 
@@ -392,7 +397,6 @@ sk_sp<SkShader> PaintShader::GetSkShader(SkFilterQuality quality) const {
           positions_.empty() ? nullptr : positions_.data(),
           static_cast<int>(colors_.size()), tx_, flags_,
           base::OptionalOrNullptr(local_matrix_));
-      break;
     }
     case Type::kRadialGradient:
       return SkGradientShader::MakeRadial(
@@ -400,21 +404,18 @@ sk_sp<SkShader> PaintShader::GetSkShader(SkFilterQuality quality) const {
           positions_.empty() ? nullptr : positions_.data(),
           static_cast<int>(colors_.size()), tx_, flags_,
           base::OptionalOrNullptr(local_matrix_));
-      break;
     case Type::kTwoPointConicalGradient:
       return SkGradientShader::MakeTwoPointConical(
           start_point_, start_radius_, end_point_, end_radius_, colors_.data(),
           positions_.empty() ? nullptr : positions_.data(),
           static_cast<int>(colors_.size()), tx_, flags_,
           base::OptionalOrNullptr(local_matrix_));
-      break;
     case Type::kSweepGradient:
       return SkGradientShader::MakeSweep(
           center_.x(), center_.y(), colors_.data(),
           positions_.empty() ? nullptr : positions_.data(),
           static_cast<int>(colors_.size()), tx_, start_degrees_, end_degrees_,
           flags_, base::OptionalOrNullptr(local_matrix_));
-      break;
     case Type::kImage:
       if (sk_cached_image_) {
         return sk_cached_image_->makeShader(
@@ -429,7 +430,6 @@ sk_sp<SkShader> PaintShader::GetSkShader(SkFilterQuality quality) const {
             return sk_cached_picture_->makeShader(
                 tx_, ty_, sampling.filter,
                 base::OptionalOrNullptr(local_matrix_), nullptr);
-            break;
           // For fixed scale, we create an image shader with an image backed by
           // the picture.
           case ScalingBehavior::kFixedScale: {
@@ -439,7 +439,6 @@ sk_sp<SkShader> PaintShader::GetSkShader(SkFilterQuality quality) const {
                 SkImage::BitDepth::kU8, SkColorSpace::MakeSRGB());
             return image->makeShader(tx_, ty_, sampling,
                                      base::OptionalOrNullptr(local_matrix_));
-            break;
           }
         }
         break;

@@ -215,7 +215,7 @@ const base::Feature kDCompTripleBufferVideoSwapChain{
 // is large enough and allows DWM to consider the main backbuffer as an
 // an overlay candidate.
 const base::Feature kDirectCompositionForceFullDamage{
-    "DirectCompositionForceFullDamage", base::FEATURE_ENABLED_BY_DEFAULT};
+    "DirectCompositionForceFullDamage", base::FEATURE_DISABLED_BY_DEFAULT};
 
 // Use presentation feedback event queries (must be enabled) to limit latency.
 const base::Feature kDirectCompositionLowLatencyPresentation{
@@ -223,9 +223,9 @@ const base::Feature kDirectCompositionLowLatencyPresentation{
     base::FEATURE_DISABLED_BY_DEFAULT};
 
 // Allow overlay swapchain to present on all GPUs even if they only support
-// software overlays.
+// software overlays. GPU deny lists limit it to NVIDIA only at the moment.
 const base::Feature kDirectCompositionSoftwareOverlays{
-    "DirectCompositionSoftwareOverlays", base::FEATURE_DISABLED_BY_DEFAULT};
+    "DirectCompositionSoftwareOverlays", base::FEATURE_ENABLED_BY_DEFAULT};
 
 // Default to using ANGLE's OpenGL backend
 const base::Feature kDefaultANGLEOpenGL{"DefaultANGLEOpenGL",
@@ -244,6 +244,10 @@ const base::Feature kDefaultANGLEVulkan{"DefaultANGLEVulkan",
 // be reliably retrieved with ANGLE backend.
 const base::Feature kTrackCurrentShaders{"TrackCurrentShaders",
                                          base::FEATURE_DISABLED_BY_DEFAULT};
+
+// Enable sharing Vulkan device queue with ANGLE's Vulkan backend.
+const base::Feature kVulkanFromANGLE{"VulkanFromANGLE",
+                                     base::FEATURE_DISABLED_BY_DEFAULT};
 
 bool IsDefaultANGLEVulkan() {
 #if defined(OS_ANDROID)

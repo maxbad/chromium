@@ -5,6 +5,8 @@
 #ifndef IOS_CHROME_BROWSER_OVERLAYS_PUBLIC_INFOBAR_BANNER_ADD_TO_READING_LIST_INFOBAR_BANNER_OVERLAY_REQUEST_CONFIG_H_
 #define IOS_CHROME_BROWSER_OVERLAYS_PUBLIC_INFOBAR_BANNER_ADD_TO_READING_LIST_INFOBAR_BANNER_OVERLAY_REQUEST_CONFIG_H_
 
+#include <CoreFoundation/CoreFoundation.h>
+
 #include "ios/chrome/browser/overlays/public/overlay_request_config.h"
 #include "ios/chrome/browser/overlays/public/overlay_user_data.h"
 
@@ -30,6 +32,9 @@ class ReadingListBannerRequestConfig
   // The button text.
   NSString* button_text() const { return button_text_; }
 
+  // The name of the banner's icon image.
+  NSString* icon_image_name() const { return icon_image_name_; }
+
  private:
   OVERLAY_USER_DATA_SETUP(ReadingListBannerRequestConfig);
   explicit ReadingListBannerRequestConfig(infobars::InfoBar* infobar);
@@ -40,6 +45,7 @@ class ReadingListBannerRequestConfig
   NSString* title_text_;
   NSString* message_text_;
   NSString* button_text_;
+  NSString* icon_image_name_ = nil;
 
   // The InfoBar causing this banner.
   infobars::InfoBar* infobar_ = nullptr;

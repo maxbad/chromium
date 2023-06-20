@@ -20,6 +20,7 @@
 
 #include "third_party/blink/renderer/platform/graphics/filters/fe_drop_shadow.h"
 
+#include "base/stl_util.h"
 #include "third_party/blink/renderer/platform/graphics/filters/fe_gaussian_blur.h"
 #include "third_party/blink/renderer/platform/graphics/filters/filter.h"
 #include "third_party/blink/renderer/platform/graphics/filters/paint_filter_builder.h"
@@ -49,7 +50,7 @@ FloatRect FEDropShadow::MapEffect(const FloatSize& std_deviation,
   offset_rect.MoveBy(offset);
   FloatRect blurred_rect =
       FEGaussianBlur::MapEffect(std_deviation, offset_rect);
-  return UnionRect(blurred_rect, rect);
+  return UnionRects(blurred_rect, rect);
 }
 
 FloatRect FEDropShadow::MapEffect(const FloatRect& rect) const {

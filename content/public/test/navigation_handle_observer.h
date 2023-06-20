@@ -5,12 +5,17 @@
 #ifndef CONTENT_PUBLIC_TEST_NAVIGATION_HANDLE_OBSERVER_H_
 #define CONTENT_PUBLIC_TEST_NAVIGATION_HANDLE_OBSERVER_H_
 
-#include "base/macros.h"
+#include <cstdint>
 #include "content/public/browser/navigation_handle_timing.h"
 #include "content/public/browser/reload_type.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents_observer.h"
+#include "net/base/auth.h"
+#include "net/base/net_errors.h"
+#include "net/dns/public/resolve_error_info.h"
+#include "net/http/http_response_headers.h"
 #include "services/metrics/public/cpp/ukm_source_id.h"
+#include "url/gurl.h"
 
 namespace content {
 
@@ -20,6 +25,10 @@ class NavigationHandleObserver : public WebContentsObserver {
  public:
   NavigationHandleObserver(WebContents* web_contents,
                            const GURL& expected_start_url);
+
+  NavigationHandleObserver(const NavigationHandleObserver&) = delete;
+  NavigationHandleObserver& operator=(const NavigationHandleObserver&) = delete;
+
   ~NavigationHandleObserver() override;
 
   void DidStartNavigation(NavigationHandle* navigation_handle) override;
@@ -76,8 +85,6 @@ class NavigationHandleObserver : public WebContentsObserver {
   NavigationHandleTiming navigation_handle_timing_;
   ReloadType reload_type_ = ReloadType::NONE;
   scoped_refptr<const net::HttpResponseHeaders> response_headers_;
-
-  DISALLOW_COPY_AND_ASSIGN(NavigationHandleObserver);
 };
 
 }  // namespace content

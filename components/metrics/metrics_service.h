@@ -13,10 +13,8 @@
 #include <map>
 #include <memory>
 #include <string>
-#include <vector>
 
 #include "base/gtest_prod_util.h"
-#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram_flattener.h"
@@ -25,6 +23,7 @@
 #include "base/sequence_checker.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
+#include "build/chromeos_buildflags.h"
 #include "components/metrics/delegating_provider.h"
 #include "components/metrics/metrics_log.h"
 #include "components/metrics/metrics_log_manager.h"
@@ -43,7 +42,7 @@ FORWARD_DECLARE_TEST(IOSChromeMetricsServiceClientTest,
 namespace base {
 class HistogramSamples;
 class PrefService;
-}
+}  // namespace base
 
 namespace metrics {
 
@@ -61,6 +60,10 @@ class MetricsService : public base::HistogramFlattener {
   MetricsService(MetricsStateManager* state_manager,
                  MetricsServiceClient* client,
                  PrefService* local_state);
+
+  MetricsService(const MetricsService&) = delete;
+  MetricsService& operator=(const MetricsService&) = delete;
+
   ~MetricsService() override;
 
   // Initializes metrics recording state. Updates various bookkeeping values in
@@ -96,9 +99,6 @@ class MetricsService : public base::HistogramFlattener {
   // Returns the client ID for this client, or the empty string if metrics
   // recording is not currently running.
   std::string GetClientId() const;
-
-  // Returns the install date of the application, in seconds since the epoch.
-  int64_t GetInstallDate();
 
   // Returns the date at which the current metrics client ID was created as
   // an int64_t containing seconds since the epoch.
@@ -159,6 +159,54 @@ class MetricsService : public base::HistogramFlattener {
   // Clears the stability metrics that are saved in local state.
   void ClearSavedStabilityMetrics();
 
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+  // Binds a user log store to store unsent logs. This log store will be
+  // fully managed by MetricsLogStore. This will no-op if another log store has
+  // already been set.
+  //
+  // If this is called before initial logs are recorded, then histograms
+  // recorded before user log store is set will be included with user histograms
+  // when initial logs are recorded.
+  //
+  // If this is called after initial logs are recorded, then this will flush all
+  // logs recorded before swapping to |user_log_store|.
+  void SetUserLogStore(std::unique_ptr<UnsentLogStore> user_log_store);
+
+  // Unbinds the user log store. If there was no user log store, then this does
+  // nothing.
+  //
+  // If this is called before initial logs are recorded, then histograms and the
+  // current log will be discarded.
+  //
+  // If called after initial logs are recorded, then this will flush all logs
+  // before the user log store is unset.
+  void UnsetUserLogStore();
+
+  // Returns true if a user log store has been bound.
+  bool HasUserLogStore();
+
+  // Initializes per-user metrics collection. Logs recorded during a user
+  // session will be stored within each user's directory and consent to send
+  // these logs will be controlled by each user. Logs recorded before any user
+  // logs in or during guest sessions (given device owner has consented) will be
+  // stored in local_state.
+  //
+  // This is in its own function because the MetricsService is created very
+  // early on and a user metrics service may have dependencies on services that
+  // are created happen after MetricsService is initialized.
+  void InitPerUserMetrics();
+
+  // Updates the current user metrics consent. No-ops if no user has logged in.
+  void UpdateCurrentUserMetricsConsent(bool user_metrics_consent);
+
+  // Forces the client ID to be reset and generates a new client ID. This will
+  // be called when a user re-consents to metrics collection and the user had
+  // consented in the past.
+  //
+  // This is to preserve the pseudo-anonymous identifier <client_id, user_id>.
+  void ResetClientId();
+#endif  // BUILDFLAG(IS_CHROMEOS_ASH)
+
   variations::SyntheticTrialRegistry* synthetic_trial_registry() {
     return &synthetic_trial_registry_;
   }
@@ -198,7 +246,7 @@ class MetricsService : public base::HistogramFlattener {
     INITIALIZED,          // InitializeMetricsRecordingState() was called.
     INIT_TASK_SCHEDULED,  // Waiting for deferred init tasks to finish.
     INIT_TASK_DONE,       // Waiting for timer to send initial log.
-    SENDING_LOGS,         // Sending logs and creating new ones when we run out.
+    SENDING_LOGS,         // Sending logs an creating new ones when we run out.
   };
 
   State state() const { return state_; }
@@ -210,7 +258,7 @@ class MetricsService : public base::HistogramFlattener {
   enum RecordingState {
     INACTIVE,
     ACTIVE,
-    UNSET
+    UNSET,
   };
 
   // Gets the LogStore for UMA logs.
@@ -259,7 +307,8 @@ class MetricsService : public base::HistogramFlattener {
   void CloseCurrentLog();
 
   // Pushes the text of the current and staged logs into persistent storage.
-  bool PushPendingLogsToPersistentStorage();
+  // Called when Chrome shuts down.
+  void PushPendingLogsToPersistentStorage();
 
   // Ensures that scheduler is running, assuming the current settings are such
   // that metrics should be reported. If not, this is a no-op.
@@ -279,6 +328,14 @@ class MetricsService : public base::HistogramFlattener {
   // to validate the version number recovered from the system profile.  Returns
   // true if a log was created.
   bool PrepareInitialStabilityLog(const std::string& prefs_previous_version);
+
+  // Prepares the initial metrics log, which includes startup histograms and
+  // profiler data, as well as incremental stability-related metrics.
+  void PrepareInitialMetricsLog();
+
+  // Reads, increments and then sets the specified long preference that is
+  // stored as a string.
+  void IncrementLongPrefsValue(const char* path);
 
   // Records that the browser was shut down cleanly.
   void LogCleanShutdown(bool end_completed);
@@ -353,6 +410,11 @@ class MetricsService : public base::HistogramFlattener {
   // state.
   State state_;
 
+  // The initial metrics log, used to record startup metrics (histograms and
+  // profiler data). Note that if a crash occurred in the previous session, an
+  // initial stability log may be sent before this.
+  std::unique_ptr<MetricsLog> initial_metrics_log_;
+
   // Whether the MetricsService object has received any notifications since
   // the last time a transmission was sent.
   bool idle_since_last_transmission_;
@@ -391,8 +453,6 @@ class MetricsService : public base::HistogramFlattener {
   // Weak pointers factory used to post task on different threads. All weak
   // pointers managed by this factory have the same lifetime as MetricsService.
   base::WeakPtrFactory<MetricsService> self_ptr_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(MetricsService);
 };
 
 }  // namespace metrics

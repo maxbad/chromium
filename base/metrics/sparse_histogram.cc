@@ -32,7 +32,7 @@ HistogramBase* SparseHistogram::FactoryGet(const std::string& name,
     // TODO(gayane): |HashMetricName| is called again in Histogram constructor.
     // Refactor code to avoid the additional call.
     bool should_record =
-        StatisticsRecorder::ShouldRecordHistogram(HashMetricName(name));
+        StatisticsRecorder::ShouldRecordHistogram(HashMetricNameAs32Bits(name));
     if (!should_record)
       return DummyHistogram::GetInstance();
     // Try to create the histogram using a "persistent" allocator. As of
@@ -120,7 +120,7 @@ void SparseHistogram::AddCount(Sample value, int count) {
   }
 
   if (UNLIKELY(StatisticsRecorder::have_active_callbacks()))
-    FindAndRunCallback(value);
+    FindAndRunCallbacks(value);
 }
 
 std::unique_ptr<HistogramSamples> SparseHistogram::SnapshotSamples() const {
@@ -165,7 +165,7 @@ bool SparseHistogram::AddSamplesFromPickle(PickleIterator* iter) {
   return unlogged_samples_->AddFromPickle(iter);
 }
 
-base::DictionaryValue SparseHistogram::ToGraphDict() const {
+base::Value SparseHistogram::ToGraphDict() const {
   std::unique_ptr<HistogramSamples> snapshot = SnapshotSamples();
   return snapshot->ToGraphDict(histogram_name(), flags());
 }
@@ -214,10 +214,12 @@ HistogramBase* SparseHistogram::DeserializeInfoImpl(PickleIterator* iter) {
   return SparseHistogram::FactoryGet(histogram_name, flags);
 }
 
-void SparseHistogram::GetParameters(DictionaryValue* params) const {
+Value SparseHistogram::GetParameters() const {
   // Unlike Histogram::GetParameters, only set the type here, and no other
   // params. The other params do not make sense for sparse histograms.
-  params->SetString("type", HistogramTypeToString(GetHistogramType()));
+  Value params(Value::Type::DICTIONARY);
+  params.SetStringKey("type", HistogramTypeToString(GetHistogramType()));
+  return params;
 }
 
 }  // namespace base

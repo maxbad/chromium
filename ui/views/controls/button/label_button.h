@@ -11,7 +11,6 @@
 #include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
-#include "base/macros.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/gfx/image/image_skia.h"
@@ -51,6 +50,7 @@ class VIEWS_EXPORT LabelButton : public Button, public NativeThemeDelegate {
   // TODO(http://crbug.com/1100034) prefer SetImageModel over SetImage().
   void SetImage(ButtonState for_state, const gfx::ImageSkia& image);
   void SetImageModel(ButtonState for_state, const ui::ImageModel& image_model);
+  bool HasImage(ButtonState for_state) const;
 
   // Gets or sets the text shown on the button.
   const std::u16string& GetText() const;

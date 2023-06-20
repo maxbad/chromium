@@ -229,7 +229,8 @@ TEST(TokenizeTest, RegexWithZeroLength) {
 }
 
 TEST(TokenizeTest, RegexWithInvalidChar) {
-  RunTokenizeTest("(ßar)", absl::InvalidArgumentError("Invalid character"));
+  RunTokenizeTest("(ßar)",
+                  absl::InvalidArgumentError("Invalid non-ASCII character"));
 }
 
 TEST(TokenizeTest, RegexWithoutClosingParen) {
@@ -287,9 +288,10 @@ TEST(TokenizeTest, RegexWithTrailingEscapedChar) {
 }
 
 TEST(TokenizeTest, RegexWithEscapedInvalidChar) {
-  // Use a single byte invalid character since the escape only applies to the
-  // next byte character.
-  RunTokenizeTest("(\\\xff)", absl::InvalidArgumentError("Invalid character"));
+  // Use a valid UTF-8 sequence (encoding of U+00A2) that encodes a non-ASCII
+  // character.
+  RunTokenizeTest("(\\\xc2\xa2)",
+                  absl::InvalidArgumentError("Invalid non-ASCII character"));
 }
 
 TEST(TokenizeTest, RegexWithLeadingQuestion) {
@@ -473,6 +475,38 @@ TEST(TokenizeTest, LenientPolicyRegexWithCaptureGroup) {
       Token(TokenType::kEnd, 10, absl::string_view()),
   };
   RunTokenizeTest("(foo(bar))", expected_tokens, TokenizePolicy::kLenient);
+}
+
+TEST(TokenizeTest, InvalidUtf8) {
+  RunTokenizeTest("hello\xcdworld", absl::InvalidArgumentError(
+                                        "Invalid UTF-8 codepoint at index 5."));
+}
+
+TEST(TokenizeTest, InvalidUtf8Escaped) {
+  RunTokenizeTest(
+      "hello\\\xcdworld",
+      absl::InvalidArgumentError("Invalid UTF-8 codepoint at index 7."));
+}
+
+TEST(TokenizeTest, InvalidUtf8InName) {
+  RunTokenizeTest(
+      "/:foo:hello\xcdworld",
+      absl::InvalidArgumentError("Invalid UTF-8 codepoint at index 11."));
+}
+
+TEST(TokenizeTest, InvalidUtf8InRegexGroup) {
+  RunTokenizeTest("(foo\xcd)", absl::InvalidArgumentError(
+                                   "Invalid UTF-8 codepoint at index 4."));
+}
+
+TEST(TokenizeTest, InvalidUtf8EscapedInRegexGroup) {
+  RunTokenizeTest("(foo\\\xcd)", absl::InvalidArgumentError(
+                                     "Invalid UTF-8 codepoint at index 6."));
+}
+
+TEST(TokenizeTest, InvalidUtf8InNestedRegexGroup) {
+  RunTokenizeTest("(foo(\xcd))", absl::InvalidArgumentError(
+                                     "Invalid UTF-8 codepoint at index 6."));
 }
 
 }  // namespace liburlpattern

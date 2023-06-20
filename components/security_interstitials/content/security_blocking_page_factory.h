@@ -7,11 +7,11 @@
 
 #include <memory>
 
-#include "base/macros.h"
 #include "build/build_config.h"
 #include "components/security_interstitials/content/bad_clock_blocking_page.h"
 #include "components/security_interstitials/content/blocked_interception_blocking_page.h"
 #include "components/security_interstitials/content/captive_portal_blocking_page.h"
+#include "components/security_interstitials/content/https_only_mode_blocking_page.h"
 #include "components/security_interstitials/content/insecure_form_blocking_page.h"
 #include "components/security_interstitials/content/legacy_tls_blocking_page.h"
 #include "components/security_interstitials/content/mitm_software_blocking_page.h"
@@ -23,6 +23,11 @@
 class SecurityBlockingPageFactory {
  public:
   SecurityBlockingPageFactory() = default;
+
+  SecurityBlockingPageFactory(const SecurityBlockingPageFactory&) = delete;
+  SecurityBlockingPageFactory& operator=(const SecurityBlockingPageFactory&) =
+      delete;
+
   virtual ~SecurityBlockingPageFactory() = default;
 
   // Creates an SSL blocking page. |options_mask| must be a bitwise mask of
@@ -88,8 +93,9 @@ class SecurityBlockingPageFactory {
   CreateInsecureFormBlockingPage(content::WebContents* web_contents,
                                  const GURL& request_url) = 0;
 
- private:
-  DISALLOW_COPY_AND_ASSIGN(SecurityBlockingPageFactory);
+  virtual std::unique_ptr<security_interstitials::HttpsOnlyModeBlockingPage>
+  CreateHttpsOnlyModeBlockingPage(content::WebContents* web_contents,
+                                  const GURL& request_url) = 0;
 };
 
 #endif  // COMPONENTS_SECURITY_INTERSTITIALS_CONTENT_SECURITY_BLOCKING_PAGE_FACTORY_H_

@@ -9,8 +9,8 @@
 #include <queue>
 #include <string>
 
-#include "base/macros.h"
 #include "components/arc/mojom/screen_capture.mojom.h"
+#include "components/viz/common/gpu/context_lost_observer.h"
 #include "gpu/command_buffer/client/gl_helper.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/receiver.h"
@@ -39,7 +39,8 @@ class CopyOutputResult;
 namespace arc {
 
 class ArcScreenCaptureSession : public mojom::ScreenCaptureSession,
-                                public ui::CompositorAnimationObserver {
+                                public ui::CompositorAnimationObserver,
+                                public viz::ContextLostObserver {
  public:
   // Creates a new ScreenCaptureSession and returns the remote for passing back
   // across a Mojo pipe. This object will be automatically destructed when the
@@ -51,6 +52,9 @@ class ArcScreenCaptureSession : public mojom::ScreenCaptureSession,
       const gfx::Size& size,
       bool enable_notification);
 
+  ArcScreenCaptureSession(const ArcScreenCaptureSession&) = delete;
+  ArcScreenCaptureSession& operator=(const ArcScreenCaptureSession&) = delete;
+
   // Implements mojo::ScreenCaptureSession interface.
   void SetOutputBuffer(mojo::ScopedHandle graphics_buffer,
                        uint32_t stride,
@@ -59,6 +63,9 @@ class ArcScreenCaptureSession : public mojom::ScreenCaptureSession,
   // Implements ui::CompositorAnimationObserver.
   void OnAnimationStep(base::TimeTicks timestamp) override;
   void OnCompositingShuttingDown(ui::Compositor* compositor) override;
+
+  // Implements viz::ContextLostObserver
+  void OnContextLost() override;
 
  private:
   struct DesktopTexture;
@@ -111,8 +118,6 @@ class ArcScreenCaptureSession : public mojom::ScreenCaptureSession,
   std::unique_ptr<gfx::ClientNativePixmapFactory> client_native_pixmap_factory_;
 
   base::WeakPtrFactory<ArcScreenCaptureSession> weak_ptr_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(ArcScreenCaptureSession);
 };
 
 }  // namespace arc

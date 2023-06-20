@@ -26,14 +26,15 @@ using ::testing::_;
 class FakeFidoDiscoveryTest : public ::testing::Test {
  public:
   FakeFidoDiscoveryTest() = default;
+
+  FakeFidoDiscoveryTest(const FakeFidoDiscoveryTest&) = delete;
+  FakeFidoDiscoveryTest& operator=(const FakeFidoDiscoveryTest&) = delete;
+
   ~FakeFidoDiscoveryTest() override = default;
 
  protected:
   FakeFidoDiscoveryFactory fake_fido_discovery_factory_;
   base::test::TaskEnvironment task_environment_;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(FakeFidoDiscoveryTest);
 };
 
 using FakeFidoDiscoveryFactoryTest = FakeFidoDiscoveryTest;
@@ -65,8 +66,7 @@ TEST_F(FakeFidoDiscoveryTest, StartDiscovery) {
 
   EXPECT_CALL(observer, DiscoveryStarted(&discovery, true,
                                          std::vector<FidoAuthenticator*>()));
-  discovery.WaitForCallToStart();
-  discovery.SimulateStarted(true);
+  discovery.WaitForCallToStartAndSimulateSuccess();
   ASSERT_TRUE(discovery.is_running());
   ASSERT_TRUE(discovery.is_start_requested());
 }

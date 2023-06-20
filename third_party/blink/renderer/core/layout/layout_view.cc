@@ -25,9 +25,9 @@
 
 #include "build/build_config.h"
 #include "third_party/blink/public/common/features.h"
-#include "third_party/blink/public/common/widget/screen_info.h"
 #include "third_party/blink/public/mojom/scroll/scrollbar_mode.mojom-blink.h"
 #include "third_party/blink/public/platform/platform.h"
+#include "third_party/blink/renderer/core/css/style_engine.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/element.h"
 #include "third_party/blink/renderer/core/editing/frame_selection.h"
@@ -38,6 +38,7 @@
 #include "third_party/blink/renderer/core/html/html_iframe_element.h"
 #include "third_party/blink/renderer/core/html/plugin_document.h"
 #include "third_party/blink/renderer/core/input/event_handler.h"
+#include "third_party/blink/renderer/core/inspector/inspector_trace_events.h"
 #include "third_party/blink/renderer/core/layout/geometry/transform_state.h"
 #include "third_party/blink/renderer/core/layout/hit_test_result.h"
 #include "third_party/blink/renderer/core/layout/layout_counter.h"
@@ -61,6 +62,7 @@
 #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/traced_value.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
+#include "ui/display/screen_info.h"
 
 #if defined(OS_LINUX) || defined(OS_CHROMEOS)
 #include "third_party/blink/renderer/platform/fonts/font_cache.h"
@@ -102,7 +104,7 @@ LayoutView::LayoutView(Document* document)
       layout_state_(nullptr),
       compositor_(RuntimeEnabledFeatures::CompositeAfterPaintEnabled()
                       ? nullptr
-                      : std::make_unique<PaintLayerCompositor>(*this)),
+                      : MakeGarbageCollected<PaintLayerCompositor>(*this)),
       layout_quote_head_(nullptr),
       layout_counter_count_(0),
       hit_test_count_(0),
@@ -127,6 +129,15 @@ LayoutView::LayoutView(Document* document)
 
 LayoutView::~LayoutView() = default;
 
+void LayoutView::Trace(Visitor* visitor) const {
+  visitor->Trace(frame_view_);
+  visitor->Trace(fragmentation_context_);
+  visitor->Trace(compositor_);
+  visitor->Trace(layout_quote_head_);
+  visitor->Trace(hit_test_cache_);
+  LayoutBlockFlow::Trace(visitor);
+}
+
 bool LayoutView::HitTest(const HitTestLocation& location,
                          HitTestResult& result) {
   NOT_DESTROYED();
@@ -141,6 +152,12 @@ bool LayoutView::HitTest(const HitTestLocation& location,
   if (!GetFrameView()->UpdateLifecycleToPrePaintClean(
           DocumentUpdateReason::kHitTest))
     return false;
+
+  // This means the LayoutView is not updated for PrePaint above, probably
+  // because the frame is detached.
+  if (!FirstFragment().HasLocalBorderBoxProperties())
+    return false;
+
   HitTestLatencyRecorder hit_test_latency_recorder(
       result.GetHitTestRequest().AllowsChildFrameContent());
   return HitTestNoLifecycleUpdate(location, result);
@@ -334,11 +351,11 @@ void LayoutView::UpdateLayout() {
     intrinsic_logical_widths_ = LogicalWidth();
     if (!fragmentation_context_) {
       fragmentation_context_ =
-          std::make_unique<ViewFragmentationContext>(*this);
+          MakeGarbageCollected<ViewFragmentationContext>(*this);
       pagination_state_changed_ = true;
     }
   } else if (fragmentation_context_) {
-    fragmentation_context_.reset();
+    fragmentation_context_.Clear();
     pagination_state_changed_ = true;
   }
 
@@ -571,7 +588,7 @@ PhysicalOffset LayoutView::OffsetForFixedPosition() const {
 
 PhysicalOffset LayoutView::PixelSnappedOffsetForFixedPosition() const {
   NOT_DESTROYED();
-  return PhysicalOffset(FlooredIntPoint(OffsetForFixedPosition()));
+  return PhysicalOffset(ToFlooredPoint(OffsetForFixedPosition()));
 }
 
 void LayoutView::AbsoluteQuads(Vector<FloatQuad>& quads,
@@ -823,7 +840,7 @@ void LayoutView::UpdateHitTestResult(HitTestResult& result,
 
 PaintLayerCompositor* LayoutView::Compositor() {
   NOT_DESTROYED();
-  return compositor_.get();
+  return compositor_;
 }
 
 void LayoutView::CleanUpCompositor() {
@@ -859,7 +876,7 @@ void LayoutView::WillBeDestroyed() {
   if (PaintLayer* layer = Layer())
     layer->SetNeedsRepaint();
   LayoutBlockFlow::WillBeDestroyed();
-  compositor_.reset();
+  compositor_.Clear();
 }
 
 void LayoutView::UpdateFromStyle() {

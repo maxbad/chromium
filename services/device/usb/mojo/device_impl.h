@@ -37,6 +37,9 @@ class DeviceImpl : public mojom::UsbDevice, public device::UsbDevice::Observer {
                      base::span<const uint8_t> blocked_interface_classes,
                      bool allow_security_key_requests);
 
+  DeviceImpl(const DeviceImpl&) = delete;
+  DeviceImpl& operator=(const DeviceImpl&) = delete;
+
   ~DeviceImpl() override;
 
  private:
@@ -82,7 +85,7 @@ class DeviceImpl : public mojom::UsbDevice, public device::UsbDevice::Observer {
                          uint32_t timeout,
                          ControlTransferInCallback callback) override;
   void ControlTransferOut(mojom::UsbControlTransferParamsPtr params,
-                          const std::vector<uint8_t>& data,
+                          base::span<const uint8_t> data,
                           uint32_t timeout,
                           ControlTransferOutCallback callback) override;
   void GenericTransferIn(uint8_t endpoint_number,
@@ -98,7 +101,7 @@ class DeviceImpl : public mojom::UsbDevice, public device::UsbDevice::Observer {
                              uint32_t timeout,
                              IsochronousTransferInCallback callback) override;
   void IsochronousTransferOut(uint8_t endpoint_number,
-                              const std::vector<uint8_t>& data,
+                              base::span<const uint8_t> data,
                               const std::vector<uint32_t>& packet_lengths,
                               uint32_t timeout,
                               IsochronousTransferOutCallback callback) override;
@@ -124,8 +127,6 @@ class DeviceImpl : public mojom::UsbDevice, public device::UsbDevice::Observer {
   mojo::SelfOwnedReceiverRef<mojom::UsbDevice> receiver_;
   mojo::Remote<device::mojom::UsbDeviceClient> client_;
   base::WeakPtrFactory<DeviceImpl> weak_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(DeviceImpl);
 };
 
 }  // namespace usb

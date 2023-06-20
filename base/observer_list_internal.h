@@ -5,6 +5,8 @@
 #ifndef BASE_OBSERVER_LIST_INTERNAL_H_
 #define BASE_OBSERVER_LIST_INTERNAL_H_
 
+#include <string>
+
 #include "base/base_export.h"
 #include "base/check_op.h"
 #include "base/containers/linked_list.h"
@@ -42,15 +44,15 @@ class BASE_EXPORT UncheckedObserverAdapter {
     return static_cast<ObserverType*>(adapter.ptr_);
   }
 
-#if DCHECK_IS_ON()
+#if EXPENSIVE_DCHECKS_ARE_ON()
   std::string GetCreationStackString() const { return stack_.ToString(); }
-#endif
+#endif  // EXPENSIVE_DCHECKS_ARE_ON()
 
  private:
   void* ptr_;
-#if DCHECK_IS_ON()
+#if EXPENSIVE_DCHECKS_ARE_ON()
   base::debug::StackTrace stack_;
-#endif
+#endif  // EXPENSIVE_DCHECKS_ARE_ON()
 };
 
 // Adapter for CheckedObserver types so that they can use the same syntax as a

@@ -32,6 +32,7 @@
 #define THIRD_PARTY_BLINK_PUBLIC_PLATFORM_PLATFORM_H_
 
 #include <memory>
+#include <string>
 #include <tuple>
 #include <vector>
 
@@ -44,7 +45,6 @@
 #include "media/base/audio_latency.h"
 #include "media/base/audio_renderer_sink.h"
 #include "media/base/media_log.h"
-#include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/blink/public/common/security/protocol_handler_security_level.h"
 #include "third_party/blink/public/common/user_agent/user_agent_metadata.h"
@@ -61,11 +61,10 @@
 #include "third_party/blink/public/platform/web_data.h"
 #include "third_party/blink/public/platform/web_dedicated_worker_host_factory_client.h"
 #include "third_party/blink/public/platform/web_string.h"
-#include "third_party/blink/public/platform/web_url_loader_factory.h"
 #include "third_party/blink/public/platform/web_v8_value_converter.h"
 #include "third_party/blink/public/platform/websocket_handshake_throttle_provider.h"
 #include "third_party/webrtc/api/video/video_codec_type.h"
-#include "ui/base/resource/scale_factor.h"
+#include "ui/base/resource/resource_scale_factor.h"
 
 class SkCanvas;
 class SkBitmap;
@@ -102,8 +101,10 @@ class BigBuffer;
 
 namespace network {
 namespace mojom {
+class URLLoaderFactory;
 class URLLoaderFactoryInterfaceBase;
 }
+class PendingSharedURLLoaderFactory;
 class SharedURLLoaderFactory;
 }
 
@@ -142,6 +143,7 @@ class WebResourceRequestSenderDelegate;
 class WebSandboxSupport;
 class WebSecurityOrigin;
 class WebThemeEngine;
+class WebURLLoaderFactory;
 class WebVideoCaptureImplManager;
 struct WebContentSecurityPolicyHeader;
 
@@ -292,9 +294,7 @@ class BLINK_PLATFORM_EXPORT Platform {
   // network::mojom::URLLoaderFactory.
   virtual std::unique_ptr<WebURLLoaderFactory> WrapURLLoaderFactory(
       CrossVariantMojoRemote<network::mojom::URLLoaderFactoryInterfaceBase>
-          url_loader_factory) {
-    return nullptr;
-  }
+          url_loader_factory);
 
   // Returns a new WebURLLoaderFactory that wraps the given
   // network::SharedURLLoaderFactory.
@@ -304,6 +304,7 @@ class BLINK_PLATFORM_EXPORT Platform {
 
   // Returns the User-Agent string.
   virtual WebString UserAgent() { return WebString(); }
+  virtual WebString ReducedUserAgent() { return WebString(); }
 
   // Returns the User Agent metadata. This will replace `UserAgent()` if we
   // end up shipping https://github.com/WICG/ua-client-hints.
@@ -441,7 +442,7 @@ class BLINK_PLATFORM_EXPORT Platform {
   // used for resources which have compress="gzip" in *.grd.
   virtual WebData GetDataResource(
       int resource_id,
-      ui::ScaleFactor scale_factor = ui::SCALE_FACTOR_NONE) {
+      ui::ResourceScaleFactor scale_factor = ui::kScaleFactorNone) {
     return WebData();
   }
 
@@ -601,7 +602,7 @@ class BLINK_PLATFORM_EXPORT Platform {
   // Whether zoom for dsf is enabled. When true, inputs to blink would all be
   // scaled by the device scale factor so that layout is done in device pixel
   // space.
-  virtual bool IsUseZoomForDSFEnabled() { return false; }
+  virtual bool IsUseZoomForDSFEnabled() { return true; }
 
   // Whether LCD text is enabled.
   virtual bool IsLcdTextEnabled() { return false; }
@@ -666,10 +667,6 @@ class BLINK_PLATFORM_EXPORT Platform {
     return media::AudioLatency::LATENCY_PLAYBACK;
   }
 
-  virtual absl::optional<std::string> GetWebRTCAudioProcessingConfiguration() {
-    return absl::nullopt;
-  }
-
   virtual bool ShouldEnforceWebRTCRoutingPreferences() { return true; }
 
   virtual media::MediaPermission* GetWebRTCMediaPermission(
@@ -696,10 +693,6 @@ class BLINK_PLATFORM_EXPORT Platform {
                                             uint16_t* udp_min_port,
                                             uint16_t* udp_max_port,
                                             bool* allow_mdns_obfuscation) {}
-
-  virtual absl::optional<int> GetAgcStartupMinimumVolume() {
-    return absl::nullopt;
-  }
 
   virtual bool IsWebRtcHWH264DecodingEnabled(
       webrtc::VideoCodecType video_coded_type) {
@@ -734,10 +727,6 @@ class BLINK_PLATFORM_EXPORT Platform {
   }
   virtual ProtocolHandlerSecurityLevel GetProtocolHandlerSecurityLevel() {
     return ProtocolHandlerSecurityLevel::kStrict;
-  }
-  virtual bool IsExcludedHeaderForServiceWorkerFetchEvent(
-      const WebString& header_name) {
-    return false;
   }
 
   // Returns true if the origin can register a service worker. Scheme must be
@@ -777,7 +766,7 @@ class BLINK_PLATFORM_EXPORT Platform {
           worker_timing_callback_task_runner,
       base::RepeatingCallback<
           void(int, mojo::PendingReceiver<blink::mojom::WorkerTimingContainer>)>
-          worker_timing_callback) {}
+          worker_timing_callback);
 
   // WebCrypto ----------------------------------------------------------
 
@@ -840,6 +829,14 @@ class BLINK_PLATFORM_EXPORT Platform {
   // Renderer Memory Metrics ----------------------------------------------
 
   virtual void RecordMetricsForBackgroundedRendererPurge() {}
+
+  // V8 Metrics -----------------------------------------------------------
+
+  // Called when adding a histogram entry. Allows customizing the name the
+  // histogram is logged as.
+  virtual std::string GetNameForHistogram(const char* name) {
+    return std::string{name};
+  }
 
   // V8 Context Snapshot --------------------------------------------------
 

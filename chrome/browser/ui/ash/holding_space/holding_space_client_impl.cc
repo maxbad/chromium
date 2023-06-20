@@ -9,15 +9,16 @@
 #include "ash/public/cpp/holding_space/holding_space_constants.h"
 #include "ash/public/cpp/holding_space/holding_space_item.h"
 #include "ash/public/cpp/holding_space/holding_space_metrics.h"
+#include "ash/public/cpp/holding_space/holding_space_progress.h"
 #include "base/barrier_closure.h"
 #include "base/bind.h"
 #include "base/notreached.h"
 #include "base/task/task_traits.h"
 #include "base/task/thread_pool.h"
-#include "chrome/browser/chromeos/file_manager/app_id.h"
-#include "chrome/browser/chromeos/file_manager/fileapi_util.h"
-#include "chrome/browser/chromeos/file_manager/open_util.h"
-#include "chrome/browser/chromeos/file_manager/path_util.h"
+#include "chrome/browser/ash/file_manager/app_id.h"
+#include "chrome/browser/ash/file_manager/fileapi_util.h"
+#include "chrome/browser/ash/file_manager/open_util.h"
+#include "chrome/browser/ash/file_manager/path_util.h"
 #include "chrome/browser/ui/ash/clipboard_util.h"
 #include "chrome/browser/ui/ash/holding_space/holding_space_keyed_service.h"
 #include "chrome/browser/ui/ash/holding_space/holding_space_keyed_service_factory.h"
@@ -121,7 +122,7 @@ void HoldingSpaceClientImpl::CopyImageToClipboard(const HoldingSpaceItem& item,
 base::FilePath HoldingSpaceClientImpl::CrackFileSystemUrl(
     const GURL& file_system_url) const {
   return file_manager::util::GetFileManagerFileSystemContext(profile_)
-      ->CrackURL(file_system_url)
+      ->CrackURLInFirstPartyContext(file_system_url)
       .path();
 }
 
@@ -170,7 +171,18 @@ void HoldingSpaceClientImpl::OpenItems(
                                                        item->file_path());
       *complete_success_ptr = false;
       barrier_closure.Run();
-      return;
+      continue;
+    }
+    if (!item->progress().IsComplete()) {
+      const bool success =
+          GetHoldingSpaceKeyedService(profile_)->OpenItemWhenComplete(item);
+      if (!success) {
+        holding_space_metrics::RecordItemFailureToLaunch(item->type(),
+                                                         item->file_path());
+      }
+      *complete_success_ptr &= success;
+      barrier_closure.Run();
+      continue;
     }
     GetFileInfo(
         profile_, item->file_path(),
@@ -241,9 +253,11 @@ void HoldingSpaceClientImpl::PinFiles(
 
   HoldingSpaceKeyedService* service = GetHoldingSpaceKeyedService(profile_);
   for (const base::FilePath& file_path : file_paths) {
+    const GURL crack_url =
+        holding_space_util::ResolveFileSystemUrl(profile_, file_path);
     const storage::FileSystemURL& file_system_url =
-        file_manager::util::GetFileManagerFileSystemContext(profile_)->CrackURL(
-            holding_space_util::ResolveFileSystemUrl(profile_, file_path));
+        file_manager::util::GetFileManagerFileSystemContext(profile_)
+            ->CrackURLInFirstPartyContext(crack_url);
     if (!service->ContainsPinnedFile(file_system_url))
       file_system_urls.push_back(file_system_url);
   }
@@ -256,11 +270,15 @@ void HoldingSpaceClientImpl::PinItems(
     const std::vector<const HoldingSpaceItem*>& items) {
   std::vector<storage::FileSystemURL> file_system_urls;
 
+  // NOTE: In-progress holding space items are neither pin- nor unpin-able.
   HoldingSpaceKeyedService* service = GetHoldingSpaceKeyedService(profile_);
   for (const HoldingSpaceItem* item : items) {
+    if (!item->progress().IsComplete())
+      continue;
+    const GURL& crack_url = item->file_system_url();
     const storage::FileSystemURL& file_system_url =
-        file_manager::util::GetFileManagerFileSystemContext(profile_)->CrackURL(
-            item->file_system_url());
+        file_manager::util::GetFileManagerFileSystemContext(profile_)
+            ->CrackURLInFirstPartyContext(crack_url);
     if (!service->ContainsPinnedFile(file_system_url))
       file_system_urls.push_back(file_system_url);
   }
@@ -301,11 +319,15 @@ void HoldingSpaceClientImpl::UnpinItems(
     const std::vector<const HoldingSpaceItem*>& items) {
   std::vector<storage::FileSystemURL> file_system_urls;
 
+  // NOTE: In-progress holding space items are neither pin- nor unpin-able.
   HoldingSpaceKeyedService* service = GetHoldingSpaceKeyedService(profile_);
   for (const HoldingSpaceItem* item : items) {
+    if (!item->progress().IsComplete())
+      continue;
+    const GURL& crack_url = item->file_system_url();
     const storage::FileSystemURL& file_system_url =
-        file_manager::util::GetFileManagerFileSystemContext(profile_)->CrackURL(
-            item->file_system_url());
+        file_manager::util::GetFileManagerFileSystemContext(profile_)
+            ->CrackURLInFirstPartyContext(crack_url);
     if (service->ContainsPinnedFile(file_system_url))
       file_system_urls.push_back(file_system_url);
   }

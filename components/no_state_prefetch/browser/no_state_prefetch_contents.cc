@@ -17,8 +17,8 @@
 #include "build/build_config.h"
 #include "components/no_state_prefetch/browser/no_state_prefetch_contents_delegate.h"
 #include "components/no_state_prefetch/browser/no_state_prefetch_manager.h"
+#include "components/no_state_prefetch/common/no_state_prefetch_final_status.h"
 #include "components/no_state_prefetch/common/no_state_prefetch_utils.h"
-#include "components/no_state_prefetch/common/prerender_final_status.h"
 #include "components/no_state_prefetch/common/render_frame_prerender_messages.mojom.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_task_traits.h"
@@ -84,7 +84,8 @@ class NoStatePrefetchContents::WebContentsDelegateImpl
     return NULL;
   }
 
-  bool ShouldTransferNavigation(bool is_main_frame_navigation) override {
+  bool ShouldAllowRendererInitiatedCrossProcessNavigation(
+      bool is_main_frame_navigation) override {
     // Cancel the prerender if the navigation attempts to transfer to a
     // different process.  Examples include server redirects to privileged pages
     // or cross-site subframe navigations in --site-per-process.
@@ -323,7 +324,7 @@ bool NoStatePrefetchContents::Matches(
   return base::Contains(alias_urls_, url);
 }
 
-void NoStatePrefetchContents::RenderProcessGone(
+void NoStatePrefetchContents::PrimaryMainFrameRenderProcessGone(
     base::TerminationStatus status) {
   if (status == base::TERMINATION_STATUS_STILL_RUNNING) {
     // The renderer process is being killed because of the browser/test
@@ -353,7 +354,10 @@ void NoStatePrefetchContents::DidStopLoading() {
 
 void NoStatePrefetchContents::DidStartNavigation(
     content::NavigationHandle* navigation_handle) {
-  if (!navigation_handle->IsInMainFrame() ||
+  // TODO(https://crbug.com/1218946): With MPArch there may be multiple main
+  // frames. This caller was converted automatically to the primary main frame
+  // to preserve its semantics. Follow up to confirm correctness.
+  if (!navigation_handle->IsInPrimaryMainFrame() ||
       navigation_handle->IsSameDocument()) {
     return;
   }
@@ -371,7 +375,10 @@ void NoStatePrefetchContents::DidStartNavigation(
 
 void NoStatePrefetchContents::DidRedirectNavigation(
     content::NavigationHandle* navigation_handle) {
-  if (!navigation_handle->IsInMainFrame())
+  // TODO(https://crbug.com/1218946): With MPArch there may be multiple main
+  // frames. This caller was converted automatically to the primary main frame
+  // to preserve its semantics. Follow up to confirm correctness.
+  if (!navigation_handle->IsInPrimaryMainFrame())
     return;
 
   // If it's a redirect on the top-level resource, the name needs to be
@@ -389,7 +396,10 @@ void NoStatePrefetchContents::DidFinishLoad(
 
 void NoStatePrefetchContents::DidFinishNavigation(
     content::NavigationHandle* navigation_handle) {
-  if (!navigation_handle->IsInMainFrame() ||
+  // TODO(https://crbug.com/1218946): With MPArch there may be multiple main
+  // frames. This caller was converted automatically to the primary main frame
+  // to preserve its semantics. Follow up to confirm correctness.
+  if (!navigation_handle->IsInPrimaryMainFrame() ||
       !navigation_handle->HasCommitted()) {
     return;
   }

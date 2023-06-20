@@ -43,8 +43,7 @@ namespace {
 
 // Time allowed for apps to self-activate after launch, see
 // go/crostini-self-activate for details.
-constexpr base::TimeDelta kSelfActivationTimeout =
-    base::TimeDelta::FromSeconds(5);
+constexpr base::TimeDelta kSelfActivationTimeout = base::Seconds(5);
 
 void MoveWindowFromOldDisplayToNewDisplay(aura::Window* window,
                                           display::Display& old_display,
@@ -83,7 +82,7 @@ void AppServiceAppWindowCrostiniTracker::OnWindowVisibilityChanged(
   // Transient windows are set up after window init, so remove them here.
   // Crostini shouldn't need to know about ARC app windows.
   if (wm::GetTransientParent(window) ||
-      arc::GetWindowTaskId(window).has_value() ||
+      arc::GetWindowTaskOrSessionId(window).has_value() ||
       crosapi::browser_util::IsLacrosWindow(window) ||
       plugin_vm::IsPluginVmAppWindow(window)) {
     return;
@@ -203,7 +202,7 @@ std::string AppServiceAppWindowCrostiniTracker::GetShelfAppId(
   // Transient windows are set up after window init, so remove them here.
   // Crostini shouldn't need to know about ARC app windows.
   if (wm::GetTransientParent(window) ||
-      arc::GetWindowTaskId(window).has_value() ||
+      arc::GetWindowTaskOrSessionId(window).has_value() ||
       crosapi::browser_util::IsLacrosWindow(window) ||
       plugin_vm::IsPluginVmAppWindow(window)) {
     return std::string();

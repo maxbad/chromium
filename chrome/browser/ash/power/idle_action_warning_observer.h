@@ -6,11 +6,10 @@
 #define CHROME_BROWSER_ASH_POWER_IDLE_ACTION_WARNING_OBSERVER_H_
 
 #include "base/compiler_specific.h"
-#include "base/macros.h"
 #include "chromeos/dbus/power/power_manager_client.h"
 #include "ui/views/widget/widget_observer.h"
 
-namespace chromeos {
+namespace ash {
 
 class IdleActionWarningDialogView;
 
@@ -20,6 +19,11 @@ class IdleActionWarningObserver : public PowerManagerClient::Observer,
                                   public views::WidgetObserver {
  public:
   IdleActionWarningObserver();
+
+  IdleActionWarningObserver(const IdleActionWarningObserver&) = delete;
+  IdleActionWarningObserver& operator=(const IdleActionWarningObserver&) =
+      delete;
+
   ~IdleActionWarningObserver() override;
 
   // PowerManagerClient::Observer:
@@ -37,10 +41,8 @@ class IdleActionWarningObserver : public PowerManagerClient::Observer,
 
   // Used to derive the correct idle action (IdleActionAC/IdleActionBattery).
   bool on_battery_power_ = false;
-
-  DISALLOW_COPY_AND_ASSIGN(IdleActionWarningObserver);
 };
 
-}  // namespace chromeos
+}  // namespace ash
 
 #endif  // CHROME_BROWSER_ASH_POWER_IDLE_ACTION_WARNING_OBSERVER_H_

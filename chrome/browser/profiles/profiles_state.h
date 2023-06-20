@@ -46,7 +46,7 @@ void RegisterPrefs(PrefRegistrySimple* registry);
 
 // Sets the last used profile pref to |profile_dir|, unless |profile_dir| is the
 // System Profile directory, which is an invalid last used profile.
-void SetLastUsedProfile(const std::string& profile_dir);
+void SetLastUsedProfile(const base::FilePath& profile_dir);
 
 #if !defined(OS_ANDROID)
 // Returns the display name of the specified on-the-record profile (or guest),
@@ -106,12 +106,6 @@ bool IsProfileLocked(const base::FilePath& profile_path);
 // Starts an update for a new version of the Gaia profile picture and other
 // profile info.
 void UpdateGaiaProfileInfoIfNeeded(Profile* profile);
-
-// If the current active profile (given by prefs::kProfileLastUsed) is locked,
-// changes the active profile to the Guest profile. Returns true if the active
-// profile had been Guest before calling or became Guest as a result of this
-// method.
-bool SetActiveProfileToGuestIfLocked();
 #endif  // !BUILDFLAG(IS_CHROMEOS_ASH)
 
 // If the profile given by |profile_path| is loaded in the ProfileManager, use
@@ -123,6 +117,9 @@ bool IsPublicSession();
 
 // Returns whether public session restrictions are enabled.
 bool ArePublicSessionRestrictionsEnabled();
+
+// Returns whether a kiosk app is being run currently.
+bool IsKioskApp();
 
 #if !BUILDFLAG(IS_CHROMEOS_ASH)
 // Returns the default name for a new enterprise profile.

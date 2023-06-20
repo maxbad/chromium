@@ -145,7 +145,7 @@ HttpAuthController::HttpAuthController(
     HostResolver* host_resolver)
     : target_(target),
       auth_url_(auth_url),
-      auth_origin_(auth_url.GetOrigin()),
+      auth_origin_(auth_url.DeprecatedGetOriginAsURL()),
       auth_path_(auth_url.path()),
       network_isolation_key_(network_isolation_key),
       embedded_identity_used_(false),
@@ -341,7 +341,7 @@ int HttpAuthController::HandleAuthChallenge(
         // We are establishing a tunnel, we can't show the error page because an
         // active network attacker could control its contents.  Instead, we just
         // fail to establish the tunnel.
-        DCHECK(target_ == HttpAuth::AUTH_PROXY);
+        DCHECK_EQ(target_, HttpAuth::AUTH_PROXY);
         net_log_.EndEventWithNetErrorCode(
             NetLogEventType::AUTH_HANDLE_CHALLENGE, ERR_PROXY_AUTH_UNSUPPORTED);
         return ERR_PROXY_AUTH_UNSUPPORTED;

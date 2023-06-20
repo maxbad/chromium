@@ -22,7 +22,7 @@
 #include "extensions/common/permissions/api_permission.h"
 #include "extensions/common/permissions/permissions_data.h"
 
-namespace chromeos {
+namespace ash {
 
 namespace {
 // The number of milliseconds that we should wait after receiving a
@@ -227,7 +227,7 @@ void ExtensionEventObserver::OnSuspendImminent(bool dark_suspend) {
   // prevent this callback from reporting ready.
   base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
       FROM_HERE, suspend_readiness_callback_.callback(),
-      dark_suspend ? base::TimeDelta::FromMilliseconds(kDarkSuspendDelayMs)
+      dark_suspend ? base::Milliseconds(kDarkSuspendDelayMs)
                    : base::TimeDelta());
 }
 
@@ -239,4 +239,4 @@ void ExtensionEventObserver::MaybeReportSuspendReadiness() {
   block_suspend_token_ = {};
 }
 
-}  // namespace chromeos
+}  // namespace ash

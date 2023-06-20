@@ -8,7 +8,6 @@
 #include "ash/app_list/test/app_list_test_helper.h"
 #include "ash/app_list/views/app_list_view.h"
 #include "ash/app_list/views/search_box_view.h"
-#include "ash/public/cpp/ash_features.h"
 #include "ash/root_window_controller.h"
 #include "ash/shelf/shelf.h"
 #include "ash/shelf/shelf_metrics.h"
@@ -47,6 +46,12 @@ gfx::RectF GetShelfBoundsInFloat() {
 class SwipeHomeToOverviewControllerTest : public AshTestBase {
  public:
   SwipeHomeToOverviewControllerTest() = default;
+
+  SwipeHomeToOverviewControllerTest(const SwipeHomeToOverviewControllerTest&) =
+      delete;
+  SwipeHomeToOverviewControllerTest& operator=(
+      const SwipeHomeToOverviewControllerTest&) = delete;
+
   ~SwipeHomeToOverviewControllerTest() override = default;
 
   // AshTestBase:
@@ -58,7 +63,7 @@ class SwipeHomeToOverviewControllerTest : public AshTestBase {
     base::RunLoop().RunUntilIdle();
 
     // Advance tick clock by arbitrary non-zero amount.
-    tick_clock_.Advance(base::TimeDelta::FromSeconds(1000));
+    tick_clock_.Advance(base::Seconds(1000));
   }
   void TearDown() override {
     home_to_overview_controller_.reset();
@@ -113,8 +118,8 @@ class SwipeHomeToOverviewControllerTest : public AshTestBase {
 
     // Ensure there is one more frame presented after animation finishes
     // to allow animation throughput data is passed from cc to ui.
-    ignore_result(ui::WaitForNextFrameToBePresented(
-        compositor, base::TimeDelta::FromMilliseconds(200)));
+    ignore_result(
+        ui::WaitForNextFrameToBePresented(compositor, base::Milliseconds(200)));
   }
 
   void TapOnHomeLauncherSearchBox() {
@@ -139,8 +144,6 @@ class SwipeHomeToOverviewControllerTest : public AshTestBase {
 
  private:
   std::unique_ptr<SwipeHomeToOverviewController> home_to_overview_controller_;
-
-  DISALLOW_COPY_AND_ASSIGN(SwipeHomeToOverviewControllerTest);
 };
 
 // Verify that the metrics of home launcher animation are recorded correctly
@@ -177,8 +180,8 @@ TEST_F(SwipeHomeToOverviewControllerTest, VerifyHomeLauncherMetrics) {
     constexpr int steps = 12;
     int update_count = 0;
     GetEventGenerator()->GestureScrollSequenceWithCallback(
-        gesture_start_point, gesture_end_point,
-        base::TimeDelta::FromMilliseconds(100), /*steps=*/steps,
+        gesture_start_point, gesture_end_point, base::Milliseconds(100),
+        /*steps=*/steps,
         base::BindRepeating(
             [](int* update_count, ui::EventType event_type,
                const gfx::Vector2dF& delta) {
@@ -515,7 +518,7 @@ TEST_F(SwipeHomeToOverviewControllerTest, DragMovementRestartsTimeout) {
       SwipeHomeToOverviewController::kMovementVelocityThreshold;
   // Advance clock, and simulate another drag whose speed is above the max
   // allowed.
-  tick_clock_.Advance(base::TimeDelta::FromMilliseconds(1));
+  tick_clock_.Advance(base::Milliseconds(1));
   Drag(shelf_bounds.top_center() - gfx::Vector2d(0, 2 * transition_threshold),
        0.f, max_allowed_velocity + 10);
 
@@ -523,7 +526,7 @@ TEST_F(SwipeHomeToOverviewControllerTest, DragMovementRestartsTimeout) {
   EXPECT_FALSE(OverviewTransitionTimerRunning());
   EXPECT_FALSE(OverviewStarted());
 
-  tick_clock_.Advance(base::TimeDelta::FromMilliseconds(1));
+  tick_clock_.Advance(base::Milliseconds(1));
 
   // Another slow drag should restart the timer.
   Drag(shelf_bounds.top_center() - gfx::Vector2d(0, 2 * transition_threshold),
@@ -569,7 +572,7 @@ TEST_F(SwipeHomeToOverviewControllerTest,
 
   // Advance clock, and simulate another drag, for an amount below the movement
   // threshold.
-  tick_clock_.Advance(base::TimeDelta::FromMilliseconds(1));
+  tick_clock_.Advance(base::Milliseconds(1));
   Drag(shelf_bounds.top_center() -
            gfx::Vector2d(0, transition_threshold + movement_threshold - 1),
        0.f, movement_threshold / 2);
@@ -578,7 +581,7 @@ TEST_F(SwipeHomeToOverviewControllerTest,
   EXPECT_TRUE(OverviewTransitionTimerRunning());
   EXPECT_FALSE(OverviewStarted());
 
-  EXPECT_EQ(delay - base::TimeDelta::FromMilliseconds(1),
+  EXPECT_EQ(delay - base::Milliseconds(1),
             GetTimerDesiredRunTime() - tick_clock_.NowTicks());
 
   // Movement with velocity above the allowed threshold restarts the timer.

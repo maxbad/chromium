@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import {Token} from 'chrome://resources/mojo/mojo/public/mojom/base/token.mojom-webui.js';
+import {RecentlyClosedTab, Tab} from 'chrome://tab-search.top-chrome/tab_search.js';
 
 /** @type {number} */
 export const SAMPLE_WINDOW_HEIGHT = 448;
@@ -17,7 +18,7 @@ export const SAMPLE_WINDOW_DATA = [
         index: 0,
         tabId: 1,
         title: 'Google',
-        url: 'https://www.google.com',
+        url: {url: 'https://www.google.com'},
         lastActiveTimeTicks: {internalValue: BigInt(5)},
         lastActiveElapsedText: '',
       },
@@ -25,7 +26,7 @@ export const SAMPLE_WINDOW_DATA = [
         index: 1,
         tabId: 5,
         title: 'Amazon',
-        url: 'https://www.amazon.com',
+        url: {url: 'https://www.amazon.com'},
         lastActiveTimeTicks: {internalValue: BigInt(4)},
         lastActiveElapsedText: '',
       },
@@ -33,7 +34,7 @@ export const SAMPLE_WINDOW_DATA = [
         index: 2,
         tabId: 6,
         title: 'Apple',
-        url: 'https://www.apple.com',
+        url: {url: 'https://www.apple.com'},
         lastActiveTimeTicks: {internalValue: BigInt(3)},
         lastActiveElapsedText: '',
       },
@@ -47,7 +48,7 @@ export const SAMPLE_WINDOW_DATA = [
         index: 0,
         tabId: 2,
         title: 'Bing',
-        url: 'https://www.bing.com/',
+        url: {url: 'https://www.bing.com/'},
         lastActiveTimeTicks: {internalValue: BigInt(2)},
         lastActiveElapsedText: '',
       },
@@ -55,7 +56,7 @@ export const SAMPLE_WINDOW_DATA = [
         index: 1,
         tabId: 3,
         title: 'Yahoo',
-        url: 'https://www.yahoo.com',
+        url: {url: 'https://www.yahoo.com'},
         lastActiveTimeTicks: {internalValue: BigInt(1)},
         lastActiveElapsedText: '',
       },
@@ -63,7 +64,7 @@ export const SAMPLE_WINDOW_DATA = [
         index: 2,
         tabId: 4,
         title: 'Apple',
-        url: 'https://www.apple.com/',
+        url: {url: 'https://www.apple.com/'},
         lastActiveTimeTicks: {internalValue: BigInt(0)},
         lastActiveElapsedText: '',
       },
@@ -71,27 +72,32 @@ export const SAMPLE_WINDOW_DATA = [
   }
 ];
 
-/** @type {!Array} */
+/** @type {!Array<RecentlyClosedTab>} */
 export const SAMPLE_RECENTLY_CLOSED_DATA = [
   {
     tabId: 100,
     title: 'PayPal',
-    url: 'https://www.paypal.com',
-    lastActiveTimeTicks: {internalValue: BigInt(11)},
+    url: {url: 'https://www.paypal.com'},
+    lastActiveTime: {internalValue: BigInt(11)},
     lastActiveElapsedText: '',
   },
   {
     tabId: 101,
     title: 'Stripe',
-    url: 'https://www.stripe.com',
-    lastActiveTimeTicks: {internalValue: BigInt(12)},
+    url: {url: 'https://www.stripe.com'},
+    lastActiveTime: {internalValue: BigInt(12)},
     lastActiveElapsedText: '',
-  }
+  },
 ];
 
 /** @return {!Array} */
 export function sampleData() {
-  return {windows: SAMPLE_WINDOW_DATA, recentlyClosedTabs: [], tabGroups: []};
+  return {
+    windows: SAMPLE_WINDOW_DATA,
+    recentlyClosedTabs: [],
+    tabGroups: [],
+    recentlyClosedTabGroups: [],
+  };
 }
 
 /**
@@ -110,16 +116,42 @@ export function sampleSiteNames(count) {
  */
 export function generateSampleTabsFromSiteNames(siteNames, hasIndex = true) {
   return siteNames.map((siteName, i) => {
-    const tab = /** @type {Tab} */ ({
+    const tab = /** @type {!Tab} */ ({
       tabId: i + 1,
       title: siteName,
-      url: 'https://www.' + siteName.toLowerCase() + '.com',
+      url: {url: 'https://www.' + siteName.toLowerCase() + '.com'},
       lastActiveTimeTicks: {internalValue: BigInt(siteNames.length - i)},
       lastActiveElapsedText: '',
     });
 
     if (hasIndex) {
       tab.index = i;
+    }
+
+    return tab;
+  });
+}
+
+/**
+ * @param {string} titlePrefix
+ * @param {number} count
+ * @param {Token} groupId
+ * @return {!Array<!RecentlyClosedTab>}
+ */
+export function generateSampleRecentlyClosedTabs(
+    titlePrefix, count, groupId = undefined) {
+  return Array.from({length: count}, (_, i) => {
+    const tabId = i + 1;
+    const tab = /** @type {RecentlyClosedTab} */ ({
+      tabId,
+      title: `${titlePrefix} ${tabId}`,
+      url: {url: `https://www.sampletab.com?q=${tabId}`},
+      lastActiveTime: {internalValue: BigInt(count - i)},
+      lastActiveElapsedText: '',
+    });
+
+    if (groupId !== undefined) {
+      tab.groupId = groupId;
     }
 
     return tab;
@@ -140,6 +172,7 @@ export function generateSampleDataFromSiteNames(siteNames) {
     }],
     recentlyClosedTabs: [],
     tabGroups: [],
+    recentlyClosedTabGroups: [],
   };
 }
 

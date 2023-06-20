@@ -281,29 +281,14 @@ public interface Tab extends TabLifecycle {
     void setIsTabStateDirty(boolean isTabStateDirty);
 
     /**
-     * If set to true, any future navigations in the tab automatically get
-     * PageTransition.FROM_API_2 applied.
-     */
-    void setAddApi2TransitionToFutureNavigations(boolean shouldAdd);
-    boolean getAddApi2TransitionToFutureNavigations();
-
-    /**
-     * If true, all future navigations are hidden. See |HistoryTabHelper::hide_navigations_|
-     * for the specifics on this.
-     */
-    public void setHideFutureNavigations(boolean hide);
-    public boolean getHideFutureNavigations();
-
-    /**
-     * If true, new notification requests are blocked.
-     */
-    public void setShouldBlockNewNotificationRequests(boolean value);
-    public boolean getShouldBlockNewNotificationRequests();
-
-    /**
      * Set whether {@link Tab} metadata (specifically all {@link PersistedTabData})
      * will be saved. Not all Tabs need to be persisted across restarts.
      * The default value when a Tab is initialized is false.
      */
     void setIsTabSaveEnabled(boolean isSaveEnabled);
+
+    /**
+     * @return true if the {@link Tab} is a custom tab.
+     */
+    boolean isCustomTab();
 }

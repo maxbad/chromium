@@ -27,6 +27,9 @@ class SSLErrorUI;
 class IOSSSLBlockingPage
     : public security_interstitials::IOSSecurityInterstitialPage {
  public:
+  IOSSSLBlockingPage(const IOSSSLBlockingPage&) = delete;
+  IOSSSLBlockingPage& operator=(const IOSSSLBlockingPage&) = delete;
+
   ~IOSSSLBlockingPage() override;
 
   // Creates an SSL blocking page. If the blocking page isn't shown, the caller
@@ -46,8 +49,7 @@ class IOSSSLBlockingPage
  protected:
   // SecurityInterstitialPage implementation:
   bool ShouldCreateNewNavigation() const override;
-  void PopulateInterstitialStrings(
-      base::DictionaryValue* load_time_data) const override;
+  void PopulateInterstitialStrings(base::Value* load_time_data) const override;
 
  private:
   void HandleCommand(
@@ -66,8 +68,6 @@ class IOSSSLBlockingPage
   std::unique_ptr<security_interstitials::IOSBlockingPageControllerClient>
       controller_;
   std::unique_ptr<security_interstitials::SSLErrorUI> ssl_error_ui_;
-
-  DISALLOW_COPY_AND_ASSIGN(IOSSSLBlockingPage);
 };
 
 #endif  // IOS_CHROME_BROWSER_SSL_IOS_SSL_BLOCKING_PAGE_H_

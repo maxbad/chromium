@@ -25,14 +25,12 @@ constexpr char kKeyRemoteControlModeEnabled[] = "remoteControlModeEnabled";
 }  // namespace
 
 CastContentWindowEmbedded::CastContentWindowEmbedded(
-    const CastContentWindow::CreateParams& params,
+    mojom::CastWebViewParamsPtr params,
     CastWindowEmbedder* cast_window_embedder,
     bool force_720p_resolution)
-    : CastContentWindow(params),
-      is_touch_enabled_(params.enable_touch_input),
+    : CastContentWindow(std::move(params)),
       cast_window_embedder_(cast_window_embedder),
       force_720p_resolution_(force_720p_resolution) {
-  DCHECK(delegate_);
   DCHECK(cast_window_embedder_);
 
   cast_window_embedder_->AddEmbeddedWindow(this);
@@ -141,11 +139,8 @@ void CastContentWindowEmbedded::SetHostContext(base::Value host_context) {
 
 void CastContentWindowEmbedded::NotifyVisibilityChange(
     VisibilityType visibility_type) {
-  if (delegate_) {
-    delegate_->OnVisibilityChange(visibility_type);
-  }
-  for (auto& observer : observer_list_) {
-    observer.OnVisibilityChange(visibility_type);
+  for (auto& observer : observers_) {
+    observer->OnVisibilityChange(visibility_type);
   }
 }
 
@@ -163,8 +158,8 @@ void CastContentWindowEmbedded::OnEmbedderWindowEvent(
 
   if (request.navigation && request.navigation.value() ==
                                 CastWindowEmbedder::NavigationType::GO_BACK) {
-    if (delegate_ && delegate_->CanHandleGesture(GestureType::GO_BACK)) {
-      delegate_->ConsumeGesture(
+    if (gesture_router()->CanHandleGesture(GestureType::GO_BACK)) {
+      gesture_router()->ConsumeGesture(
           GestureType::GO_BACK,
           base::BindOnce(&CastContentWindowEmbedded::ConsumeGestureCompleted,
                          base::Unretained(this)));
@@ -201,17 +196,18 @@ void CastContentWindowEmbedded::OnEmbedderWindowEvent(
   }
 
   if (request.back_gesture_progress_event) {
-    if (delegate_ && delegate_->CanHandleGesture(GestureType::GO_BACK))
-      delegate_->GestureProgress(
+    if (gesture_router()->CanHandleGesture(GestureType::GO_BACK)) {
+      gesture_router()->GestureProgress(
           GestureType::GO_BACK,
           gfx::Point(request.back_gesture_progress_event.value().x,
                      request.back_gesture_progress_event.value().y));
+    }
     return;
   }
 
   if (request.back_gesture_cancel_event) {
-    if (delegate_ && delegate_->CanHandleGesture(GestureType::GO_BACK))
-      delegate_->CancelGesture(GestureType::GO_BACK);
+    if (gesture_router()->CanHandleGesture(GestureType::GO_BACK))
+      gesture_router()->CancelGesture(GestureType::GO_BACK);
     return;
   }
 }
@@ -275,7 +271,7 @@ CastContentWindowEmbedded::PopulateCastWindowProperties() {
   window_properties.session_id = session_id_;
   window_properties.app_id = app_id_;
   window_properties.is_system_setup_window = false;
-  window_properties.is_touch_enabled = is_touch_enabled_;
+  window_properties.is_touch_enabled = params_->enable_touch_input;
   window_properties.is_remote_control = is_remote_control_;
   window_properties.visibility_priority = visibility_priority_;
   window_properties.force_720p_resolution = force_720p_resolution_;

@@ -11,14 +11,18 @@ import org.chromium.chrome.browser.preferences.SharedPreferencesManager;
 import org.chromium.chrome.browser.toolbar.adaptive.AdaptiveToolbarFeatures.AdaptiveToolbarButtonVariant;
 
 /**
- * A utility class for handling adaptive toolbar cuistomization user settings used by {@link
+ * A utility class for handling adaptive toolbar customization user settings used by {@link
  * AdaptiveToolbarButtonController}.
  */
 public class AdaptiveToolbarPrefs {
-    /** Returns whether customization is enabled. */
-    public static boolean isCustomizationEnabled() {
+    /**
+     * Returns whether the customization preference toggle is enabled. Returns true if no value has
+     * been set. The value returned is orthogonal to whether the corresponding feature flag is
+     * enabled.
+     */
+    public static boolean isCustomizationPreferenceEnabled() {
         return SharedPreferencesManager.getInstance().readBoolean(
-                ADAPTIVE_TOOLBAR_CUSTOMIZATION_ENABLED, false);
+                ADAPTIVE_TOOLBAR_CUSTOMIZATION_ENABLED, true);
     }
 
     /**
@@ -42,7 +46,7 @@ public class AdaptiveToolbarPrefs {
 
     /**
      * Set customization setting.
-     * @param setting The {@link AdaptiveToolbarButtonVariant} for this Preference.
+     * @param settings The {@link AdaptiveToolbarButtonVariant} for this Preference.
      */
     public static void saveToolbarButtonManualOverride(@AdaptiveToolbarButtonVariant int settings) {
         SharedPreferencesManager.getInstance().writeInt(

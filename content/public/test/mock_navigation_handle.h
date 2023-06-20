@@ -49,21 +49,31 @@ class MockNavigationHandle : public NavigationHandle {
   SiteInstance* GetSourceSiteInstance() override {
     return nullptr;  // Good enough for unit tests...
   }
-  bool IsInMainFrame() override {
+  bool IsInMainFrame() const override {
     return render_frame_host_ ? !render_frame_host_->GetParent() : true;
   }
-  MOCK_METHOD0(IsInPrimaryMainFrame, bool());
-  MOCK_METHOD0(IsPrerenderedPageActivation, bool());
+  MOCK_METHOD0(IsInPrerenderedMainFrame, bool());
+  bool IsPrerenderedPageActivation() override {
+    return is_prerendered_page_activation_;
+  }
   // By default, MockNavigationHandles are renderer-initiated navigations.
   bool IsRendererInitiated() override { return is_renderer_initiated_; }
   bool IsSameOrigin() override {
     NOTIMPLEMENTED();
     return false;
   }
+  bool IsInPrimaryMainFrame() const override {
+    return is_in_primary_main_frame_;
+  }
   MOCK_METHOD0(GetFrameTreeNodeId, int());
-  MOCK_METHOD0(GetPreviousRenderFrameHostId, GlobalFrameRoutingId());
+  MOCK_METHOD0(GetPreviousRenderFrameHostId, GlobalRenderFrameHostId());
   bool IsServedFromBackForwardCache() override {
     return is_served_from_bfcache_;
+  }
+  bool IsPageActivation() const override {
+    MockNavigationHandle* handle = const_cast<MockNavigationHandle*>(this);
+    return handle->IsPrerenderedPageActivation() ||
+           handle->IsServedFromBackForwardCache();
   }
   RenderFrameHost* GetParentFrame() override {
     return render_frame_host_ ? render_frame_host_->GetParent() : nullptr;
@@ -80,7 +90,9 @@ class MockNavigationHandle : public NavigationHandle {
   const GURL& GetBaseURLForDataURL() override { return base_url_for_data_url_; }
   MOCK_METHOD0(IsPost, bool());
   const blink::mojom::Referrer& GetReferrer() override { return referrer_; }
-  void SetReferrer(blink::mojom::ReferrerPtr referrer) override {}
+  void SetReferrer(blink::mojom::ReferrerPtr referrer) override {
+    referrer_ = *referrer;
+  }
   MOCK_METHOD0(HasUserGesture, bool());
   ui::PageTransition GetPageTransition() override { return page_transition_; }
   MOCK_METHOD0(GetNavigationUIData, NavigationUIData*());
@@ -152,6 +164,7 @@ class MockNavigationHandle : public NavigationHandle {
               RegisterThrottleForTesting,
               (std::unique_ptr<NavigationThrottle>));
   MOCK_METHOD(bool, IsDeferredForTesting, ());
+  MOCK_METHOD(bool, IsCommitDeferringConditionDeferredForTesting, ());
   MOCK_METHOD(void,
               RegisterSubresourceOverride,
               (blink::mojom::TransferrableURLLoaderPtr));
@@ -165,10 +178,12 @@ class MockNavigationHandle : public NavigationHandle {
   MOCK_METHOD(void, SetSilentlyIgnoreErrors, ());
   MOCK_METHOD(network::mojom::WebSandboxFlags, SandboxFlagsToCommit, ());
   MOCK_METHOD(bool, IsWaitingToCommit, ());
-  MOCK_METHOD(bool, WasEarlyHintsPreloadLinkHeaderReceived, ());
+  MOCK_METHOD(bool, WasResourceHintsReceived, ());
+  MOCK_METHOD(bool, IsPdf, ());
   void WriteIntoTrace(perfetto::TracedValue context) override {
     auto dict = std::move(context).WriteDictionary();
   }
+  MOCK_METHOD(bool, SetNavigationTimeout, (base::TimeDelta));
 
   void set_url(const GURL& url) { url_ = url; }
   void set_previous_main_frame_url(const GURL& previous_main_frame_url) {
@@ -192,8 +207,14 @@ class MockNavigationHandle : public NavigationHandle {
   void set_is_served_from_bfcache(bool is_served_from_bfcache) {
     is_served_from_bfcache_ = is_served_from_bfcache;
   }
+  void set_is_prerendered_page_activation(bool is_prerendered_page_activation) {
+    is_prerendered_page_activation_ = is_prerendered_page_activation;
+  }
   void set_is_renderer_initiated(bool is_renderer_initiated) {
     is_renderer_initiated_ = is_renderer_initiated;
+  }
+  void set_is_in_primary_main_frame(bool is_in_primary_main_frame) {
+    is_in_primary_main_frame_ = is_in_primary_main_frame;
   }
   void set_redirect_chain(const std::vector<GURL>& redirect_chain) {
     redirect_chain_ = redirect_chain;
@@ -248,7 +269,9 @@ class MockNavigationHandle : public NavigationHandle {
   RenderFrameHost* render_frame_host_ = nullptr;
   bool is_same_document_ = false;
   bool is_served_from_bfcache_ = false;
+  bool is_prerendered_page_activation_ = false;
   bool is_renderer_initiated_ = true;
+  bool is_in_primary_main_frame_ = true;
   std::vector<GURL> redirect_chain_;
   bool has_committed_ = false;
   bool is_error_page_ = false;

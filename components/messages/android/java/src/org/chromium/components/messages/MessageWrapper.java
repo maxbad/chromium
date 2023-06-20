@@ -4,6 +4,9 @@
 
 package org.chromium.components.messages;
 
+import android.graphics.Bitmap;
+import android.graphics.drawable.BitmapDrawable;
+
 import androidx.annotation.DrawableRes;
 
 import org.chromium.base.annotations.CalledByNative;
@@ -22,17 +25,19 @@ public final class MessageWrapper {
     /**
      * Creates an instance of MessageWrapper and links it with native MessageWrapper object.
      * @param nativeMessageWrapper Pointer to native MessageWrapper.
+     * @param messageIdentifier Message identifier of the new message.
      * @return reference to created MessageWrapper.
      */
     @CalledByNative
-    static MessageWrapper create(long nativeMessageWrapper) {
-        return new MessageWrapper(nativeMessageWrapper);
+    static MessageWrapper create(long nativeMessageWrapper, int messageIdentifier) {
+        return new MessageWrapper(nativeMessageWrapper, messageIdentifier);
     }
 
-    private MessageWrapper(long nativeMessageWrapper) {
+    private MessageWrapper(long nativeMessageWrapper, int messageIdentifier) {
         mNativeMessageWrapper = nativeMessageWrapper;
         mMessageProperties =
                 new PropertyModel.Builder(MessageBannerProperties.ALL_KEYS)
+                        .with(MessageBannerProperties.MESSAGE_IDENTIFIER, messageIdentifier)
                         .with(MessageBannerProperties.ON_PRIMARY_ACTION, this::handleActionClick)
                         .with(MessageBannerProperties.ON_SECONDARY_ACTION,
                                 this::handleSecondaryActionClick)
@@ -105,6 +110,16 @@ public final class MessageWrapper {
     @CalledByNative
     void setIconResourceId(@DrawableRes int resourceId) {
         mMessageProperties.set(MessageBannerProperties.ICON_RESOURCE_ID, resourceId);
+    }
+
+    @CalledByNative
+    boolean isValidIcon() {
+        return mMessageProperties.get(MessageBannerProperties.ICON) != null;
+    }
+
+    @CalledByNative
+    void setIcon(Bitmap iconBitmap) {
+        mMessageProperties.set(MessageBannerProperties.ICON, new BitmapDrawable(iconBitmap));
     }
 
     @CalledByNative

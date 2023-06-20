@@ -5,12 +5,12 @@
 #ifndef CHROME_BROWSER_SSL_CHROME_SECURITY_BLOCKING_PAGE_FACTORY_H_
 #define CHROME_BROWSER_SSL_CHROME_SECURITY_BLOCKING_PAGE_FACTORY_H_
 
-#include "base/macros.h"
 #include "build/build_config.h"
 #include "components/captive_portal/core/buildflags.h"
 #include "components/security_interstitials/content/bad_clock_blocking_page.h"
 #include "components/security_interstitials/content/blocked_interception_blocking_page.h"
 #include "components/security_interstitials/content/captive_portal_blocking_page.h"
+#include "components/security_interstitials/content/https_only_mode_blocking_page.h"
 #include "components/security_interstitials/content/insecure_form_blocking_page.h"
 #include "components/security_interstitials/content/legacy_tls_blocking_page.h"
 #include "components/security_interstitials/content/mitm_software_blocking_page.h"
@@ -76,6 +76,9 @@ class ChromeSecurityBlockingPageFactory : public SecurityBlockingPageFactory {
   std::unique_ptr<security_interstitials::InsecureFormBlockingPage>
   CreateInsecureFormBlockingPage(content::WebContents* web_contents,
                                  const GURL& request_url) override;
+  std::unique_ptr<security_interstitials::HttpsOnlyModeBlockingPage>
+  CreateHttpsOnlyModeBlockingPage(content::WebContents* web_contents,
+                                  const GURL& request_url) override;
 
   // Overrides the calculation of whether the app is enterprise-managed for
   // tests.

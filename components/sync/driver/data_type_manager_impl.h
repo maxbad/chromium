@@ -10,14 +10,12 @@
 #include <map>
 
 #include "base/containers/queue.h"
-#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
 #include "components/sync/base/weak_handle.h"
 #include "components/sync/driver/configure_context.h"
 #include "components/sync/driver/model_load_manager.h"
 #include "components/sync/engine/model_type_configurer.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace syncer {
 
@@ -36,6 +34,10 @@ class DataTypeManagerImpl : public DataTypeManager,
       const DataTypeEncryptionHandler* encryption_handler,
       ModelTypeConfigurer* configurer,
       DataTypeManagerObserver* observer);
+
+  DataTypeManagerImpl(const DataTypeManagerImpl&) = delete;
+  DataTypeManagerImpl& operator=(const DataTypeManagerImpl&) = delete;
+
   ~DataTypeManagerImpl() override;
 
   // DataTypeManager interface.
@@ -138,8 +140,8 @@ class DataTypeManagerImpl : public DataTypeManager,
   void ConfigureImpl(ModelTypeSet desired_types,
                      const ConfigureContext& context);
 
-  // Calls data type controllers of requested types to activate.
-  void ActivateDataTypes();
+  // Calls data type controllers of requested types to connect.
+  void ConnectDataTypes();
 
   DataTypeConfigStateMap BuildDataTypeConfigStateMap(
       const ModelTypeSet& types_being_configured) const;
@@ -172,12 +174,12 @@ class DataTypeManagerImpl : public DataTypeManager,
   State state_ = DataTypeManager::STOPPED;
 
   // The set of types whose initial download of sync data has completed.
-  // TODO(crbug.com/1170318): This class does not actually handle control types
-  // (i.e. NIGORI) - |controllers_| doesn't contain an entry for NIGORI.
-  // However, we have to pretend that NIGORI is already downloaded (which it
-  // is, but this class doesn't know that) to prevent a re-download on every
-  // browser startup. It would be cleaner to remove all NIGORI/ControlTypes()
-  // handling from this class.
+  // Note: This class mostly doesn't handle control types (i.e. NIGORI) -
+  // |controllers_| doesn't contain an entry for NIGORI, and by the time this
+  // class gets instantiated, NIGORI is already up and running. It still has to
+  // be maintained as part of |downloaded_types_|, however, since in some edge
+  // cases (notably PurgeForMigration()), this class might have to trigger a
+  // re-download of NIGORI data.
   ModelTypeSet downloaded_types_ = ControlTypes();
 
   // Types that requested in current configuration cycle.
@@ -226,8 +228,6 @@ class DataTypeManagerImpl : public DataTypeManager,
   std::map<ModelType, DataTypeConfigurationStats> configuration_stats_;
 
   base::WeakPtrFactory<DataTypeManagerImpl> weak_ptr_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(DataTypeManagerImpl);
 };
 
 }  // namespace syncer

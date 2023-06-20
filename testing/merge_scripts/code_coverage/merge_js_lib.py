@@ -8,6 +8,14 @@ import json
 import os
 import sys
 
+_HERE_PATH = os.path.dirname(__file__)
+_THIRD_PARTY_PATH = os.path.normpath(
+    os.path.join(_HERE_PATH, '..', '..', '..', 'third_party'))
+sys.path.append(os.path.join(_THIRD_PARTY_PATH, 'node'))
+sys.path.append(os.path.join(_THIRD_PARTY_PATH, 'js_code_coverage'))
+import node
+import coverage_modules
+
 logging.basicConfig(format='[%(asctime)s %(levelname)s] %(message)s',
                     level=logging.DEBUG)
 
@@ -265,21 +273,29 @@ def write_parsed_scripts(task_output_dir):
 
   Args:
     task_output_dir (str): The output directory for the sharded task. This will
-        contain the raw JavaScript v8 coverage files that are identified by
+        contain the raw JavaScript v8 parsed files that are identified by
         their ".js.json" suffix.
 
   Returns:
-    The absolute file path to the raw parsed scripts.
+    The absolute file path to the raw parsed scripts or None if no parsed
+    scripts were identified (or any of the raw data contains invalid JSON).
   """
   scripts = _get_paths_with_suffix(task_output_dir, '.js.json')
   output_dir = os.path.join(task_output_dir, 'parsed_scripts')
 
   if not scripts:
-    logging.info('No raw scripts found in %s', task_output_dir)
-    return
+    return None
 
   for file_path in scripts:
-    script_data = _parse_json_file(file_path)
+    # TODO(crbug.com/1224786): Some of the raw script data is being saved with
+    # a trailing curly brace leading to invalid JSON. Bail out if this is
+    # encountered and ensure we log the file path.
+    script_data = None
+    try:
+      script_data = _parse_json_file(file_path)
+    except ValueError as e:
+      logging.error('Failed to parse %s: %s', file_path, e)
+      return None
 
     if any(key not in script_data for key in ('url', 'text')):
       logging.info('File %s is missing key url or text', file_path)
@@ -293,8 +309,62 @@ def write_parsed_scripts(task_output_dir):
     if not os.path.exists(source_directory):
       os.makedirs(source_directory)
 
-    with open(os.path.join(output_dir, source_path), 'w') as f:
+    with open(os.path.join(output_dir, source_path), 'wb') as f:
       f.write(script_data['text'].encode('utf8'))
 
-  logging.info('Raw parsed scripts written out to %s', output_dir)
   return output_dir
+
+
+def get_raw_coverage_dirs(task_output_dir):
+  """Returns a list of directories containing raw v8 coverage.
+
+  Args:
+    task_output_dir (str): The output directory for the sharded task. This will
+        contain the raw JavaScript v8 coverage files that are identified by
+        their ".cov.json" suffix.
+  """
+  coverage_directories = set()
+  for dir_path, _sub_dirs, file_names in os.walk(task_output_dir):
+    for name in file_names:
+      if name.endswith('.cov.json'):
+        coverage_directories.add(dir_path)
+        continue
+
+  return coverage_directories
+
+
+def convert_raw_coverage_to_istanbul(
+    raw_coverage_dirs, source_dir, task_output_dir):
+  """Calls the node helper script convert_to_istanbul.js
+
+  Args:
+    raw_coverage_dirs (list): Directory that contains raw v8 code coverage.
+    source_dir (str): Root directory containing the instrumented source.
+
+  Raises:
+    RuntimeError: If the underlying node command fails.
+  """
+  return node.RunNode(
+      [os.path.join(_HERE_PATH, 'convert_to_istanbul.js'),
+          '--source-dir', source_dir,
+          '--output-dir', task_output_dir,
+          '--raw-coverage-dirs', ' '.join(raw_coverage_dirs),
+      ])
+
+def merge_istanbul_reports(istanbul_coverage_dir, source_dir, output_file):
+  """Merges all disparate istanbul reports into a single report.
+
+  Args:
+    istanbul_coverage_dir (str): Directory containing separate coverage files.
+    source_dir (str): Directory containing instrumented source code.
+    output_file (str): File path to output merged coverage.
+
+  Raises:
+    RuntimeError: If the underlying node command fails.
+  """
+  return node.RunNode(
+      [coverage_modules.PathToNyc(),
+          'merge', istanbul_coverage_dir,
+          output_file,
+          '--cwd', source_dir,
+      ])

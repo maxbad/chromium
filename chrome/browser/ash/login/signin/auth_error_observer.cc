@@ -13,21 +13,18 @@
 #include "chrome/browser/signin/identity_manager_factory.h"
 #include "chrome/browser/signin/signin_error_controller_factory.h"
 #include "chrome/browser/sync/sync_service_factory.h"
-#include "components/signin/public/identity_manager/consent_level.h"
+#include "components/signin/public/base/consent_level.h"
 #include "components/signin/public/identity_manager/identity_manager.h"
 #include "components/sync/driver/sync_service.h"
 #include "components/user_manager/user_manager.h"
-#include "components/user_manager/user_type.h"
 
-namespace chromeos {
+namespace ash {
 
 // static
 bool AuthErrorObserver::ShouldObserve(Profile* profile) {
   const user_manager::User* const user =
       ProfileHelper::Get()->GetUserByProfile(profile);
-  return user &&
-         (user->HasGaiaAccount() ||
-          user->GetType() == user_manager::USER_TYPE_SUPERVISED_DEPRECATED);
+  return user && user->HasGaiaAccount();
 }
 
 AuthErrorObserver::AuthErrorObserver(Profile* profile) : profile_(profile) {
@@ -79,8 +76,7 @@ void AuthErrorObserver::HandleAuthError(
     const GoogleServiceAuthError& auth_error) {
   const user_manager::User* const user =
       ProfileHelper::Get()->GetUserByProfile(profile_);
-  DCHECK(user->HasGaiaAccount() ||
-         user->GetType() == user_manager::USER_TYPE_SUPERVISED_DEPRECATED);
+  DCHECK(user->HasGaiaAccount());
 
   if (auth_error.IsPersistentError()) {
     // Invalidate OAuth2 refresh token to force Gaia sign-in flow. This is
@@ -104,4 +100,4 @@ void AuthErrorObserver::HandleAuthError(
   }
 }
 
-}  // namespace chromeos
+}  // namespace ash

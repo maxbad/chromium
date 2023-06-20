@@ -9,7 +9,6 @@
 
 #include "base/callback.h"
 #include "base/gtest_prod_util.h"
-#include "base/macros.h"
 #include "base/memory/aligned_memory.h"
 #include "build/build_config.h"
 #include "media/base/media_export.h"
@@ -45,11 +44,15 @@ class MEDIA_EXPORT SincResampler {
   // acquire audio data for resampling.  |io_sample_rate_ratio| is the ratio
   // of input / output sample rates.  |request_frames| controls the size in
   // frames of the buffer requested by each |read_cb| call.  The value must be
-  // greater than kKernelSize.  Specify kDefaultRequestSize if there are no
+  // greater than 1.5*kKernelSize.  Specify kDefaultRequestSize if there are no
   // request size constraints.
   SincResampler(double io_sample_rate_ratio,
                 int request_frames,
                 const ReadCB read_cb);
+
+  SincResampler(const SincResampler&) = delete;
+  SincResampler& operator=(const SincResampler&) = delete;
+
   ~SincResampler();
 
   // Resample |frames| of data from |read_cb_| into |destination|.
@@ -170,8 +173,6 @@ class MEDIA_EXPORT SincResampler {
   float* const r2_;
   float* r3_;
   float* r4_;
-
-  DISALLOW_COPY_AND_ASSIGN(SincResampler);
 };
 
 }  // namespace media

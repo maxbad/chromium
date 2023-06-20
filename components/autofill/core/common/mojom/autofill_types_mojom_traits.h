@@ -42,6 +42,22 @@ struct StructTraits<autofill::mojom::FrameTokenDataView, autofill::FrameToken> {
 };
 
 template <>
+struct StructTraits<autofill::mojom::FrameTokenWithPredecessorDataView,
+                    autofill::FrameTokenWithPredecessor> {
+  static autofill::FrameToken token(
+      const autofill::FrameTokenWithPredecessor& r) {
+    return r.token;
+  }
+
+  static int predecessor(const autofill::FrameTokenWithPredecessor& r) {
+    return r.predecessor;
+  }
+
+  static bool Read(autofill::mojom::FrameTokenWithPredecessorDataView data,
+                   autofill::FrameTokenWithPredecessor* out);
+};
+
+template <>
 struct StructTraits<autofill::mojom::FormRendererIdDataView,
                     autofill::FormRendererId> {
   static uint32_t id(autofill::FormRendererId r) { return r.value(); }
@@ -57,6 +73,21 @@ struct StructTraits<autofill::mojom::FieldRendererIdDataView,
 
   static bool Read(autofill::mojom::FieldRendererIdDataView data,
                    autofill::FieldRendererId* out);
+};
+
+template <>
+struct StructTraits<autofill::mojom::SelectOptionDataView,
+                    autofill::SelectOption> {
+  static const std::u16string& value(const autofill::SelectOption& r) {
+    return r.value;
+  }
+
+  static const std::u16string& content(const autofill::SelectOption& r) {
+    return r.content;
+  }
+
+  static bool Read(autofill::mojom::SelectOptionDataView data,
+                   autofill::SelectOption* out);
 };
 
 template <>
@@ -175,14 +206,9 @@ struct StructTraits<autofill::mojom::FormFieldDataDataView,
     return r.user_input;
   }
 
-  static const std::vector<std::u16string>& option_values(
+  static const std::vector<autofill::SelectOption>& options(
       const autofill::FormFieldData& r) {
-    return r.option_values;
-  }
-
-  static const std::vector<std::u16string>& option_contents(
-      const autofill::FormFieldData& r) {
-    return r.option_contents;
+    return r.options;
   }
 
   static autofill::FormFieldData::LabelSource label_source(
@@ -243,20 +269,10 @@ struct StructTraits<autofill::mojom::FormDataDataView, autofill::FormData> {
     return r.button_titles;
   }
 
-  static const GURL& url(const autofill::FormData& r) { return r.url; }
-
-  static const GURL& full_url(const autofill::FormData& r) {
-    return r.full_url;
-  }
-
   static const GURL& action(const autofill::FormData& r) { return r.action; }
 
   static bool is_action_empty(const autofill::FormData& r) {
     return r.is_action_empty;
-  }
-
-  static const url::Origin& main_frame_origin(const autofill::FormData& r) {
-    return r.main_frame_origin;
   }
 
   static bool is_form_tag(const autofill::FormData& r) { return r.is_form_tag; }
@@ -266,14 +282,9 @@ struct StructTraits<autofill::mojom::FormDataDataView, autofill::FormData> {
     return r.unique_renderer_id;
   }
 
-  static const std::vector<autofill::FrameToken>& child_frames(
+  static const std::vector<autofill::FrameTokenWithPredecessor>& child_frames(
       const autofill::FormData& r) {
     return r.child_frames;
-  }
-
-  static const std::vector<int32_t>& child_frame_predecessors(
-      const autofill::FormData& r) {
-    return r.child_frame_predecessors;
   }
 
   static autofill::mojom::SubmissionIndicatorEvent submission_event(
@@ -303,6 +314,11 @@ struct StructTraits<autofill::mojom::FormDataDataView, autofill::FormData> {
 template <>
 struct StructTraits<autofill::mojom::FormFieldDataPredictionsDataView,
                     autofill::FormFieldDataPredictions> {
+  static const std::string& host_form_signature(
+      const autofill::FormFieldDataPredictions& r) {
+    return r.host_form_signature;
+  }
+
   static const std::string& signature(
       const autofill::FormFieldDataPredictions& r) {
     return r.signature;

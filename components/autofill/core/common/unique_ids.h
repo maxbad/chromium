@@ -9,15 +9,16 @@
 #include <limits>
 #include <ostream>
 
+#include "base/types/id_type.h"
 #include "base/unguessable_token.h"
-#include "base/util/type_safety/id_type.h"
+#include "build/build_config.h"
 #include "third_party/abseil-cpp/absl/types/variant.h"
 
 namespace autofill {
 
 namespace internal {
 
-// TokenType wraps an base::UnguessableToken just like util::TokenType but
+// TokenType wraps an base::UnguessableToken just like base::TokenType but
 // initializes to zero by default. We use it to define our own versions of
 // LocalFrameToken and RemoteFrameToken to avoid dependencies on blink here and
 // in the mojo code, since iOS depends on this code.
@@ -27,6 +28,7 @@ class TokenType
  public:
   using base::StrongAlias<TokenTypeMarker, base::UnguessableToken>::StrongAlias;
   bool is_empty() const { return this->value().is_empty(); }
+  explicit constexpr operator bool() const { return !is_empty(); }
   std::string ToString() const { return this->value().ToString(); }
 };
 
@@ -53,14 +55,18 @@ using FrameToken = absl::variant<RemoteFrameToken, LocalFrameToken>;
 
 namespace internal {
 
-using FormRendererIdType = ::util::IdTypeU32<class FormRendererIdMarker>;
-using FieldRendererIdType = ::util::IdTypeU32<class FieldRendererIdMarker>;
+#if defined(OS_IOS)
+using FormRendererIdType = ::base::IdTypeU32<class FormRendererIdMarker>;
+using FieldRendererIdType = ::base::IdTypeU32<class FieldRendererIdMarker>;
+#else
+using FormRendererIdType = ::base::IdTypeU64<class FormRendererIdMarker>;
+using FieldRendererIdType = ::base::IdTypeU64<class FieldRendererIdMarker>;
+#endif
 
 }  // namespace internal
 
 // FormRendererId and FieldRendererId uniquely identify a DOM form or field
-// element, respectively, among all such elements in one frame, until they
-// overflow after 2**32 elements have been created in the renderer process.
+// element, respectively, among all such elements in one frame.
 //
 // To uniquely identify frames across frames, see FormGlobalId and
 // FieldGlobalId.
@@ -118,8 +124,7 @@ bool operator<(const GlobalId<RendererId>& a, const GlobalId<RendererId>& b) {
 }  // namespace internal
 
 // FormGlobalId and FieldGlobalId uniquely identify a DOM form or field
-// element, respectively, among all such elements in all frames, until they
-// overflow after 2**32 elements have been created in one renderer process.
+// element, respectively, among all such elements in all frames.
 //
 // As a sentinel value, the FormRendererId of a synthetic form converts to
 // `false`. A synthetic form is the collection of form fields outside of the

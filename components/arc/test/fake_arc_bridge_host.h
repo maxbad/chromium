@@ -5,7 +5,6 @@
 #ifndef COMPONENTS_ARC_TEST_FAKE_ARC_BRIDGE_HOST_H_
 #define COMPONENTS_ARC_TEST_FAKE_ARC_BRIDGE_HOST_H_
 
-#include "base/macros.h"
 #include "components/arc/mojom/arc_bridge.mojom.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 
@@ -14,6 +13,10 @@ namespace arc {
 class FakeArcBridgeHost : public mojom::ArcBridgeHost {
  public:
   FakeArcBridgeHost();
+
+  FakeArcBridgeHost(const FakeArcBridgeHost&) = delete;
+  FakeArcBridgeHost& operator=(const FakeArcBridgeHost&) = delete;
+
   ~FakeArcBridgeHost() override;
 
   // ArcBridgeHost overrides.
@@ -79,6 +82,9 @@ class FakeArcBridgeHost : public mojom::ArcBridgeHost {
   void OnIntentHelperInstanceReady(
       mojo::PendingRemote<mojom::IntentHelperInstance> intent_helper_remote)
       override;
+  void OnKeyboardShortcutInstanceReady(
+      mojo::PendingRemote<mojom::KeyboardShortcutInstance>
+          keyboard_shortcut_remote) override;
   void OnKeymasterInstanceReady(
       mojo::PendingRemote<mojom::KeymasterInstance> keymaster_remote) override;
   void OnKioskInstanceReady(
@@ -88,10 +94,15 @@ class FakeArcBridgeHost : public mojom::ArcBridgeHost {
   void OnMediaSessionInstanceReady(
       mojo::PendingRemote<mojom::MediaSessionInstance> media_session_remote)
       override;
+  void OnMemoryInstanceReady(
+      mojo::PendingRemote<mojom::MemoryInstance> memory_remote) override;
   void OnMetricsInstanceReady(
       mojo::PendingRemote<mojom::MetricsInstance> metrics_remote) override;
   void OnMidisInstanceReady(
       mojo::PendingRemote<mojom::MidisInstance> midis_remote) override;
+  void OnNearbyShareInstanceReady(
+      mojo::PendingRemote<mojom::NearbyShareInstance> nearby_share_remote)
+      override;
   void OnNetInstanceReady(
       mojo::PendingRemote<mojom::NetInstance> net_remote) override;
   void OnNotificationsInstanceReady(
@@ -142,12 +153,6 @@ class FakeArcBridgeHost : public mojom::ArcBridgeHost {
       mojo::PendingRemote<mojom::UsbHostInstance> usb_remote) override;
   void OnVideoInstanceReady(
       mojo::PendingRemote<mojom::VideoInstance> video_remote) override;
-  void OnVoiceInteractionArcHomeInstanceReady(
-      mojo::PendingRemote<mojom::VoiceInteractionArcHomeInstance> home_remote)
-      override;
-  void OnVoiceInteractionFrameworkInstanceReady(
-      mojo::PendingRemote<mojom::VoiceInteractionFrameworkInstance>
-          framework_remote) override;
   void OnVolumeMounterInstanceReady(
       mojo::PendingRemote<mojom::VolumeMounterInstance> volume_mounter_remote)
       override;
@@ -157,9 +162,6 @@ class FakeArcBridgeHost : public mojom::ArcBridgeHost {
       mojo::PendingRemote<mojom::WallpaperInstance> wallpaper_remote) override;
   void OnWebApkInstanceReady(
       mojo::PendingRemote<mojom::WebApkInstance> webapk_instance) override;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(FakeArcBridgeHost);
 };
 
 }  // namespace arc

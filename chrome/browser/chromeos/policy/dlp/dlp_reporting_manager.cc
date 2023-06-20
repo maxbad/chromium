@@ -17,6 +17,8 @@
 #include "chrome/browser/profiles/profile_manager.h"
 #include "components/reporting/client/report_queue.h"
 #include "components/reporting/util/status.h"
+#include "components/user_manager/user.h"
+#include "components/user_manager/user_manager.h"
 #include "url/gurl.h"
 
 namespace policy {
@@ -27,7 +29,7 @@ DlpPolicyEvent_Mode DlpRulesManagerLevel2DlpEventMode(
     case DlpRulesManager::Level::kBlock:
       return DlpPolicyEvent_Mode_BLOCK;
     case DlpRulesManager::Level::kWarn:
-      return DlpPolicyEvent_Mode_BLOCK;
+      return DlpPolicyEvent_Mode_WARN;
     case DlpRulesManager::Level::kReport:
       return DlpPolicyEvent_Mode_REPORT;
     case DlpRulesManager::Level::kNotSet:
@@ -75,9 +77,32 @@ DlpRulesManager::Restriction DlpEventRestriction2DlpRulesManagerRestriction(
   }
 }
 
+DlpPolicyEvent_UserType GetCurrentUserType() {
+  // Could be not initialized in tests.
+  if (!user_manager::UserManager::IsInitialized() ||
+      !user_manager::UserManager::Get()->GetPrimaryUser()) {
+    return DlpPolicyEvent_UserType_UNDEFINED_USER_TYPE;
+  }
+  const user_manager::User* const user =
+      user_manager::UserManager::Get()->GetPrimaryUser();
+  DCHECK(user);
+  switch (user->GetType()) {
+    case user_manager::USER_TYPE_REGULAR:
+      return DlpPolicyEvent_UserType_REGULAR;
+    case user_manager::USER_TYPE_PUBLIC_ACCOUNT:
+      return DlpPolicyEvent_UserType_MANAGED_GUEST;
+    case user_manager::USER_TYPE_KIOSK_APP:
+    case user_manager::USER_TYPE_ARC_KIOSK_APP:
+    case user_manager::USER_TYPE_WEB_KIOSK_APP:
+      return DlpPolicyEvent_UserType_KIOSK;
+    default:
+      NOTREACHED();
+      return DlpPolicyEvent_UserType_UNDEFINED_USER_TYPE;
+  }
+}
+
 DlpPolicyEvent CreateDlpPolicyEvent(const std::string& src_pattern,
-                                    DlpRulesManager::Restriction restriction,
-                                    DlpRulesManager::Level level) {
+                                    DlpRulesManager::Restriction restriction) {
   DlpPolicyEvent event;
 
   DlpPolicyEventSource* event_source = new DlpPolicyEventSource;
@@ -86,9 +111,17 @@ DlpPolicyEvent CreateDlpPolicyEvent(const std::string& src_pattern,
 
   event.set_restriction(
       DlpRulesManagerRestriction2DlpEventRestriction(restriction));
-  event.set_mode(DlpRulesManagerLevel2DlpEventMode(level));
   event.set_timestamp_micro(base::Time::Now().ToTimeT());
+  event.set_user_type(GetCurrentUserType());
 
+  return event;
+}
+
+DlpPolicyEvent CreateDlpPolicyEvent(const std::string& src_pattern,
+                                    DlpRulesManager::Restriction restriction,
+                                    DlpRulesManager::Level level) {
+  auto event = CreateDlpPolicyEvent(src_pattern, restriction);
+  event.set_mode(DlpRulesManagerLevel2DlpEventMode(level));
   return event;
 }
 
@@ -99,7 +132,7 @@ DlpPolicyEvent CreateDlpPolicyEvent(const std::string& src_pattern,
   auto event = CreateDlpPolicyEvent(src_pattern, restriction, level);
 
   DlpPolicyEventDestination* event_destination = new DlpPolicyEventDestination;
-  event_destination->set_url(src_pattern);
+  event_destination->set_url(dst_pattern);
   event.set_allocated_destination(event_destination);
 
   return event;
@@ -150,7 +183,7 @@ void DlpReportingManager::SetReportQueue(
 
 void DlpReportingManager::ReportEvent(const std::string& src_pattern,
                                       DlpRulesManager::Restriction restriction,
-                                      DlpRulesManager::Level level) const {
+                                      DlpRulesManager::Level level) {
   auto event = CreateDlpPolicyEvent(src_pattern, restriction, level);
   ReportEvent(std::move(event));
 }
@@ -158,7 +191,7 @@ void DlpReportingManager::ReportEvent(const std::string& src_pattern,
 void DlpReportingManager::ReportEvent(const std::string& src_pattern,
                                       const std::string& dst_pattern,
                                       DlpRulesManager::Restriction restriction,
-                                      DlpRulesManager::Level level) const {
+                                      DlpRulesManager::Level level) {
   auto event =
       CreateDlpPolicyEvent(src_pattern, dst_pattern, restriction, level);
   ReportEvent(std::move(event));
@@ -168,23 +201,32 @@ void DlpReportingManager::ReportEvent(
     const std::string& src_pattern,
     const DlpRulesManager::Component dst_component,
     DlpRulesManager::Restriction restriction,
-    DlpRulesManager::Level level) const {
+    DlpRulesManager::Level level) {
   auto event =
       CreateDlpPolicyEvent(src_pattern, dst_component, restriction, level);
   ReportEvent(std::move(event));
 }
 
-void DlpReportingManager::OnEventEnqueued(reporting::Status status) const {
+void DlpReportingManager::ReportWarningProceededEvent(
+    const std::string& src_pattern,
+    DlpRulesManager::Restriction restriction) {
+  auto event = CreateDlpPolicyEvent(src_pattern, restriction);
+  event.set_mode(DlpPolicyEvent_Mode_WARN_PROCEED);
+  ReportEvent(std::move(event));
+}
+
+void DlpReportingManager::OnEventEnqueued(reporting::Status status) {
   if (!status.ok()) {
     VLOG(1) << "Could not enqueue event to DLP reporting queue because of "
             << status;
   }
+  events_reported_++;
   base::UmaHistogramEnumeration(
       GetDlpHistogramPrefix() + dlp::kReportedEventStatus, status.code(),
       reporting::error::Code::MAX_VALUE);
 }
 
-void DlpReportingManager::ReportEvent(DlpPolicyEvent event) const {
+void DlpReportingManager::ReportEvent(DlpPolicyEvent event) {
   // TODO(1187506, marcgrimme) Refactor to handle gracefully with user
   // interaction when queue is not ready.
   if (!report_queue_.get()) {
@@ -194,7 +236,7 @@ void DlpReportingManager::ReportEvent(DlpPolicyEvent event) const {
   }
   reporting::ReportQueue::EnqueueCallback callback = base::BindOnce(
       &DlpReportingManager::OnEventEnqueued, base::Unretained(this));
-  report_queue_->Enqueue(&event, reporting::Priority::IMMEDIATE,
+  report_queue_->Enqueue(&event, reporting::Priority::SLOW_BATCH,
                          std::move(callback));
 
   switch (event.mode()) {
@@ -206,6 +248,16 @@ void DlpReportingManager::ReportEvent(DlpPolicyEvent event) const {
     case DlpPolicyEvent_Mode_REPORT:
       base::UmaHistogramEnumeration(
           GetDlpHistogramPrefix() + dlp::kReportedReportLevelRestriction,
+          DlpEventRestriction2DlpRulesManagerRestriction(event.restriction()));
+      break;
+    case DlpPolicyEvent_Mode_WARN:
+      base::UmaHistogramEnumeration(
+          GetDlpHistogramPrefix() + dlp::kReportedWarnLevelRestriction,
+          DlpEventRestriction2DlpRulesManagerRestriction(event.restriction()));
+      break;
+    case DlpPolicyEvent_Mode_WARN_PROCEED:
+      base::UmaHistogramEnumeration(
+          GetDlpHistogramPrefix() + dlp::kReportedWarnProceedLevelRestriction,
           DlpEventRestriction2DlpRulesManagerRestriction(event.restriction()));
       break;
     case DlpPolicyEvent_Mode_UNDEFINED_MODE:

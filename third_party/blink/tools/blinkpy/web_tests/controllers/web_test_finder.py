@@ -28,6 +28,7 @@
 
 import errno
 import fnmatch
+import hashlib
 import json
 import logging
 import math
@@ -182,7 +183,8 @@ class WebTestFinder(object):
                     line = self._strip_comments(line)
                     if not line:
                         continue
-                    is_glob = line[-1] == '*' and line[-2] != '\\'
+                    is_glob = line[-1] == '*' and (len(line) == 1
+                                                   or line[-2] != '\\')
                     if line[0] == '-':
                         if is_glob:
                             negative_globs.append(line)
@@ -195,14 +197,14 @@ class WebTestFinder(object):
             except IOError as error:
                 if error.errno == errno.ENOENT:
                     _log.critical('')
-                    _log.critical('--test-list file "%s" not found', file)
+                    _log.critical('--test-list file "%s" not found', filename)
                 raise
         return positive_matches, negative_matches, positive_globs, negative_globs
 
     @staticmethod
     def _strip_comments(line):
-        commentIndex = line.find('//')
-        if commentIndex is -1:
+        commentIndex = line.find('#')
+        if commentIndex == -1:
             commentIndex = len(line)
 
         line = re.sub(r'\s+', ' ', line[:commentIndex].strip())
@@ -298,8 +300,11 @@ class WebTestFinder(object):
 
     @staticmethod
     def _split_into_chunks(test_names, index, count):
-        tests_and_indices = [(test_name, hash(test_name) % count)
-                             for test_name in test_names]
+        tests_and_indices = [
+            (test_name,
+             int(hashlib.sha256(test_name.encode('utf-8')).hexdigest(), 16) %
+             count) for test_name in test_names
+        ]
 
         tests_to_run = [
             test_name for test_name, test_index in tests_and_indices

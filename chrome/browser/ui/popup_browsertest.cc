@@ -6,6 +6,7 @@
 
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
+#include "build/chromeos_buildflags.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/common/chrome_switches.h"
@@ -26,7 +27,7 @@
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
 #include "ash/shell.h"
-#include "ui/display/test/display_manager_test_api.h"
+#include "ui/display/test/display_manager_test_api.h"  // nogncheck
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
 
 namespace {
@@ -35,12 +36,15 @@ namespace {
 // with and without the experimental WindowPlacement blink feature.
 class PopupBrowserTest : public InProcessBrowserTest,
                          public ::testing::WithParamInterface<bool> {
+ public:
+  PopupBrowserTest(const PopupBrowserTest&) = delete;
+  PopupBrowserTest& operator=(const PopupBrowserTest&) = delete;
+
  protected:
   PopupBrowserTest() = default;
   ~PopupBrowserTest() override = default;
 
   void SetUpCommandLine(base::CommandLine* command_line) override {
-    InProcessBrowserTest::SetUpCommandLine(command_line);
     base::CommandLine::ForCurrentProcess()->AppendSwitch(
         embedder_support::kDisablePopupBlocking);
     const bool enable_window_placement = GetParam();
@@ -64,9 +68,6 @@ class PopupBrowserTest : public InProcessBrowserTest,
     EXPECT_TRUE(WaitForRenderFrameReady(popup_contents->GetMainFrame()));
     return popup;
   }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(PopupBrowserTest);
 };
 
 INSTANTIATE_TEST_SUITE_P(All, PopupBrowserTest, ::testing::Bool());
@@ -158,7 +159,13 @@ IN_PROC_BROWSER_TEST_P(PopupBrowserTest, DISABLED_OpenClampedToCurrentDisplay) {
 }
 
 // Ensure popups cannot be moved beyond the available display space by script.
-IN_PROC_BROWSER_TEST_P(PopupBrowserTest, MoveClampedToCurrentDisplay) {
+// TODO(crbug.com/1228795): Flaking on Linux Ozone
+#if defined(OS_LINUX) && defined(USE_OZONE)
+#define Maybe_MoveClampedToCurrentDisplay DISABLED_MoveClampedToCurrentDisplay
+#else
+#define Maybe_MoveClampedToCurrentDisplay MoveClampedToCurrentDisplay
+#endif
+IN_PROC_BROWSER_TEST_P(PopupBrowserTest, Maybe_MoveClampedToCurrentDisplay) {
   const auto display = GetDisplayNearestBrowser(browser());
   const char kOpenPopup[] =
       "open('.', '', 'left=' + (screen.availLeft + 50) + "
@@ -272,7 +279,11 @@ IN_PROC_BROWSER_TEST_P(PopupBrowserTest, MAYBE_AboutBlankCrossScreenPlacement) {
         permissions::PermissionRequestManager::ACCEPT_ALL);
     constexpr char kGetScreensLength[] = R"(
       (async () => {
-        try { return (await getScreens()).screens.length; } catch { return 0; }
+        try {
+          return (await getScreenDetails()).screens.length;
+        } catch {
+          return 0;
+        }
       })();
     )";
     EXPECT_EQ(2, EvalJs(opener, kGetScreensLength));

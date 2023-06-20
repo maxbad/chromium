@@ -11,7 +11,6 @@
 #include "base/bind.h"
 #include "base/check_op.h"
 #include "base/i18n/rtl.h"
-#include "base/macros.h"
 #include "build/build_config.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/accessibility/ax_action_data.h"
@@ -76,18 +75,18 @@ class Arrow : public Button {
     // TODO(pbos): Share ink-drop configuration code between here and
     // Combobox's TransparentButton.
     // Similar to Combobox's TransparentButton.
-    ink_drop()->SetMode(views::InkDropHost::InkDropMode::ON);
+    InkDrop::Get(this)->SetMode(views::InkDropHost::InkDropMode::ON);
     SetHasInkDropActionOnClick(true);
-    InkDrop::UseInkDropForSquareRipple(ink_drop(),
+    InkDrop::UseInkDropForSquareRipple(InkDrop::Get(this),
                                        /*highlight_on_hover=*/false);
-    ink_drop()->SetCreateRippleCallback(base::BindRepeating(
+    InkDrop::Get(this)->SetCreateRippleCallback(base::BindRepeating(
         [](Button* host) -> std::unique_ptr<views::InkDropRipple> {
           return std::make_unique<views::FloodFillInkDropRipple>(
               host->size(),
-              host->ink_drop()->GetInkDropCenterBasedOnLastEvent(),
+              InkDrop::Get(host)->GetInkDropCenterBasedOnLastEvent(),
               style::GetColor(*host, style::CONTEXT_TEXTFIELD,
                               style::STYLE_PRIMARY),
-              host->ink_drop()->GetVisibleOpacity());
+              InkDrop::Get(host)->GetVisibleOpacity());
         },
         this));
   }
@@ -145,6 +144,10 @@ class EditableCombobox::EditableComboboxMenuModel
     observation_.Observe(combobox_model_);
   }
 
+  EditableComboboxMenuModel(const EditableComboboxMenuModel&) = delete;
+  EditableComboboxMenuModel& operator=(const EditableComboboxMenuModel&) =
+      delete;
+
   ~EditableComboboxMenuModel() override = default;
 
   void UpdateItemsShown() {
@@ -156,7 +159,8 @@ class EditableCombobox::EditableComboboxMenuModel
         if (!filter_on_edit_ ||
             base::StartsWith(combobox_model_->GetItemAt(i), owner_->GetText(),
                              base::CompareCase::INSENSITIVE_ASCII)) {
-          items_shown_.push_back({i, combobox_model_->IsItemEnabledAt(i)});
+          items_shown_.push_back(
+              {static_cast<size_t>(i), combobox_model_->IsItemEnabledAt(i)});
         }
       }
     }
@@ -272,8 +276,6 @@ class EditableCombobox::EditableComboboxMenuModel
 
   base::ScopedObservation<ui::ComboboxModel, ui::ComboboxModelObserver>
       observation_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(EditableComboboxMenuModel);
 };
 
 // This class adds itself as the pre-target handler for the RootView of the
@@ -286,6 +288,11 @@ class EditableCombobox::EditableComboboxPreTargetHandler
       : owner_(owner), root_view_(root_view) {
     root_view_->AddPreTargetHandler(this);
   }
+
+  EditableComboboxPreTargetHandler(const EditableComboboxPreTargetHandler&) =
+      delete;
+  EditableComboboxPreTargetHandler& operator=(
+      const EditableComboboxPreTargetHandler&) = delete;
 
   ~EditableComboboxPreTargetHandler() override { StopObserving(); }
 
@@ -318,8 +325,6 @@ class EditableCombobox::EditableComboboxPreTargetHandler
 
   EditableCombobox* owner_;
   View* root_view_;
-
-  DISALLOW_COPY_AND_ASSIGN(EditableComboboxPreTargetHandler);
 };
 
 EditableCombobox::EditableCombobox()

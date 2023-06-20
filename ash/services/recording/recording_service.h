@@ -13,12 +13,12 @@
 #include "ash/services/recording/recording_encoder_muxer.h"
 #include "ash/services/recording/video_capture_params.h"
 #include "base/bind.h"
-#include "base/bind_post_task.h"
 #include "base/callback_forward.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/sequence_checker.h"
-#include "base/sequenced_task_runner.h"
+#include "base/task/bind_post_task.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/thread_annotations.h"
 #include "base/threading/sequence_bound.h"
 #include "base/threading/thread_checker.h"
@@ -57,7 +57,8 @@ class RecordingService : public mojom::RecordingService,
           audio_stream_factory,
       const base::FilePath& webm_file_path,
       const viz::FrameSinkId& frame_sink_id,
-      const gfx::Size& frame_sink_size) override;
+      const gfx::Size& frame_sink_size_dip,
+      float device_scale_factor) override;
   void RecordWindow(
       mojo::PendingRemote<mojom::RecordingServiceClient> client,
       mojo::PendingRemote<viz::mojom::FrameSinkVideoCapturer> video_capturer,
@@ -65,9 +66,10 @@ class RecordingService : public mojom::RecordingService,
           audio_stream_factory,
       const base::FilePath& webm_file_path,
       const viz::FrameSinkId& frame_sink_id,
-      const gfx::Size& frame_sink_size,
+      const gfx::Size& frame_sink_size_dip,
+      float device_scale_factor,
       const viz::SubtreeCaptureId& subtree_capture_id,
-      const gfx::Size& window_size) override;
+      const gfx::Size& window_size_dip) override;
   void RecordRegion(
       mojo::PendingRemote<mojom::RecordingServiceClient> client,
       mojo::PendingRemote<viz::mojom::FrameSinkVideoCapturer> video_capturer,
@@ -75,14 +77,17 @@ class RecordingService : public mojom::RecordingService,
           audio_stream_factory,
       const base::FilePath& webm_file_path,
       const viz::FrameSinkId& frame_sink_id,
-      const gfx::Size& frame_sink_size,
-      const gfx::Rect& crop_region) override;
+      const gfx::Size& frame_sink_size_dip,
+      float device_scale_factor,
+      const gfx::Rect& crop_region_dip) override;
   void StopRecording() override;
-  void OnRecordedWindowChangingRoot(
-      const viz::FrameSinkId& new_frame_sink_id,
-      const gfx::Size& new_frame_sink_size) override;
-  void OnRecordedWindowSizeChanged(const gfx::Size& new_window_size) override;
-  void OnFrameSinkSizeChanged(const gfx::Size& new_frame_sink_size) override;
+  void OnRecordedWindowChangingRoot(const viz::FrameSinkId& new_frame_sink_id,
+                                    const gfx::Size& new_frame_sink_size_dip,
+                                    float new_device_scale_factor) override;
+  void OnRecordedWindowSizeChanged(
+      const gfx::Size& new_window_size_dip) override;
+  void OnFrameSinkSizeChanged(const gfx::Size& new_frame_sink_size_dip,
+                              float new_device_scale_factor) override;
 
   // viz::mojom::FrameSinkVideoConsumer:
   void OnFrameCaptured(
@@ -242,6 +247,12 @@ class RecordingService : public mojom::RecordingService,
   // constructed, used, and destroyed on the main thread sequence.
   base::SequenceBound<RecordingEncoderMuxer> encoder_muxer_
       GUARDED_BY_CONTEXT(main_thread_checker_);
+
+  // The number of times the video encoder was reconfigured as a result of a
+  // change in the video size in the middle of recording (See
+  // ReconfigureVideoEncoder()).
+  int number_of_video_encoder_reconfigures_
+      GUARDED_BY_CONTEXT(main_thread_checker_) = 0;
 
   base::WeakPtrFactory<RecordingService> weak_ptr_factory_{this};
 };

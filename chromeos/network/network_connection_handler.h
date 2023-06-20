@@ -11,7 +11,6 @@
 
 #include "base/callback.h"
 #include "base/component_export.h"
-#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "chromeos/network/network_connection_observer.h"
@@ -45,7 +44,9 @@ class ManagedNetworkConfigurationHandler;
 
 class COMPONENT_EXPORT(CHROMEOS_NETWORK) NetworkConnectionHandler {
  public:
-  // Constants for |error_name| from |error_callback| for Connect.
+  // Constants for |error_name| from |error_callback| for Connect. Whenever a
+  // new error name associated to cellular connections is added,
+  // CellularMetricsLogger should be updated as well.
 
   //  No network matching |service_path| is found (hidden networks must be
   //  configured before connecting).
@@ -129,6 +130,9 @@ class COMPONENT_EXPORT(CHROMEOS_NETWORK) NetworkConnectionHandler {
   // Connect failed because connect request timed out.
   static const char kErrorConnectTimeout[];
 
+  // Connect failed because waiting for connectable timed out.
+  static const char kConnectableCellularTimeout[];
+
   class COMPONENT_EXPORT(CHROMEOS_NETWORK) TetherDelegate {
    public:
     using StringErrorCallback =
@@ -151,6 +155,9 @@ class COMPONENT_EXPORT(CHROMEOS_NETWORK) NetworkConnectionHandler {
    protected:
     virtual ~TetherDelegate() {}
   };
+
+  NetworkConnectionHandler(const NetworkConnectionHandler&) = delete;
+  NetworkConnectionHandler& operator=(const NetworkConnectionHandler&) = delete;
 
   virtual ~NetworkConnectionHandler();
 
@@ -242,8 +249,6 @@ class COMPONENT_EXPORT(CHROMEOS_NETWORK) NetworkConnectionHandler {
   // Only to be used by NetworkConnectionHandler implementation (and not by
   // derived classes).
   base::WeakPtrFactory<NetworkConnectionHandler> weak_ptr_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(NetworkConnectionHandler);
 };
 
 }  // namespace chromeos

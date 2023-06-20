@@ -9,7 +9,6 @@
 #include <string>
 
 #include "base/callback.h"
-#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "components/autofill_assistant/browser/devtools/devtools/domains/types_dom.h"
 #include "components/autofill_assistant/browser/devtools/devtools/domains/types_runtime.h"
@@ -61,6 +60,7 @@ class ElementPositionGetter : public WebControllerWorker {
       std::unique_ptr<dom::GetBoxModelResult> result);
   void OnScrollIntoView(const DevtoolsClient::ReplyStatus& reply_status,
                         std::unique_ptr<runtime::CallFunctionOnResult> result);
+  void RunNextRound();
   void OnResult(int x, int y);
   void OnError(const ClientStatus& status);
 

@@ -40,7 +40,7 @@ It is used by ARC (to run Android apps) and Crostini (to run Linux apps).
 Lacros will use exo as the Wayland server for graphics and event handling. Where
 possible we use stable Wayland protocols. We also share Wayland protocol
 extensions with ARC and Crostini (e.g.
-[zaura-shell](https://chromium.googlesource.com/chromium/src.git/+/main/components/exo/wayland/protocol/aura-shell.xml).
+[zaura-shell](https://chromium.googlesource.com/chromium/src.git/+/main/components/exo/wayland/protocol/aura-shell.xml)).
 Higher-level features (e.g. file picking) use Mojo IPC.
 
 We call the new Mojo API surface "crosapi". It's similar in concept to Win32 or
@@ -72,11 +72,6 @@ Once Lacros launches, the plan to use Lacros vs Chrome will be finalized.
 
 
 ## GN var and C++ macros
-
-*Note* that this will take effect once target_os flip of lacros-chrome is landed
-with patch [crrev.com/c/2644407](https://crrev.com/c/2644407). For a short while
-please keep using `BUILDFLAG(IS_CHROMEOS_ASH) || BUILDFLAG(IS_CHROMEOS_LACROS`
-and `is_chromeos_ash || is_chromeos_lacros` to target both binaries.
 
 Both lacros and ash are built with gn arg `target_os="chromeos"`. This means
 that C++ macro defined(OS_CHROMEOS) and gn variable is_chromeos are set true for

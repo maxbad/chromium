@@ -18,6 +18,8 @@
 #include "components/prefs/ios/pref_observer_bridge.h"
 #include "components/prefs/pref_change_registrar.h"
 #include "components/prefs/pref_service.h"
+#include "components/search_engines/template_url_service.h"
+#include "components/search_engines/template_url_service_observer.h"
 #include "components/signin/public/identity_manager/identity_manager.h"
 #include "components/strings/grit/components_strings.h"
 #include "components/sync/driver/sync_service.h"
@@ -33,8 +35,9 @@
 #include "ios/chrome/browser/feature_engagement/tracker_factory.h"
 #include "ios/chrome/browser/history/web_history_service_factory.h"
 #import "ios/chrome/browser/main/browser.h"
-#import "ios/chrome/browser/signin/authentication_service.h"
-#import "ios/chrome/browser/signin/authentication_service_factory.h"
+#include "ios/chrome/browser/search_engines/template_url_service_factory.h"
+#include "ios/chrome/browser/signin/authentication_service.h"
+#include "ios/chrome/browser/signin/authentication_service_factory.h"
 #include "ios/chrome/browser/signin/identity_manager_factory.h"
 #include "ios/chrome/browser/sync/sync_service_factory.h"
 #import "ios/chrome/browser/ui/alert_coordinator/action_sheet_coordinator.h"
@@ -44,6 +47,7 @@
 #import "ios/chrome/browser/ui/icons/chrome_icon.h"
 #import "ios/chrome/browser/ui/list_model/list_model.h"
 #import "ios/chrome/browser/ui/settings/cells/clear_browsing_data_constants.h"
+#import "ios/chrome/browser/ui/settings/cells/search_engine_item.h"
 #import "ios/chrome/browser/ui/settings/cells/table_view_clear_browsing_data_item.h"
 #import "ios/chrome/browser/ui/settings/clear_browsing_data/browsing_data_counter_wrapper_producer.h"
 #import "ios/chrome/browser/ui/settings/clear_browsing_data/clear_browsing_data_consumer.h"
@@ -59,8 +63,7 @@
 #import "ios/chrome/common/ui/colors/semantic_color_names.h"
 #include "ios/chrome/grit/ios_chromium_strings.h"
 #include "ios/chrome/grit/ios_strings.h"
-#import "ios/public/provider/chrome/browser/chrome_browser_provider.h"
-#import "ios/public/provider/chrome/browser/images/branded_image_provider.h"
+#import "ios/public/provider/chrome/browser/branded_images/branded_images_api.h"
 #include "ui/base/l10n/l10n_util_mac.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
@@ -200,8 +203,6 @@ static NSDictionary* _imageNamesByItemTypes = @{
 
 - (void)loadModel:(ListModel*)model {
   self.tableViewTimeRangeItem = [self timeRangeItem];
-  self.tableViewTimeRangeItem.useCustomSeparator =
-      base::FeatureList::IsEnabled(kSettingsRefresh) ? NO : YES;
 
   [model addSectionWithIdentifier:SectionIdentifierTimeRange];
   [model addItem:self.tableViewTimeRangeItem
@@ -337,10 +338,38 @@ static NSDictionary* _imageNamesByItemTypes = @{
   // Google Account footer.
   signin::IdentityManager* identityManager =
       IdentityManagerFactory::GetForBrowserState(self.browserState);
-  if (identityManager->HasPrimaryAccount(signin::ConsentLevel::kSync)) {
-    [model addSectionWithIdentifier:SectionIdentifierGoogleAccount];
-    [model setFooter:[self footerForGoogleAccountSectionItem]
-        forSectionWithIdentifier:SectionIdentifierGoogleAccount];
+
+  if (base::FeatureList::IsEnabled(kSearchHistoryLinkIOS)) {
+    const BOOL loggedIn =
+        identityManager->HasPrimaryAccount(signin::ConsentLevel::kSignin) ||
+        identityManager->HasPrimaryAccount(signin::ConsentLevel::kSync);
+    const TemplateURLService* templateURLService =
+        ios::TemplateURLServiceFactory::GetForBrowserState(_browserState);
+    const TemplateURL* defaultSearchEngine =
+        templateURLService->GetDefaultSearchProvider();
+    const BOOL isDefaultSearchEngineGoogle =
+        defaultSearchEngine->GetEngineType(
+            templateURLService->search_terms_data()) ==
+        SearchEngineType::SEARCH_ENGINE_GOOGLE;
+    // If the user has their DSE set to Google and is logged out
+    // there is no additional data to delete, so omit this section.
+    if (isDefaultSearchEngineGoogle && !loggedIn) {
+      // Nothing to do.
+    } else {
+      // Show additional instructions for deleting data.
+      [model addSectionWithIdentifier:SectionIdentifierGoogleAccount];
+      [model setFooter:[self footerGoogleAccountDSEBasedItem:loggedIn
+                                         defaultSearchEngine:defaultSearchEngine
+                                 isDefaultSearchEngineGoogle:
+                                     isDefaultSearchEngineGoogle]
+          forSectionWithIdentifier:SectionIdentifierGoogleAccount];
+    }
+  } else {
+    if (identityManager->HasPrimaryAccount(signin::ConsentLevel::kSync)) {
+      [model addSectionWithIdentifier:SectionIdentifierGoogleAccount];
+      [model setFooter:[self footerForGoogleAccountSectionItem]
+          forSectionWithIdentifier:SectionIdentifierGoogleAccount];
+    }
   }
 
   [model addSectionWithIdentifier:SectionIdentifierSavedSiteData];
@@ -363,13 +392,20 @@ static NSDictionary* _imageNamesByItemTypes = @{
       ios::WebHistoryServiceFactory::GetForBrowserState(_browserState);
 
   __weak ClearBrowsingDataManager* weakSelf = self;
-  browsing_data::ShouldShowNoticeAboutOtherFormsOfBrowsingHistory(
-      syncService, historyService, base::BindOnce(^(bool shouldShowNotice) {
-        ClearBrowsingDataManager* strongSelf = weakSelf;
-        [strongSelf
-            setShouldShowNoticeAboutOtherFormsOfBrowsingHistory:shouldShowNotice
-                                                       forModel:model];
-      }));
+
+  // The text notice at the bottom of the CBD selector is not needed when
+  // the Search History Link feature is enabled. However, the popup notice
+  // will be left for now.
+  if (!base::FeatureList::IsEnabled(kSearchHistoryLinkIOS)) {
+    browsing_data::ShouldShowNoticeAboutOtherFormsOfBrowsingHistory(
+        syncService, historyService, base::BindOnce(^(bool shouldShowNotice) {
+          ClearBrowsingDataManager* strongSelf = weakSelf;
+          [strongSelf
+              setShouldShowNoticeAboutOtherFormsOfBrowsingHistory:
+                  shouldShowNotice
+                                                         forModel:model];
+        }));
+  }
 
   browsing_data::ShouldPopupDialogAboutOtherFormsOfBrowsingHistory(
       syncService, historyService, GetChannel(),
@@ -409,8 +445,6 @@ static NSDictionary* _imageNamesByItemTypes = @{
       [self accessibilityIdentifierFromItemType:itemType];
   clearDataItem.dataTypeMask = mask;
   clearDataItem.prefName = prefName;
-  clearDataItem.useCustomSeparator =
-      base::FeatureList::IsEnabled(kSettingsRefresh) ? NO : YES;
   clearDataItem.checkedBackgroundColor = [[UIColor colorNamed:kBlueColor]
       colorWithAlphaComponent:kSelectedBackgroundColorAlpha];
   clearDataItem.imageName = [_imageNamesByItemTypes
@@ -450,6 +484,53 @@ static NSDictionary* _imageNamesByItemTypes = @{
              : [self footerGoogleAccountItem];
 }
 
+- (TableViewLinkHeaderFooterItem*)
+    footerGoogleAccountDSEBasedItem:(const BOOL)loggedIn
+                defaultSearchEngine:(const TemplateURL*)defaultSearchEngine
+        isDefaultSearchEngineGoogle:(const BOOL)isDefaultSearchEngineGoogle {
+  TableViewLinkHeaderFooterItem* footerItem =
+      [[TableViewLinkHeaderFooterItem alloc]
+          initWithType:ItemTypeFooterGoogleAccountDSEBased];
+  if (loggedIn) {
+    if (isDefaultSearchEngineGoogle) {
+      footerItem.text =
+          l10n_util::GetNSString(IDS_IOS_CLEAR_BROWSING_DATA_FOOTER_GOOGLE_DSE);
+      footerItem.urls = std::vector<GURL>{
+          google_util::AppendGoogleLocaleParam(
+              GURL(kClearBrowsingDataDSESearchUrlInFooterURL),
+              GetApplicationContext()->GetApplicationLocale()),
+          google_util::AppendGoogleLocaleParam(
+              GURL(kClearBrowsingDataDSEMyActivityUrlInFooterURL),
+              GetApplicationContext()->GetApplicationLocale())};
+    } else if (defaultSearchEngine->prepopulate_id() > 0) {
+      footerItem.text = l10n_util::GetNSStringF(
+          IDS_IOS_CLEAR_BROWSING_DATA_FOOTER_KNOWN_DSE_SIGNED_IN,
+          defaultSearchEngine->short_name());
+      footerItem.urls = std::vector<GURL>{google_util::AppendGoogleLocaleParam(
+          GURL(kClearBrowsingDataDSEMyActivityUrlInFooterURL),
+          GetApplicationContext()->GetApplicationLocale())};
+    } else {
+      footerItem.text = l10n_util::GetNSString(
+          IDS_IOS_CLEAR_BROWSING_DATA_FOOTER_UNKOWN_DSE_SIGNED_IN);
+      footerItem.urls = std::vector<GURL>{google_util::AppendGoogleLocaleParam(
+          GURL(kClearBrowsingDataDSEMyActivityUrlInFooterURL),
+          GetApplicationContext()->GetApplicationLocale())};
+    }
+  } else {
+    // Logged Out with Google DSE is handled in calling function since there
+    // should be no account footer section in this case.
+    if (defaultSearchEngine->prepopulate_id() > 0) {
+      footerItem.text = l10n_util::GetNSStringF(
+          IDS_IOS_CLEAR_BROWSING_DATA_FOOTER_KNOWN_DSE_SIGNED_OUT,
+          defaultSearchEngine->short_name());
+    } else {
+      footerItem.text = l10n_util::GetNSString(
+          IDS_IOS_CLEAR_BROWSING_DATA_FOOTER_UNKOWN_DSE_SIGNED_OUT);
+    }
+  }
+  return footerItem;
+}
+
 - (TableViewLinkHeaderFooterItem*)footerGoogleAccountItem {
   TableViewLinkHeaderFooterItem* footerItem =
       [[TableViewLinkHeaderFooterItem alloc]
@@ -460,9 +541,9 @@ static NSDictionary* _imageNamesByItemTypes = @{
 }
 
 - (TableViewLinkHeaderFooterItem*)footerGoogleAccountAndMyActivityItem {
-  UIImage* image = ios::GetChromeBrowserProvider()
-                       ->GetBrandedImageProvider()
-                       ->GetClearBrowsingDataAccountActivityImage();
+  UIImage* image = ios::provider::GetBrandedImage(
+      ios::provider::BrandedImage::kClearBrowsingDataAccountActivity);
+
   return [self
       footerItemWithType:ItemTypeFooterGoogleAccountAndMyActivity
                  titleID:IDS_IOS_CLEAR_BROWSING_DATA_FOOTER_ACCOUNT_AND_HISTORY
@@ -471,9 +552,9 @@ static NSDictionary* _imageNamesByItemTypes = @{
 }
 
 - (TableViewLinkHeaderFooterItem*)footerSavedSiteDataItem {
-  UIImage* image = ios::GetChromeBrowserProvider()
-                       ->GetBrandedImageProvider()
-                       ->GetClearBrowsingDataSiteDataImage();
+  UIImage* image = ios::provider::GetBrandedImage(
+      ios::provider::BrandedImage::kClearBrowsingDataSiteData);
+
   return [self
       footerItemWithType:ItemTypeFooterSavedSiteData
                  titleID:IDS_IOS_CLEAR_BROWSING_DATA_FOOTER_SAVED_SITE_DATA

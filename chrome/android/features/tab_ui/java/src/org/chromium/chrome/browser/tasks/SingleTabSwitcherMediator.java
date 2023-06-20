@@ -9,6 +9,7 @@ import static org.chromium.chrome.browser.tasks.SingleTabViewProperties.FAVICON;
 import static org.chromium.chrome.browser.tasks.SingleTabViewProperties.IS_VISIBLE;
 import static org.chromium.chrome.browser.tasks.SingleTabViewProperties.TITLE;
 
+import android.content.Context;
 import android.graphics.drawable.Drawable;
 import android.os.SystemClock;
 
@@ -32,6 +33,7 @@ import org.chromium.chrome.browser.tasks.tab_management.TabListFaviconProvider;
 import org.chromium.chrome.browser.tasks.tab_management.TabSwitcher;
 import org.chromium.chrome.browser.tasks.tab_management.TabUiFeatureUtilities;
 import org.chromium.chrome.features.start_surface.StartSurfaceConfiguration;
+import org.chromium.chrome.features.start_surface.StartSurfaceUserData;
 import org.chromium.ui.modelutil.PropertyModel;
 
 /** Mediator of the single tab tab switcher. */
@@ -51,18 +53,21 @@ public class SingleTabSwitcherMediator implements TabSwitcher.Controller {
     private boolean mAddNormalTabModelObserverPending;
     private Long mTabTitleAvailableTime;
     private boolean mFaviconInitialized;
+    private Context mContext;
 
-    SingleTabSwitcherMediator(PropertyModel propertyModel, TabModelSelector tabModelSelector,
-            TabListFaviconProvider tabListFaviconProvider) {
+    SingleTabSwitcherMediator(Context context, PropertyModel propertyModel,
+            TabModelSelector tabModelSelector, TabListFaviconProvider tabListFaviconProvider) {
         mTabModelSelector = tabModelSelector;
         mPropertyModel = propertyModel;
         mTabListFaviconProvider = tabListFaviconProvider;
+        mContext = context;
 
         mPropertyModel.set(FAVICON, mTabListFaviconProvider.getDefaultFaviconDrawable(false));
         mPropertyModel.set(CLICK_LISTENER, v -> {
             if (mTabSelectingListener != null
                     && mTabModelSelector.getCurrentTabId() != TabList.INVALID_TAB_INDEX) {
                 selectTheCurrentTab();
+                StartSurfaceUserData.setOpenedFromStart(mTabModelSelector.getCurrentTab());
             }
         });
 
@@ -133,8 +138,7 @@ public class SingleTabSwitcherMediator implements TabSwitcher.Controller {
 
     private void updateFavicon(Tab tab) {
         assert mTabListFaviconProvider.isInitialized();
-        // TODO(crbug/783819): convert TabListFaviconProvider to GURL
-        mTabListFaviconProvider.getFaviconForUrlAsync(tab.getUrl().getSpec(), false,
+        mTabListFaviconProvider.getFaviconDrawableForUrlAsync(tab.getUrl(), false,
                 (Drawable favicon) -> { mPropertyModel.set(FAVICON, favicon); });
     }
 
@@ -188,7 +192,7 @@ public class SingleTabSwitcherMediator implements TabSwitcher.Controller {
 
             PseudoTab activeTab;
             try (StrictModeContext ignored = StrictModeContext.allowDiskReads()) {
-                activeTab = PseudoTab.getActiveTabFromStateFile();
+                activeTab = PseudoTab.getActiveTabFromStateFile(mContext);
             }
             if (activeTab != null) {
                 mPropertyModel.set(TITLE, activeTab.getTitle());
@@ -243,7 +247,7 @@ public class SingleTabSwitcherMediator implements TabSwitcher.Controller {
 
         StartSurfaceConfiguration.recordHistogram(SINGLE_TAB_TITLE_AVAILABLE_TIME_UMA,
                 mTabTitleAvailableTime - activityCreationTimeMs,
-                TabUiFeatureUtilities.supportInstantStart(false));
+                TabUiFeatureUtilities.supportInstantStart(false, mContext));
     }
 
     @Override
@@ -253,7 +257,7 @@ public class SingleTabSwitcherMediator implements TabSwitcher.Controller {
 
     private void updateSelectedTab(Tab tab) {
         mPropertyModel.set(TITLE, tab.getTitle());
-        mTabListFaviconProvider.getFaviconForUrlAsync(tab.getUrl().getSpec(), false,
+        mTabListFaviconProvider.getFaviconDrawableForUrlAsync(tab.getUrl(), false,
                 (Drawable favicon) -> { mPropertyModel.set(FAVICON, favicon); });
     }
 

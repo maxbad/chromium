@@ -7,14 +7,13 @@ package org.chromium.components.page_info;
 import android.content.Context;
 import android.text.Spannable;
 import android.text.SpannableString;
-import android.text.SpannableStringBuilder;
 import android.text.style.TextAppearanceSpan;
 
 import org.chromium.components.content_settings.ContentSettingValues;
 import org.chromium.components.content_settings.ContentSettingsType;
 import org.chromium.components.location.LocationUtils;
 import org.chromium.components.page_info.PageInfoPermissionsController.PermissionObject;
-import org.chromium.components.permissions.PermissionUtil;
+import org.chromium.components.permissions.AndroidPermissionRequester;
 import org.chromium.components.permissions.nfc.NfcSystemLevelSetting;
 import org.chromium.ui.base.AndroidPermissionDelegate;
 
@@ -44,8 +43,9 @@ public class PermissionParamsListBuilder {
         mEntries = new ArrayList<>();
     }
 
-    public void addPermissionEntry(String name, int type, @ContentSettingValues int value) {
-        mEntries.add(new PageInfoPermissionEntry(name, type, value));
+    public void addPermissionEntry(
+            String name, String nameMidSentence, int type, @ContentSettingValues int value) {
+        mEntries.add(new PageInfoPermissionEntry(name, nameMidSentence, type, value));
     }
 
     public void clearPermissionEntries() {
@@ -63,6 +63,7 @@ public class PermissionParamsListBuilder {
     private PermissionObject createPermissionParams(
             PermissionParamsListBuilder.PageInfoPermissionEntry permission) {
         PermissionObject permissionParams = new PermissionObject();
+        permissionParams.type = permission.type;
 
         if (permission.setting == ContentSettingValues.ALLOW) {
             LocationUtils locationUtils = LocationUtils.getInstance();
@@ -76,7 +77,8 @@ public class PermissionParamsListBuilder {
                     && !NfcSystemLevelSetting.isNfcSystemLevelSettingEnabled()) {
                 permissionParams.warningTextResource =
                         R.string.page_info_android_permission_blocked;
-            } else if (!hasAndroidPermission(permission.type)) {
+            } else if (!AndroidPermissionRequester.hasRequiredAndroidPermissionsForContentSetting(
+                               mPermissionDelegate, permission.type)) {
                 if (permission.type == ContentSettingsType.AR) {
                     permissionParams.warningTextResource =
                             R.string.page_info_android_ar_camera_blocked;
@@ -87,12 +89,15 @@ public class PermissionParamsListBuilder {
             }
         }
 
-        SpannableStringBuilder builder = new SpannableStringBuilder();
         SpannableString nameString = new SpannableString(permission.name);
+        SpannableString nameStringMidSentence = new SpannableString(permission.nameMidSentence);
         final TextAppearanceSpan span =
                 new TextAppearanceSpan(mContext, R.style.TextAppearance_TextMediumThick_Primary);
         nameString.setSpan(span, 0, nameString.length(), Spannable.SPAN_INCLUSIVE_EXCLUSIVE);
         permissionParams.name = nameString;
+        nameStringMidSentence.setSpan(
+                span, 0, nameStringMidSentence.length(), Spannable.SPAN_INCLUSIVE_EXCLUSIVE);
+        permissionParams.nameMidSentence = nameStringMidSentence;
 
         switch (permission.setting) {
             case ContentSettingValues.ALLOW:
@@ -109,29 +114,20 @@ public class PermissionParamsListBuilder {
         return permissionParams;
     }
 
-    private boolean hasAndroidPermission(int contentSettingType) {
-        String[] androidPermissions =
-                PermissionUtil.getAndroidPermissionsForContentSetting(contentSettingType);
-        if (androidPermissions == null) return true;
-        for (int i = 0; i < androidPermissions.length; i++) {
-            if (!mPermissionDelegate.hasPermission(androidPermissions[i])) {
-                return false;
-            }
-        }
-        return true;
-    }
-
     /**
      * An entry in the settings dropdown for a given permission. There are two options for each
      * permission: Allow and Block.
      */
     private static final class PageInfoPermissionEntry {
         public final String name;
+        public final String nameMidSentence;
         public final int type;
         public final @ContentSettingValues int setting;
 
-        PageInfoPermissionEntry(String name, int type, @ContentSettingValues int setting) {
+        PageInfoPermissionEntry(
+                String name, String nameMidSentence, int type, @ContentSettingValues int setting) {
             this.name = name;
+            this.nameMidSentence = nameMidSentence;
             this.type = type;
             this.setting = setting;
         }

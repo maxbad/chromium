@@ -6,20 +6,21 @@
 // finish running its tests.
 import 'chrome://resources/mojo/mojo/public/js/mojo_bindings_lite.js';
 
-import {ReadLaterApiProxy, ReadLaterApiProxyImpl} from 'chrome://read-later.top-chrome/read_later_api_proxy.js';
 import {BookmarkFolderElement, FOLDER_OPEN_CHANGED_EVENT} from 'chrome://read-later.top-chrome/side_panel/bookmark_folder.js';
-import {getFaviconForPageURL} from 'chrome://resources/js/icon.m.js';
+import {BookmarksApiProxy} from 'chrome://read-later.top-chrome/side_panel/bookmarks_api_proxy.js';
+import {getFaviconForPageURL} from 'chrome://resources/js/icon.js';
 
 import {assertEquals, assertFalse, assertTrue} from '../../chai_assert.js';
-import {eventToPromise, flushTasks, waitAfterNextRender} from '../../test_util.m.js';
-import {TestReadLaterApiProxy} from '../test_read_later_api_proxy.js';
+import {eventToPromise, flushTasks, waitAfterNextRender} from '../../test_util.js';
+
+import {TestBookmarksApiProxy} from './test_bookmarks_api_proxy.js';
 
 suite('SidePanelBookmarkFolderTest', () => {
   /** @type {!BookmarkFolderElement} */
   let bookmarkFolder;
 
-  /** @type {!TestReadLaterApiProxy} */
-  let readLaterApi;
+  /** @type {!TestBookmarksApiProxy} */
+  let bookmarksApi;
 
   /** @type {!chrome.bookmarks.BookmarkTreeNode} */
   const folder = {
@@ -54,8 +55,8 @@ suite('SidePanelBookmarkFolderTest', () => {
   setup(async () => {
     document.body.innerHTML = '';
 
-    readLaterApi = new TestReadLaterApiProxy();
-    ReadLaterApiProxyImpl.instance_ = readLaterApi;
+    bookmarksApi = new TestBookmarksApiProxy();
+    BookmarksApiProxy.setInstance(bookmarksApi);
 
     bookmarkFolder = /** @type {!BookmarkFolderElement} */ (
         document.createElement('bookmark-folder'));
@@ -69,10 +70,7 @@ suite('SidePanelBookmarkFolderTest', () => {
   test('UpdatesDepthVariables', () => {
     bookmarkFolder.depth = 3;
     assertEquals('3', bookmarkFolder.style.getPropertyValue('--node-depth'));
-    assertEquals(
-        '4',
-        bookmarkFolder.shadowRoot.querySelector('#children')
-            .style.getPropertyValue('--node-depth'));
+    assertEquals('4', bookmarkFolder.style.getPropertyValue('--child-depth'));
   });
 
   test('RendersChildren', () => {
@@ -84,10 +82,28 @@ suite('SidePanelBookmarkFolderTest', () => {
 
     assertEquals(
         folder.children[1].title,
-        childElements[1].querySelector('.title').innerText);
+        childElements[1].querySelector('.title').textContent);
     assertEquals(
         folder.children[2].title,
-        childElements[2].querySelector('.title').innerText);
+        childElements[2].querySelector('.title').textContent);
+  });
+
+  test('UpdatesChildCountVariable', () => {
+    assertEquals('3', bookmarkFolder.style.getPropertyValue('--child-count'));
+
+    bookmarkFolder.folder = Object.assign({}, folder, {
+      children: [
+        {
+          id: '1',
+          title: 'Shopping list',
+          children: [],
+        },
+      ]
+    });
+    assertEquals('1', bookmarkFolder.style.getPropertyValue('--child-count'));
+
+    bookmarkFolder.folder = Object.assign({}, folder, {children: undefined});
+    assertEquals('0', bookmarkFolder.style.getPropertyValue('--child-count'));
   });
 
   test('ShowsFaviconForBookmarks', () => {
@@ -120,8 +136,163 @@ suite('SidePanelBookmarkFolderTest', () => {
 
   test('OpensBookmark', async () => {
     getChildElements()[1].click();
-    const [url, updateReadStatus] = await readLaterApi.whenCalled('openURL');
-    assertEquals(folder.children[1].url, url.url);
-    assertFalse(updateReadStatus);
+    const [url, parentFolderDepth] =
+        await bookmarksApi.whenCalled('openBookmark');
+    assertEquals(folder.children[1].url, url);
+    assertEquals(0, parentFolderDepth);
+  });
+
+  test('MovesFocusDown', () => {
+    // No focus yet, should focus folder row.
+    assertTrue(bookmarkFolder.moveFocus(1));
+    assertEquals(
+        bookmarkFolder.shadowRoot.querySelector('.row'),
+        bookmarkFolder.shadowRoot.activeElement);
+
+    // Move focus down one, should focus first child which is a folder.
+    assertTrue(bookmarkFolder.moveFocus(1));
+    assertEquals(
+        bookmarkFolder.shadowRoot.querySelector('#children bookmark-folder'),
+        bookmarkFolder.shadowRoot.activeElement);
+
+    const bookmarkElements =
+        bookmarkFolder.shadowRoot.querySelectorAll('#children .row');
+    // Move focus down one, should focus second child, the first bookmark.
+    assertTrue(bookmarkFolder.moveFocus(1));
+    assertEquals(bookmarkElements[0], bookmarkFolder.shadowRoot.activeElement);
+
+    // Move focus down one, should focus second child, the second bookmark.
+    assertTrue(bookmarkFolder.moveFocus(1));
+    assertEquals(bookmarkElements[1], bookmarkFolder.shadowRoot.activeElement);
+
+    // No more room.
+    assertFalse(bookmarkFolder.moveFocus(1));
+  });
+
+  test('MovesFocusUp', () => {
+    // No focus yet, should focus last bookmark.
+    const bookmarkElements =
+        bookmarkFolder.shadowRoot.querySelectorAll('#children .row');
+    assertTrue(bookmarkFolder.moveFocus(-1));
+    assertEquals(
+        bookmarkElements[bookmarkElements.length - 1],
+        bookmarkFolder.shadowRoot.activeElement);
+
+    // Move focus up one, should focus the first bookmark.
+    assertTrue(bookmarkFolder.moveFocus(-1));
+    assertEquals(bookmarkElements[0], bookmarkFolder.shadowRoot.activeElement);
+
+    // Move focus up one, should focus the child folder.
+    assertTrue(bookmarkFolder.moveFocus(-1));
+    assertEquals(
+        bookmarkFolder.shadowRoot.querySelector('#children bookmark-folder'),
+        bookmarkFolder.shadowRoot.activeElement);
+
+    // Move focus up one, should focus the folder itself.
+    assertTrue(bookmarkFolder.moveFocus(-1));
+    assertEquals(
+        bookmarkFolder.shadowRoot.querySelector('.row'),
+        bookmarkFolder.shadowRoot.activeElement);
+
+    // No more room.
+    assertFalse(bookmarkFolder.moveFocus(-1));
+  });
+
+  test('DoesNotFocusHiddenChildren', async () => {
+    bookmarkFolder.openFolders = [];
+    await waitAfterNextRender();
+    assertTrue(bookmarkFolder.moveFocus(1));   // Moves focus to folder.
+    assertFalse(bookmarkFolder.moveFocus(1));  // No children to move focus to.
+  });
+
+  test('MovesFocusWithinNestedFolders', async () => {
+    bookmarkFolder.folder = {
+      id: '0',
+      title: 'Bookmarks bar',
+      children: [{
+        id: '1',
+        title: 'Nested folder 1',
+        children: [{
+          id: '2',
+          title: 'Nested folder 2',
+          children: [{
+            id: '3',
+            title: 'Nested folder 3',
+            children: [],
+          }],
+        }],
+      }],
+    };
+    bookmarkFolder.openFolders = ['0', '1', '2', '3'];
+    await waitAfterNextRender();
+
+    // Move focus down 1, should focus root folder.
+    assertTrue(bookmarkFolder.moveFocus(1));
+    assertEquals(
+        bookmarkFolder.shadowRoot.querySelector('.row'),
+        bookmarkFolder.shadowRoot.activeElement);
+
+    // Move focus down 1, should focus first nested folder.
+    assertTrue(bookmarkFolder.moveFocus(1));
+    assertEquals(
+        bookmarkFolder.folder.children[0],
+        bookmarkFolder.shadowRoot.activeElement.folder);
+
+    // Move focus down 1, should focus grandchild folder.
+    assertTrue(bookmarkFolder.moveFocus(1));
+    assertEquals(
+        bookmarkFolder.folder.children[0].children[0],
+        bookmarkFolder.shadowRoot.activeElement.shadowRoot.activeElement
+            .folder);
+
+    // Move focus down 1, should focus great grandchild folder.
+    assertTrue(bookmarkFolder.moveFocus(1));
+    assertEquals(
+        bookmarkFolder.folder.children[0].children[0].children[0],
+        bookmarkFolder.shadowRoot.activeElement.shadowRoot.activeElement
+            .shadowRoot.activeElement.folder);
+
+    // Move focus up 1, should focus grandchild folder.
+    assertTrue(bookmarkFolder.moveFocus(-1));
+    assertEquals(
+        bookmarkFolder.folder.children[0].children[0],
+        bookmarkFolder.shadowRoot.activeElement.shadowRoot.activeElement
+            .folder);
+  });
+
+  test('SendsClickModifiers', async () => {
+    const item = getChildElements()[1];
+    item.dispatchEvent(new MouseEvent('click'));
+    const [, , click] = await bookmarksApi.whenCalled('openBookmark');
+    assertFalse(
+        click.middleButton || click.altKey || click.ctrlKey || click.metaKey ||
+        click.shiftKey);
+    bookmarksApi.resetResolver('openBookmark');
+
+    // Middle mouse button click.
+    item.dispatchEvent(new MouseEvent('auxclick', {button: 1}));
+    const [, , auxClick] = await bookmarksApi.whenCalled('openBookmark');
+    assertTrue(auxClick.middleButton);
+    assertFalse(
+        auxClick.altKey || auxClick.ctrlKey || auxClick.metaKey ||
+        auxClick.shiftKey);
+    bookmarksApi.resetResolver('openBookmark');
+
+    // Non-middle mouse aux clicks.
+    item.dispatchEvent(new MouseEvent('auxclick', {button: 2}));
+    assertEquals(0, bookmarksApi.getCallCount('openBookmark'));
+
+    // Modifier keys.
+    item.dispatchEvent(new MouseEvent('click', {
+      altKey: true,
+      ctrlKey: true,
+      metaKey: true,
+      shiftKey: true,
+    }));
+    const [, , modifiedClick] = await bookmarksApi.whenCalled('openBookmark');
+    assertFalse(modifiedClick.middleButton);
+    assertTrue(
+        modifiedClick.altKey && modifiedClick.ctrlKey &&
+        modifiedClick.metaKey && modifiedClick.shiftKey);
   });
 });

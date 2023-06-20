@@ -22,7 +22,6 @@
 class BrowserView;
 class CaptionButtonPlaceholderContainer;
 class OpaqueBrowserFrameViewLayout;
-class OpaqueBrowserFrameViewPlatformSpecific;
 class TabIconView;
 
 namespace chrome {
@@ -63,9 +62,11 @@ class OpaqueBrowserFrameView : public BrowserNonClientFrameView,
   int GetTopInset(bool restored) const override;
   int GetThemeBackgroundXInset() const override;
   void UpdateThrobber(bool running) override;
+  void WindowControlsOverlayEnabledChanged() override;
   gfx::Size GetMinimumSize() const override;
   void PaintAsActiveChanged() override;
   void UpdateFrameColor() override;
+  void OnThemeChanged() override;
 
   // views::NonClientFrameView:
   gfx::Rect GetBoundsForClientView() const override;
@@ -83,7 +84,7 @@ class OpaqueBrowserFrameView : public BrowserNonClientFrameView,
 
   // TabIconViewModel:
   bool ShouldTabIconViewAnimate() const override;
-  gfx::ImageSkia GetFaviconForTabIconView() override;
+  ui::ImageModel GetFaviconForTabIconView() override;
 
   // OpaqueBrowserFrameViewLayoutDelegate:
   bool ShouldShowWindowIcon() const override;
@@ -107,6 +108,8 @@ class OpaqueBrowserFrameView : public BrowserNonClientFrameView,
   FrameButtonStyle GetFrameButtonStyle() const override;
   void UpdateWindowControlsOverlay(
       const gfx::Rect& bounding_rect) const override;
+  bool IsTranslucentWindowOpacitySupported() const override;
+  bool ShouldDrawRestoredFrameShadow() const override;
 
  protected:
   views::Button* minimize_button() const { return minimize_button_; }
@@ -114,13 +117,25 @@ class OpaqueBrowserFrameView : public BrowserNonClientFrameView,
   views::Button* restore_button() const { return restore_button_; }
   views::Button* close_button() const { return close_button_; }
 
+  OpaqueBrowserFrameViewLayout* layout() { return layout_; }
+
+  views::FrameBackground* frame_background() const {
+    return frame_background_.get();
+  }
+
   // views::View:
   void OnPaint(gfx::Canvas* canvas) override;
 
-  OpaqueBrowserFrameViewLayout* layout() { return layout_; }
+  // Paint various sub-components of this view.  The *FrameBorder() functions
+  // also paint the background of the titlebar area, since the top frame border
+  // and titlebar background are a contiguous component.
+  virtual void PaintRestoredFrameBorder(gfx::Canvas* canvas) const;
+  void PaintMaximizedFrameBorder(gfx::Canvas* canvas) const;
+  void PaintClientEdge(gfx::Canvas* canvas) const;
 
  private:
   friend class WebAppOpaqueBrowserFrameViewTest;
+  friend class WebAppOpaqueBrowserFrameViewWindowControlsOverlayTest;
 
   // Creates and returns a FrameCaptionButton with |this| as its listener.
   // Memory is owned by the caller.
@@ -161,11 +176,11 @@ class OpaqueBrowserFrameView : public BrowserNonClientFrameView,
       ViewID view_id,
       const gfx::Size& desired_size);
 
-  // Returns the thickness of the border that makes up the window frame edges.
+  // Returns the insets from the native window edge to the client view.
   // This does not include any client edge.  If |restored| is true, this is
   // calculated as if the window was restored, regardless of its current
   // node_data.
-  int FrameBorderThickness(bool restored) const;
+  gfx::Insets FrameBorderInsets(bool restored) const;
 
   // Returns the thickness of the border that makes up the window frame edge
   // along the top of the frame. If |restored| is true, this acts as if the
@@ -181,14 +196,16 @@ class OpaqueBrowserFrameView : public BrowserNonClientFrameView,
   // Returns true if the view should draw its own custom title bar.
   bool GetShowWindowTitleBar() const;
 
-  // Paint various sub-components of this view.  The *FrameBorder() functions
-  // also paint the background of the titlebar area, since the top frame border
-  // and titlebar background are a contiguous component.
-  void PaintRestoredFrameBorder(gfx::Canvas* canvas) const;
-  void PaintMaximizedFrameBorder(gfx::Canvas* canvas) const;
-  void PaintClientEdge(gfx::Canvas* canvas) const;
-
   void UpdateCaptionButtonPlaceholderContainerBackground();
+
+#if defined(OS_WIN)
+  // Sets caption button's accessible name as its tooltip when it's in a PWA
+  // with window-controls-overlay display override and resets it otherwise. In
+  // this mode, the web contents covers the frame view and so does it's legacy
+  // hwnd which prevent tooltips being shown for the caption buttons. This hwnd
+  // only exists in windows.
+  void UpdateCaptionButtonToolTipsForWindowControlsOverlay();
+#endif
 
   // Our layout manager also calculates various bounds.
   OpaqueBrowserFrameViewLayout* layout_;
@@ -205,9 +222,6 @@ class OpaqueBrowserFrameView : public BrowserNonClientFrameView,
 
   // Background painter for the window frame.
   std::unique_ptr<views::FrameBackground> frame_background_;
-
-  // Observer that handles platform dependent configuration.
-  std::unique_ptr<OpaqueBrowserFrameViewPlatformSpecific> platform_observer_;
 
   // PlaceholderContainer beneath the controls button for PWAs with window
   // controls overlay display override.

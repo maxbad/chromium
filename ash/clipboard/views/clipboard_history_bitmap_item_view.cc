@@ -9,8 +9,8 @@
 #include "ash/clipboard/clipboard_history_util.h"
 #include "ash/clipboard/views/clipboard_history_delete_button.h"
 #include "ash/clipboard/views/clipboard_history_view_constants.h"
+#include "ash/public/cpp/style/scoped_light_mode_as_default.h"
 #include "ash/style/ash_color_provider.h"
-#include "ash/style/scoped_light_mode_as_default.h"
 #include "base/bind.h"
 #include "base/containers/contains.h"
 #include "base/time/time.h"
@@ -23,6 +23,7 @@
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/strings/grit/ui_strings.h"
+#include "ui/views/border.h"
 #include "ui/views/controls/image_view.h"
 #include "ui/views/layout/box_layout.h"
 #include "ui/views/layout/fill_layout.h"
@@ -34,13 +35,11 @@ namespace {
 
 // The duration of the fade out animation for transitioning the placeholder
 // image to rendered HTML.
-constexpr base::TimeDelta kFadeOutDurationMs =
-    base::TimeDelta::FromMilliseconds(60);
+constexpr base::TimeDelta kFadeOutDurationMs = base::Milliseconds(60);
 
 // The duration of the fade in animation for transitioning the placeholder image
 // to rendered HTML.
-constexpr base::TimeDelta kFadeInDurationMs =
-    base::TimeDelta::FromMilliseconds(200);
+constexpr base::TimeDelta kFadeInDurationMs = base::Milliseconds(200);
 
 ////////////////////////////////////////////////////////////////////////////////
 // FadeImageView
@@ -225,7 +224,7 @@ class ClipboardHistoryBitmapItemView::BitmapContentsView
     ScopedLightModeAsDefault scoped_light_mode_as_default;
 
     ContentsView::OnThemeChanged();
-    border_container_view_->border()->set_color(
+    border_container_view_->GetBorder()->set_color(
         AshColorProvider::Get()->GetControlsLayerColor(
             AshColorProvider::ControlsLayerType::kHairlineBorderColor));
   }

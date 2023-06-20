@@ -12,7 +12,11 @@
 #include "components/constrained_window/constrained_window_views.h"
 #include "components/payments/content/payment_ui_observer.h"
 #include "components/payments/content/secure_payment_confirmation_model.h"
+#include "components/payments/core/sizes.h"
 #include "ui/base/metadata/metadata_impl_macros.h"
+#include "ui/color/color_id.h"
+#include "ui/color/color_provider.h"
+#include "ui/views/border.h"
 #include "ui/views/controls/image_view.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/controls/progress_bar.h"
@@ -32,12 +36,26 @@ void RecordAuthenticationDialogResult(
       result);
 }
 
+class BorderedRowView : public views::View {
+ public:
+  METADATA_HEADER(BorderedRowView);
+
+  void OnThemeChanged() override {
+    View::OnThemeChanged();
+    SetBorder(views::CreateSolidSidedBorder(
+        0, 0, 1, 0, GetColorProvider()->GetColor(ui::kColorSeparator)));
+  }
+};
+
+BEGIN_METADATA(BorderedRowView, views::View)
+END_METADATA
+
 }  // namespace
 
 // static
 base::WeakPtr<SecurePaymentConfirmationView>
 SecurePaymentConfirmationView::Create(
-    const PaymentUIObserver* payment_ui_observer) {
+    const base::WeakPtr<PaymentUIObserver> payment_ui_observer) {
   // On desktop, the SecurePaymentConfirmationView object is memory managed by
   // the views:: machinery. It is deleted when the window is closed and
   // views::DialogDelegateView::DeleteDelegate() is called by its corresponding
@@ -51,8 +69,8 @@ SecurePaymentConfirmationView::SecurePaymentConfirmationView() = default;
 SecurePaymentConfirmationView::~SecurePaymentConfirmationView() = default;
 
 SecurePaymentConfirmationDialogView::SecurePaymentConfirmationDialogView(
-    ObserverForTest* observer_for_test,
-    const PaymentUIObserver* ui_observer_for_test)
+    base::WeakPtr<ObserverForTest> observer_for_test,
+    const base::WeakPtr<PaymentUIObserver> ui_observer_for_test)
     : observer_for_test_(observer_for_test),
       ui_observer_for_test_(ui_observer_for_test) {}
 SecurePaymentConfirmationDialogView::~SecurePaymentConfirmationDialogView() =
@@ -199,13 +217,12 @@ SecurePaymentConfirmationDialogView::GetWeakPtr() {
 }
 
 void SecurePaymentConfirmationDialogView::InitChildViews() {
-  RemoveAllChildViews(true);
+  RemoveAllChildViews();
 
   SetLayoutManager(std::make_unique<views::BoxLayout>(
       views::BoxLayout::Orientation::kVertical, gfx::Insets(), 0));
 
   AddChildView(CreateSecurePaymentConfirmationHeaderView(
-      GetNativeTheme()->ShouldUseDarkColors(),
       static_cast<int>(DialogViewID::PROGRESS_BAR),
       static_cast<int>(DialogViewID::HEADER_ICON)));
 
@@ -295,12 +312,7 @@ std::unique_ptr<views::View> SecurePaymentConfirmationDialogView::CreateRowView(
     DialogViewID value_id,
     const SkBitmap* icon,
     DialogViewID icon_id) {
-  std::unique_ptr<views::View> row = std::make_unique<views::View>();
-
-  row->SetBorder(views::CreateSolidSidedBorder(
-      0, 0, 1, 0,
-      GetNativeTheme()->GetSystemColor(
-          ui::NativeTheme::kColorId_SeparatorColor)));
+  auto row = std::make_unique<BorderedRowView>();
 
   views::GridLayout* layout =
       row->SetLayoutManager(std::make_unique<views::GridLayout>());
@@ -321,7 +333,8 @@ std::unique_ptr<views::View> SecurePaymentConfirmationDialogView::CreateRowView(
     columns->AddColumn(views::GridLayout::LEADING, views::GridLayout::CENTER,
                        views::GridLayout::kFixedSize,
                        views::GridLayout::ColumnSize::kFixed,
-                       kInstrumentIconWidth, kInstrumentIconWidth);
+                       kSecurePaymentConfirmationInstrumentIconWidthPx,
+                       kSecurePaymentConfirmationInstrumentIconWidthPx);
     columns->AddPaddingColumn(views::GridLayout::kFixedSize,
                               ChromeLayoutProvider::Get()->GetDistanceMetric(
                                   views::DISTANCE_RELATED_LABEL_HORIZONTAL));

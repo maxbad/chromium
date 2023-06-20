@@ -10,12 +10,15 @@
 #include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
 #include "base/strings/stringprintf.h"
+#include "base/test/bind.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/web_applications/components/web_app_icon_generator.h"
-#include "chrome/browser/web_applications/components/web_app_utils.h"
 #include "chrome/browser/web_applications/file_utils_wrapper.h"
+#include "chrome/browser/web_applications/web_app_icon_generator.h"
+#include "chrome/browser/web_applications/web_app_icon_manager.h"
+#include "chrome/browser/web_applications/web_app_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gfx/codec/png_codec.h"
+#include "ui/gfx/color_utils.h"
 #include "ui/gfx/image/image_skia.h"
 #include "url/gurl.h"
 
@@ -89,6 +92,14 @@ base::FilePath GetAppIconsMaskableDir(Profile* profile, const AppId& app_id) {
   return icons_dir;
 }
 
+base::FilePath GetOtherIconsDir(Profile* profile, const AppId& app_id) {
+  base::FilePath web_apps_root_directory = GetWebAppsRootDirectory(profile);
+  base::FilePath app_dir =
+      GetManifestResourcesDirectoryForApp(web_apps_root_directory, app_id);
+  base::FilePath icons_dir = app_dir.AppendASCII("Image Cache");
+  return icons_dir;
+}
+
 bool ReadBitmap(FileUtilsWrapper* utils,
                 const base::FilePath& file_path,
                 SkBitmap* bitmap) {
@@ -129,8 +140,10 @@ void ExpectImageSkiaRep(const gfx::ImageSkia& image_skia,
   EXPECT_EQ(size_px, image_skia.GetRepresentation(scale).GetBitmap().width());
   EXPECT_EQ(size_px, image_skia.GetRepresentation(scale).GetBitmap().height());
 
-  EXPECT_EQ(color,
-            image_skia.GetRepresentation(scale).GetBitmap().getColor(0, 0));
+  EXPECT_EQ(
+      color_utils::SkColorToRgbaString(color),
+      color_utils::SkColorToRgbaString(
+          image_skia.GetRepresentation(scale).GetBitmap().getColor(0, 0)));
 }
 
 blink::Manifest::ImageResource CreateSquareImageResource(
@@ -172,6 +185,121 @@ std::map<SquareSizePx, SkBitmap> ReadPngsFromDirectory(
   }
 
   return pngs;
+}
+
+GeneratedIconsInfo::GeneratedIconsInfo() = default;
+
+GeneratedIconsInfo::GeneratedIconsInfo(const GeneratedIconsInfo&) = default;
+
+GeneratedIconsInfo::GeneratedIconsInfo(IconPurpose purpose,
+                                       std::vector<SquareSizePx> sizes_px,
+                                       std::vector<SkColor> colors)
+    : purpose(purpose), sizes_px(sizes_px), colors(colors) {}
+
+GeneratedIconsInfo::~GeneratedIconsInfo() = default;
+
+apps::IconInfo CreateIconInfo(const GURL& icon_base_url,
+                              IconPurpose purpose,
+                              SquareSizePx size_px) {
+  apps::IconInfo apps_icon_info;
+
+  apps_icon_info.url =
+      icon_base_url.Resolve("icon-" + base::NumberToString(size_px) + ".png");
+  apps_icon_info.square_size_px = size_px;
+  apps_icon_info.purpose = ManifestPurposeToIconInfoPurpose(purpose);
+
+  return apps_icon_info;
+}
+
+void AddIconsToWebApplicationInfo(
+    WebApplicationInfo* web_application_info,
+    const GURL& icons_base_url,
+    const std::vector<GeneratedIconsInfo>& icons_info) {
+  for (const GeneratedIconsInfo& info : icons_info) {
+    DCHECK_EQ(info.sizes_px.size(), info.colors.size());
+
+    std::map<SquareSizePx, SkBitmap> generated_bitmaps;
+
+    for (size_t i = 0; i < info.sizes_px.size(); ++i) {
+      apps::IconInfo apps_icon_info =
+          CreateIconInfo(icons_base_url, info.purpose, info.sizes_px[i]);
+      web_application_info->manifest_icons.push_back(std::move(apps_icon_info));
+
+      AddGeneratedIcon(&generated_bitmaps, info.sizes_px[i], info.colors[i]);
+    }
+
+    web_application_info->icon_bitmaps.SetBitmapsForPurpose(
+        info.purpose, std::move(generated_bitmaps));
+  }
+}
+
+void IconManagerWriteGeneratedIcons(
+    WebAppIconManager& icon_manager,
+    const AppId& app_id,
+    const std::vector<GeneratedIconsInfo>& icons_info) {
+  IconBitmaps icon_bitmaps;
+
+  for (const GeneratedIconsInfo& info : icons_info) {
+    DCHECK_EQ(info.sizes_px.size(), info.colors.size());
+
+    std::map<SquareSizePx, SkBitmap> generated_bitmaps;
+
+    for (size_t i = 0; i < info.sizes_px.size(); ++i)
+      AddGeneratedIcon(&generated_bitmaps, info.sizes_px[i], info.colors[i]);
+
+    icon_bitmaps.SetBitmapsForPurpose(info.purpose,
+                                      std::move(generated_bitmaps));
+  }
+
+  base::RunLoop run_loop;
+  icon_manager.WriteData(app_id, std::move(icon_bitmaps), {}, {},
+                         base::BindLambdaForTesting([&](bool success) {
+                           DCHECK(success);
+                           run_loop.Quit();
+                         }));
+  run_loop.Run();
+}
+
+void IconManagerStartAndAwaitFaviconAny(WebAppIconManager& icon_manager,
+                                        const AppId& app_id) {
+  base::RunLoop run_loop;
+  icon_manager.SetFaviconReadCallbackForTesting(
+      base::BindLambdaForTesting([&](const AppId& cached_app_id) {
+        DCHECK_EQ(cached_app_id, app_id);
+        run_loop.Quit();
+      }));
+  icon_manager.Start();
+  run_loop.Run();
+}
+
+void IconManagerStartAndAwaitFaviconMonochrome(WebAppIconManager& icon_manager,
+                                               const AppId& app_id) {
+  base::RunLoop run_loop;
+  icon_manager.SetFaviconMonochromeReadCallbackForTesting(
+      base::BindLambdaForTesting([&](const AppId& cached_app_id) {
+        DCHECK_EQ(cached_app_id, app_id);
+        run_loop.Quit();
+      }));
+  icon_manager.Start();
+  run_loop.Run();
+}
+
+SkColor IconManagerReadAppIconPixel(const WebAppIconManager& icon_manager,
+                                    const AppId& app_id,
+                                    SquareSizePx size_px,
+                                    int x,
+                                    int y) {
+  SkColor result;
+  base::RunLoop run_loop;
+  icon_manager.ReadIcons(
+      app_id, IconPurpose::ANY, {size_px},
+      base::BindLambdaForTesting(
+          [&](std::map<SquareSizePx, SkBitmap> icon_bitmaps) {
+            run_loop.Quit();
+            result = icon_bitmaps.at(size_px).getColor(x, y);
+          }));
+  run_loop.Run();
+  return result;
 }
 
 }  // namespace web_app

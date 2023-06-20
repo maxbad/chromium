@@ -8,7 +8,6 @@
 #include "ash/search_box/search_box_view_delegate.h"
 #include "ash/shortcut_viewer/strings/grit/shortcut_viewer_strings.h"
 #include "ash/shortcut_viewer/vector_icons/vector_icons.h"
-#include "base/bind.h"
 #include "ui/accessibility/ax_enums.mojom.h"
 #include "ui/accessibility/ax_node_data.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -78,10 +77,6 @@ void KSVSearchBoxView::SetAccessibleValue(const std::u16string& value) {
   NotifyAccessibilityEvent(ax::mojom::Event::kValueChanged, true);
 }
 
-void KSVSearchBoxView::UpdateBackgroundColor(SkColor color) {
-  GetSearchBoxBackground()->SetNativeControlColor(color);
-}
-
 void KSVSearchBoxView::UpdateSearchBoxBorder() {
   // TODO(wutao): Rename this function or create another function in base class.
   // It updates many things in addition to the border.
@@ -105,13 +100,6 @@ void KSVSearchBoxView::UpdateSearchBoxBorder() {
 
 void KSVSearchBoxView::SetupCloseButton() {
   views::ImageButton* close = close_button();
-  close->SetCallback(base::BindRepeating(
-      [](ash::SearchBoxViewBase* view) {
-        // Focus on the search box text field after clicking close button.
-        view->search_box()->RequestFocus();
-        view->ClearSearch();
-      },
-      this));
   close->SetHasInkDropActionOnClick(true);
   close->SetImage(
       views::ImageButton::STATE_NORMAL,
@@ -142,9 +130,7 @@ void KSVSearchBoxView::SetupBackButton() {
   back->SetVisible(false);
 }
 
-void KSVSearchBoxView::OnSearchBoxActiveChanged(bool active) {
-  // Update to override default placeholder attributes set by base class when
-  // the search box is no longer active.
+void KSVSearchBoxView::UpdatePlaceholderTextStyle() {
   SetPlaceholderTextAttributes();
 }
 

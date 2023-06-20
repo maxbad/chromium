@@ -13,6 +13,7 @@
 #include "ash/ambient/ambient_controller.h"
 #include "ash/ambient/test/test_ambient_client.h"
 #include "ash/ambient/ui/ambient_background_image_view.h"
+#include "ash/public/cpp/ambient/proto/photo_cache_entry.pb.h"
 #include "ash/public/cpp/test/test_image_downloader.h"
 #include "ash/test/ash_test_base.h"
 #include "services/media_session/public/mojom/media_session.mojom.h"
@@ -95,6 +96,10 @@ class AmbientAshTestBase : public AshTestBase {
   // Set the size of the next image that will be loaded.
   void SetDecodedPhotoSize(int width, int height);
 
+  void SetPhotoOrientation(bool portrait);
+
+  void SetPhotoTopicType(::ambient::TopicType topic_type);
+
   // Advance the task environment timer to expire the lock screen inactivity
   // timer.
   void FastForwardToLockScreenTimeout();
@@ -124,8 +129,8 @@ class AmbientAshTestBase : public AshTestBase {
   int GetNumOfActiveWakeLocks(device::mojom::WakeLockType type);
 
   // Simulate to issue an |access_token|.
-  // If |with_error| is true, will return an empty access token.
-  void IssueAccessToken(const std::string& access_token, bool with_error);
+  // If |is_empty| is true, will return an empty access token.
+  void IssueAccessToken(bool is_empty);
 
   bool IsAccessTokenRequestPending();
 
@@ -141,8 +146,8 @@ class AmbientAshTestBase : public AshTestBase {
   // Returns the media string view for the default display.
   MediaStringView* GetMediaStringView();
 
-  const std::map<int, PhotoCacheEntry>& GetCachedFiles();
-  const std::map<int, PhotoCacheEntry>& GetBackupCachedFiles();
+  const std::map<int, ::ambient::PhotoCacheEntry>& GetCachedFiles();
+  const std::map<int, ::ambient::PhotoCacheEntry>& GetBackupCachedFiles();
 
   AmbientController* ambient_controller();
 

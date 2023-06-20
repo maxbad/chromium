@@ -35,6 +35,8 @@ class PLATFORM_EXPORT ShapeResultBloberizer {
   ShapeResultBloberizer(const FontDescription&,
                         float device_scale_factor,
                         Type);
+  ShapeResultBloberizer(const ShapeResultBloberizer&) = delete;
+  ShapeResultBloberizer& operator=(const ShapeResultBloberizer&) = delete;
 
   struct BlobInfo {
     BlobInfo(sk_sp<SkTextBlob> b, CanvasRotationInVertical r)
@@ -97,9 +99,9 @@ class PLATFORM_EXPORT ShapeResultBloberizer {
     }
 
     pending_glyphs_.push_back(glyph);
-    pending_offsets_.push_back(offset.X() +
+    pending_offsets_.push_back(offset.x() +
                                pending_vertical_baseline_x_offset_);
-    pending_offsets_.push_back(offset.Y());
+    pending_offsets_.push_back(offset.y());
     if (UNLIKELY(!current_text_.IsNull())) {
       DVLOG(5) << "  Appending glyph " << glyph << " with start index "
                << character_index;
@@ -196,8 +198,6 @@ class PLATFORM_EXPORT ShapeResultBloberizer {
   // Constructed blobs.
   BlobBuffer blobs_;
   float advance_ = 0;
-
-  DISALLOW_COPY_AND_ASSIGN(ShapeResultBloberizer);
 };
 
 struct PLATFORM_EXPORT ShapeResultBloberizer::FillGlyphsNG

@@ -22,6 +22,8 @@
 #include "ui/views/test/ax_event_counter.h"
 #include "ui/views/widget/widget_utils.h"
 
+using testing::NiceMock;
+
 namespace {
 
 struct TypeClicks {
@@ -52,6 +54,9 @@ const struct TypeClicks kClickTestCase[] = {
 class AutofillPopupViewNativeViewsTest : public ChromeViewsTestBase {
  public:
   AutofillPopupViewNativeViewsTest() = default;
+  AutofillPopupViewNativeViewsTest(AutofillPopupViewNativeViewsTest&) = delete;
+  AutofillPopupViewNativeViewsTest& operator=(
+      AutofillPopupViewNativeViewsTest&) = delete;
   ~AutofillPopupViewNativeViewsTest() override = default;
 
   void SetUp() override {
@@ -82,12 +87,9 @@ class AutofillPopupViewNativeViewsTest : public ChromeViewsTestBase {
 
  protected:
   std::unique_ptr<autofill::AutofillPopupViewNativeViews> view_;
-  autofill::MockAutofillPopupController autofill_popup_controller_;
+  NiceMock<autofill::MockAutofillPopupController> autofill_popup_controller_;
   std::unique_ptr<views::Widget> widget_;
   std::unique_ptr<ui::test::EventGenerator> generator_;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(AutofillPopupViewNativeViewsTest);
 };
 
 class AutofillPopupViewNativeViewsForEveryTypeTest
@@ -245,7 +247,7 @@ TEST_P(AutofillPopupViewNativeViewsForEveryTypeTest, ShowClickTest) {
 
   generator_->set_current_screen_location(center);
   generator_->ClickLeftButton();
-  view()->RemoveAllChildViews(true /* delete_children */);
+  view()->RemoveAllChildViews();
 }
 
 INSTANTIATE_TEST_SUITE_P(All,

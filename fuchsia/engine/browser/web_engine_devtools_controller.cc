@@ -4,7 +4,6 @@
 
 #include "fuchsia/engine/browser/web_engine_devtools_controller.h"
 
-#include <chromium/internal/cpp/fidl.h>
 #include <fuchsia/web/cpp/fidl.h>
 #include <lib/fidl/cpp/interface_ptr_set.h>
 #include <lib/sys/cpp/component_context.h>
@@ -19,6 +18,7 @@
 #include "content/public/browser/devtools_agent_host.h"
 #include "content/public/browser/devtools_socket_factory.h"
 #include "content/public/common/content_switches.h"
+#include "fuchsia/engine/fidl/chromium/internal/cpp/fidl.h"
 #include "fuchsia/engine/switches.h"
 #include "net/base/net_errors.h"
 #include "net/base/port_util.h"
@@ -89,8 +89,6 @@ class NoopController : public WebEngineDevToolsController {
   NoopController& operator=(const NoopController&) = delete;
 
   // WebEngineDevToolsController implementation:
-  void OnContextCreated() override {}
-  void OnContextDestroyed() override {}
   bool OnFrameCreated(content::WebContents* contents,
                       bool user_debugging) override {
     return !user_debugging;
@@ -106,23 +104,22 @@ class NoopController : public WebEngineDevToolsController {
 };
 
 // "User-mode" makes DevTools accessible to remote devices for Frames specified
-// by the Context owner. The controller, which starts DevTools when the first
-// Frame is created, and shuts it down when no debuggable Frames remain.
+// by the web_instance owner. The controller, which starts DevTools when the
+// first Frame is created, and shuts it down when no debuggable Frames remain.
 class UserModeController : public WebEngineDevToolsController {
  public:
   explicit UserModeController(uint16_t server_port)
       : ip_endpoint_(net::IPAddress::IPv6AllZeros(), server_port) {}
-  ~UserModeController() override { DCHECK(!is_remote_debugging_started_); }
+  ~UserModeController() override {
+    if (is_remote_debugging_started_) {
+      content::DevToolsAgentHost::StopRemoteDebuggingServer();
+    }
+  }
 
   UserModeController(const UserModeController&) = delete;
   UserModeController& operator=(const UserModeController&) = delete;
 
   // WebEngineDevToolsController implementation:
-  void OnContextCreated() override {}
-  void OnContextDestroyed() override {
-    if (is_remote_debugging_started_)
-      content::DevToolsAgentHost::StopRemoteDebuggingServer();
-  }
   bool OnFrameCreated(content::WebContents* contents,
                       bool user_debugging) override {
     if (user_debugging) {
@@ -207,21 +204,14 @@ class DebugModeController : public WebEngineDevToolsController,
   DebugModeController()
       : DebugModeController(
             net::IPEndPoint(net::IPAddress::IPv4Localhost(), 0)) {}
-  ~DebugModeController() override = default;
+  ~DebugModeController() override {
+    content::DevToolsAgentHost::StopRemoteDebuggingServer();
+  }
 
   DebugModeController(const DebugModeController&) = delete;
   DebugModeController& operator=(const DebugModeController&) = delete;
 
   // DevToolsController implementation:
-  void OnContextCreated() override {
-    StartRemoteDebuggingServer(
-        base::BindOnce(&DebugModeController::OnDevToolsPortChanged,
-                       base::Unretained(this)),
-        ip_endpoint_);
-  }
-  void OnContextDestroyed() override {
-    content::DevToolsAgentHost::StopRemoteDebuggingServer();
-  }
   bool OnFrameCreated(content::WebContents* contents,
                       bool user_debugging) override {
     return !user_debugging;
@@ -242,7 +232,13 @@ class DebugModeController : public WebEngineDevToolsController,
   explicit DebugModeController(net::IPEndPoint ip_endpoint)
       : ip_endpoint_(std::move(ip_endpoint)),
         connector_binding_(base::ComponentContextForProcess()->outgoing().get(),
-                           this) {}
+                           this) {
+    // Immediately start the service.
+    StartRemoteDebuggingServer(
+        base::BindOnce(&DebugModeController::OnDevToolsPortChanged,
+                       base::Unretained(this)),
+        ip_endpoint_);
+  }
 
   virtual void OnDevToolsPortChanged(uint16_t port) {
     devtools_port_ = port;
@@ -290,8 +286,7 @@ class DebugModeController : public WebEngineDevToolsController,
 };
 
 // "Mixed-mode" is used when both user and debug remote debugging are active at
-// the same time. The service lifespan is tied to the Context and all Frames are
-// available for remote debugging.
+// the same time. The service is enabled for the lifespan of the web_instance.
 class MixedModeController : public DebugModeController {
  public:
   explicit MixedModeController(uint16_t server_port)

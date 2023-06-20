@@ -19,6 +19,7 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/common/storage_key/storage_key.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker_registration_options.mojom.h"
 #include "url/origin.h"
 
 namespace content {
@@ -95,6 +96,11 @@ class DevToolsBackgroundServicesContextTest
       : task_environment_(BrowserTaskEnvironment::IO_MAINLOOP),
         embedded_worker_test_helper_(base::FilePath() /* in memory */) {}
 
+  DevToolsBackgroundServicesContextTest(
+      const DevToolsBackgroundServicesContextTest&) = delete;
+  DevToolsBackgroundServicesContextTest& operator=(
+      const DevToolsBackgroundServicesContextTest&) = delete;
+
   ~DevToolsBackgroundServicesContextTest() override = default;
 
   void SetUp() override {
@@ -135,7 +141,7 @@ class DevToolsBackgroundServicesContextTest
   }
 
   void SimulateOneWeekPassing() {
-    base::Time one_week_ago = base::Time::Now() - base::TimeDelta::FromDays(7);
+    base::Time one_week_ago = base::Time::Now() - base::Days(7);
     context_->expiration_times_
         [devtools::proto::BackgroundService::BACKGROUND_FETCH] = one_week_ago;
   }
@@ -165,7 +171,7 @@ class DevToolsBackgroundServicesContextTest
   }
 
   void LogTestBackgroundServiceEvent(const std::string& log_message) {
-    context_->LogBackgroundServiceEventOnCoreThread(
+    context_->LogBackgroundServiceEvent(
         service_worker_registration_id_, origin_,
         DevToolsBackgroundService::kBackgroundFetch, kEventName, kInstanceId,
         {{"key", log_message}});
@@ -223,7 +229,7 @@ class DevToolsBackgroundServicesContextTest
           base::BindOnce(&DidRegisterServiceWorker,
                          &service_worker_registration_id,
                          run_loop.QuitClosure()),
-          /*requesting_frame_id=*/GlobalFrameRoutingId());
+          /*requesting_frame_id=*/GlobalRenderFrameHostId());
 
       run_loop.Run();
     }
@@ -260,8 +266,6 @@ class DevToolsBackgroundServicesContextTest
   scoped_refptr<DevToolsBackgroundServicesContextImpl> context_;
   scoped_refptr<ServiceWorkerRegistration> service_worker_registration_;
   std::unique_ptr<ContentBrowserClient> browser_client_;
-
-  DISALLOW_COPY_AND_ASSIGN(DevToolsBackgroundServicesContextTest);
 };
 
 TEST_F(DevToolsBackgroundServicesContextTest,

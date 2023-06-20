@@ -10,6 +10,7 @@
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
 #include "build/build_config.h"
+#include "build/chromeos_buildflags.h"
 #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
 #include "chrome/browser/serial/serial_blocklist.h"
 #include "chrome/browser/serial/serial_chooser_context_factory.h"
@@ -18,6 +19,7 @@
 #include "chrome/test/base/scoped_testing_local_state.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
+#include "chrome/test/base/testing_profile_manager.h"
 #include "components/content_settings/core/browser/host_content_settings_map.h"
 #include "components/content_settings/core/common/pref_names.h"
 #include "components/permissions/test/object_permission_context_base_mock_permission_observer.h"
@@ -28,7 +30,17 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+#if defined(OS_CHROMEOS)
+#include "chrome/browser/ash/login/users/fake_chrome_user_manager.h"
+#include "components/account_id/account_id.h"
+#include "components/user_manager/scoped_user_manager.h"
+#endif
+
+using testing::NiceMock;
+
 namespace {
+
+constexpr char kTestUserEmail[] = "user@example.com";
 
 class MockPortObserver : public SerialChooserContext::PortObserver {
  public:
@@ -71,21 +83,40 @@ std::unique_ptr<base::Value> ReadJson(base::StringPiece json) {
                       : nullptr;
 }
 
-class SerialChooserContextTest : public testing::Test {
+class SerialChooserContextTestBase {
  public:
-  SerialChooserContextTest()
-      : testing_local_state_(TestingBrowserProcess::GetGlobal()) {}
-  ~SerialChooserContextTest() override = default;
+  SerialChooserContextTestBase() = default;
+  ~SerialChooserContextTestBase() = default;
 
   // Disallow copy and assignment.
-  SerialChooserContextTest(SerialChooserContextTest&) = delete;
-  SerialChooserContextTest& operator=(SerialChooserContextTest&) = delete;
+  SerialChooserContextTestBase(SerialChooserContextTestBase&) = delete;
+  SerialChooserContextTestBase& operator=(SerialChooserContextTestBase&) =
+      delete;
 
-  void SetUp() override {
+  void DoSetUp(bool is_affiliated) {
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+    auto fake_user_manager = std::make_unique<ash::FakeChromeUserManager>();
+    auto* fake_user_manager_ptr = fake_user_manager.get();
+    scoped_user_manager_ = std::make_unique<user_manager::ScopedUserManager>(
+        std::move(fake_user_manager));
+
+    constexpr char kTestUserGaiaId[] = "1111111111";
+    auto account_id =
+        AccountId::FromUserEmailGaiaId(kTestUserEmail, kTestUserGaiaId);
+    fake_user_manager_ptr->AddUserWithAffiliation(account_id, is_affiliated);
+    fake_user_manager_ptr->LoginUser(account_id);
+#endif  // BUILDFLAG(IS_CHROMEOS_ASH)
+
+    testing_profile_manager_ = std::make_unique<TestingProfileManager>(
+        TestingBrowserProcess::GetGlobal());
+    ASSERT_TRUE(testing_profile_manager_->SetUp());
+    profile_ = testing_profile_manager_->CreateTestingProfile(kTestUserEmail);
+    ASSERT_TRUE(profile_);
+
     mojo::PendingRemote<device::mojom::SerialPortManager> port_manager;
     port_manager_.AddReceiver(port_manager.InitWithNewPipeAndPassReceiver());
 
-    context_ = SerialChooserContextFactory::GetForProfile(&profile_);
+    context_ = SerialChooserContextFactory::GetForProfile(profile_);
     context_->SetPortManagerForTesting(std::move(port_manager));
     scoped_permission_observation_.Observe(context_);
     scoped_port_observation_.Observe(context_);
@@ -94,7 +125,7 @@ class SerialChooserContextTest : public testing::Test {
     context_->FlushPortManagerConnectionForTesting();
   }
 
-  void TearDown() override {
+  void DoTearDown() {
     // Because SerialBlocklist is a singleton it must be cleared after tests run
     // to prevent leakage between tests.
     feature_list_.Reset();
@@ -113,32 +144,60 @@ class SerialChooserContextTest : public testing::Test {
   }
 
   device::FakeSerialPortManager& port_manager() { return port_manager_; }
-  TestingProfile* profile() { return &profile_; }
-  TestingPrefServiceSimple* local_state() { return testing_local_state_.Get(); }
+  TestingProfile* profile() { return profile_; }
+  TestingPrefServiceSimple* local_state() {
+    return testing_profile_manager_->local_state()->Get();
+  }
   SerialChooserContext* context() { return context_; }
   permissions::MockPermissionObserver& permission_observer() {
     return permission_observer_;
   }
-  MockPortObserver& port_observer() { return port_observer_; }
+  NiceMock<MockPortObserver>& port_observer() { return port_observer_; }
 
  private:
   content::BrowserTaskEnvironment task_environment_;
   base::test::ScopedFeatureList feature_list_;
   device::FakeSerialPortManager port_manager_;
-  ScopedTestingLocalState testing_local_state_;
-  TestingProfile profile_;
+  std::unique_ptr<TestingProfileManager> testing_profile_manager_;
+  TestingProfile* profile_ = nullptr;
+
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+  std::unique_ptr<user_manager::ScopedUserManager> scoped_user_manager_;
+#endif
+
   SerialChooserContext* context_;
-  permissions::MockPermissionObserver permission_observer_;
+  NiceMock<permissions::MockPermissionObserver> permission_observer_;
   base::ScopedObservation<
       permissions::ObjectPermissionContextBase,
       permissions::ObjectPermissionContextBase::PermissionObserver>
       scoped_permission_observation_{&permission_observer_};
-  MockPortObserver port_observer_;
+  NiceMock<MockPortObserver> port_observer_;
   base::ScopedObservation<SerialChooserContext,
                           SerialChooserContext::PortObserver,
                           &SerialChooserContext::AddPortObserver,
                           &SerialChooserContext::RemovePortObserver>
       scoped_port_observation_{&port_observer_};
+};
+
+class SerialChooserContextTest : public SerialChooserContextTestBase,
+                                 public testing::Test {
+ public:
+  void SetUp() override { DoSetUp(/*is_affiliated=*/true); }
+  void TearDown() override { DoTearDown(); }
+};
+
+class SerialChooserContextAffiliatedTest : public SerialChooserContextTestBase,
+                                           public testing::TestWithParam<bool> {
+ public:
+  SerialChooserContextAffiliatedTest() : is_affiliated_(GetParam()) {}
+
+  void SetUp() override { DoSetUp(is_affiliated_); }
+  void TearDown() override { DoTearDown(); }
+
+  bool is_affiliated() const { return is_affiliated_; }
+
+ private:
+  bool is_affiliated_;
 };
 
 }  // namespace
@@ -260,14 +319,15 @@ TEST_F(SerialChooserContextTest, EphemeralPermissionRevokedOnDisconnect) {
   port->token = base::UnguessableToken::Create();
   port_manager().AddPort(port.Clone());
 
-  context()->GrantPortPermission(origin, *port);
-  EXPECT_TRUE(context()->HasPortPermission(origin, *port));
-
   EXPECT_CALL(permission_observer(),
               OnObjectPermissionChanged(
                   absl::make_optional(ContentSettingsType::SERIAL_GUARD),
-                  ContentSettingsType::SERIAL_CHOOSER_DATA));
+                  ContentSettingsType::SERIAL_CHOOSER_DATA))
+      .Times(2);
   EXPECT_CALL(permission_observer(), OnPermissionRevoked(origin));
+
+  context()->GrantPortPermission(origin, *port);
+  EXPECT_TRUE(context()->HasPortPermission(origin, *port));
 
   port_manager().RemovePort(port->token);
   {
@@ -299,14 +359,15 @@ TEST_F(SerialChooserContextTest, PersistenceRequiresDisplayName) {
       CreatePersistentPort(/*name=*/absl::nullopt, "ABC123");
   port_manager().AddPort(port.Clone());
 
-  context()->GrantPortPermission(origin, *port);
-  EXPECT_TRUE(context()->HasPortPermission(origin, *port));
-
   EXPECT_CALL(permission_observer(),
               OnObjectPermissionChanged(
                   absl::make_optional(ContentSettingsType::SERIAL_GUARD),
-                  ContentSettingsType::SERIAL_CHOOSER_DATA));
+                  ContentSettingsType::SERIAL_CHOOSER_DATA))
+      .Times(2);
   EXPECT_CALL(permission_observer(), OnPermissionRevoked(origin));
+
+  context()->GrantPortPermission(origin, *port);
+  EXPECT_TRUE(context()->HasPortPermission(origin, *port));
 
   // Without a display name a persistent permission cannot be recorded and so
   // removing the device will revoke permission.
@@ -400,9 +461,9 @@ TEST_F(SerialChooserContextTest, GuardPermission) {
 
 TEST_F(SerialChooserContextTest, PolicyGuardPermission) {
   const auto origin = url::Origin::Create(GURL("https://google.com"));
-
   auto port = device::mojom::SerialPortInfo::New();
   port->token = base::UnguessableToken::Create();
+
   context()->GrantPortPermission(origin, *port);
 
   auto* profile_prefs = profile()->GetTestingPrefService();
@@ -483,7 +544,7 @@ TEST_F(SerialChooserContextTest, PolicyBlockedForUrls) {
   EXPECT_EQ(1u, all_origin_objects.size());
 }
 
-TEST_F(SerialChooserContextTest, PolicyAllowForUrls) {
+TEST_P(SerialChooserContextAffiliatedTest, PolicyAllowForUrls) {
   const auto kFooOrigin = url::Origin::Create(GURL("https://foo.origin"));
   const auto kBarOrigin = url::Origin::Create(GURL("https://bar.origin"));
 
@@ -515,54 +576,76 @@ TEST_F(SerialChooserContextTest, PolicyAllowForUrls) {
   usb_port2->product_id = 0x4E12;
 
   EXPECT_TRUE(context()->CanRequestObjectPermission(kFooOrigin));
-  EXPECT_TRUE(context()->HasPortPermission(kFooOrigin, *platform_port));
-  EXPECT_TRUE(context()->HasPortPermission(kFooOrigin, *usb_port1));
-  EXPECT_TRUE(context()->HasPortPermission(kFooOrigin, *usb_port2));
-
   EXPECT_TRUE(context()->CanRequestObjectPermission(kBarOrigin));
-  EXPECT_FALSE(context()->HasPortPermission(kBarOrigin, *platform_port));
-  EXPECT_TRUE(context()->HasPortPermission(kBarOrigin, *usb_port1));
-  EXPECT_FALSE(context()->HasPortPermission(kBarOrigin, *usb_port2));
 
-  auto foo_objects = context()->GetGrantedObjects(kFooOrigin);
-  ASSERT_EQ(1u, foo_objects.size());
-  const auto& foo_object = foo_objects.front();
-  EXPECT_EQ(kFooOrigin.GetURL(), foo_object->origin);
-  EXPECT_EQ(u"Any serial port",
-            context()->GetObjectDisplayName(foo_object->value));
-  EXPECT_EQ(content_settings::SETTING_SOURCE_POLICY, foo_object->source);
-  EXPECT_FALSE(foo_object->incognito);
+  if (is_affiliated()) {
+    EXPECT_TRUE(context()->HasPortPermission(kFooOrigin, *platform_port));
+    EXPECT_TRUE(context()->HasPortPermission(kFooOrigin, *usb_port1));
+    EXPECT_TRUE(context()->HasPortPermission(kFooOrigin, *usb_port2));
 
-  auto bar_objects = context()->GetGrantedObjects(kBarOrigin);
-  ASSERT_EQ(1u, bar_objects.size());
-  const auto& bar_object = bar_objects.front();
-  EXPECT_EQ(kBarOrigin.GetURL(), bar_object->origin);
-  EXPECT_EQ(u"Nexus One", context()->GetObjectDisplayName(bar_object->value));
-  EXPECT_EQ(content_settings::SETTING_SOURCE_POLICY, bar_object->source);
-  EXPECT_FALSE(bar_object->incognito);
+    EXPECT_FALSE(context()->HasPortPermission(kBarOrigin, *platform_port));
+    EXPECT_TRUE(context()->HasPortPermission(kBarOrigin, *usb_port1));
+    EXPECT_FALSE(context()->HasPortPermission(kBarOrigin, *usb_port2));
 
-  auto all_objects = context()->GetAllGrantedObjects();
-  EXPECT_EQ(2u, all_objects.size());
-  bool found_foo_object = false, found_bar_object = false;
-  for (const auto& object : all_objects) {
-    if (object->origin == kFooOrigin.GetURL()) {
-      EXPECT_FALSE(found_foo_object);
-      found_foo_object = true;
-      EXPECT_EQ(u"Any serial port",
-                context()->GetObjectDisplayName(object->value));
-    } else if (object->origin == kBarOrigin.GetURL()) {
-      EXPECT_FALSE(found_bar_object);
-      found_bar_object = true;
-      EXPECT_EQ(u"Nexus One", context()->GetObjectDisplayName(object->value));
+    auto foo_objects = context()->GetGrantedObjects(kFooOrigin);
+    ASSERT_EQ(1u, foo_objects.size());
+    const auto& foo_object = foo_objects.front();
+    EXPECT_EQ(kFooOrigin.GetURL(), foo_object->origin);
+    EXPECT_EQ(u"Any serial port",
+              context()->GetObjectDisplayName(foo_object->value));
+    EXPECT_EQ(content_settings::SETTING_SOURCE_POLICY, foo_object->source);
+    EXPECT_FALSE(foo_object->incognito);
+
+    auto bar_objects = context()->GetGrantedObjects(kBarOrigin);
+    ASSERT_EQ(1u, bar_objects.size());
+    const auto& bar_object = bar_objects.front();
+    EXPECT_EQ(kBarOrigin.GetURL(), bar_object->origin);
+    EXPECT_EQ(u"Nexus One", context()->GetObjectDisplayName(bar_object->value));
+    EXPECT_EQ(content_settings::SETTING_SOURCE_POLICY, bar_object->source);
+    EXPECT_FALSE(bar_object->incognito);
+
+    auto all_objects = context()->GetAllGrantedObjects();
+    EXPECT_EQ(2u, all_objects.size());
+    bool found_foo_object = false, found_bar_object = false;
+    for (const auto& object : all_objects) {
+      if (object->origin == kFooOrigin.GetURL()) {
+        EXPECT_FALSE(found_foo_object);
+        found_foo_object = true;
+        EXPECT_EQ(u"Any serial port",
+                  context()->GetObjectDisplayName(object->value));
+      } else if (object->origin == kBarOrigin.GetURL()) {
+        EXPECT_FALSE(found_bar_object);
+        found_bar_object = true;
+        EXPECT_EQ(u"Nexus One", context()->GetObjectDisplayName(object->value));
+      }
+      EXPECT_EQ(content_settings::SETTING_SOURCE_POLICY, object->source);
+      EXPECT_FALSE(object->incognito);
     }
-    EXPECT_EQ(content_settings::SETTING_SOURCE_POLICY, object->source);
-    EXPECT_FALSE(object->incognito);
+    EXPECT_TRUE(found_foo_object);
+    EXPECT_TRUE(found_bar_object);
+  } else {
+    // Policy-defined port permissions are not set for unaffiliated users.
+    EXPECT_FALSE(context()->HasPortPermission(kFooOrigin, *platform_port));
+    EXPECT_FALSE(context()->HasPortPermission(kFooOrigin, *usb_port1));
+    EXPECT_FALSE(context()->HasPortPermission(kFooOrigin, *usb_port2));
+
+    EXPECT_FALSE(context()->HasPortPermission(kBarOrigin, *platform_port));
+    EXPECT_FALSE(context()->HasPortPermission(kBarOrigin, *usb_port1));
+    EXPECT_FALSE(context()->HasPortPermission(kBarOrigin, *usb_port2));
+
+    auto foo_objects = context()->GetGrantedObjects(kFooOrigin);
+    EXPECT_EQ(0u, foo_objects.size());
+
+    auto bar_objects = context()->GetGrantedObjects(kBarOrigin);
+    EXPECT_EQ(0u, bar_objects.size());
+
+    auto all_objects = context()->GetAllGrantedObjects();
+    EXPECT_EQ(0u, all_objects.size());
   }
-  EXPECT_TRUE(found_foo_object);
-  EXPECT_TRUE(found_bar_object);
 }
 
-TEST_F(SerialChooserContextTest, PolicyAllowForUrlsDescriptionStrings) {
+TEST_P(SerialChooserContextAffiliatedTest,
+       PolicyAllowForUrlsDescriptionStrings) {
   const auto kFooOrigin = url::Origin::Create(GURL("https://foo.origin"));
   const auto kBarOrigin = url::Origin::Create(GURL("https://bar.origin"));
 
@@ -586,33 +669,56 @@ TEST_F(SerialChooserContextTest, PolicyAllowForUrlsDescriptionStrings) {
                }
              ])"));
 
-  auto google_objects = context()->GetGrantedObjects(
-      url::Origin::Create(GURL("https://google.com")));
-  EXPECT_EQ(1u, google_objects.size());
-  EXPECT_EQ(u"USB devices from Google Inc.",
-            context()->GetObjectDisplayName(google_objects[0]->value));
+  if (is_affiliated()) {
+    auto google_objects = context()->GetGrantedObjects(
+        url::Origin::Create(GURL("https://google.com")));
+    ASSERT_EQ(1u, google_objects.size());
+    EXPECT_EQ(u"USB devices from Google Inc.",
+              context()->GetObjectDisplayName(google_objects[0]->value));
 
-  auto unknown_vendor_objects = context()->GetGrantedObjects(
-      url::Origin::Create(GURL("https://unknown-vendor.com")));
-  EXPECT_EQ(1u, unknown_vendor_objects.size());
-  EXPECT_EQ(u"USB devices from vendor 18D2",
-            context()->GetObjectDisplayName(unknown_vendor_objects[0]->value));
+    auto unknown_vendor_objects = context()->GetGrantedObjects(
+        url::Origin::Create(GURL("https://unknown-vendor.com")));
+    ASSERT_EQ(1u, unknown_vendor_objects.size());
+    EXPECT_EQ(
+        u"USB devices from vendor 18D2",
+        context()->GetObjectDisplayName(unknown_vendor_objects[0]->value));
 
-  auto unknown_product_objects = context()->GetGrantedObjects(
-      url::Origin::Create(GURL("https://unknown-product.google.com")));
-  EXPECT_EQ(1u, unknown_product_objects.size());
-  EXPECT_EQ(u"USB device from Google Inc. (product 162E)",
-            context()->GetObjectDisplayName(unknown_product_objects[0]->value));
+    auto unknown_product_objects = context()->GetGrantedObjects(
+        url::Origin::Create(GURL("https://unknown-product.google.com")));
+    ASSERT_EQ(1u, unknown_product_objects.size());
+    EXPECT_EQ(
+        u"USB device from Google Inc. (product 162E)",
+        context()->GetObjectDisplayName(unknown_product_objects[0]->value));
 
-  auto unknown_product_and_vendor_objects = context()->GetGrantedObjects(
-      url::Origin::Create(GURL("https://unknown-product.unknown-vendor.com")));
-  EXPECT_EQ(1u, unknown_product_and_vendor_objects.size());
-  EXPECT_EQ(u"USB device (18D2:162E)",
-            context()->GetObjectDisplayName(
-                unknown_product_and_vendor_objects[0]->value));
+    auto unknown_product_and_vendor_objects =
+        context()->GetGrantedObjects(url::Origin::Create(
+            GURL("https://unknown-product.unknown-vendor.com")));
+    ASSERT_EQ(1u, unknown_product_and_vendor_objects.size());
+    EXPECT_EQ(u"USB device (18D2:162E)",
+              context()->GetObjectDisplayName(
+                  unknown_product_and_vendor_objects[0]->value));
+  } else {
+    // Policy-defined port permissions are not set for unaffiliated users.
+    auto google_objects = context()->GetGrantedObjects(
+        url::Origin::Create(GURL("https://google.com")));
+    EXPECT_EQ(0u, google_objects.size());
+
+    auto unknown_vendor_objects = context()->GetGrantedObjects(
+        url::Origin::Create(GURL("https://unknown-vendor.com")));
+    EXPECT_EQ(0u, unknown_vendor_objects.size());
+
+    auto unknown_product_objects = context()->GetGrantedObjects(
+        url::Origin::Create(GURL("https://unknown-product.google.com")));
+    EXPECT_EQ(0u, unknown_product_objects.size());
+
+    auto unknown_product_and_vendor_objects =
+        context()->GetGrantedObjects(url::Origin::Create(
+            GURL("https://unknown-product.unknown-vendor.com")));
+    EXPECT_EQ(0u, unknown_product_and_vendor_objects.size());
+  }
 }
 
-TEST_F(SerialChooserContextTest, PolicyAllowOverridesGuard) {
+TEST_P(SerialChooserContextAffiliatedTest, PolicyAllowOverridesGuard) {
   const auto kFooOrigin = url::Origin::Create(GURL("https://foo.origin"));
   const auto kBarOrigin = url::Origin::Create(GURL("https://bar.origin"));
 
@@ -627,12 +733,19 @@ TEST_F(SerialChooserContextTest, PolicyAllowOverridesGuard) {
   port->token = base::UnguessableToken::Create();
 
   EXPECT_FALSE(context()->CanRequestObjectPermission(kFooOrigin));
-  EXPECT_TRUE(context()->HasPortPermission(kFooOrigin, *port));
+
+  if (is_affiliated()) {
+    EXPECT_TRUE(context()->HasPortPermission(kFooOrigin, *port));
+  } else {
+    // Policy-defined port permissions are not set for unaffiliated users.
+    EXPECT_FALSE(context()->HasPortPermission(kFooOrigin, *port));
+  }
+
   EXPECT_FALSE(context()->CanRequestObjectPermission(kBarOrigin));
   EXPECT_FALSE(context()->HasPortPermission(kBarOrigin, *port));
 }
 
-TEST_F(SerialChooserContextTest, PolicyAllowOverridesBlocked) {
+TEST_P(SerialChooserContextAffiliatedTest, PolicyAllowOverridesBlocked) {
   const auto kFooOrigin = url::Origin::Create(GURL("https://foo.origin"));
   const auto kBarOrigin = url::Origin::Create(GURL("https://bar.origin"));
 
@@ -647,7 +760,14 @@ TEST_F(SerialChooserContextTest, PolicyAllowOverridesBlocked) {
   port->token = base::UnguessableToken::Create();
 
   EXPECT_FALSE(context()->CanRequestObjectPermission(kFooOrigin));
-  EXPECT_TRUE(context()->HasPortPermission(kFooOrigin, *port));
+
+  if (is_affiliated()) {
+    EXPECT_TRUE(context()->HasPortPermission(kFooOrigin, *port));
+  } else {
+    // Policy-defined port permissions are not set for unaffiliated users.
+    EXPECT_FALSE(context()->HasPortPermission(kFooOrigin, *port));
+  }
+
   EXPECT_FALSE(context()->CanRequestObjectPermission(kBarOrigin));
   EXPECT_FALSE(context()->HasPortPermission(kBarOrigin, *port));
 }
@@ -682,7 +802,7 @@ TEST_F(SerialChooserContextTest, Blocklist) {
   EXPECT_EQ(1u, all_origin_objects.size());
 }
 
-TEST_F(SerialChooserContextTest, BlocklistOverridesPolicy) {
+TEST_P(SerialChooserContextAffiliatedTest, BlocklistOverridesPolicy) {
   const auto origin = url::Origin::Create(GURL("https://google.com"));
 
   local_state()->SetManagedPref(prefs::kManagedSerialAllowUsbDevicesForUrls,
@@ -699,10 +819,35 @@ TEST_F(SerialChooserContextTest, BlocklistOverridesPolicy) {
   port->vendor_id = 0x18D1;
   port->has_product_id = true;
   port->product_id = 0x58F0;
-  EXPECT_TRUE(context()->HasPortPermission(origin, *port));
+
+  if (is_affiliated()) {
+    EXPECT_TRUE(context()->HasPortPermission(origin, *port));
+  } else {
+    // Policy-defined port permissions are not set for unaffiliated users.
+    EXPECT_FALSE(context()->HasPortPermission(origin, *port));
+  }
 
   // Adding a USB device to the blocklist overrides permissions granted by
   // policy.
   SetDynamicBlocklist("usb:18D1:58F0");
   EXPECT_FALSE(context()->HasPortPermission(origin, *port));
 }
+
+// Boolean parameter means if user is affiliated on the device. Affiliated
+// users belong to the domain that owns the device and is only meaningful
+// on Chrome OS.
+//
+// The SerialAllowAllPortsForUrls and SerialAllowUsbDevicesForUrls policies
+// only take effect for sffiliated users.
+INSTANTIATE_TEST_SUITE_P(
+    SerialChooserContextAffiliatedTestInstance,
+    SerialChooserContextAffiliatedTest,
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+    testing::Values(true, false),
+#else
+    testing::Values(true),
+#endif
+    [](const testing::TestParamInfo<
+        SerialChooserContextAffiliatedTest::ParamType>& info) {
+      return info.param ? "affiliated" : "unaffiliated";
+    });

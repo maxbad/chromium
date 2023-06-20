@@ -35,7 +35,7 @@ GinJavaMethodInvocationHelper::GinJavaMethodInvocationHelper(
     const base::ListValue& arguments)
     : object_(std::move(object)),
       method_name_(method_name),
-      arguments_(arguments.DeepCopy()),
+      arguments_(arguments.CreateDeepCopy()),
       invocation_error_(kGinJavaBridgeNoError) {}
 
 GinJavaMethodInvocationHelper::~GinJavaMethodInvocationHelper() {}
@@ -111,7 +111,7 @@ bool GinJavaMethodInvocationHelper::AppendObjectRef(
 void GinJavaMethodInvocationHelper::Invoke() {
   JNIEnv* env = AttachCurrentThread();
   const JavaMethod* method =
-      object_->FindMethod(method_name_, arguments_->GetSize());
+      object_->FindMethod(method_name_, arguments_->GetList().size());
   if (!method) {
     SetInvocationError(kGinJavaBridgeMethodNotFound);
     return;
@@ -178,7 +178,7 @@ void GinJavaMethodInvocationHelper::SetInvocationError(
 void GinJavaMethodInvocationHelper::SetPrimitiveResult(
     const base::ListValue& result_wrapper) {
   holds_primitive_result_ = true;
-  primitive_result_.reset(result_wrapper.DeepCopy());
+  primitive_result_ = result_wrapper.CreateDeepCopy();
 }
 
 void GinJavaMethodInvocationHelper::SetObjectResult(
@@ -221,29 +221,29 @@ void GinJavaMethodInvocationHelper::InvokeMethod(jobject object,
   base::ListValue result_wrapper;
   switch (return_type.type) {
     case JavaType::TypeBoolean:
-      result_wrapper.AppendBoolean(
+      result_wrapper.Append(static_cast<bool>(
           object ? env->CallBooleanMethodA(object, id, parameters)
-                 : env->CallStaticBooleanMethodA(clazz, id, parameters));
+                 : env->CallStaticBooleanMethodA(clazz, id, parameters)));
       break;
     case JavaType::TypeByte:
-      result_wrapper.AppendInteger(
+      result_wrapper.Append(static_cast<int>(
           object ? env->CallByteMethodA(object, id, parameters)
-                 : env->CallStaticByteMethodA(clazz, id, parameters));
+                 : env->CallStaticByteMethodA(clazz, id, parameters)));
       break;
     case JavaType::TypeChar:
-      result_wrapper.AppendInteger(
+      result_wrapper.Append(static_cast<int>(
           object ? env->CallCharMethodA(object, id, parameters)
-                 : env->CallStaticCharMethodA(clazz, id, parameters));
+                 : env->CallStaticCharMethodA(clazz, id, parameters)));
       break;
     case JavaType::TypeShort:
-      result_wrapper.AppendInteger(
+      result_wrapper.Append(static_cast<int>(
           object ? env->CallShortMethodA(object, id, parameters)
-                 : env->CallStaticShortMethodA(clazz, id, parameters));
+                 : env->CallStaticShortMethodA(clazz, id, parameters)));
       break;
     case JavaType::TypeInt:
-      result_wrapper.AppendInteger(
+      result_wrapper.Append(static_cast<int>(
           object ? env->CallIntMethodA(object, id, parameters)
-                 : env->CallStaticIntMethodA(clazz, id, parameters));
+                 : env->CallStaticIntMethodA(clazz, id, parameters)));
       break;
     case JavaType::TypeLong:
       result_wrapper.Append(static_cast<double>(
@@ -303,7 +303,7 @@ void GinJavaMethodInvocationHelper::InvokeMethod(jobject object,
         result_wrapper.Append(GinJavaBridgeValue::CreateUndefinedValue());
         break;
       }
-      result_wrapper.AppendString(
+      result_wrapper.Append(
           base::android::ConvertJavaStringToUTF8(scoped_java_string));
       break;
     }

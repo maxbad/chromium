@@ -30,12 +30,18 @@ class AwRenderProcess : public content::RenderProcessHostObserver,
       const base::android::JavaParamRef<jobject>& obj);
 
   explicit AwRenderProcess(content::RenderProcessHost* render_process_host);
+
+  AwRenderProcess(const AwRenderProcess&) = delete;
+  AwRenderProcess& operator=(const AwRenderProcess&) = delete;
+
   ~AwRenderProcess() override;
 
   void ClearCache();
   void SetJsOnlineProperty(bool network_up);
   void SetCpuAffinityToLittleCores();
-  void EnableIdleThrottling();
+  void EnableIdleThrottling(int32_t policy,
+                            int32_t min_time_ms,
+                            float min_cputime_ratio);
 
  private:
   void Ready();
@@ -55,7 +61,6 @@ class AwRenderProcess : public content::RenderProcessHostObserver,
   mojo::AssociatedRemote<mojom::Renderer> renderer_remote_;
 
   base::WeakPtrFactory<AwRenderProcess> weak_factory_{this};
-  DISALLOW_COPY_AND_ASSIGN(AwRenderProcess);
 };
 
 }  // namespace android_webview

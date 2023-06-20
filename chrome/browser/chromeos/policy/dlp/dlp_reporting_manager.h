@@ -17,6 +17,8 @@ namespace policy {
 // helper function to create DlpPolicyEvents to be enqueued or used to test
 // against.
 DlpPolicyEvent CreateDlpPolicyEvent(const std::string& src_pattern,
+                                    DlpRulesManager::Restriction restriction);
+DlpPolicyEvent CreateDlpPolicyEvent(const std::string& src_pattern,
                                     DlpRulesManager::Restriction restriction,
                                     DlpRulesManager::Level level);
 DlpPolicyEvent CreateDlpPolicyEvent(const std::string& src_pattern,
@@ -47,26 +49,33 @@ class DlpReportingManager {
   // restrictions.
   void ReportEvent(const std::string& src_pattern,
                    DlpRulesManager::Restriction restriction,
-                   DlpRulesManager::Level level) const;
+                   DlpRulesManager::Level level);
   void ReportEvent(const std::string& src_pattern,
                    const std::string& dst_pattern,
                    DlpRulesManager::Restriction restriction,
-                   DlpRulesManager::Level level) const;
+                   DlpRulesManager::Level level);
   void ReportEvent(const std::string& src_pattern,
                    DlpRulesManager::Component dst_component,
                    DlpRulesManager::Restriction restriction,
-                   DlpRulesManager::Level level) const;
+                   DlpRulesManager::Level level);
+  void ReportWarningProceededEvent(const std::string& src_pattern,
+                                   DlpRulesManager::Restriction restriction);
 
   ReportQueueSetterCallback GetReportQueueSetter();
+
+  size_t events_reported() const { return events_reported_; }
 
  private:
   friend class DlpReportingManagerTestHelper;
 
   void SetReportQueue(std::unique_ptr<reporting::ReportQueue> report_queue);
 
-  void OnEventEnqueued(reporting::Status status) const;
+  void OnEventEnqueued(reporting::Status status);
 
-  void ReportEvent(DlpPolicyEvent event) const;
+  void ReportEvent(DlpPolicyEvent event);
+
+  // Counter for the number of events reported from login.
+  size_t events_reported_ = 0;
 
   std::unique_ptr<reporting::ReportQueue> report_queue_;
 

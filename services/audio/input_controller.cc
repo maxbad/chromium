@@ -12,13 +12,13 @@
 #include <utility>
 
 #include "base/bind.h"
+#include "base/cxx17_backports.h"
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_macros.h"
-#include "base/numerics/ranges.h"
-#include "base/single_thread_task_runner.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
@@ -32,14 +32,14 @@
 namespace audio {
 namespace {
 
+using OpenOutcome = media::AudioInputStream::OpenOutcome;
+
 const int kMaxInputChannels = 3;
-constexpr base::TimeDelta kCheckMutedStateInterval =
-    base::TimeDelta::FromSeconds(1);
+constexpr base::TimeDelta kCheckMutedStateInterval = base::Seconds(1);
 
 #if defined(AUDIO_POWER_MONITORING)
 // Time in seconds between two successive measurements of audio power levels.
-constexpr base::TimeDelta kPowerMonitorLogInterval =
-    base::TimeDelta::FromSeconds(15);
+constexpr base::TimeDelta kPowerMonitorLogInterval = base::Seconds(15);
 
 // A warning will be logged when the microphone audio volume is below this
 // threshold.
@@ -95,7 +95,7 @@ float AveragePower(const media::AudioBus& buffer) {
 
   // Update accumulated average results, with clamping for sanity.
   const float average_power =
-      base::ClampToRange(sum_power / (frames * channels), 0.0f, 1.0f);
+      base::clamp(sum_power / (frames * channels), 0.0f, 1.0f);
 
   // Convert average power level to dBFS units, and pin it down to zero if it
   // is insignificantly small.
@@ -218,6 +218,10 @@ InputController::InputController(EventHandler* handler,
   DCHECK(handler_);
   DCHECK(sync_writer_);
   DCHECK(activity_monitor_);
+  if (!user_input_monitor_) {
+    handler_->OnLog(
+        "AIC::InputController() => (WARNING: keypress monitoring is disabled)");
+  }
 }
 
 InputController::~InputController() {
@@ -395,6 +399,17 @@ void InputController::OnStreamInactive(Snoopable* output_stream) {
   DCHECK_CALLED_ON_VALID_THREAD(owning_thread_);
 }
 
+InputController::ErrorCode MapOpenOutcomeToErrorCode(OpenOutcome outcome) {
+  switch (outcome) {
+    case OpenOutcome::kFailedSystemPermissions:
+      return InputController::STREAM_OPEN_SYSTEM_PERMISSIONS_ERROR;
+    case OpenOutcome::kFailedInUse:
+      return InputController::STREAM_OPEN_DEVICE_IN_USE_ERROR;
+    default:
+      return InputController::STREAM_OPEN_ERROR;
+  }
+}
+
 void InputController::DoCreate(media::AudioManager* audio_manager,
                                const media::AudioParameters& params,
                                const std::string& device_id,
@@ -425,14 +440,10 @@ void InputController::DoCreate(media::AudioManager* audio_manager,
   }
 
   auto open_outcome = stream->Open();
-  if (open_outcome != media::AudioInputStream::OpenOutcome::kSuccess) {
+  if (open_outcome != OpenOutcome::kSuccess) {
     stream->Close();
     LogCaptureStartupResult(CAPTURE_STARTUP_OPEN_STREAM_FAILED);
-    handler_->OnError(
-        open_outcome ==
-                media::AudioInputStream::OpenOutcome::kFailedSystemPermissions
-            ? STREAM_OPEN_SYSTEM_PERMISSIONS_ERROR
-            : STREAM_OPEN_ERROR);
+    handler_->OnError(MapOpenOutcomeToErrorCode(open_outcome));
     return;
   }
 

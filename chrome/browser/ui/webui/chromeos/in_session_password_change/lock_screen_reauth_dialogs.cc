@@ -7,11 +7,13 @@
 #include <memory>
 #include <string>
 
+#include "ash/constants/ash_features.h"
 #include "base/bind.h"
 #include "base/json/json_writer.h"
 #include "chrome/browser/ash/login/helper.h"
 #include "chrome/browser/ash/login/saml/in_session_password_sync_manager.h"
 #include "chrome/browser/ash/login/saml/in_session_password_sync_manager_factory.h"
+#include "chrome/browser/ash/login/ui/oobe_dialog_size_utils.h"
 #include "chrome/browser/ash/profiles/profile_helper.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/profile.h"
@@ -32,7 +34,19 @@ namespace chromeos {
 
 namespace {
 LockScreenStartReauthDialog* g_dialog = nullptr;
+
 }  // namespace
+
+// static
+gfx::Size LockScreenStartReauthDialog::CalculateLockScreenReauthDialogSize(
+    bool is_new_layout_enabled) {
+  if (!is_new_layout_enabled) {
+    return kBaseLockDialogSize;
+  }
+
+  // LockscreenReauth Dialog size should match OOBE Dialog size.
+  return CalculateOobeDialogSizeForPrimaryDisplay();
+}
 
 void LockScreenStartReauthDialog::Show() {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
@@ -76,13 +90,19 @@ void LockScreenStartReauthDialog::OnDialogClosed(
   const user_manager::User* user =
       user_manager::UserManager::Get()->GetActiveUser();
   Profile* profile = ProfileHelper::Get()->GetProfileByUser(user);
-  InSessionPasswordSyncManager* password_sync_manager =
-      chromeos::InSessionPasswordSyncManagerFactory::GetForProfile(profile);
+  auto* password_sync_manager =
+      InSessionPasswordSyncManagerFactory::GetForProfile(profile);
   password_sync_manager->ResetDialog();
 }
 
 bool LockScreenStartReauthDialog::IsRunning() {
   return g_dialog;
+}
+
+int LockScreenStartReauthDialog::GetDialogWidth() {
+  gfx::Size ret;
+  GetDialogSize(&ret);
+  return ret.width();
 }
 
 void LockScreenStartReauthDialog::CloseLockScreenNetworkDialog() {
@@ -104,7 +124,8 @@ void LockScreenStartReauthDialog::ShowLockScreenNetworkDialog() {
 
 LockScreenStartReauthDialog::LockScreenStartReauthDialog()
     : BaseLockDialog(GURL(chrome::kChromeUILockScreenStartReauthURL),
-                     kBaseLockDialogSize),
+                     CalculateLockScreenReauthDialogSize(
+                         features::IsNewLockScreenReauthLayoutEnabled())),
       network_state_helper_(std::make_unique<login::NetworkStateHelper>()) {
   NetworkHandler::Get()->network_state_handler()->AddObserver(this, FROM_HERE);
 }
@@ -119,6 +140,8 @@ LockScreenStartReauthDialog::~LockScreenStartReauthDialog() {
 
 void LockScreenStartReauthDialog::NetworkConnectionStateChanged(
     const NetworkState* network) {
+  if (!profile_)
+    return;
   if (network_state_helper_->IsConnected()) {
     if (lock_screen_network_dialog_) {
       lock_screen_network_dialog_->Close();

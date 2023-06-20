@@ -47,6 +47,8 @@
 namespace base {
 template <typename, typename>
 class RefCountedThreadSafe;
+template <typename>
+class FileErrorOr;
 class TimeDelta;
 class TimeTicks;
 class Time;
@@ -57,6 +59,12 @@ struct SkISize;
 class SkRefCnt;
 template <typename T>
 class sk_sp;
+
+namespace blink {
+// TODO(https://crbug.com/1247393): Move this and others to
+// blink/public/platform.
+class WebTimeRanges;
+}  // namespace blink
 
 namespace gfx {
 class ColorSpace;
@@ -70,6 +78,7 @@ struct SyncToken;
 namespace media {
 class VideoFrame;
 struct VideoCaptureFeedback;
+struct VideoTransformation;
 }  // namespace media
 
 namespace mojo {
@@ -81,6 +90,10 @@ template <typename Interface>
 class PendingAssociatedRemote;
 template <typename Interface>
 class PendingAssociatedReceiver;
+template <typename Interface>
+class ScopedHandleBase;
+class DataPipeProducerHandle;
+typedef ScopedHandleBase<DataPipeProducerHandle> ScopedDataPipeProducerHandle;
 }  // namespace mojo
 
 namespace WTF {
@@ -143,6 +156,12 @@ struct CrossThreadCopier<sk_sp<T>>
   STATIC_ONLY(CrossThreadCopier);
   static_assert(std::is_base_of<SkRefCnt, T>::value,
                 "sk_sp<T> can be passed across threads only if T is SkRefCnt.");
+};
+
+template <typename T>
+struct CrossThreadCopier<base::FileErrorOr<T>>
+    : public CrossThreadCopierPassThrough<base::FileErrorOr<T>> {
+  STATIC_ONLY(CrossThreadCopier);
 };
 
 template <>
@@ -313,6 +332,13 @@ struct CrossThreadCopier<mojo::PendingAssociatedReceiver<Interface>>
 };
 
 template <>
+struct CrossThreadCopier<mojo::ScopedDataPipeProducerHandle>
+    : public CrossThreadCopierByValuePassThrough<
+          mojo::ScopedDataPipeProducerHandle> {
+  STATIC_ONLY(CrossThreadCopier);
+};
+
+template <>
 struct CrossThreadCopier<blink::MessagePortChannel> {
   STATIC_ONLY(CrossThreadCopier);
   using Type = blink::MessagePortChannel;
@@ -359,6 +385,18 @@ template <>
 struct CrossThreadCopier<std::vector<scoped_refptr<media::VideoFrame>>>
     : public CrossThreadCopierPassThrough<
           std::vector<scoped_refptr<media::VideoFrame>>> {
+  STATIC_ONLY(CrossThreadCopier);
+};
+
+template <>
+struct CrossThreadCopier<media::VideoTransformation>
+    : public CrossThreadCopierPassThrough<media::VideoTransformation> {
+  STATIC_ONLY(CrossThreadCopier);
+};
+
+template <>
+struct CrossThreadCopier<blink::WebTimeRanges>
+    : public CrossThreadCopierByValuePassThrough<blink::WebTimeRanges> {
   STATIC_ONLY(CrossThreadCopier);
 };
 

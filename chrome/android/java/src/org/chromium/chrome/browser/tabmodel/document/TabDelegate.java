@@ -15,6 +15,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import org.chromium.base.ContextUtils;
+import org.chromium.base.IntentUtils;
 import org.chromium.chrome.browser.ChromeTabbedActivity;
 import org.chromium.chrome.browser.IntentHandler;
 import org.chromium.chrome.browser.ServiceTabLauncher;
@@ -34,6 +35,8 @@ import org.chromium.content_public.browser.LoadUrlParams;
 import org.chromium.content_public.browser.WebContents;
 import org.chromium.ui.base.PageTransition;
 import org.chromium.url.GURL;
+
+import java.nio.ByteBuffer;
 
 /**
  * Asynchronously creates Tabs by creating/starting up Activities.
@@ -73,7 +76,7 @@ public class TabDelegate extends AsyncTabCreator {
      * The index is ignored in DocumentMode because Android handles the ordering of Tabs.
      */
     @Override
-    public Tab createFrozenTab(TabState state, byte[] criticalPersistedTabData, int id,
+    public Tab createFrozenTab(TabState state, ByteBuffer criticalPersistedTabData, int id,
             boolean isIncognito, int index) {
         if (isIncognito != mIsIncognito) {
             throw new IllegalStateException("Incognito state mismatch. isIncognito: " + isIncognito
@@ -102,7 +105,7 @@ public class TabDelegate extends AsyncTabCreator {
         if (targetActivity == null) return;
 
         MultiWindowUtils.setOpenInOtherWindowIntentExtras(intent, activity, targetActivity);
-        IntentHandler.addTrustedIntentExtras(intent);
+        IntentUtils.addTrustedIntentExtras(intent);
         MultiInstanceManager.onMultiInstanceModeStarted();
         activity.startActivity(
                 intent, MultiWindowUtils.getOpenInOtherWindowActivityOptions(activity));

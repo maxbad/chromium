@@ -47,6 +47,7 @@ import org.chromium.base.annotations.CalledByNative;
 import org.chromium.base.annotations.JNINamespace;
 import org.chromium.base.annotations.NativeMethods;
 import org.chromium.base.metrics.RecordHistogram;
+import org.chromium.base.task.ChainedTasks;
 import org.chromium.base.task.PostTask;
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.AppHooks;
@@ -58,8 +59,6 @@ import org.chromium.chrome.browser.browserservices.SessionDataHolder;
 import org.chromium.chrome.browser.browserservices.SessionHandler;
 import org.chromium.chrome.browser.device.DeviceClassManager;
 import org.chromium.chrome.browser.flags.ChromeFeatureList;
-import org.chromium.chrome.browser.incognito.IncognitoUtils;
-import org.chromium.chrome.browser.init.ChainedTasks;
 import org.chromium.chrome.browser.init.ChromeBrowserInitializer;
 import org.chromium.chrome.browser.metrics.PageLoadMetrics;
 import org.chromium.chrome.browser.metrics.UmaSessionStats;
@@ -163,6 +162,9 @@ public class CustomTabsConnection {
             "android.support.customtabs.PARALLEL_REQUEST_URL";
     static final String RESOURCE_PREFETCH_URL_LIST_KEY =
             "androidx.browser.RESOURCE_PREFETCH_URL_LIST";
+
+    private static final String ON_RESIZED_CALLBACK = "onResized";
+    private static final String ON_RESIZED_SIZE_EXTRA = "size";
 
     @IntDef({ParallelRequestStatus.NO_REQUEST, ParallelRequestStatus.SUCCESS,
             ParallelRequestStatus.FAILURE_NOT_INITIALIZED,
@@ -360,7 +362,7 @@ public class CustomTabsConnection {
         String originalPackage = getClientPackageNameForSession(session);
         String selfPackage = ContextUtils.getApplicationContext().getPackageName();
         if (TextUtils.isEmpty(originalPackage) || !selfPackage.equals(originalPackage)) return;
-        mClientManager.overridePackageNameForSession(session, packageName);
+        mClientManager.overridePackageNameForSessionForTesting(session, packageName); // IN-TEST
     }
 
     /** Warmup activities that should only happen once. */
@@ -495,7 +497,7 @@ public class CustomTabsConnection {
             // creation in incognito mode not to have inconsistent modes between tab model and
             // hidden tab. (crbug.com/1190971)
             boolean canUseHiddenTab = mClientManager.getCanUseHiddenTab(session)
-                    && !IncognitoUtils.hasAnyIncognitoExtra(extras);
+                    && !IntentHandler.hasAnyIncognitoExtra(extras);
             startSpeculation(session, url, canUseHiddenTab, extras, uid);
         }
         preconnectUrls(otherLikelyBundles);
@@ -553,7 +555,7 @@ public class CustomTabsConnection {
         // mayLaunchUrl should not be executed for Incognito CCT since all setup is created with
         // regular profile. If we need to enable mayLaunchUrl for off-the-record profiles, we need
         // to update the profile used. Please see crbug.com/1106757.
-        if (IncognitoUtils.hasAnyIncognitoExtra(extras)) return false;
+        if (IntentHandler.hasAnyIncognitoExtra(extras)) return false;
 
         final boolean lowConfidence =
                 (url == null || TextUtils.isEmpty(url.toString())) && otherLikelyBundles != null;
@@ -1072,7 +1074,7 @@ public class CustomTabsConnection {
     }
 
     @VisibleForTesting
-    void setCanUseHiddenTabForSession(CustomTabsSessionToken session, boolean value) {
+    public void setCanUseHiddenTabForSession(CustomTabsSessionToken session, boolean value) {
         mClientManager.setCanUseHiddenTab(session, value);
     }
 
@@ -1125,6 +1127,18 @@ public class CustomTabsConnection {
 
         if (safeExtraCallback(session, BOTTOM_BAR_SCROLL_STATE_CALLBACK, args) && mLogRequests) {
             logCallback("extraCallback(" + BOTTOM_BAR_SCROLL_STATE_CALLBACK + ")", hidden);
+        }
+    }
+
+    /**
+     * Called when a resizable Custom Tab is resized.
+     */
+    public void onResized(@Nullable CustomTabsSessionToken session, int size) {
+        Bundle args = new Bundle();
+        args.putInt(ON_RESIZED_SIZE_EXTRA, size);
+
+        if (safeExtraCallback(session, ON_RESIZED_CALLBACK, args) && mLogRequests) {
+            logCallback("extraCallback(" + ON_RESIZED_CALLBACK + ")", args);
         }
     }
 

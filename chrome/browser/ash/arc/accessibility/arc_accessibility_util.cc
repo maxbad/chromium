@@ -8,12 +8,27 @@
 #include "base/containers/contains.h"
 #include "chrome/browser/ash/arc/accessibility/accessibility_info_data_wrapper.h"
 #include "chrome/browser/ash/arc/accessibility/accessibility_node_info_data_wrapper.h"
+#include "components/arc/arc_util.h"
 #include "components/arc/mojom/accessibility_helper.mojom.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "ui/accessibility/ax_enums.mojom.h"
 #include "ui/aura/window.h"
 
 namespace arc {
+
+namespace {
+
+aura::Window* FindWindowToParent(bool (*predicate)(const aura::Window*),
+                                 aura::Window* window) {
+  while (window) {
+    if (predicate(window))
+      return window;
+    window = window->parent();
+  }
+  return nullptr;
+}
+
+}  // namespace
 
 using AXBooleanProperty = mojom::AccessibilityBooleanProperty;
 using AXEventIntProperty = mojom::AccessibilityEventIntProperty;
@@ -83,7 +98,7 @@ ax::mojom::Event ToAXEvent(
           // differentiaiting between when they first appear (vs text changed).
           // This case is made evident with snackbar handling, which needs to be
           // announced when it appears.
-          // TODO (b/187465133): Revisit this liveregion handling logic, once
+          // TODO(b/187465133): Revisit this liveregion handling logic, once
           // the talkback spec has been clarified. There is a proposal to write
           // an API to expose attributes similar to aria-relevant, which will
           // eventually allow liveregions to be handled similar to how it gets
@@ -138,7 +153,7 @@ absl::optional<mojom::AccessibilityActionType> ConvertToAndroidAction(
     case ax::mojom::Action::kDoDefault:
       return arc::mojom::AccessibilityActionType::CLICK;
     case ax::mojom::Action::kFocus:
-      // Fallthrough
+      return arc::mojom::AccessibilityActionType::FOCUS;
     case ax::mojom::Action::kSetSequentialFocusNavigationStartingPoint:
       return arc::mojom::AccessibilityActionType::ACCESSIBILITY_FOCUS;
     case ax::mojom::Action::kScrollToMakeVisible:
@@ -175,6 +190,68 @@ absl::optional<mojom::AccessibilityActionType> ConvertToAndroidAction(
       return arc::mojom::AccessibilityActionType::LONG_CLICK;
     default:
       return absl::nullopt;
+  }
+}
+
+ax::mojom::Action ConvertToChromeAction(
+    const mojom::AccessibilityActionType action) {
+  switch (action) {
+    case arc::mojom::AccessibilityActionType::CLICK:
+      return ax::mojom::Action::kDoDefault;
+    case arc::mojom::AccessibilityActionType::FOCUS:
+      return ax::mojom::Action::kFocus;
+    case arc::mojom::AccessibilityActionType::ACCESSIBILITY_FOCUS:
+      // TODO(hirokisato): there are multiple actions converted to
+      // ACCESSIBILITY_FOCUS. Consider if this is appropriate.
+      return ax::mojom::Action::kSetSequentialFocusNavigationStartingPoint;
+    case arc::mojom::AccessibilityActionType::SHOW_ON_SCREEN:
+      return ax::mojom::Action::kScrollToMakeVisible;
+    case arc::mojom::AccessibilityActionType::SCROLL_BACKWARD:
+      return ax::mojom::Action::kScrollBackward;
+    case arc::mojom::AccessibilityActionType::SCROLL_FORWARD:
+      return ax::mojom::Action::kScrollForward;
+    case arc::mojom::AccessibilityActionType::SCROLL_UP:
+      return ax::mojom::Action::kScrollUp;
+    case arc::mojom::AccessibilityActionType::SCROLL_DOWN:
+      return ax::mojom::Action::kScrollDown;
+    case arc::mojom::AccessibilityActionType::SCROLL_LEFT:
+      return ax::mojom::Action::kScrollLeft;
+    case arc::mojom::AccessibilityActionType::SCROLL_RIGHT:
+      return ax::mojom::Action::kScrollRight;
+    case arc::mojom::AccessibilityActionType::CUSTOM_ACTION:
+      return ax::mojom::Action::kCustomAction;
+    case arc::mojom::AccessibilityActionType::CLEAR_ACCESSIBILITY_FOCUS:
+      return ax::mojom::Action::kClearAccessibilityFocus;
+    case arc::mojom::AccessibilityActionType::GET_TEXT_LOCATION:
+      return ax::mojom::Action::kGetTextLocation;
+    case arc::mojom::AccessibilityActionType::SHOW_TOOLTIP:
+      return ax::mojom::Action::kShowTooltip;
+    case arc::mojom::AccessibilityActionType::HIDE_TOOLTIP:
+      return ax::mojom::Action::kHideTooltip;
+    case arc::mojom::AccessibilityActionType::COLLAPSE:
+      return ax::mojom::Action::kCollapse;
+    case arc::mojom::AccessibilityActionType::EXPAND:
+      return ax::mojom::Action::kExpand;
+    case arc::mojom::AccessibilityActionType::LONG_CLICK:
+      return ax::mojom::Action::kShowContextMenu;
+    // Below are actions not mapped in ConvertToAndroidAction().
+    case arc::mojom::AccessibilityActionType::CLEAR_FOCUS:
+    case arc::mojom::AccessibilityActionType::SELECT:
+    case arc::mojom::AccessibilityActionType::CLEAR_SELECTION:
+    case arc::mojom::AccessibilityActionType::NEXT_AT_MOVEMENT_GRANULARITY:
+    case arc::mojom::AccessibilityActionType::PREVIOUS_AT_MOVEMENT_GRANULARITY:
+    case arc::mojom::AccessibilityActionType::NEXT_HTML_ELEMENT:
+    case arc::mojom::AccessibilityActionType::PREVIOUS_HTML_ELEMENT:
+    case arc::mojom::AccessibilityActionType::COPY:
+    case arc::mojom::AccessibilityActionType::PASTE:
+    case arc::mojom::AccessibilityActionType::CUT:
+    case arc::mojom::AccessibilityActionType::SET_SELECTION:
+    case arc::mojom::AccessibilityActionType::DISMISS:
+    case arc::mojom::AccessibilityActionType::SET_TEXT:
+    case arc::mojom::AccessibilityActionType::CONTEXT_CLICK:
+    case arc::mojom::AccessibilityActionType::SCROLL_TO_POSITION:
+    case arc::mojom::AccessibilityActionType::SET_PROGRESS:
+      return ax::mojom::Action::kNone;
   }
 }
 
@@ -242,13 +319,17 @@ std::string ToLiveStatusString(mojom::AccessibilityLiveRegionType type) {
   return std::string();  // Placeholder.
 }
 
+bool IsArcOrGhostWindow(const aura::Window* window) {
+  return window && (ash::IsArcWindow(window) ||
+                    arc::GetWindowTaskOrSessionId(window).has_value());
+}
+
 aura::Window* FindArcWindow(aura::Window* window) {
-  while (window) {
-    if (ash::IsArcWindow(window))
-      return window;
-    window = window->parent();
-  }
-  return nullptr;
+  return FindWindowToParent(ash::IsArcWindow, window);
+}
+
+aura::Window* FindArcOrGhostWindow(aura::Window* window) {
+  return FindWindowToParent(IsArcOrGhostWindow, window);
 }
 
 }  // namespace arc

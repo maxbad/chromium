@@ -28,6 +28,17 @@ bool StructTraits<autofill::mojom::FrameTokenDataView, autofill::FrameToken>::
 }
 
 // static
+bool StructTraits<autofill::mojom::FrameTokenWithPredecessorDataView,
+                  autofill::FrameTokenWithPredecessor>::
+    Read(autofill::mojom::FrameTokenWithPredecessorDataView data,
+         autofill::FrameTokenWithPredecessor* out) {
+  if (!data.ReadToken(&out->token))
+    return false;
+  out->predecessor = data.predecessor();
+  return true;
+}
+
+// static
 bool StructTraits<autofill::mojom::FormRendererIdDataView,
                   autofill::FormRendererId>::
     Read(autofill::mojom::FormRendererIdDataView data,
@@ -42,6 +53,18 @@ bool StructTraits<autofill::mojom::FieldRendererIdDataView,
     Read(autofill::mojom::FieldRendererIdDataView data,
          autofill::FieldRendererId* out) {
   *out = autofill::FieldRendererId(data.id());
+  return true;
+}
+
+// static
+bool StructTraits<
+    autofill::mojom::SelectOptionDataView,
+    autofill::SelectOption>::Read(autofill::mojom::SelectOptionDataView data,
+                                  autofill::SelectOption* out) {
+  if (!data.ReadValue(&out->value))
+    return false;
+  if (!data.ReadContent(&out->content))
+    return false;
   return true;
 }
 
@@ -110,9 +133,7 @@ bool StructTraits<
   if (!data.ReadUserInput(&out->user_input))
     return false;
 
-  if (!data.ReadOptionValues(&out->option_values))
-    return false;
-  if (!data.ReadOptionContents(&out->option_contents))
+  if (!data.ReadOptions(&out->options))
     return false;
 
   if (!data.ReadLabelSource(&out->label_source))
@@ -149,15 +170,9 @@ bool StructTraits<autofill::mojom::FormDataDataView, autofill::FormData>::Read(
     return false;
   if (!data.ReadButtonTitles(&out->button_titles))
     return false;
-  if (!data.ReadUrl(&out->url))
-    return false;
-  if (!data.ReadFullUrl(&out->full_url))
-    return false;
   if (!data.ReadAction(&out->action))
     return false;
   out->is_action_empty = data.is_action_empty();
-  if (!data.ReadMainFrameOrigin(&out->main_frame_origin))
-    return false;
 
   out->is_form_tag = data.is_form_tag();
 
@@ -165,9 +180,6 @@ bool StructTraits<autofill::mojom::FormDataDataView, autofill::FormData>::Read(
     return false;
 
   if (!data.ReadChildFrames(&out->child_frames))
-    return false;
-
-  if (!data.ReadChildFramePredecessors(&out->child_frame_predecessors))
     return false;
 
   if (!data.ReadSubmissionEvent(&out->submission_event))
@@ -190,6 +202,8 @@ bool StructTraits<autofill::mojom::FormFieldDataPredictionsDataView,
                   autofill::FormFieldDataPredictions>::
     Read(autofill::mojom::FormFieldDataPredictionsDataView data,
          autofill::FormFieldDataPredictions* out) {
+  if (!data.ReadHostFormSignature(&out->host_form_signature))
+    return false;
   if (!data.ReadSignature(&out->signature))
     return false;
   if (!data.ReadHeuristicType(&out->heuristic_type))

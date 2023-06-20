@@ -4,13 +4,27 @@
 
 #include "components/arc/compat_mode/arc_resize_lock_manager.h"
 
-#include "ash/frame/non_client_frame_view_ash.h"
 #include "ash/public/cpp/app_types_util.h"
+#include "ash/public/cpp/arc_resize_lock_type.h"
+#include "ash/public/cpp/resize_shadow_type.h"
 #include "ash/public/cpp/window_properties.h"
+#include "ash/shell.h"
+#include "ash/wm/resize_shadow_controller.h"
 #include "base/bind.h"
+#include "base/callback_forward.h"
 #include "base/memory/singleton.h"
+#include "base/memory/weak_ptr.h"
+#include "base/notreached.h"
 #include "components/arc/arc_browser_context_keyed_service_factory_base.h"
+#include "components/arc/arc_features.h"
 #include "components/arc/compat_mode/arc_splash_screen_dialog_view.h"
+#include "components/arc/compat_mode/arc_window_property_util.h"
+#include "components/arc/compat_mode/compat_mode_button_controller.h"
+#include "components/arc/compat_mode/metrics.h"
+#include "components/arc/compat_mode/touch_mode_mouse_rewriter.h"
+#include "ui/aura/window_observer.h"
+#include "ui/aura/window_tree_host.h"
+#include "ui/wm/public/activation_client.h"
 
 namespace arc {
 
@@ -34,6 +48,126 @@ class ArcResizeLockManagerFactory
   ~ArcResizeLockManagerFactory() override = default;
 };
 
+// A self-deleting window activation observer that runs the given callback when
+// its associated window gets activated.
+class WindowActivationObserver : public wm::ActivationChangeObserver,
+                                 public aura::WindowObserver {
+ public:
+  WindowActivationObserver(const WindowActivationObserver&) = delete;
+  WindowActivationObserver& operator=(const WindowActivationObserver&) = delete;
+
+  static void RunOnActivated(aura::Window* window,
+                             base::OnceClosure on_activated) {
+    // ash::Shell can be null in unittests.
+    if (!ash::Shell::HasInstance())
+      return;
+
+    if (ash::Shell::Get()->activation_client()->GetActiveWindow() == window) {
+      std::move(on_activated).Run();
+      return;
+    }
+
+    // The following instance self-destructs when the window gets activated or
+    // destroyed before getting activated.
+    new WindowActivationObserver(window, std::move(on_activated));
+  }
+
+  // aura::WindowObserver:
+  void OnWindowDestroying(aura::Window* window) override {
+    DCHECK(observer_.IsObservingSource(window));
+    delete this;
+  }
+
+  // wm::ActivationChangeObserver:
+  void OnWindowActivated(ActivationReason reason,
+                         aura::Window* gained_active,
+                         aura::Window* lost_active) override {
+    if (gained_active != window_)
+      return;
+    RemoveAllObservers();
+    // To avoid nested-activation, here we post the task to the queue.
+    base::SequencedTaskRunnerHandle::Get()->PostTask(FROM_HERE,
+                                                     std::move(on_activated_));
+    delete this;
+  }
+
+ private:
+  WindowActivationObserver(aura::Window* window, base::OnceClosure on_activated)
+      : window_(window), on_activated_(std::move(on_activated)) {
+    DCHECK(!on_activated_.is_null());
+    ash::Shell::Get()->activation_client()->AddObserver(this);
+    observer_.Observe(window_);
+  }
+
+  ~WindowActivationObserver() override { RemoveAllObservers(); }
+
+  void RemoveAllObservers() {
+    observer_.Reset();
+    ash::Shell::Get()->activation_client()->RemoveObserver(this);
+  }
+
+  aura::Window* const window_;
+  base::OnceClosure on_activated_;
+  base::ScopedObservation<aura::Window, aura::WindowObserver> observer_{this};
+};
+
+// A self-deleting window property observer that runs the given callback when
+// its ash::kAppIDKey is set to non-null value.
+class AppIdObserver : public aura::WindowObserver {
+ public:
+  AppIdObserver(const AppIdObserver&) = delete;
+  AppIdObserver& operator=(const AppIdObserver&) = delete;
+
+  static void RunOnReady(aura::Window* window,
+                         base::OnceCallback<void(aura::Window*)> on_ready) {
+    if (GetAppId(window)) {
+      std::move(on_ready).Run(window);
+      return;
+    }
+
+    // The following instance self-destructs when the window gets activated or
+    // destroyed before getting activated.
+    new AppIdObserver(window, std::move(on_ready));
+  }
+
+  // aura::WindowObserver:
+  void OnWindowDestroying(aura::Window* window) override {
+    DCHECK(observer_.IsObservingSource(window));
+    delete this;
+  }
+  void OnWindowPropertyChanged(aura::Window* window,
+                               const void* key,
+                               intptr_t old) override {
+    DCHECK(observer_.IsObservingSource(window));
+    if (key != ash::kAppIDKey)
+      return;
+    if (!GetAppId(window))
+      return;
+    observer_.Reset();
+    std::move(on_ready_).Run(window);
+    delete this;
+  }
+
+ private:
+  AppIdObserver(aura::Window* window,
+                base::OnceCallback<void(aura::Window*)> on_ready)
+      : window_(window), on_ready_(std::move(on_ready)) {
+    DCHECK(!on_ready_.is_null());
+    observer_.Observe(window_);
+  }
+
+  ~AppIdObserver() override { observer_.Reset(); }
+
+  aura::Window* const window_;
+  base::OnceCallback<void(aura::Window*)> on_ready_;
+  base::ScopedObservation<aura::Window, aura::WindowObserver> observer_{this};
+};
+
+bool ShouldEnableResizeLock(ash::ArcResizeLockType type) {
+  return type != ash::ArcResizeLockType::NONE &&
+         type != ash::ArcResizeLockType::RESIZE_ENABLED_TOGGLABLE;
+}
+
 }  // namespace
 
 // static
@@ -44,7 +178,13 @@ ArcResizeLockManager* ArcResizeLockManager::GetForBrowserContext(
 
 ArcResizeLockManager::ArcResizeLockManager(
     content::BrowserContext* browser_context,
-    ArcBridgeService* arc_bridge_service) {
+    ArcBridgeService* arc_bridge_service)
+    : compat_mode_button_controller_(
+          std::make_unique<CompatModeButtonController>()),
+      touch_mode_mouse_rewriter_(
+          base::FeatureList::IsEnabled(arc::kTouchModeMouse)
+              ? std::make_unique<TouchModeMouseRewriter>()
+              : nullptr) {
   if (aura::Env::HasInstance())
     env_observation.Observe(aura::Env::GetInstance());
 }
@@ -58,86 +198,160 @@ void ArcResizeLockManager::OnWindowInitialized(aura::Window* new_window) {
   if (window_observations_.IsObservingSource(new_window))
     return;
 
-  if (new_window->GetProperty(ash::kArcResizeLockKey))
-    EnableResizeLock(new_window);
-
   window_observations_.AddObservation(new_window);
+
+  AppIdObserver::RunOnReady(
+      new_window,
+      base::BindOnce(
+          [](base::WeakPtr<ArcResizeLockManager> manager,
+             aura::Window* window) {
+            if (!manager)
+              return;
+            if (!manager->pref_delegate_)
+              return;
+            const auto state =
+                manager->pref_delegate_->GetResizeLockState(*GetAppId(window));
+            RecordResizeLockStateHistogram(
+                ResizeLockStateHistogramType::InitialState, state);
+          },
+          weak_ptr_factory_.GetWeakPtr()));
 }
 
 void ArcResizeLockManager::OnWindowPropertyChanged(aura::Window* window,
                                                    const void* key,
                                                    intptr_t old) {
-  if (key != ash::kArcResizeLockKey && key != ash::kAppIDKey)
+  if (key != ash::kArcResizeLockTypeKey)
     return;
 
-  const bool current_resize_lock_value =
-      window->GetProperty(ash::kArcResizeLockKey);
-  const bool resize_lock_changed =
-      (key == ash::kArcResizeLockKey &&
-       current_resize_lock_value != static_cast<bool>(old));
-  const bool has_app_id = window->GetProperty(ash::kAppIDKey) != nullptr;
-  const bool app_id_changed = key == ash::kAppIDKey;
+  const auto new_value = window->GetProperty(ash::kArcResizeLockTypeKey);
+  const auto old_value = static_cast<ash::ArcResizeLockType>(old);
 
-  // Both the resize lock value and app id are needed to enable resize lock.
-  if (has_app_id && current_resize_lock_value &&
-      (app_id_changed || resize_lock_changed)) {
-    EnableResizeLock(window);
+  if (new_value != old_value) {
+    AppIdObserver::RunOnReady(
+        window, base::BindOnce(
+                    [](base::WeakPtr<ArcResizeLockManager> manager,
+                       aura::Window* window) {
+                      if (!manager)
+                        return;
+                      if (ShouldEnableResizeLock(window->GetProperty(
+                              ash::kArcResizeLockTypeKey))) {
+                        manager->EnableResizeLock(window);
+                      } else {
+                        manager->DisableResizeLock(window);
+                      }
+                      // EnableResizeLock() and DisableResizeLock() are supposed
+                      // to be called only when resizability is toggled while
+                      // resize lock state may need to be updated even when
+                      // resizability doesn't change (e.g.NONE ->
+                      // RESIZE_ENABLED_TOGGLABLE)
+                      manager->UpdateResizeLockState(window);
+                    },
+                    weak_ptr_factory_.GetWeakPtr()));
   }
 
-  if (resize_lock_changed && !current_resize_lock_value)
-    DisableResizeLock(window);
+  // We need to always trigger UpdateCompatModeButton regardless of value
+  // change because it need to be called even when the property is set to
+  // ArcResizeLockType::NONE, which is the the default value of
+  // kArcResizeLockTypeKey, and the new value is the same as |old| in that case.
+  AppIdObserver::RunOnReady(
+      window, base::BindOnce(&CompatModeButtonController::Update,
+                             compat_mode_button_controller_->GetWeakPtr(),
+                             pref_delegate_));
+}
+
+void ArcResizeLockManager::OnWindowBoundsChanged(
+    aura::Window* window,
+    const gfx::Rect& old_bounds,
+    const gfx::Rect& new_bounds,
+    ui::PropertyChangeReason reason) {
+  compat_mode_button_controller_->Update(pref_delegate_, window);
 }
 
 void ArcResizeLockManager::OnWindowDestroying(aura::Window* window) {
+  resize_lock_enabled_windows_.erase(window);
   if (window_observations_.IsObservingSource(window))
     window_observations_.RemoveObservation(window);
 }
 
 void ArcResizeLockManager::EnableResizeLock(aura::Window* window) {
-  const std::string* app_id = window->GetProperty(ash::kAppIDKey);
-  // The state is |ArcResizeLockState::READY| only when we enable the resize
-  // lock for an app for the first time.
-  if (app_id && pref_delegate_->GetResizeLockState(*app_id) ==
-                    mojom::ArcResizeLockState::READY) {
-    pref_delegate_->SetResizeLockState(*app_id, mojom::ArcResizeLockState::ON);
+  const bool inserted = resize_lock_enabled_windows_.insert(window).second;
+  if (!inserted)
+    return;
 
-    // Show the splash screen in current window. The splash screen is an
-    // overlay covering the entire window. User can only remove the overlay
-    // before closing the window.
-    ShowSplashScreenDialog(window);
+  if (base::FeatureList::IsEnabled(arc::kTouchModeMouse)) {
+    // TODO(tetsui): Reconsider the trigger condition after experimenting i.e.
+    // whether it is reasonable to have it enabled when ResizeLock is enabled.
+    window->GetHost()->GetEventSource()->AddEventRewriter(
+        touch_mode_mouse_rewriter_.get());
   }
 
-  // Setup size button override.
-  auto* frame_view = ash::NonClientFrameViewAsh::Get(window);
-  // Resize Lock feature only supports non-client frame view, and doesn't
-  // browser windows.
-  DCHECK(frame_view);
-  frame_view->GetHeaderView()
-      ->caption_button_container()
-      ->SetOnSizeButtonPressedCallback(
-          base::BindRepeating(&ArcResizeLockManager::OnResizeButtonPressed,
-                              base::Unretained(this), frame_view->frame()));
+  const auto app_id = GetAppId(window);
+  DCHECK(app_id);
+  // The state is |ArcResizeLockState::READY| only when we enable the resize
+  // lock for an app for the first time.
+  if (pref_delegate_->GetResizeLockState(*app_id) ==
+      mojom::ArcResizeLockState::READY) {
+    if (ShouldShowSplashScreenDialog(pref_delegate_)) {
+      const bool is_for_unresizable =
+          window->GetProperty(ash::kArcResizeLockTypeKey) ==
+          ash::ArcResizeLockType::RESIZE_DISABLED_NONTOGGLABLE;
+      WindowActivationObserver::RunOnActivated(
+          window, base::BindOnce(&ArcSplashScreenDialogView::Show, window,
+                                 is_for_unresizable));
+    }
+  }
+
+  UpdateResizeLockState(window);
+
+  window->SetProperty(ash::kResizeShadowTypeKey, ash::ResizeShadowType::kLock);
+  // Show lock shadow effect on window. ash::Shell may not exist in tests.
+  if (ash::Shell::HasInstance())
+    ash::Shell::Get()->resize_shadow_controller()->ShowShadow(window);
 }
 
 void ArcResizeLockManager::DisableResizeLock(aura::Window* window) {
-  auto* frame_view = ash::NonClientFrameViewAsh::Get(window);
-  DCHECK(frame_view);
-  frame_view->GetHeaderView()
-      ->caption_button_container()
-      ->ClearOnSizeButtonPressedCallback();
+  const bool erased = resize_lock_enabled_windows_.erase(window);
+  if (!erased)
+    return;
+  window->SetProperty(ash::kResizeShadowTypeKey,
+                      ash::ResizeShadowType::kUnlock);
+  // Hide shadow effect on window. ash::Shell may not exist in tests.
+  if (ash::Shell::HasInstance())
+    ash::Shell::Get()->resize_shadow_controller()->HideShadow(window);
+
+  if (base::FeatureList::IsEnabled(arc::kTouchModeMouse)) {
+    window->GetHost()->GetEventSource()->RemoveEventRewriter(
+        touch_mode_mouse_rewriter_.get());
+  }
 }
 
-bool ArcResizeLockManager::OnResizeButtonPressed(views::Widget* widget) {
-  if (widget->IsFullscreen() || widget->IsMaximized()) {
-    // Use default behavior for "restore" operations.
-    return false;
+void ArcResizeLockManager::UpdateResizeLockState(aura::Window* window) {
+  const auto app_id = GetAppId(window);
+  DCHECK(app_id);
+  const auto resize_lock_type = window->GetProperty(ash::kArcResizeLockTypeKey);
+  switch (resize_lock_type) {
+    case ash::ArcResizeLockType::RESIZE_DISABLED_TOGGLABLE:
+      pref_delegate_->SetResizeLockState(*app_id,
+                                         mojom::ArcResizeLockState::ON);
+      break;
+    case ash::ArcResizeLockType::RESIZE_DISABLED_NONTOGGLABLE:
+      pref_delegate_->SetResizeLockState(
+          *app_id, mojom::ArcResizeLockState::FULLY_LOCKED);
+      break;
+    case ash::ArcResizeLockType::RESIZE_ENABLED_TOGGLABLE:
+      pref_delegate_->SetResizeLockState(*app_id,
+                                         mojom::ArcResizeLockState::OFF);
+      break;
+    case ash::ArcResizeLockType::NONE:
+      // Maximizing an app with RESIZE_ENABLED_TOGGLABLE can lead to this case.
+      // Resize lock state shouldn't be updated as the pre-maximized state
+      // needs to be restored later.
+      break;
   }
 
-  resize_toggle_menu_.reset();
-  resize_toggle_menu_ =
-      std::make_unique<ResizeToggleMenu>(widget, pref_delegate_);
-
-  return true;
+  // As we updated the resize lock state above, we need to update compat mode
+  // button.
+  compat_mode_button_controller_->Update(pref_delegate_, window);
 }
 
 }  // namespace arc

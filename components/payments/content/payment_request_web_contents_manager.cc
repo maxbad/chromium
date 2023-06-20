@@ -31,19 +31,21 @@ void PaymentRequestWebContentsManager::CreatePaymentRequest(
     content::RenderFrameHost* render_frame_host,
     std::unique_ptr<ContentPaymentRequestDelegate> delegate,
     mojo::PendingReceiver<payments::mojom::PaymentRequest> receiver,
-    PaymentRequest::ObserverForTest* observer_for_testing) {
-  auto new_request = std::make_unique<PaymentRequest>(
-      render_frame_host, std::move(delegate), /*manager=*/this,
-      delegate->GetDisplayManager(), std::move(receiver), observer_for_testing);
-  PaymentRequest* request_ptr = new_request.get();
-  payment_requests_.insert(std::make_pair(request_ptr, std::move(new_request)));
+    base::WeakPtr<PaymentRequest::ObserverForTest> observer_for_testing) {
+  // Deliberately drop the returned PaymentRequest*, as the public API for this
+  // class does not expose the requests.
+  CreatePaymentRequestInternal(render_frame_host, std::move(delegate),
+                               std::move(receiver), observer_for_testing);
 }
 
 void PaymentRequestWebContentsManager::DidStartNavigation(
     content::NavigationHandle* navigation_handle) {
   // Navigations that are not in the main frame (e.g. iframe) or that are in the
   // same document do not close the Payment Request. Disregard those.
-  if (!navigation_handle->IsInMainFrame() ||
+  // TODO(https://crbug.com/1218946): With MPArch there may be multiple main
+  // frames. This caller was converted automatically to the primary main frame
+  // to preserve its semantics. Follow up to confirm correctness.
+  if (!navigation_handle->IsInPrimaryMainFrame() ||
       navigation_handle->IsSameDocument()) {
     return;
   }
@@ -58,8 +60,7 @@ void PaymentRequestWebContentsManager::DidStartNavigation(
 
 void PaymentRequestWebContentsManager::RenderFrameDeleted(
     content::RenderFrameHost* render_frame_host) {
-  const auto render_frame_host_id =
-      render_frame_host->GetGlobalFrameRoutingId();
+  const auto render_frame_host_id = render_frame_host->GetGlobalId();
   // Two passes to avoid modifying the |payment_requests_| map while iterating
   // over it.
   std::vector<PaymentRequest*> obsolete;
@@ -73,6 +74,41 @@ void PaymentRequestWebContentsManager::RenderFrameDeleted(
   }
 }
 
+void PaymentRequestWebContentsManager::SetSPCTransactionMode(
+    SPCTransactionMode mode) {
+  spc_transaction_mode_ = mode;
+}
+
+base::WeakPtr<PaymentRequestWebContentsManager>
+PaymentRequestWebContentsManager::GetWeakPtr() {
+  return weak_ptr_factory_.GetWeakPtr();
+}
+
+PaymentRequest*
+PaymentRequestWebContentsManager::CreateAndReturnPaymentRequestForTesting(
+    content::RenderFrameHost* render_frame_host,
+    std::unique_ptr<ContentPaymentRequestDelegate> delegate,
+    mojo::PendingReceiver<payments::mojom::PaymentRequest> receiver,
+    base::WeakPtr<PaymentRequest::ObserverForTest> observer_for_testing) {
+  return CreatePaymentRequestInternal(render_frame_host, std::move(delegate),
+                                      std::move(receiver),
+                                      observer_for_testing);
+}
+
+PaymentRequest* PaymentRequestWebContentsManager::CreatePaymentRequestInternal(
+    content::RenderFrameHost* render_frame_host,
+    std::unique_ptr<ContentPaymentRequestDelegate> delegate,
+    mojo::PendingReceiver<payments::mojom::PaymentRequest> receiver,
+    base::WeakPtr<PaymentRequest::ObserverForTest> observer_for_testing) {
+  auto new_request = std::make_unique<PaymentRequest>(
+      render_frame_host, std::move(delegate), /*manager=*/GetWeakPtr(),
+      delegate->GetDisplayManager()->GetWeakPtr(), std::move(receiver),
+      spc_transaction_mode_, observer_for_testing);
+  PaymentRequest* request_ptr = new_request.get();
+  payment_requests_.insert(std::make_pair(request_ptr, std::move(new_request)));
+  return request_ptr;
+}
+
 void PaymentRequestWebContentsManager::DestroyRequest(
     base::WeakPtr<PaymentRequest> request) {
   if (!request)
@@ -84,8 +120,9 @@ void PaymentRequestWebContentsManager::DestroyRequest(
 
 PaymentRequestWebContentsManager::PaymentRequestWebContentsManager(
     content::WebContents* web_contents)
-    : content::WebContentsObserver(web_contents) {}
+    : content::WebContentsObserver(web_contents),
+      spc_transaction_mode_(SPCTransactionMode::NONE) {}
 
-WEB_CONTENTS_USER_DATA_KEY_IMPL(PaymentRequestWebContentsManager)
+WEB_CONTENTS_USER_DATA_KEY_IMPL(PaymentRequestWebContentsManager);
 
 }  // namespace payments

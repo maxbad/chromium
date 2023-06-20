@@ -360,6 +360,10 @@ bool Editor::DeleteSelectionAfterDraggingWithEvents(
   if (frame_->GetDocument()->GetFrame() != frame_)
     return false;
 
+  // No DOM mutation if EditContext is active.
+  if (frame_->GetInputMethodController().GetActiveEditContext())
+    return true;
+
   if (should_delete && drag_source->isConnected()) {
     DeleteSelectionWithSmartDelete(delete_mode,
                                    InputEvent::InputType::kDeleteByDrag,
@@ -393,6 +397,10 @@ bool Editor::ReplaceSelectionAfterDraggingWithEvents(
   // remaining actions;
   if (frame_->GetDocument()->GetFrame() != frame_)
     return false;
+
+  // No DOM mutation if EditContext is active.
+  if (frame_->GetInputMethodController().GetActiveEditContext())
+    return true;
 
   if (should_insert && drop_target->isConnected())
     ReplaceSelectionAfterDragging(fragment, insert_mode, drag_source_type);
@@ -679,7 +687,7 @@ void Editor::AddToKillRing(const EphemeralRange& range) {
   should_start_new_kill_ring_sequence_ = false;
 }
 
-EphemeralRange Editor::RangeForPoint(const IntPoint& frame_point) const {
+EphemeralRange Editor::RangeForPoint(const gfx::Point& frame_point) const {
   const PositionWithAffinity position_with_affinity =
       GetFrame().PositionForPoint(PhysicalOffset(frame_point));
   if (position_with_affinity.IsNull())

@@ -6,7 +6,10 @@
 
 #include "base/check.h"
 #include "base/environment.h"
+#include "base/strings/stringprintf.h"
 #include "ui/base/x/x11_util.h"
+#include "ui/events/event_constants.h"
+#include "ui/events/event_utils.h"
 #include "ui/events/platform/x11/x11_event_source.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/x/x11_atom_cache.h"
@@ -14,6 +17,7 @@
 #include "ui/gfx/x/xproto.h"
 #include "ui/gfx/x/xproto_util.h"
 #include "ui/gtk/gtk_compat.h"
+#include "ui/gtk/gtk_util.h"
 #include "ui/gtk/x/gtk_event_loop_x11.h"
 #include "ui/platform_window/x11/x11_window.h"
 #include "ui/platform_window/x11/x11_window_manager.h"
@@ -46,6 +50,15 @@ GdkKeymap* GtkUiPlatformX11::GetGdkKeymap() {
   return gdk_keymap_get_for_display(GetGdkDisplay());
 }
 
+GdkModifierType GtkUiPlatformX11::GetGdkKeyEventState(
+    const ui::KeyEvent& key_event) {
+  return gtk::GetGdkKeyEventState(key_event);
+}
+
+int GtkUiPlatformX11::GetGdkKeyEventGroup(const ui::KeyEvent& key_event) {
+  return GetKeyEventProperty(key_event, ui::kPropertyKeyboardGroup);
+}
+
 GdkWindow* GtkUiPlatformX11::GetGdkWindow(gfx::AcceleratedWidget window_id) {
   DCHECK(!gtk::GtkCheckVersion(4));
   GdkDisplay* display = GetGdkDisplay();
@@ -57,6 +70,13 @@ GdkWindow* GtkUiPlatformX11::GetGdkWindow(gfx::AcceleratedWidget window_id) {
     gdk_window = gdk_x11_window_foreign_new_for_display(
         display, static_cast<uint32_t>(window_id));
   return gdk_window;
+}
+
+bool GtkUiPlatformX11::ExportWindowHandle(
+    gfx::AcceleratedWidget window_id,
+    base::OnceCallback<void(std::string)> callback) {
+  std::move(callback).Run(base::StringPrintf("x11:%#x", window_id));
+  return true;
 }
 
 bool GtkUiPlatformX11::SetGtkWidgetTransientFor(GtkWidget* widget,
@@ -101,16 +121,8 @@ void GtkUiPlatformX11::ShowGtkWindow(GtkWindow* window) {
       static_cast<uint32_t>(ui::X11EventSource::GetInstance()->GetTimestamp()));
 }
 
-int GtkUiPlatformX11::GetGdkKeyState() {
-  auto* xevent =
-      ui::X11EventSource::GetInstance()->connection()->dispatching_event();
-
-  if (!xevent)
-    return ui::EF_NONE;
-
-  auto* key_xevent = xevent->As<x11::KeyEvent>();
-  DCHECK(key_xevent);
-  return static_cast<int>(key_xevent->state);
+bool GtkUiPlatformX11::PreferGtkIme() {
+  return true;
 }
 
 }  // namespace gtk

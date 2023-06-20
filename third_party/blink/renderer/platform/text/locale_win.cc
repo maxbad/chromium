@@ -33,8 +33,8 @@
 #include <limits>
 #include <memory>
 
+#include "base/cxx17_backports.h"
 #include "base/memory/ptr_util.h"
-#include "base/stl_util.h"
 #include "base/strings/string_util.h"
 #include "third_party/blink/renderer/platform/language.h"
 #include "third_party/blink/renderer/platform/text/date_components.h"
@@ -45,12 +45,13 @@
 #include "third_party/blink/renderer/platform/wtf/text/string_buffer.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_hash.h"
+#include "third_party/blink/renderer/platform/wtf/text/unicode.h"
 #include "ui/base/ui_base_features.h"
 
 namespace blink {
 
 static String ExtractLanguageCode(const String& locale) {
-  size_t dash_position = locale.find('-');
+  wtf_size_t dash_position = locale.find('-');
   if (dash_position == kNotFound)
     return locale;
   return locale.Left(dash_position);
@@ -377,7 +378,7 @@ String LocaleWin::ShortTimeFormat() {
     StringBuilder builder;
     builder.Append(GetLocaleInfoString(LOCALE_STIME));
     builder.Append("ss");
-    size_t pos = format.ReverseFind(builder.ToString());
+    wtf_size_t pos = format.ReverseFind(builder.ToString());
     if (pos != kNotFound)
       format.Remove(pos, builder.length());
   }

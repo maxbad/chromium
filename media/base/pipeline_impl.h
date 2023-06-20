@@ -7,7 +7,6 @@
 
 #include <memory>
 
-#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/threading/thread_checker.h"
@@ -86,6 +85,10 @@ class MEDIA_EXPORT PipelineImpl : public Pipeline {
                scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
                CreateRendererCB create_renderer_cb,
                MediaLog* media_log);
+
+  PipelineImpl(const PipelineImpl&) = delete;
+  PipelineImpl& operator=(const PipelineImpl&) = delete;
+
   ~PipelineImpl() override;
 
   // Pipeline implementation.
@@ -162,8 +165,8 @@ class MEDIA_EXPORT PipelineImpl : public Pipeline {
   void OnVideoNaturalSizeChange(const gfx::Size& size);
   void OnVideoOpacityChange(bool opaque);
   void OnVideoAverageKeyframeDistanceUpdate();
-  void OnAudioDecoderChange(const AudioDecoderInfo& info);
-  void OnVideoDecoderChange(const VideoDecoderInfo& info);
+  void OnAudioPipelineInfoChange(const AudioPipelineInfo& info);
+  void OnVideoPipelineInfoChange(const VideoPipelineInfo& info);
   void OnRemotePlayStateChange(MediaStatus::State state);
   void OnVideoFrameRateChange(absl::optional<int> fps);
 
@@ -215,8 +218,6 @@ class MEDIA_EXPORT PipelineImpl : public Pipeline {
 
   base::ThreadChecker thread_checker_;
   base::WeakPtrFactory<PipelineImpl> weak_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(PipelineImpl);
 };
 
 }  // namespace media

@@ -24,13 +24,14 @@ import '../os_people_page/lock_screen_password_prompt_dialog.m.js';
 import {loadTimeData} from '//resources/js/load_time_data.m.js';
 import {afterNextRender, flush, html, Polymer, TemplateInstanceBase, Templatizer} from '//resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 
-import {PrefsBehavior} from '../../prefs/prefs_behavior.js';
-import {Route, RouteObserverBehavior, Router} from '../../router.js';
+import {Route, Router} from '../../router.js';
 import {DeepLinkingBehavior} from '../deep_linking_behavior.m.js';
 import {LockScreenUnlockType, LockStateBehavior, LockStateBehaviorImpl} from '../os_people_page/lock_state_behavior.m.js';
 import {routes} from '../os_route.m.js';
+import {PrefsBehavior} from '../prefs_behavior.js';
+import {RouteObserverBehavior} from '../route_observer_behavior.js';
 
-import {PeripheralDataAccessBrowserProxy, PeripheralDataAccessBrowserProxyImpl} from './peripheral_data_access_browser_proxy.js';
+import {DataAccessPolicyState, PeripheralDataAccessBrowserProxy, PeripheralDataAccessBrowserProxyImpl} from './peripheral_data_access_browser_proxy.js';
 
 Polymer({
   _template: html`{__html_template__}`,
@@ -117,18 +118,6 @@ Polymer({
     },
 
     /**
-     * True if redesign of account management flows is enabled.
-     * @private
-     */
-    isAccountManagementFlowsV2Enabled_: {
-      type: Boolean,
-      value() {
-        return loadTimeData.getBoolean('isAccountManagementFlowsV2Enabled');
-      },
-      readOnly: true,
-    },
-
-    /**
      * True if Pciguard UI is enabled.
      * @private
      */
@@ -136,6 +125,18 @@ Polymer({
       type: Boolean,
       value() {
         return loadTimeData.getBoolean('pciguardUiEnabled');
+      },
+      readOnly: true,
+    },
+
+    /**
+     * True if snooping protection is enabled.
+     * @private
+     */
+    isSnoopingProtectionEnabled_: {
+      type: Boolean,
+      value() {
+        return loadTimeData.getBoolean('isSnoopingProtectionEnabled');
       },
       readOnly: true,
     },
@@ -165,10 +166,15 @@ Polymer({
     },
 
     /** @private */
-    isPeripheralProtectionToggleEnforced_: {
+    dataAccessProtectionPrefName_: {
+      type: String,
+      value: '',
+    },
+
+    /** @private */
+    isUserConfigurable_: {
       type: Boolean,
-      computed: 'computeIsPeripheralProtectionToggleEnforced_(' +
-          'prefs.cros.device.peripheral_data_access_enabled.*)',
+      value: false,
       reflectToAttribute: true,
     },
 
@@ -176,13 +182,6 @@ Polymer({
     dataAccessShiftTabPressed_: {
       type: Boolean,
       value: false,
-    },
-
-    /** @private */
-    shouldShowSubsections_: {
-      type: Boolean,
-      computed: 'computeShouldShowSubsections_(' +
-          'isAccountManagementFlowsV2Enabled_, isGuestMode_)',
     },
 
     /**
@@ -299,6 +298,11 @@ Polymer({
     Router.getInstance().navigateTo(routes.ACCOUNTS);
   },
 
+  /** @private */
+  onSmartPrivacy_() {
+    Router.getInstance().navigateTo(routes.SMART_PRIVACY);
+  },
+
   /**
    * The timeout ID to pass to clearTimeout() to cancel auth token
    * invalidation.
@@ -351,35 +355,26 @@ Polymer({
 
   /** @private */
   onPeripheralProtectionClick_() {
-    if (this.isPeripheralProtectionToggleEnforced_) {
+    if (!this.isUserConfigurable_) {
       return;
     }
 
     // Do not flip the actual toggle as this will flip the underlying pref.
     // Instead if the user is attempting to disable the toggle, present the
     // warning dialog.
-    if (!this.prefs['cros']['device']['peripheral_data_access_enabled'].value) {
+    if (!this.getPref(this.dataAccessProtectionPrefName_).value) {
       this.showDisableProtectionDialog_ = true;
       return;
     }
 
     // The underlying settings-toggle-button is disabled, therefore we will have
     // to set the pref value manually to flip the toggle.
-    this.setPrefValue('cros.device.peripheral_data_access_enabled', false);
-  },
-
-  /**
-   * @return {boolean} True is the toggle is enforced.
-   * @private
-   */
-  computeIsPeripheralProtectionToggleEnforced_() {
-    return this.prefs['cros']['device']['peripheral_data_access_enabled']
-               .enforcement === chrome.settingsPrivate.Enforcement.ENFORCED;
+    this.setPrefValue(this.dataAccessProtectionPrefName_, false);
   },
 
   /** @private */
   onDataAccessToggleFocus_() {
-    if (this.isPeripheralProtectionToggleEnforced_) {
+    if (!this.isUserConfigurable_) {
       return;
     }
 
@@ -391,7 +386,7 @@ Polymer({
       return;
     }
 
-    this.$$('#peripheralDataAccessProtection').focus();
+    this.$$('.peripheral-data-access-protection').focus();
   },
 
   /**
@@ -409,42 +404,61 @@ Polymer({
     }
 
     if ((event.key !== 'Enter' && event.key !== ' ') ||
-        this.isPeripheralProtectionToggleEnforced_) {
+        !this.isUserConfigurable_) {
       return;
     }
 
     event.stopPropagation();
 
-    if (!this.prefs['cros']['device']['peripheral_data_access_enabled'].value) {
+    if (!this.getPref(this.dataAccessProtectionPrefName_).value) {
       this.showDisableProtectionDialog_ = true;
       return;
     }
-    this.setPrefValue('cros.device.peripheral_data_access_enabled', false);
+    this.setPrefValue(this.dataAccessProtectionPrefName_, false);
   },
 
   /**
    * This is used to add a keydown listener event for handling keyboard
-   * navigation inputs. We have to wait until #peripheralDataAccessProtection
-   * is rendered before adding the observer.
+   * navigation inputs. We have to wait until either
+   * #crosSettingDataAccessToggle or #localStateDataAccessToggle is rendered
+   * before adding the observer.
    * @private
    */
   onDataAccessFlagsSet_() {
     if (this.isThunderboltSupported_ && this.isPciguardUiEnabled_) {
-      afterNextRender(this, () => {
-        this.$$('#peripheralDataAccessProtection')
-            .$$('#control')
-            .addEventListener(
-                'keydown', this.onDataAccessToggleKeyPress_.bind(this));
-      });
+      this.browserProxy_.getPolicyState()
+          .then(policy => {
+            this.dataAccessProtectionPrefName_ = policy.prefName;
+            this.isUserConfigurable_ = policy.isUserConfigurable;
+          })
+          .then(() => {
+            afterNextRender(this, () => {
+              this.$$('.peripheral-data-access-protection')
+                  .shadowRoot.querySelector('#control')
+                  .addEventListener(
+                      'keydown', this.onDataAccessToggleKeyPress_.bind(this));
+            });
+          });
     }
   },
 
   /**
-   * @return {boolean} whether 'accounts' and 'lock screen' subsections should
-   * be shown.
+   * @return {boolean} returns true if the current data access pref is from the
+   * local_state.
    * @private
    */
-  computeShouldShowSubsections_() {
-    return this.isAccountManagementFlowsV2Enabled_ && !this.isGuestMode_;
-  }
+  isLocalStateDataAccessPref_() {
+    return this.dataAccessProtectionPrefName_ ===
+        'settings.local_state_device_pci_data_access_enabled';
+  },
+
+  /**
+   * @return {boolean} returns true if the current data access pref is from the
+   * CrosSetting.
+   * @private
+   */
+  isCrosSettingDataAccessPref_() {
+    return this.dataAccessProtectionPrefName_ ===
+        'cros.device.peripheral_data_access_enabled';
+  },
 });

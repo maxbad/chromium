@@ -7,15 +7,10 @@
 
 #include <memory>
 
-#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "base/scoped_observation.h"
 #include "base/time/time.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
-// TODO(https://crbug.com/1164001): use forward declaration when moving to
-// chrome/browser/ash/.
-#include "chrome/browser/ash/accessibility/accessibility_manager.h"
-#include "chrome/browser/ash/accessibility/magnification_manager.h"
 #include "chrome/browser/ash/power/ml/boot_clock.h"
 #include "chrome/browser/ash/power/ml/screen_brightness_event.pb.h"
 #include "chromeos/dbus/power/power_manager_client.h"
@@ -30,7 +25,11 @@ namespace base {
 class RepeatingTimer;
 }  // namespace base
 
-namespace chromeos {
+namespace ash {
+
+class AccessibilityManager;
+class MagnificationManager;
+
 namespace power {
 namespace ml {
 
@@ -45,12 +44,10 @@ class AdaptiveScreenBrightnessManager
       public viz::mojom::VideoDetectorObserver {
  public:
   // Duration of inactivity that marks the end of an activity.
-  static constexpr base::TimeDelta kInactivityDuration =
-      base::TimeDelta::FromSeconds(20);
+  static constexpr base::TimeDelta kInactivityDuration = base::Seconds(20);
 
   // Interval at which data should be logged.
-  static constexpr base::TimeDelta kLoggingInterval =
-      base::TimeDelta::FromMinutes(10);
+  static constexpr base::TimeDelta kLoggingInterval = base::Minutes(10);
 
   AdaptiveScreenBrightnessManager(
       std::unique_ptr<AdaptiveScreenBrightnessUkmLogger> ukm_logger,
@@ -60,6 +57,11 @@ class AdaptiveScreenBrightnessManager
       MagnificationManager* magnification_manager,
       mojo::PendingReceiver<viz::mojom::VideoDetectorObserver> receiver,
       std::unique_ptr<base::RepeatingTimer> periodic_timer);
+
+  AdaptiveScreenBrightnessManager(const AdaptiveScreenBrightnessManager&) =
+      delete;
+  AdaptiveScreenBrightnessManager& operator=(
+      const AdaptiveScreenBrightnessManager&) = delete;
 
   ~AdaptiveScreenBrightnessManager() override;
 
@@ -155,12 +157,10 @@ class AdaptiveScreenBrightnessManager
   absl::optional<ScreenBrightnessEvent_Event_Reason> reason_;
 
   base::WeakPtrFactory<AdaptiveScreenBrightnessManager> weak_ptr_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(AdaptiveScreenBrightnessManager);
 };
 
 }  // namespace ml
 }  // namespace power
-}  // namespace chromeos
+}  // namespace ash
 
 #endif  // CHROME_BROWSER_ASH_POWER_ML_ADAPTIVE_SCREEN_BRIGHTNESS_MANAGER_H_

@@ -137,12 +137,10 @@ class ExtensionMetricsApiTest
     : public ExtensionApiTest,
       public testing::WithParamInterface<ContextType> {
  public:
-  bool RunComponentTest(const char* extension_name) {
-    return RunExtensionTest(
-        extension_name, {},
-        {.load_as_service_worker = GetParam() == ContextType::kServiceWorker,
-         .load_as_component = true});
-  }
+  ExtensionMetricsApiTest() : ExtensionApiTest(GetParam()) {}
+  ~ExtensionMetricsApiTest() override = default;
+  ExtensionMetricsApiTest(const ExtensionMetricsApiTest&) = delete;
+  ExtensionMetricsApiTest& operator=(const ExtensionMetricsApiTest&) = delete;
 };
 
 INSTANTIATE_TEST_SUITE_P(PersistentBackground,
@@ -161,7 +159,8 @@ IN_PROC_BROWSER_TEST_P(ExtensionMetricsApiTest, Metrics) {
   ASSERT_TRUE(variations::AssociateVariationParams(
       "apitestfieldtrial2", "group1", {{"a", "aa"}, {"b", "bb"}}));
 
-  ASSERT_TRUE(RunComponentTest("metrics")) << message_;
+  ASSERT_TRUE(RunExtensionTest("metrics", {}, {.load_as_component = true}))
+      << message_;
 
   ValidateUserActions(user_action_tester, g_user_actions,
                       base::size(g_user_actions));

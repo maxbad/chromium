@@ -4,16 +4,19 @@
 
 <link rel="import" href="chrome://resources/html/polymer.html">
 
+<link rel="import" href="chrome://resources/html/parse_html_subset.html">
 <link rel="import" href="chrome://resources/polymer/v1_0/iron-icon/iron-icon.html">
 
-<link rel="import" href="chrome://resources/html/parse_html_subset.html">
-<link rel="import" href="/components/common_styles.html">
-<link rel="import" href="/components/oobe_adaptive_dialog.html">
-<link rel="import" href="/components/oobe_i18n_behavior/oobe_i18n_behavior.html">
-<link rel="import" href="/components/oobe_dialog_host_behavior/oobe_dialog_host_behavior.html">
-<link rel="import" href="/components/login_screen_behavior.html">
-<link rel="import" href="/components/multi_step_behavior.html">
 <link rel="import" href="/components/oobe_icons.html">
+<link rel="import" href="/components/behaviors/login_screen_behavior.html">
+<link rel="import" href="/components/behaviors/multi_step_behavior.html">
+<link rel="import" href="/components/behaviors/oobe_dialog_host_behavior.html">
+<link rel="import" href="/components/behaviors/oobe_i18n_behavior.html">
+<link rel="import" href="/components/buttons/oobe_text_button.html">
+<link rel="import" href="/components/common_styles/common_styles.html">
+<link rel="import" href="/components/common_styles/oobe_dialog_host_styles.html">
+<link rel="import" href="/components/dialogs/oobe_adaptive_dialog.html">
+<link rel="import" href="/components/dialogs/oobe_modal_dialog.html">
 
 <!--
   Update required card that informs user that current chromeos version does not
@@ -23,7 +26,7 @@
 -->
 <dom-module id="update-required-card-element">
   <template>
-    <style include="oobe-dialog-host">
+    <style include="oobe-dialog-host-styles">
       :host .content {
         padding: 24px 24px 16px;
       }
@@ -53,8 +56,8 @@
       <h1 slot="title">
         [[i18nDynamic(locale, 'updateRequiredTitle')]]
       </h1>
-      <div slot="subtitle">
-        [[i18nDynamic(locale,'updateRequiredMessage', enterpriseDomain,
+      <div id="update-subtitle" slot="subtitle">
+        [[i18nDynamic(locale,'updateRequiredMessage', enterpriseManager,
             deviceName)]]
       </div>
       <div slot="content" class="flex layout vertical center-justified center">
@@ -110,7 +113,7 @@
       </h1>
       <div slot="subtitle" class="update-subtitle">
         [[i18nDynamic(locale,'updateOverMeteredNetworkMessage',
-            enterpriseDomain)]]
+            enterpriseManager)]]
       </div>
       <div slot="content" class="flex layout vertical center-justified center">
         <img class="update-illustration oobe-illustration"
@@ -133,7 +136,7 @@
       </h1>
       <div slot="subtitle" class="update-subtitle"
           id="no-network-message">
-        [[i18nDynamic(locale,'noNetworkMessage', enterpriseDomain)]]
+        [[i18nDynamic(locale,'noNetworkMessage', enterpriseManager)]]
       </div>
       <div slot="content" class="flex layout vertical center-justified center">
         <img class="update-illustration oobe-illustration"
@@ -173,7 +176,7 @@
           <!-- Use lock image indicating that end-of-life has been reached and
              the device is disabled for further use  -->
           <img class="update-illustration oobe-illustration"
-              src="../../images/1x/device-disabled.svg">
+              src="../../images/device-disabled.svg">
         </div>
       </div>
     </oobe-adaptive-dialog>

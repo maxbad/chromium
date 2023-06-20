@@ -8,12 +8,12 @@
 #include <memory>
 
 #include "ash/ash_export.h"
+#include "ash/display/window_tree_host_manager.h"
 #include "ash/public/cpp/session/session_observer.h"
 #include "ash/shell_observer.h"
 #include "ash/system/palette/palette_tool_manager.h"
 #include "ash/system/palette/stylus_battery_delegate.h"
 #include "ash/system/tray/tray_background_view.h"
-#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "ui/events/devices/input_device_event_observer.h"
 
@@ -43,10 +43,15 @@ class TrayBubbleWrapper;
 class ASH_EXPORT PaletteTray : public TrayBackgroundView,
                                public SessionObserver,
                                public ShellObserver,
+                               public ash::WindowTreeHostManager::Observer,
                                public PaletteToolManager::Delegate,
                                public ui::InputDeviceEventObserver {
  public:
   explicit PaletteTray(Shelf* shelf);
+
+  PaletteTray(const PaletteTray&) = delete;
+  PaletteTray& operator=(const PaletteTray&) = delete;
+
   ~PaletteTray() override;
 
   static void RegisterLocalStatePrefs(PrefRegistrySimple* registry);
@@ -70,6 +75,9 @@ class ASH_EXPORT PaletteTray : public TrayBackgroundView,
 
   // ShellObserver:
   void OnLockStateChanged(bool locked) override;
+
+  // ash::WindowTreeHostManager::Observer:
+  void OnDisplayConfigurationChanged() override;
 
   // TrayBackgroundView:
   void ClickedOutsideBubble() override;
@@ -99,6 +107,7 @@ class ASH_EXPORT PaletteTray : public TrayBackgroundView,
   // ui::InputDeviceObserver:
   void OnInputDeviceConfigurationChanged(uint8_t input_device_types) override;
   void OnStylusStateChanged(ui::StylusState stylus_state) override;
+  void OnTouchDeviceAssociationChanged() override;
 
   // TrayBubbleView::Delegate:
   void BubbleViewDestroyed() override;
@@ -174,8 +183,6 @@ class ASH_EXPORT PaletteTray : public TrayBackgroundView,
   ScopedSessionObserver scoped_session_observer_;
 
   base::WeakPtrFactory<PaletteTray> weak_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(PaletteTray);
 };
 
 }  // namespace ash

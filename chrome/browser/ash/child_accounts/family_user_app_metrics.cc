@@ -8,6 +8,7 @@
 
 #include "base/check.h"
 #include "base/containers/contains.h"
+#include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/time/time.h"
 #include "chrome/browser/apps/app_service/app_service_proxy.h"
@@ -24,7 +25,7 @@ namespace ash {
 
 namespace {
 // Recently launched apps this many days ago in the past will be recorded.
-constexpr base::TimeDelta kOneDay = base::TimeDelta::FromDays(1);
+constexpr base::TimeDelta kOneDay = base::Days(1);
 
 // UMA metrics for a snapshot count of installed and enabled extensions for a
 // given family user.
@@ -56,6 +57,8 @@ constexpr char kBorealisAppsCountHistogramName[] =
     "FamilyUser.BorealisAppsCount2";
 constexpr char kSystemWebAppsCountHistogramName[] =
     "FamilyUser.SystemWebAppsCount2";
+constexpr char kStandaloneBrowserExtensionCountHistogramName[] =
+    "FamilyUser.LacrosChromeAppsCount2";
 
 const char* GetAppsCountHistogramName(apps::mojom::AppType app_type) {
   switch (app_type) {
@@ -83,10 +86,20 @@ const char* GetAppsCountHistogramName(apps::mojom::AppType app_type) {
       return kBorealisAppsCountHistogramName;
     case apps::mojom::AppType::kSystemWeb:
       return kSystemWebAppsCountHistogramName;
+    case apps::mojom::AppType::kStandaloneBrowserExtension:
+      return kStandaloneBrowserExtensionCountHistogramName;
   }
 }
 
 }  // namespace
+
+// static
+std::unique_ptr<FamilyUserAppMetrics> FamilyUserAppMetrics::Create(
+    Profile* profile) {
+  auto metrics = base::WrapUnique(new FamilyUserAppMetrics(profile));
+  metrics->Init();
+  return metrics;
+}
 
 FamilyUserAppMetrics::FamilyUserAppMetrics(Profile* profile)
     : extension_registry_(extensions::ExtensionRegistry::Get(profile)),
@@ -118,6 +131,12 @@ FamilyUserAppMetrics::GetEnabledExtensionsCountHistogramNameForTest() {
 const char* FamilyUserAppMetrics::GetAppsCountHistogramNameForTest(
     apps::mojom::AppType app_type) {
   return GetAppsCountHistogramName(app_type);
+}
+
+void FamilyUserAppMetrics::Init() {
+  for (const auto app_type : app_registry_->GetInitializedAppTypes()) {
+    OnAppTypeInitialized(app_type);
+  }
 }
 
 void FamilyUserAppMetrics::OnNewDay() {
@@ -210,7 +229,7 @@ void FamilyUserAppMetrics::RecordRecentlyUsedAppsCount(
 
 bool FamilyUserAppMetrics::IsAppWindowOpen(const std::string& app_id) {
   // An app is active if it has an open window.
-  return !instance_registry_->GetWindows(app_id).empty();
+  return instance_registry_->ContainsAppId(app_id);
 }
 
 }  // namespace ash

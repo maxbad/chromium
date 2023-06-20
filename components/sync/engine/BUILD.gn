@@ -4,6 +4,8 @@
 
 static_library("engine") {
   sources = [
+    "active_devices_invalidation_info.cc",
+    "active_devices_invalidation_info.h",
     "backoff_delay_provider.cc",
     "backoff_delay_provider.h",
     "bookmark_update_preprocessing.cc",
@@ -118,6 +120,8 @@ static_library("engine") {
     "nigori/key_derivation_params.cc",
     "nigori/key_derivation_params.h",
     "nigori/keystore_keys_handler.h",
+    "nigori/nigori.cc",
+    "nigori/nigori.h",
     "nudge_handler.h",
     "polling_constants.h",
     "shutdown_reason.cc",

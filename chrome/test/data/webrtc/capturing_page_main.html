@@ -1,6 +1,6 @@
 <html>
   <head>
-    <title>Capture Handle Test - Capturing Page</title>
+    <title>Capture Handle Test - Main Capturing Page</title>
     <link rel="icon" href="data:," />
     <script>
       "use strict";
@@ -19,21 +19,44 @@
         // Blocks until onCaptureHandleChange() unblocks.
       }
 
-      function readCaptureHandleFromSettings() {
+      function readLastEmbeddedEvent() {
+        // Blocks until the embedded frame's onCaptureHandleChange() unblocks.
+      }
+
+      function readCaptureHandle() {
         if (!capturedVideoTrack) {
           window.domAutomationController.send("error-no-video-track");
           return;
         }
 
-        let settings = capturedVideoTrack.getSettings();
-        if (!settings.captureHandle) {
+        let captureHandle = capturedVideoTrack.getCaptureHandle();
+        if (!captureHandle) {
           window.domAutomationController.send("no-capture-handle");
           return;
         }
 
         window.domAutomationController.send(
-          JSON.stringify(settings.captureHandle)
+          JSON.stringify(captureHandle)
         );
+      }
+
+      function startEmbeddingFrame(url) {
+        document.getElementById("embedded_frame").src = url;
+        // window.domAutomationController.send() called by embedded page.
+      }
+
+      function captureOtherTabFromEmbeddedFrame() {
+        document
+          .getElementById("embedded_frame")
+          .contentWindow.postMessage("start-capture", "*");
+        // window.domAutomationController.send() called by embedded page.
+      }
+
+      function readCaptureHandleInEmbeddedFrame() {
+        document
+          .getElementById("embedded_frame")
+          .contentWindow.postMessage("read-capture-handle", "*");
+        // window.domAutomationController.send() called by embedded page.
       }
 
       function handleCaptureSuccess(stream) {
@@ -59,7 +82,7 @@
           throw "Unexpected event type.";
         }
         window.domAutomationController.send(
-          JSON.stringify(event.captureHandle)
+          JSON.stringify(event.captureHandle())
         );
       }
 
@@ -84,6 +107,8 @@
     </script>
   </head>
   <body>
-    <h1>Capture Handle Test - Capturing Page</h1>
+    <h1>Capture Handle Test - Main Capturing Page</h1>
+    <br/>
+    <iframe id="embedded_frame" allow="display-capture *"></iframe>
   </body>
 </html>

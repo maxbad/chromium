@@ -105,7 +105,7 @@ class RenderViewContextMenuViews::SubmenuViewObserver
 // RenderViewContextMenuViews, public:
 
 RenderViewContextMenuViews::RenderViewContextMenuViews(
-    content::RenderFrameHost* render_frame_host,
+    content::RenderFrameHost& render_frame_host,
     const content::ContextMenuParams& params)
     : RenderViewContextMenu(render_frame_host, params),
       bidi_submenu_model_(this) {
@@ -118,7 +118,7 @@ RenderViewContextMenuViews::~RenderViewContextMenuViews() {
 
 // static
 RenderViewContextMenuViews* RenderViewContextMenuViews::Create(
-    content::RenderFrameHost* render_frame_host,
+    content::RenderFrameHost& render_frame_host,
     const content::ContextMenuParams& params) {
   return new RenderViewContextMenuViews(render_frame_host, params);
 }
@@ -159,11 +159,6 @@ bool RenderViewContextMenuViews::GetAcceleratorForCommandId(
 
     case IDC_CONTENT_CONTEXT_COPY:
       *accel = ui::Accelerator(ui::VKEY_C, ui::EF_CONTROL_DOWN);
-      return true;
-
-    case IDC_CONTENT_CONTEXT_INSPECTELEMENT:
-      *accel = ui::Accelerator(ui::VKEY_I,
-                               ui::EF_SHIFT_DOWN | ui::EF_CONTROL_DOWN);
       return true;
 
     case IDC_CONTENT_CONTEXT_PASTE:

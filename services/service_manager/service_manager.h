@@ -29,7 +29,6 @@
 #include "services/service_manager/public/mojom/service_manager.mojom.h"
 #include "services/service_manager/service_instance_registry.h"
 #include "services/service_manager/service_process_host.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace service_manager {
 
@@ -108,6 +107,9 @@ class ServiceManager : public Service {
   // manually registered with |RegisterService()| below.
   ServiceManager(const std::vector<Manifest>& manifests,
                  ServiceExecutablePolicy service_executable_policy);
+
+  ServiceManager(const ServiceManager&) = delete;
+  ServiceManager& operator=(const ServiceManager&) = delete;
 
   ~ServiceManager() override;
 
@@ -205,8 +207,6 @@ class ServiceManager : public Service {
   ServiceInstance* service_manager_instance_;
 
   mojo::RemoteSet<mojom::ServiceManagerListener> listeners_;
-
-  DISALLOW_COPY_AND_ASSIGN(ServiceManager);
 };
 
 }  // namespace service_manager

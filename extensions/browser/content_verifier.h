@@ -73,6 +73,10 @@ class ContentVerifier : public base::RefCountedThreadSafe<ContentVerifier>,
 
   ContentVerifier(content::BrowserContext* context,
                   std::unique_ptr<ContentVerifierDelegate> delegate);
+
+  ContentVerifier(const ContentVerifier&) = delete;
+  ContentVerifier& operator=(const ContentVerifier&) = delete;
+
   void Start();
   void Shutdown();
 
@@ -117,6 +121,10 @@ class ContentVerifier : public base::RefCountedThreadSafe<ContentVerifier>,
   // arbitrary time, we are only allowed to do it during installation.
   bool ShouldComputeHashesOnInstall(const Extension& extension);
 
+  // Returns public key used to check content verification data. Normally it's
+  // Chrome Web Store key, but may be overridden in tests via delegate.
+  ContentVerifierKey GetContentVerifierKey();
+
   GURL GetSignatureFetchUrlForTest(const ExtensionId& extension_id,
                                    const base::Version& extension_version);
 
@@ -139,6 +147,9 @@ class ContentVerifier : public base::RefCountedThreadSafe<ContentVerifier>,
       const std::string& extension_id,
       const base::FilePath& extension_root,
       const std::set<base::FilePath>& relative_unix_paths);
+
+  void OverrideDelegateForTesting(
+      std::unique_ptr<ContentVerifierDelegate> delegate);
 
  private:
   friend class base::RefCountedThreadSafe<ContentVerifier>;
@@ -220,8 +231,6 @@ class ContentVerifier : public base::RefCountedThreadSafe<ContentVerifier>,
 
   // Data that should only be used on the IO thread.
   ContentVerifierIOData io_data_;
-
-  DISALLOW_COPY_AND_ASSIGN(ContentVerifier);
 };
 
 }  // namespace extensions

@@ -19,6 +19,7 @@
 #include "chromecast/browser/lru_renderer_cache.h"
 #include "chromecast/browser/renderer_prelauncher.h"
 #include "chromecast/chromecast_buildflags.h"
+#include "chromecast/graphics/cast_screen.h"
 #include "content/public/browser/media_capture_devices.h"
 #include "content/public/browser/media_session.h"
 #include "content/public/browser/render_frame_host.h"
@@ -43,21 +44,23 @@ namespace {
 
 std::unique_ptr<content::WebContents> CreateWebContents(
     content::BrowserContext* browser_context,
-    scoped_refptr<content::SiteInstance> site_instance) {
+    scoped_refptr<content::SiteInstance> site_instance,
+    const mojom::CastWebViewParams& params) {
   DCHECK(browser_context);
   content::WebContents::CreateParams create_params(browser_context, nullptr);
   create_params.site_instance = site_instance;
+  create_params.enable_wake_locks = params.keep_screen_on;
   return content::WebContents::Create(create_params);
 }
 
 std::unique_ptr<RendererPrelauncher> TakeOrCreatePrelauncher(
     const GURL& prelaunch_url,
-    CastWebView::RendererPool renderer_pool,
+    mojom::RendererPool renderer_pool,
     CastWebService* web_service) {
   if (!prelaunch_url.is_valid()) {
     return nullptr;
   }
-  if (renderer_pool == CastWebView::RendererPool::OVERLAY) {
+  if (renderer_pool == mojom::RendererPool::OVERLAY) {
     return web_service->overlay_renderer_cache()->TakeRendererPrelauncher(
         prelaunch_url);
   }
@@ -74,55 +77,57 @@ scoped_refptr<content::SiteInstance> Prelaunch(
   return prelauncher->site_instance();
 }
 
+#if defined(USE_AURA)
+constexpr gfx::Rect k720pDimensions(0, 0, 1280, 720);
+#endif
+
 }  // namespace
 
 CastWebViewDefault::CastWebViewDefault(
-    const CreateParams& params,
+    mojom::CastWebViewParamsPtr params,
     CastWebService* web_service,
     content::BrowserContext* browser_context,
     std::unique_ptr<CastContentWindow> cast_content_window)
-    : delegate_(params.delegate),
+    : params_(std::move(params)),
       web_service_(web_service),
-      shutdown_delay_(params.shutdown_delay),
-      renderer_pool_(params.renderer_pool),
-      prelaunch_url_(params.prelaunch_url),
-      activity_id_(params.activity_id),
-      session_id_(params.window_params.session_id),
-      sdk_version_(params.sdk_version),
-      allow_media_access_(params.allow_media_access),
-      log_js_console_messages_(params.log_js_console_messages),
-      log_prefix_(params.log_prefix),
-      renderer_prelauncher_(TakeOrCreatePrelauncher(prelaunch_url_,
-                                                    renderer_pool_,
+      renderer_prelauncher_(TakeOrCreatePrelauncher(params_->prelaunch_url,
+                                                    params_->renderer_pool,
                                                     web_service_)),
       site_instance_(Prelaunch(renderer_prelauncher_.get())),
-      web_contents_(CreateWebContents(browser_context, site_instance_)),
-      cast_web_contents_(web_contents_.get(), params.web_contents_params),
+      web_contents_(
+          CreateWebContents(browser_context, site_instance_, *params_)),
+      cast_web_contents_(web_contents_.get(), params_->Clone()),
       window_(cast_content_window
                   ? std::move(cast_content_window)
-                  : web_service->CreateWindow(params.window_params)) {
+                  : web_service->CreateWindow(params_->Clone())) {
   DCHECK(web_service_);
   DCHECK(window_);
   window_->SetCastWebContents(&cast_web_contents_);
   web_contents_->SetDelegate(this);
 #if defined(USE_AURA)
-  web_contents_->GetNativeView()->SetName(params.activity_id);
-#endif
+  web_contents_->GetNativeView()->SetName(params_->activity_id);
+  if (params_->force_720p_resolution) {
+    const auto primary_display =
+        display::Screen::GetScreen()->GetPrimaryDisplay();
 
-#if BUILDFLAG(IS_ANDROID_APPLIANCE)
-  // Configure the ducking multiplier for AThings-like speakers. We don't want
-  // the Chromium MediaSession to duck since we are doing our own ducking.
-  constexpr double kDuckingMultiplier = 1.0;
-  content::MediaSession::Get(web_contents_.get())
-      ->SetDuckingVolumeMultiplier(kDuckingMultiplier);
+    // Force scale factor to 1.0 and screen bounds to 720p.
+    // When performed prior to the creation of the web view this causes blink to
+    // render at a 1.0 pixel ratio but the compositor still scales out at 1.5,
+    // increasing performance on 1080p displays (at the expense of visual
+    // quality).
+    shell::CastBrowserProcess::GetInstance()
+        ->cast_screen()
+        ->OverridePrimaryDisplaySettings(k720pDimensions, 1.0,
+                                         primary_display.rotation());
+  }
 #endif
 }
 
 CastWebViewDefault::~CastWebViewDefault() {
-  if (renderer_prelauncher_ && prelaunch_url_.is_valid() &&
-      renderer_pool_ == RendererPool::OVERLAY) {
+  if (renderer_prelauncher_ && params_->prelaunch_url.is_valid() &&
+      params_->renderer_pool == mojom::RendererPool::OVERLAY) {
     web_service_->overlay_renderer_cache()->ReleaseRendererPrelauncher(
-        prelaunch_url_);
+        params_->prelaunch_url);
   }
 }
 
@@ -139,7 +144,17 @@ CastWebContents* CastWebViewDefault::cast_web_contents() {
 }
 
 base::TimeDelta CastWebViewDefault::shutdown_delay() const {
-  return shutdown_delay_;
+  return params_->shutdown_delay;
+}
+
+void CastWebViewDefault::OwnerDestroyed() {
+#if defined(USE_AURA)
+  if (params_->force_720p_resolution) {
+    shell::CastBrowserProcess::GetInstance()
+        ->cast_screen()
+        ->RestorePrimaryDisplaySettings();
+  }
+#endif
 }
 
 void CastWebViewDefault::CloseContents(content::WebContents* source) {
@@ -175,7 +190,7 @@ bool CastWebViewDefault::CheckMediaAccessPermission(
     const GURL& security_origin,
     blink::mojom::MediaStreamType type) {
   if (!chromecast::IsFeatureEnabled(kAllowUserMediaAccess) &&
-      !allow_media_access_) {
+      !params_->allow_media_access) {
     LOG(WARNING) << __func__ << ": media access is disabled.";
     return false;
   }
@@ -188,13 +203,13 @@ bool CastWebViewDefault::DidAddMessageToConsole(
     const std::u16string& message,
     int32_t line_no,
     const std::u16string& source_id) {
-  if (!log_js_console_messages_)
+  if (!params_->log_js_console_messages)
     return true;
   std::u16string single_line_message;
   // Mult-line message is not friendly to dumpstate redact.
   base::ReplaceChars(message, u"\n", u"\\n ", &single_line_message);
   logging::LogMessage("CONSOLE", line_no, ::logging::LOG_INFO).stream()
-      << log_prefix_ << ": \"" << single_line_message
+      << params_->log_prefix << ": \"" << single_line_message
       << "\", source: " << source_id << " (" << line_no << ")";
   return true;
 }
@@ -222,7 +237,7 @@ void CastWebViewDefault::RequestMediaAccessPermission(
     const content::MediaStreamRequest& request,
     content::MediaResponseCallback callback) {
   if (!chromecast::IsFeatureEnabled(kAllowUserMediaAccess) &&
-      !allow_media_access_) {
+      !params_->allow_media_access) {
     LOG(WARNING) << __func__ << ": media access is disabled.";
     std::move(callback).Run(
         blink::MediaStreamDevices(),
@@ -271,7 +286,7 @@ bool CastWebViewDefault::ShouldAllowRunningInsecureContent(
     const url::Origin& /* origin */,
     const GURL& /* resource_url */) {
   metrics::CastMetricsHelper::GetInstance()->RecordApplicationEvent(
-      activity_id_, session_id_, sdk_version_,
+      params_->activity_id, params_->session_id, params_->sdk_version,
       "Cast.Platform.AppRunningInsecureContent");
   return allowed_per_prefs;
 }

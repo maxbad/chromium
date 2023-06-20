@@ -25,6 +25,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_attributes_storage.h"
 #include "chrome/browser/signin/identity_manager_factory.h"
+#include "chrome/browser/signin/signin_features.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/browser/ui/browser_navigator_params.h"
@@ -33,11 +34,11 @@
 #include "chrome/common/pref_names.h"
 #include "components/feature_engagement/public/tracker.h"
 #include "components/prefs/pref_service.h"
+#include "components/signin/public/base/consent_level.h"
 #include "components/signin/public/base/signin_metrics.h"
 #include "components/signin/public/base/signin_pref_names.h"
 #include "components/signin/public/identity_manager/account_info.h"
 #include "components/signin/public/identity_manager/accounts_in_cookie_jar_info.h"
-#include "components/signin/public/identity_manager/consent_level.h"
 #include "components/signin/public/identity_manager/identity_manager.h"
 #include "components/signin/public/identity_manager/identity_utils.h"
 #include "third_party/re2/src/re2/re2.h"
@@ -46,6 +47,12 @@
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
 #include "chrome/browser/ash/profiles/profile_helper.h"
+#endif
+
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+#include "chrome/browser/lacros/account_manager/account_manager_util.h"
+#include "components/account_manager_core/account_manager_facade.h"
+#include "components/account_manager_core/chromeos/account_manager_facade_factory.h"
 #endif
 
 #if BUILDFLAG(ENABLE_DICE_SUPPORT)
@@ -59,7 +66,7 @@ namespace {
 const char kAnimatedIdentityKeyName[] = "animated_identity_user_data";
 
 constexpr base::TimeDelta kDelayForCrossWindowAnimationReplay =
-    base::TimeDelta::FromSeconds(5);
+    base::Seconds(5);
 
 // UserData attached to the user profile, keeping track of the last time the
 // animation was shown to the user.
@@ -84,22 +91,6 @@ class AvatarButtonUserData : public base::SupportsUserData::Data {
     GetOrCreateForProfile(profile)->animated_identity_last_shown_ = time;
   }
 
-  // Returns the last time the avatar was highlighted. Returns the null time if
-  // it was never shown.
-  static base::TimeTicks GetAvatarLastHighlighted(Profile* profile) {
-    DCHECK(profile);
-    AvatarButtonUserData* data = GetForProfile(profile);
-    if (!data)
-      return base::TimeTicks();
-    return data->avatar_last_highlighted_;
-  }
-
-  // Sets the time when the avatar was highlighted.
-  static void SetAvatarLastHighlighted(Profile* profile, base::TimeTicks time) {
-    DCHECK(!time.is_null());
-    GetOrCreateForProfile(profile)->avatar_last_highlighted_ = time;
-  }
-
  private:
   // Returns nullptr if there is no AvatarButtonUserData attached to the
   // profile.
@@ -122,7 +113,6 @@ class AvatarButtonUserData : public base::SupportsUserData::Data {
   }
 
   base::TimeTicks animated_identity_last_shown_;
-  base::TimeTicks avatar_last_highlighted_;
 };
 
 #if BUILDFLAG(ENABLE_DICE_SUPPORT)
@@ -161,6 +151,23 @@ std::string GetReauthAccessPointHistogramSuffix(
       return "ToMovePassword";
   }
 }
+
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+account_manager::AccountManagerFacade::AccountAdditionSource
+GetAccountReauthSourceFromAccessPoint(
+    signin_metrics::AccessPoint access_point) {
+  switch (access_point) {
+    case signin_metrics::AccessPoint::ACCESS_POINT_AVATAR_BUBBLE_SIGN_IN:
+      return account_manager::AccountManagerFacade::AccountAdditionSource::
+          kAvatarBubbleReauthAccountButton;
+    default:
+      NOTREACHED() << "Reauth is requested from an unknown access point "
+                   << static_cast<int>(access_point);
+      return account_manager::AccountManagerFacade::AccountAdditionSource::
+          kMaxValue;
+  }
+}
+#endif
 
 }  // namespace
 
@@ -203,6 +210,49 @@ void ShowSigninErrorLearnMorePage(Profile* profile) {
   params.disposition = WindowOpenDisposition::NEW_FOREGROUND_TAB;
   Navigate(&params);
 }
+
+void ShowReauthForPrimaryAccountWithAuthError(
+    Browser* browser,
+    signin_metrics::AccessPoint access_point) {
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+  // On ChromeOS, sync errors are fixed by re-signing into the OS.
+  NOTREACHED();
+#elif BUILDFLAG(IS_CHROMEOS_LACROS)
+  internal::ShowReauthForPrimaryAccountWithAuthErrorLacros(
+      browser, access_point,
+      ::GetAccountManagerFacade(browser->profile()->GetPath().value()));
+#else
+  browser->signin_view_controller()->ShowSignin(
+      profiles::BUBBLE_VIEW_MODE_GAIA_REAUTH, access_point);
+#endif
+}
+
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+namespace internal {
+void ShowReauthForPrimaryAccountWithAuthErrorLacros(
+    Browser* browser,
+    signin_metrics::AccessPoint access_point,
+    account_manager::AccountManagerFacade* account_manager_facade) {
+  Profile* profile = browser->profile();
+  if (IsAccountManagerAvailable(profile)) {
+    signin::IdentityManager* identity_manager =
+        IdentityManagerFactory::GetForProfile(profile);
+    CoreAccountInfo primary_account_info =
+        identity_manager->GetPrimaryAccountInfo(signin::ConsentLevel::kSignin);
+    DCHECK(!primary_account_info.IsEmpty());
+    DCHECK(identity_manager->HasAccountWithRefreshTokenInPersistentErrorState(
+        primary_account_info.account_id));
+    account_manager_facade->ShowReauthAccountDialog(
+        GetAccountReauthSourceFromAccessPoint(access_point),
+        primary_account_info.email);
+  } else {
+    DCHECK(!base::FeatureList::IsEnabled(kMultiProfileAccountConsistency));
+    browser->signin_view_controller()->ShowSignin(
+        profiles::BUBBLE_VIEW_MODE_GAIA_REAUTH, access_point);
+  }
+}
+}  // namespace internal
+#endif  // BUILDFLAG(IS_CHROMEOS_LACROS)
 
 void EnableSyncFromSingleAccountPromo(
     Browser* browser,
@@ -411,8 +461,6 @@ void RecordAnimatedIdentityTriggered(Profile* profile) {
 
 void RecordAvatarIconHighlighted(Profile* profile) {
   base::RecordAction(base::UserMetricsAction("AvatarToolbarButtonHighlighted"));
-  AvatarButtonUserData::SetAvatarLastHighlighted(profile,
-                                                 base::TimeTicks::Now());
 }
 
 void RecordProfileMenuViewShown(Profile* profile) {
@@ -432,12 +480,6 @@ void RecordProfileMenuViewShown(Profile* profile) {
       AvatarButtonUserData::GetAnimatedIdentityLastShown(profile);
   if (!last_shown.is_null()) {
     base::UmaHistogramLongTimes("Profile.Menu.OpenedAfterAvatarAnimation",
-                                base::TimeTicks::Now() - last_shown);
-  }
-
-  last_shown = AvatarButtonUserData::GetAvatarLastHighlighted(profile);
-  if (!last_shown.is_null()) {
-    base::UmaHistogramLongTimes("Profile.Menu.OpenedAfterAvatarHighlight",
                                 base::TimeTicks::Now() - last_shown);
   }
 }

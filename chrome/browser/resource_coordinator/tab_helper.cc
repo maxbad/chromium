@@ -51,15 +51,18 @@ bool ResourceCoordinatorTabHelper::IsLoaded(content::WebContents* contents) {
   return true;
 }
 
-void ResourceCoordinatorTabHelper::DidReceiveResponse() {
-  TabLoadTracker::Get()->DidReceiveResponse(web_contents());
+void ResourceCoordinatorTabHelper::PrimaryPageChanged(content::Page& page) {
+  ukm_source_id_ =
+      ukm::ConvertToSourceId(page.GetMainDocument().GetPageUkmSourceId(),
+                             ukm::SourceIdType::NAVIGATION_ID);
+  TabLoadTracker::Get()->PrimaryPageChanged(web_contents());
 }
 
 void ResourceCoordinatorTabHelper::DidStopLoading() {
   TabLoadTracker::Get()->DidStopLoading(web_contents());
 }
 
-void ResourceCoordinatorTabHelper::RenderProcessGone(
+void ResourceCoordinatorTabHelper::PrimaryMainFrameRenderProcessGone(
     base::TerminationStatus status) {
   // TODO(siggi): Looks like this can be acquired in a more timely manner from
   //    the RenderProcessHostObserver.
@@ -70,19 +73,6 @@ void ResourceCoordinatorTabHelper::WebContentsDestroyed() {
   TabLoadTracker::Get()->StopTracking(web_contents());
 }
 
-void ResourceCoordinatorTabHelper::DidFinishNavigation(
-    content::NavigationHandle* navigation_handle) {
-  if (!navigation_handle->HasCommitted() ||
-      navigation_handle->IsSameDocument()) {
-    return;
-  }
-
-  if (navigation_handle->IsInMainFrame()) {
-    ukm_source_id_ = ukm::ConvertToSourceId(
-        navigation_handle->GetNavigationId(), ukm::SourceIdType::NAVIGATION_ID);
-  }
-}
-
-WEB_CONTENTS_USER_DATA_KEY_IMPL(ResourceCoordinatorTabHelper)
+WEB_CONTENTS_USER_DATA_KEY_IMPL(ResourceCoordinatorTabHelper);
 
 }  // namespace resource_coordinator

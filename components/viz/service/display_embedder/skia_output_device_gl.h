@@ -10,7 +10,6 @@
 
 #include "base/containers/flat_map.h"
 #include "base/containers/flat_set.h"
-#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "components/viz/service/display_embedder/skia_output_device.h"
@@ -44,6 +43,10 @@ class SkiaOutputDeviceGL final : public SkiaOutputDevice {
       scoped_refptr<gpu::gles2::FeatureInfo> feature_info,
       gpu::MemoryTracker* memory_tracker,
       DidSwapBufferCompleteCallback did_swap_buffer_complete_callback);
+
+  SkiaOutputDeviceGL(const SkiaOutputDeviceGL&) = delete;
+  SkiaOutputDeviceGL& operator=(const SkiaOutputDeviceGL&) = delete;
+
   ~SkiaOutputDeviceGL() override;
 
   // SkiaOutputDevice implementation:
@@ -66,6 +69,7 @@ class SkiaOutputDeviceGL final : public SkiaOutputDevice {
   void EnsureBackbuffer() override;
   void DiscardBackbuffer() override;
   SkSurface* BeginPaint(
+      bool allocate_frame_buffer,
       std::vector<GrBackendSemaphore>* end_semaphores) override;
   void EndPaint() override;
 
@@ -83,15 +87,13 @@ class SkiaOutputDeviceGL final : public SkiaOutputDevice {
                                 OutputSurfaceFrame frame,
                                 gfx::SwapCompletionResult result);
 
-  using ScopedOverlayAccess =
-      gpu::SharedImageRepresentationOverlay::ScopedReadAccess;
+  scoped_refptr<gl::GLImage> GetGLImageForMailbox(const gpu::Mailbox& mailbox);
 
-  scoped_refptr<gl::GLImage> GetGLImageForMailbox(
-      const gpu::Mailbox& mailbox,
-      std::unique_ptr<ScopedOverlayAccess>* access);
+  // Mailboxes of overlays scheduled in the current frame.
+  base::flat_set<gpu::Mailbox> scheduled_overlay_mailboxes_;
 
-  static void EndOverlayAccess(
-      std::unique_ptr<ScopedOverlayAccess> overlay_access);
+  // Holds references to overlay textures so they aren't destroyed while in use.
+  base::flat_map<gpu::Mailbox, OverlayData> overlays_;
 
   gpu::MailboxManager* const mailbox_manager_;
 
@@ -104,17 +106,9 @@ class SkiaOutputDeviceGL final : public SkiaOutputDevice {
 
   sk_sp<SkSurface> sk_surface_;
 
-  // Mailboxes of overlays scheduled in the current frame.
-  base::flat_set<gpu::Mailbox> scheduled_overlay_mailboxes_;
-
-  // Holds references to overlay textures so they aren't destroyed while in use.
-  base::flat_map<gpu::Mailbox, OverlayData> overlays_;
-
   uint64_t backbuffer_estimated_size_ = 0;
 
   base::WeakPtrFactory<SkiaOutputDeviceGL> weak_ptr_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(SkiaOutputDeviceGL);
 };
 
 }  // namespace viz

@@ -107,10 +107,14 @@ void SkiaOutputDeviceOffscreen::EnsureBackbuffer() {
 
   DCHECK(!backbuffer_estimated_size_);
   if (backend_texture_.backend() == GrBackendApi::kVulkan) {
+#if BUILDFLAG(ENABLE_VULKAN)
     GrVkImageInfo vk_image_info;
     bool result = backend_texture_.getVkImageInfo(&vk_image_info);
     DCHECK(result);
     backbuffer_estimated_size_ = vk_image_info.fAlloc.fSize;
+#else
+    DCHECK(false);
+#endif
   } else {
     auto info = SkImageInfo::Make(size_.width(), size_.height(),
                                   kSurfaceColorType, kUnpremul_SkAlphaType);
@@ -131,7 +135,9 @@ void SkiaOutputDeviceOffscreen::DiscardBackbuffer() {
 }
 
 SkSurface* SkiaOutputDeviceOffscreen::BeginPaint(
+    bool allocate_frame_buffer,
     std::vector<GrBackendSemaphore>* end_semaphores) {
+  DCHECK(!allocate_frame_buffer);
   DCHECK(backend_texture_.isValid());
   if (!sk_surface_) {
     SkSurfaceProps surface_props =

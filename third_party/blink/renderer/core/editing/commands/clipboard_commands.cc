@@ -413,8 +413,6 @@ void ClipboardCommands::PasteFromClipboard(LocalFrame& frame,
 
   if (!fragment_and_plain_text.first)
     return;
-  frame.GetSystemClipboard()->RecordClipboardImageUrls(
-      fragment_and_plain_text.first);
   PasteAsFragment(frame, fragment_and_plain_text.first,
                   CanSmartReplaceInClipboard(frame),
                   fragment_and_plain_text.second, source);
@@ -524,6 +522,10 @@ bool ClipboardCommands::ExecutePasteAndMatchStyle(LocalFrame& frame,
       return true;
     // 'beforeinput' event handler may destroy target frame.
     if (frame.GetDocument()->GetFrame() != frame)
+      return true;
+
+    // No DOM mutation if EditContext is active.
+    if (frame.GetInputMethodController().GetActiveEditContext())
       return true;
   }
 

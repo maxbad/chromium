@@ -6,13 +6,18 @@ package org.chromium.chrome.browser.autofill;
 
 import static com.google.common.truth.Truth.assertThat;
 
+import static org.junit.Assert.assertEquals;
+
+import android.graphics.Bitmap;
+
 import androidx.test.filters.SmallTest;
 
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
-import org.junit.ClassRule;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.TestRule;
 import org.junit.runner.RunWith;
 
 import org.chromium.base.test.BaseJUnit4ClassRunner;
@@ -22,7 +27,12 @@ import org.chromium.base.test.util.Feature;
 import org.chromium.chrome.browser.autofill.PersonalDataManager.AutofillProfile;
 import org.chromium.chrome.browser.autofill.PersonalDataManager.CreditCard;
 import org.chromium.chrome.browser.autofill.PersonalDataManager.ValueWithStatus;
+import org.chromium.chrome.browser.flags.ChromeFeatureList;
+import org.chromium.chrome.browser.video_tutorials.test.TestImageFetcher;
 import org.chromium.chrome.test.ChromeBrowserTestRule;
+import org.chromium.chrome.test.util.browser.Features;
+import org.chromium.content_public.browser.test.util.TestThreadUtils;
+import org.chromium.url.GURL;
 
 import java.util.LinkedList;
 import java.util.List;
@@ -34,14 +44,24 @@ import java.util.concurrent.TimeoutException;
 @RunWith(BaseJUnit4ClassRunner.class)
 @Batch(Batch.PER_CLASS)
 public class PersonalDataManagerTest {
-    @ClassRule
-    public static final ChromeBrowserTestRule sChromeBrowserTestRule = new ChromeBrowserTestRule();
+    private static final Bitmap TEST_CARD_ART_IMAGE =
+            Bitmap.createBitmap(100, 200, Bitmap.Config.ARGB_8888);
+
+    @Rule
+    public final ChromeBrowserTestRule mChromeBrowserTestRule = new ChromeBrowserTestRule();
+
+    @Rule
+    public final TestRule mFeaturesProcessorRule = new Features.InstrumentationProcessor();
 
     private AutofillTestHelper mHelper;
 
     @Before
     public void setUp() {
         mHelper = new AutofillTestHelper();
+        TestThreadUtils.runOnUiThreadBlocking(
+                ()
+                        -> PersonalDataManager.getInstance().setImageFetcherForTesting(
+                                new TestImageFetcher(TEST_CARD_ART_IMAGE)));
     }
 
     @After
@@ -190,6 +210,27 @@ public class PersonalDataManagerTest {
     @Test
     @SmallTest
     @Feature({"Autofill"})
+    public void testCreditCardWithCardArtUrl_imageDownloaded() throws TimeoutException {
+        GURL cardArtUrl = new GURL("http://google.com/test.png");
+        CreditCard cardWithCardArtUrl = new CreditCard(/* guid= */ "serverGuid", /* origin= */ "",
+                /* isLocal= */ false, /* isCached= */ false, "John Doe Server", "41111111111111111",
+                /* obfuscatedCardNumber= */ "", "3", "2019", "Visa", /* issuerIconDrawableId= */ 0,
+                /* billingAddressId= */ "",
+                /* serverId= */ "serverId");
+        cardWithCardArtUrl.setCardArtUrl(cardArtUrl);
+
+        mHelper.addServerCreditCard(cardWithCardArtUrl);
+
+        TestThreadUtils.runOnUiThreadBlocking(() -> {
+            assertEquals(TEST_CARD_ART_IMAGE,
+                    PersonalDataManager.getInstance()
+                            .getCustomImageForAutofillSuggestionIfAvailable(cardArtUrl));
+        });
+    }
+
+    @Test
+    @SmallTest
+    @Feature({"Autofill"})
     public void testAddAndDeleteCreditCard() throws TimeoutException {
         CreditCard card = createLocalCreditCard("Visa", "1234123412341234", "5", "2020");
         card.setOrigin("Chrome settings");
@@ -228,7 +269,11 @@ public class PersonalDataManagerTest {
     @Test
     @SmallTest
     @Feature({"Autofill"})
-    public void testRespectVerificationStatuses() throws TimeoutException {
+    @Features.
+    EnableFeatures({ChromeFeatureList.AUTOFILL_ENABLE_SUPPORT_FOR_MORE_STRUCTURE_IN_ADDRESSES,
+            ChromeFeatureList.AUTOFILL_ENABLE_SUPPORT_FOR_MORE_STRUCTURE_IN_NAMES})
+    public void
+    testRespectVerificationStatuses() throws TimeoutException {
         AutofillProfile profileWithDifferentStatuses = new AutofillProfile("" /* guid */,
                 "" /* origin */, true,
                 new ValueWithStatus("" /* honorific prefix */, VerificationStatus.NO_STATUS),

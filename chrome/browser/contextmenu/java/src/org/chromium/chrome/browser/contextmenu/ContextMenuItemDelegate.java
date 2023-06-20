@@ -192,11 +192,6 @@ public interface ContextMenuItemDelegate {
     void onOpenInChrome(GURL linkUrl, GURL pageUrl);
 
     /**
-     * Returns true if menu entries should be added for open in chrome.
-     */
-    boolean supportsOpenInChromeFromCct();
-
-    /**
      * Called when the {@code url} should be opened in a new Chrome tab from CCT.
      * @param linkUrl The URL to open.
      * @param isIncognito true if the {@code url} should be opened in a new incognito tab.
@@ -229,7 +224,7 @@ public interface ContextMenuItemDelegate {
     void onReadLater(GURL url, String title);
 
     /**
-     * Called when a text fragment should be removed from the page.
+     * Removes all text fragment highlights from all frames on the page.
      */
     void removeHighlighting();
 }

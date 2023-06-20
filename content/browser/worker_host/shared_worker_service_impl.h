@@ -12,7 +12,7 @@
 
 #include "base/compiler_specific.h"
 #include "base/containers/unique_ptr_adapters.h"
-#include "base/macros.h"
+#include "base/gtest_prod_util.h"
 #include "base/observer_list.h"
 #include "content/browser/service_worker/service_worker_context_wrapper.h"
 #include "content/browser/worker_host/shared_worker_host.h"
@@ -33,7 +33,6 @@ class StorageKey;
 
 namespace content {
 
-class ChromeAppCacheService;
 class SharedWorkerInstance;
 class SharedWorkerHost;
 class StoragePartitionImpl;
@@ -43,8 +42,11 @@ class CONTENT_EXPORT SharedWorkerServiceImpl : public SharedWorkerService {
  public:
   SharedWorkerServiceImpl(
       StoragePartitionImpl* storage_partition,
-      scoped_refptr<ServiceWorkerContextWrapper> service_worker_context,
-      scoped_refptr<ChromeAppCacheService> appcache_service);
+      scoped_refptr<ServiceWorkerContextWrapper> service_worker_context);
+
+  SharedWorkerServiceImpl(const SharedWorkerServiceImpl&) = delete;
+  SharedWorkerServiceImpl& operator=(const SharedWorkerServiceImpl&) = delete;
+
   ~SharedWorkerServiceImpl() override;
 
   // SharedWorkerService implementation.
@@ -63,7 +65,7 @@ class CONTENT_EXPORT SharedWorkerServiceImpl : public SharedWorkerService {
 
   // Creates the worker if necessary or connects to an already existing worker.
   void ConnectToWorker(
-      GlobalFrameRoutingId client_render_frame_host_id,
+      GlobalRenderFrameHostId client_render_frame_host_id,
       blink::mojom::SharedWorkerInfoPtr info,
       mojo::PendingRemote<blink::mojom::SharedWorkerClient> client,
       blink::mojom::SharedWorkerCreationContextType creation_context_type,
@@ -80,9 +82,9 @@ class CONTENT_EXPORT SharedWorkerServiceImpl : public SharedWorkerService {
   void NotifyBeforeWorkerDestroyed(
       const blink::SharedWorkerToken& shared_worker_token);
   void NotifyClientAdded(const blink::SharedWorkerToken& shared_worker_token,
-                         GlobalFrameRoutingId render_frame_host_id);
+                         GlobalRenderFrameHostId render_frame_host_id);
   void NotifyClientRemoved(const blink::SharedWorkerToken& shared_worker_token,
-                           GlobalFrameRoutingId render_frame_host_id);
+                           GlobalRenderFrameHostId render_frame_host_id);
 
   StoragePartitionImpl* storage_partition() { return storage_partition_; }
 
@@ -135,22 +137,19 @@ class CONTENT_EXPORT SharedWorkerServiceImpl : public SharedWorkerService {
   // |storage_partition_| owns |this|.
   StoragePartitionImpl* const storage_partition_;
   scoped_refptr<ServiceWorkerContextWrapper> service_worker_context_;
-  // |appcache_service_| may be null.
-  scoped_refptr<ChromeAppCacheService> appcache_service_;
   scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory_override_;
 
   // Keeps a reference count of each worker-client pair so as to not send
   // duplicate OnClientAdded() notifications if the same frame connects multiple
   // times to the same shared worker. Note that this is a situation unique to
   // shared worker and cannot happen with dedicated workers and service workers.
-  base::flat_map<std::pair<blink::SharedWorkerToken, GlobalFrameRoutingId>, int>
+  base::flat_map<std::pair<blink::SharedWorkerToken, GlobalRenderFrameHostId>,
+                 int>
       shared_worker_client_counts_;
 
   base::ObserverList<Observer> observers_;
 
   base::WeakPtrFactory<SharedWorkerServiceImpl> weak_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(SharedWorkerServiceImpl);
 };
 
 }  // namespace content

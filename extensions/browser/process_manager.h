@@ -62,6 +62,10 @@ class ProcessManager : public KeyedService,
   using ExtensionHostSet = std::set<extensions::ExtensionHost*>;
 
   static ProcessManager* Get(content::BrowserContext* context);
+
+  ProcessManager(const ProcessManager&) = delete;
+  ProcessManager& operator=(const ProcessManager&) = delete;
+
   ~ProcessManager() override;
 
   // KeyedService support:
@@ -78,6 +82,9 @@ class ProcessManager : public KeyedService,
   void UnregisterServiceWorker(const WorkerId& worker_id);
 
   // Returns the SiteInstance that the given URL belongs to.
+  // NOTE: Usage of this method is potentially error-prone. An extension can
+  // correspond to multiple SiteInstances (e.g. consider a cross origin isolated
+  // extension with non-cross-origin-isolated contexts).
   // TODO(aa): This only returns correct results for extensions and packaged
   // apps, not hosted apps.
   virtual scoped_refptr<content::SiteInstance> GetSiteInstanceForURL(
@@ -401,8 +408,6 @@ class ProcessManager : public KeyedService,
 
   // Must be last member, see doc on WeakPtrFactory.
   base::WeakPtrFactory<ProcessManager> weak_ptr_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(ProcessManager);
 };
 
 }  // namespace extensions

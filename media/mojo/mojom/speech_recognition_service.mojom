@@ -9,6 +9,7 @@ import "media/mojo/mojom/audio_stream_factory.mojom";
 import "media/mojo/mojom/media_types.mojom";
 import "mojo/public/mojom/base/file_path.mojom";
 import "mojo/public/mojom/base/time.mojom";
+import "sandbox/policy/mojom/sandbox.mojom";
 import "services/network/public/mojom/url_loader_factory.mojom";
 
 // Corresponds to the LangIdEvent.ConfidenceInterval defined in
@@ -47,6 +48,7 @@ interface SpeechRecognitionContext {
 // The main interface to a speech secognition service process.
 // Used by the browser to issue top-level control requests to the service,
 // acquired during process launch.
+[ServiceSandbox=sandbox.mojom.Sandbox.kSpeechRecognition]
 interface SpeechRecognitionService {
   // Bind the context to a new instance of the speech recognition.
   BindContext(pending_receiver<SpeechRecognitionContext> context);
@@ -200,8 +202,10 @@ interface SpeechRecognitionClientBrowserInterface {
     pending_remote<SpeechRecognitionBrowserObserver> observer);
 };
 
-// Corresponds to ExtendedSodaConfigMsg in
-// chrome/services/speech/soda/proto/soda_api.proto.
+// Corresponds to ExtendedSodaConfigMsg.RecognitionMode in
+// chrome/services/speech/soda/proto/soda_api.proto and
+// SodaRecognitionMode in
+// chromeos/services/machine_learning/public/mojom/soda.mojom.
 enum SpeechRecognitionMode {
   kUnknown,
   // Intended for voice input for keyboard usage.
@@ -211,7 +215,6 @@ enum SpeechRecognitionMode {
 };
 
 // Options for speech recognition.
-// TODO(crbug.com/1195916): Add language identifier.
 // TODO(crbug.com/1165437): Add option to include timing metrics in the result.
 struct SpeechRecognitionOptions {
   // What kind of recognition to use.
@@ -221,4 +224,11 @@ struct SpeechRecognitionOptions {
 
   // Whether to enable formatting and punctuation in the recognition results.
   bool enable_formatting;
+
+  // The BCP-47 localized language code to use (e.g. "en-US").
+  // TODO(crbug.com/1161569): Language needs to be required when multiple
+  // languages are supported by SODA, so that each SpeechRecognitionRecognizer
+  // can use its own language. Right now Language is only used by Projector
+  // and Dictation via OnDeviceSpeechRecognizer in Chrome OS.
+  string? language;
 };

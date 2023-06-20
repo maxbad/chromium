@@ -5,6 +5,7 @@
 #include "cc/paint/skia_paint_canvas.h"
 
 #include "base/bind.h"
+#include "base/notreached.h"
 #include "base/trace_event/trace_event.h"
 #include "cc/paint/display_item_list.h"
 #include "cc/paint/paint_recorder.h"
@@ -12,6 +13,7 @@
 #include "cc/paint/skottie_wrapper.h"
 #include "skia/ext/legacy_display_globals.h"
 #include "third_party/skia/include/core/SkAnnotation.h"
+#include "third_party/skia/include/core/SkTextBlob.h"
 #include "third_party/skia/include/docs/SkPDFDocument.h"
 
 namespace cc {
@@ -53,6 +55,12 @@ void* SkiaPaintCanvas::accessTopLayerPixels(SkImageInfo* info,
 
 void SkiaPaintCanvas::flush() {
   canvas_->flush();
+}
+
+bool SkiaPaintCanvas::NeedsFlush() const {
+  // Since flush() is always capable of flushing immediately with
+  // SkiaPaintCanvas, there is never any need for deferred flushing.
+  return false;
 }
 
 int SkiaPaintCanvas::save() {
@@ -125,7 +133,8 @@ void SkiaPaintCanvas::clipRRect(const SkRRect& rrect,
 
 void SkiaPaintCanvas::clipPath(const SkPath& path,
                                SkClipOp op,
-                               bool do_anti_alias) {
+                               bool do_anti_alias,
+                               UsePaintCache) {
   canvas_->clipPath(path, op, do_anti_alias);
 }
 
@@ -250,7 +259,9 @@ void SkiaPaintCanvas::drawRoundRect(const SkRect& rect,
   FlushAfterDrawIfNeeded();
 }
 
-void SkiaPaintCanvas::drawPath(const SkPath& path, const PaintFlags& flags) {
+void SkiaPaintCanvas::drawPath(const SkPath& path,
+                               const PaintFlags& flags,
+                               UsePaintCache) {
   ScopedRasterFlags raster_flags(&flags, image_provider_,
                                  canvas_->getTotalMatrix(), max_texture_size(),
                                  255u);
@@ -308,7 +319,16 @@ void SkiaPaintCanvas::drawImageRect(const PaintImage& image,
 
 void SkiaPaintCanvas::drawSkottie(scoped_refptr<SkottieWrapper> skottie,
                                   const SkRect& dst,
-                                  float t) {
+                                  float t,
+                                  SkottieFrameDataMap images) {
+  if (!images.empty()) {
+    // This is not implemented solely because there's no use case yet. To
+    // implement, we could retrieve the underlying SkImage from each
+    // PaintImage in |images| here and call SkottieWrapper::SetImageForAsset().
+    NOTIMPLEMENTED()
+        << "Rendering skottie frames with image assets directly to a "
+           "SkiaPaintCanvas is currently not supported.";
+  }
   skottie->Draw(canvas_, t, dst);
 }
 

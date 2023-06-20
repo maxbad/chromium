@@ -12,9 +12,9 @@
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "base/scoped_observation.h"
+#include "components/safe_browsing/core/browser/db/database_manager.h"
+#include "components/safe_browsing/core/browser/db/v4_protocol_manager_util.h"
 #include "components/safe_browsing/core/browser/safe_browsing_url_checker_impl.h"
-#include "components/safe_browsing/core/db/database_manager.h"
-#include "components/safe_browsing/core/db/v4_protocol_manager_util.h"
 #import "ios/chrome/browser/safe_browsing/safe_browsing_query_manager.h"
 #import "ios/web/public/navigation/web_state_policy_decider.h"
 #include "ios/web/public/web_state_observer.h"
@@ -98,12 +98,13 @@ class SafeBrowsingTabHelper
     };
 
     // web::WebStatePolicyDecider implementation
-    web::WebStatePolicyDecider::PolicyDecision ShouldAllowRequest(
+    void ShouldAllowRequest(
         NSURLRequest* request,
-        const web::WebStatePolicyDecider::RequestInfo& request_info) override;
+        web::WebStatePolicyDecider::RequestInfo request_info,
+        web::WebStatePolicyDecider::PolicyDecisionCallback callback) override;
     void ShouldAllowResponse(
         NSURLResponse* response,
-        bool for_main_frame,
+        web::WebStatePolicyDecider::ResponseInfo response_info,
         web::WebStatePolicyDecider::PolicyDecisionCallback callback) override;
 
     // Implementations of ShouldAllowResponse() for main frame and sub frame

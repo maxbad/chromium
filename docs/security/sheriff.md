@@ -209,8 +209,7 @@ help.
   some issues reported in Chromium are already known or even fixed upstream.
 * **URL spoofing issues**, especially related to RTL or IDNs? See
   [go/url-spoofs](http://go/url-spoofs) for a guide to triaging these.
-* **SQLite bugs** can be assigned to huangdarwin@. CC drhsqlite@ for upstream
-  issues.
+* **SQLite bugs** can be assigned to mek@. CC drhsqlite@ for upstream issues.
 
 Tips for reproducing bugs:
 
@@ -270,12 +269,13 @@ risk of merging the bug into stable branches).
 
 #### Step 3. Set FoundIn
 
-Identify the earliest affected branch (stable, beta or head) and set the
-corresponding `FoundIn` label (for example `FoundIn-66` if the stable
-milestone is 66 and you've confirmed it's reproducible on M66).
+Identify the earliest affected branch (Extended Stable, Stable, Beta or Head)
+and set the corresponding `FoundIn` label (for example `FoundIn-66` if the
+extended stable milestone is 66 and you've confirmed it's reproducible on M66).
 If you reproduced the bug with ClusterFuzz, it should do this on your behalf.
 
-If in doubt about the currently active milestones, check
+Sometimes Extended Stable is the same milestone as Stable; sometimes it
+differs. If in doubt about the currently active milestones, check
 [ChromiumDash](https://chromiumdash.appspot.com/releases?platform=Windows).
 There's no need to check for reproducibility on milestones earlier than the
 current Stable milestone.

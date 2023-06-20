@@ -7,6 +7,10 @@
 
 #include "components/infobars/core/confirm_infobar_delegate.h"
 
+namespace web {
+class WebState;
+}
+
 class ReadingListModel;
 
 // Shows an add to Reading List prompt in iOS
@@ -14,8 +18,11 @@ class IOSAddToReadingListInfobarDelegate : public ConfirmInfoBarDelegate {
  public:
   IOSAddToReadingListInfobarDelegate(const GURL& URL,
                                      const std::u16string& title,
-                                     int time_to_read,
-                                     ReadingListModel* model);
+                                     int estimated_read_time_,
+                                     double score,
+                                     double long_score,
+                                     ReadingListModel* model,
+                                     web::WebState* web_state);
   ~IOSAddToReadingListInfobarDelegate() override;
 
   // Returns |delegate| as an IOSAddToReadingListInfobarDelegate, or nullptr
@@ -31,14 +38,18 @@ class IOSAddToReadingListInfobarDelegate : public ConfirmInfoBarDelegate {
 
   const GURL& URL() const { return url_; }
 
-  int time_to_read() { return time_to_read_; }
+  int estimated_read_time() { return estimated_read_time_; }
 
   // InfoBarDelegate implementation.
   InfoBarIdentifier GetIdentifier() const override;
   std::u16string GetMessageText() const override;
+  void InfoBarDismissed() override;
 
   // ConfirmInfoBarDelegate implementation.
   bool Accept() override;
+
+  // If called, sets the pref to never show the Reading List Message.
+  virtual void NeverShow();
 
  private:
   // The URL of the page to be saved to Reading List.
@@ -46,9 +57,16 @@ class IOSAddToReadingListInfobarDelegate : public ConfirmInfoBarDelegate {
   // The title of the page to be saved to Reading List.
   const std::u16string& title_;
   // The estimated time to read of the page.
-  int time_to_read_;
+  int estimated_read_time_;
+  // The score of the page measuring distilibility, a proxy for whether the
+  // page is likely an article.
+  double distilibility_score_;
+  // The score of the page measuring length of the page.
+  double length_score_;
   // Reference to save |url_| to Reading List.
-  ReadingListModel* model_;
+  ReadingListModel* model_ = nullptr;
+  // WebState pointer that is showing |url_|.
+  web::WebState* web_state_ = nullptr;
 };
 
 #endif  // IOS_CHROME_BROWSER_UI_READING_LIST_IOS_ADD_TO_READING_LIST_INFOBAR_DELEGATE_H_

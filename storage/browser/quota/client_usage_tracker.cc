@@ -52,15 +52,6 @@ void RecordSkippedOriginHistogram(const InvalidOriginReason reason) {
   UMA_HISTOGRAM_ENUMERATION("Quota.SkippedInvalidOriginUsage", reason);
 }
 
-std::vector<blink::StorageKey> ToStorageKeys(
-    const std::vector<url::Origin>& origins) {
-  std::vector<blink::StorageKey> storage_keys;
-  storage_keys.reserve(origins.size());
-  for (const url::Origin& origin : origins)
-    storage_keys.emplace_back(blink::StorageKey(origin));
-  return storage_keys;
-}
-
 }  // namespace
 
 struct ClientUsageTracker::AccumulateInfo {
@@ -77,10 +68,10 @@ struct ClientUsageTracker::AccumulateInfo {
 
 ClientUsageTracker::ClientUsageTracker(
     UsageTracker* tracker,
-    scoped_refptr<QuotaClient> client,
+    mojom::QuotaClient* client,
     blink::mojom::StorageType type,
     scoped_refptr<SpecialStoragePolicy> special_storage_policy)
-    : client_(std::move(client)),
+    : client_(client),
       type_(type),
       global_limited_usage_(0),
       global_unlimited_usage_(0),
@@ -107,7 +98,7 @@ void ClientUsageTracker::GetGlobalUsage(GlobalUsageCallback callback) {
     return;
   }
 
-  client_->GetOriginsForType(
+  client_->GetStorageKeysForType(
       type_,
       base::BindOnce(&ClientUsageTracker::DidGetStorageKeysForGlobalUsage,
                      weak_factory_.GetWeakPtr(), std::move(callback)));
@@ -127,7 +118,7 @@ void ClientUsageTracker::GetHostUsage(const std::string& host,
   if (!host_usage_accumulators_.Add(
           host, base::BindOnce(&DidGetHostUsage, std::move(callback))))
     return;
-  client_->GetOriginsForHost(
+  client_->GetStorageKeysForHost(
       type_, host,
       base::BindOnce(&ClientUsageTracker::DidGetStorageKeysForHostUsage,
                      weak_factory_.GetWeakPtr(), host));
@@ -242,10 +233,10 @@ void ClientUsageTracker::SetUsageCacheEnabled(
 
 void ClientUsageTracker::DidGetStorageKeysForGlobalUsage(
     GlobalUsageCallback callback,
-    const std::vector<url::Origin>& origins) {
+    const std::vector<blink::StorageKey>& storage_keys) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   std::map<std::string, std::vector<blink::StorageKey>> storage_keys_by_host;
-  for (const auto& storage_key : ToStorageKeys(origins))
+  for (const auto& storage_key : storage_keys)
     storage_keys_by_host[storage_key.origin().host()].push_back(storage_key);
 
   AccumulateInfo* info = new AccumulateInfo;
@@ -265,10 +256,10 @@ void ClientUsageTracker::DidGetStorageKeysForGlobalUsage(
 
   for (const auto& host_and_storage_keys : storage_keys_by_host) {
     const std::string& host = host_and_storage_keys.first;
-    const std::vector<blink::StorageKey>& storage_keys =
+    const std::vector<blink::StorageKey>& storage_keys_for_host =
         host_and_storage_keys.second;
     if (host_usage_accumulators_.Add(host, accumulator))
-      GetUsageForStorageKeys(host, storage_keys);
+      GetUsageForStorageKeys(host, storage_keys_for_host);
   }
 
   // Fire the sentinel as we've now called GetUsageForStorageKeys for all
@@ -297,9 +288,9 @@ void ClientUsageTracker::AccumulateHostUsage(AccumulateInfo* info,
 
 void ClientUsageTracker::DidGetStorageKeysForHostUsage(
     const std::string& host,
-    const std::vector<url::Origin>& origins) {
+    const std::vector<blink::StorageKey>& storage_keys) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  GetUsageForStorageKeys(host, ToStorageKeys(origins));
+  GetUsageForStorageKeys(host, storage_keys);
 }
 
 void ClientUsageTracker::GetUsageForStorageKeys(
@@ -324,8 +315,8 @@ void ClientUsageTracker::GetUsageForStorageKeys(
     if (GetCachedStorageKeyUsage(storage_key, &storage_key_usage)) {
       accumulator.Run(storage_key, storage_key_usage);
     } else {
-      client_->GetOriginUsage(storage_key.origin(), type_,
-                              base::BindOnce(accumulator, storage_key));
+      client_->GetStorageKeyUsage(storage_key, type_,
+                                  base::BindOnce(accumulator, storage_key));
     }
   }
 
@@ -343,7 +334,7 @@ void ClientUsageTracker::AccumulateStorageKeyUsage(
   if (storage_key.has_value()) {
     // TODO(https://crbug.com/941480): `storage_key` should not be opaque or
     // have an empty url, but sometimes it is.
-    if (storage_key->opaque()) {
+    if (storage_key->origin().opaque()) {
       DVLOG(1) << "AccumulateStorageKeyUsage for opaque storage_key!";
       RecordSkippedOriginHistogram(InvalidOriginReason::kIsOpaque);
     } else if (storage_key->origin().GetURL().is_empty()) {

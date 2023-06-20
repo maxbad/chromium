@@ -4,29 +4,37 @@
 
 #include "chrome/services/file_util/zip_file_creator.h"
 
-#include <memory>
 #include <utility>
 
 #include "base/files/file.h"
 #include "base/files/file_path.h"
 #include "base/logging.h"
-#include "components/services/filesystem/public/mojom/types.mojom-shared.h"
-#include "mojo/public/cpp/bindings/remote.h"
+#include "base/memory/scoped_refptr.h"
+#include "base/strings/strcat.h"
+#include "components/services/filesystem/public/mojom/types.mojom.h"
 #include "third_party/zlib/google/zip.h"
 
 namespace chrome {
-
 namespace {
+
+std::string Redact(const std::string& s) {
+  return LOG_IS_ON(INFO) ? base::StrCat({"'", s, "'"}) : "(redacted)";
+}
+
+std::string Redact(const base::FilePath& path) {
+  return Redact(path.value());
+}
 
 // A zip::FileAccessor that talks to a file system through the Mojo
 // filesystem::mojom::Directory.
-// Note that zip::ZipFileAccessor deals with absolute paths that must be
-// converted to relative when calling filesystem::mojom::Directory APIs.
 class MojoFileAccessor : public zip::FileAccessor {
  public:
-  MojoFileAccessor(
-      mojo::PendingRemote<filesystem::mojom::Directory> source_dir_remote)
-      : source_dir_remote_(std::move(source_dir_remote)) {}
+  explicit MojoFileAccessor(
+      mojo::PendingRemote<filesystem::mojom::Directory> src_dir)
+      : src_dir_(std::move(src_dir)) {}
+
+  MojoFileAccessor(const MojoFileAccessor&) = delete;
+  MojoFileAccessor& operator=(const MojoFileAccessor&) = delete;
 
   ~MojoFileAccessor() override = default;
 
@@ -48,8 +56,8 @@ class MojoFileAccessor : public zip::FileAccessor {
     }
 
     std::vector<filesystem::mojom::FileOpenResultPtr> results;
-    if (!source_dir_remote_->OpenFileHandles(std::move(details), &results)) {
-      LOG(ERROR) << "Cannot open '" << paths.front() << "' and "
+    if (!src_dir_->OpenFileHandles(std::move(details), &results)) {
+      LOG(ERROR) << "Cannot open " << Redact(paths.front()) << " and "
                  << (paths.size() - 1) << " other files";
       return false;
     }
@@ -74,14 +82,14 @@ class MojoFileAccessor : public zip::FileAccessor {
     mojo::Remote<filesystem::mojom::Directory> dir_remote;
     filesystem::mojom::Directory* dir = nullptr;
     if (path.empty()) {
-      dir = source_dir_remote_.get();
+      dir = src_dir_.get();
     } else {
       base::File::Error error;
-      source_dir_remote_->OpenDirectory(
+      src_dir_->OpenDirectory(
           path.value(), dir_remote.BindNewPipeAndPassReceiver(),
           filesystem::mojom::kFlagRead | filesystem::mojom::kFlagOpen, &error);
       if (error != base::File::Error::FILE_OK) {
-        LOG(ERROR) << "Cannot open '" << path << "': Error " << error;
+        LOG(ERROR) << "Cannot open " << Redact(path) << ": Error " << error;
         return false;
       }
       dir = dir_remote.get();
@@ -91,7 +99,8 @@ class MojoFileAccessor : public zip::FileAccessor {
     base::File::Error error;
     dir->Read(&error, &contents);
     if (error != base::File::Error::FILE_OK) {
-      LOG(ERROR) << "Cannot list content of '" << path << "': Error " << error;
+      LOG(ERROR) << "Cannot list content of " << Redact(path) << ": Error "
+                 << error;
       return false;
     }
 
@@ -113,9 +122,10 @@ class MojoFileAccessor : public zip::FileAccessor {
 
     base::File::Error error;
     filesystem::mojom::FileInformationPtr file_info;
-    source_dir_remote_->StatFile(path.value(), &error, &file_info);
+    src_dir_->StatFile(path.value(), &error, &file_info);
     if (error != base::File::Error::FILE_OK) {
-      LOG(ERROR) << "Cannot get info of '" << path << "': Error " << error;
+      LOG(ERROR) << "Cannot get info of " << Redact(path) << ": Error "
+                 << error;
       return false;
     }
 
@@ -126,48 +136,75 @@ class MojoFileAccessor : public zip::FileAccessor {
   }
 
  private:
-  // Interface ptr to the actual interface implementation used to access files.
-  const mojo::Remote<filesystem::mojom::Directory> source_dir_remote_;
-
-  DISALLOW_COPY_AND_ASSIGN(MojoFileAccessor);
+  // Interface ptr to the source directory.
+  const mojo::Remote<filesystem::mojom::Directory> src_dir_;
 };
 
 }  // namespace
 
-ZipFileCreator::ZipFileCreator() = default;
+ZipFileCreator::ZipFileCreator(PendingCreator receiver)
+    : receiver_(this, std::move(receiver)) {
+  receiver_.set_disconnect_handler(
+      base::BindOnce(&ZipFileCreator::OnDisconnect, base::AdoptRef(this)));
+}
 
-ZipFileCreator::~ZipFileCreator() = default;
+ZipFileCreator::~ZipFileCreator() {
+  DCHECK(cancelled_.IsSet());
+}
 
 void ZipFileCreator::CreateZipFile(
-    mojo::PendingRemote<filesystem::mojom::Directory> source_dir_remote,
-    const std::vector<base::FilePath>& source_relative_paths,
+    PendingDirectory src_dir,
+    const std::vector<base::FilePath>& relative_paths,
     base::File zip_file,
-    CreateZipFileCallback callback) {
+    PendingListener listener) {
   DCHECK(zip_file.IsValid());
 
-  for (const base::FilePath& path : source_relative_paths) {
+  for (const base::FilePath& path : relative_paths) {
     if (path.IsAbsolute() || path.ReferencesParent()) {
       // Paths are expected to be relative. If there are not, the API is used
       // incorrectly and this is an error.
-      std::move(callback).Run(/*success=*/false);
+      Listener(std::move(listener))->OnFinished(/*success=*/false);
       return;
     }
   }
 
-  MojoFileAccessor file_accessor(std::move(source_dir_remote));
+  runner_->PostTask(
+      FROM_HERE, base::BindOnce(&ZipFileCreator::WriteZipFile, this,
+                                std::move(src_dir), std::move(relative_paths),
+                                std::move(zip_file), std::move(listener)));
+}
+
+void ZipFileCreator::WriteZipFile(
+    PendingDirectory src_dir,
+    const std::vector<base::FilePath>& relative_paths,
+    base::File zip_file,
+    PendingListener pending_listener) const {
+  MojoFileAccessor file_accessor(std::move(src_dir));
+  const Listener listener(std::move(pending_listener));
   const bool success = zip::Zip({
       .file_accessor = &file_accessor,
       .dest_fd = zip_file.GetPlatformFile(),
-      .src_files = source_relative_paths,
-      .progress_callback =
-          base::BindRepeating([](const zip::Progress& progress) {
-            VLOG(1) << "ZIP progress: " << progress;
-            return true;
-          }),
-      .progress_period = base::TimeDelta::FromMilliseconds(500),
+      .src_files = relative_paths,
+      .progress_callback = base::BindRepeating(&ZipFileCreator::OnProgress,
+                                               this, std::cref(listener)),
+      .progress_period = base::Milliseconds(1000),
       .recursive = true,
   });
-  std::move(callback).Run(success);
+
+  listener->OnFinished(success);
+}
+
+bool ZipFileCreator::OnProgress(const Listener& listener,
+                                const zip::Progress& progress) const {
+  listener->OnProgress(progress.bytes, progress.files, progress.directories);
+  return !cancelled_.IsSet();
+}
+
+void ZipFileCreator::OnDisconnect() {
+  DCHECK(receiver_.is_bound());
+  receiver_.reset();
+  DCHECK(!cancelled_.IsSet());
+  cancelled_.Set();
 }
 
 }  // namespace chrome

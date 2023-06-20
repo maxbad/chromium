@@ -5,8 +5,8 @@
 #include "extensions/renderer/bindings/api_binding_js_util.h"
 
 #include "base/bind.h"
+#include "base/cxx17_backports.h"
 #include "base/macros.h"
-#include "base/stl_util.h"
 #include "extensions/renderer/bindings/api_binding_test_util.h"
 #include "extensions/renderer/bindings/api_bindings_system.h"
 #include "extensions/renderer/bindings/api_bindings_system_unittest.h"
@@ -31,6 +31,10 @@ const char kHandleException[] =
 }  // namespace
 
 class APIBindingJSUtilUnittest : public APIBindingsSystemTest {
+ public:
+  APIBindingJSUtilUnittest(const APIBindingJSUtilUnittest&) = delete;
+  APIBindingJSUtilUnittest& operator=(const APIBindingJSUtilUnittest&) = delete;
+
  protected:
   APIBindingJSUtilUnittest() {}
   ~APIBindingJSUtilUnittest() override {}
@@ -48,11 +52,6 @@ class APIBindingJSUtilUnittest : public APIBindingsSystemTest {
       v8::Local<v8::Context> context,
       v8::Local<v8::Object>* secondary_parent) override {
     return context->Global();
-  }
-
-  void AddConsoleError(v8::Local<v8::Context> context,
-                       const std::string& error) override {
-    console_errors_.push_back(error);
   }
 
   std::string GetExposedError(v8::Local<v8::Context> context) {
@@ -78,15 +77,6 @@ class APIBindingJSUtilUnittest : public APIBindingsSystemTest {
   APILastError* last_error() {
     return bindings_system()->request_handler()->last_error();
   }
-
-  const std::vector<std::string>& console_errors() const {
-    return console_errors_;
-  }
-
- private:
-  std::vector<std::string> console_errors_;
-
-  DISALLOW_COPY_AND_ASSIGN(APIBindingJSUtilUnittest);
 };
 
 TEST_F(APIBindingJSUtilUnittest, TestSetLastError) {

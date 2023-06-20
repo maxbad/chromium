@@ -8,7 +8,6 @@
 #include <memory>
 #include <vector>
 
-#include "base/observer_list.h"
 #include "base/scoped_observation.h"
 #include "build/chromeos_buildflags.h"
 #include "chrome/browser/command_observer.h"
@@ -22,6 +21,7 @@
 #include "chrome/browser/ui/views/location_bar/location_bar_view.h"
 #include "chrome/browser/ui/views/profiles/avatar_toolbar_button.h"
 #include "chrome/browser/ui/views/toolbar/chrome_labs_bubble_view_model.h"
+#include "chrome/browser/ui/views/toolbar/read_later_toolbar_button.h"
 #include "chrome/browser/upgrade_detector/upgrade_observer.h"
 #include "components/prefs/pref_member.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
@@ -62,7 +62,7 @@ class CastToolbarButton;
 }
 
 namespace send_tab_to_self {
-class SendTabToSelfToolbarButtonView;
+class SendTabToSelfToolbarIconView;
 }
 
 namespace views {
@@ -152,9 +152,11 @@ class ToolbarView : public views::AccessiblePaneView,
   LocationBarView* location_bar() const { return location_bar_; }
   CustomTabBarView* custom_tab_bar() { return custom_tab_bar_; }
   media_router::CastToolbarButton* cast_button() const { return cast_; }
-  ToolbarButton* read_later_button() const { return read_later_button_; }
+  ReadLaterToolbarButton* read_later_button() const {
+    return read_later_button_;
+  }
   MediaToolbarButtonView* media_button() const { return media_button_; }
-  send_tab_to_self::SendTabToSelfToolbarButtonView* send_tab_to_self_button()
+  send_tab_to_self::SendTabToSelfToolbarIconView* send_tab_to_self_button()
       const {
     return send_tab_to_self_button_;
   }
@@ -234,6 +236,7 @@ class ToolbarView : public views::AccessiblePaneView,
   views::AccessiblePaneView* GetAsAccessiblePaneView() override;
   views::View* GetAnchorView(PageActionIconType type) override;
   void ZoomChangedForActiveTab(bool can_show_bubble) override;
+  ReadLaterToolbarButton* GetSidePanelButton() override;
   AvatarToolbarButton* GetAvatarToolbarButton() override;
   ToolbarButton* GetBackButton() override;
   ReloadButton* GetReloadButton() override;
@@ -275,11 +278,11 @@ class ToolbarView : public views::AccessiblePaneView,
   ExtensionsToolbarContainer* extensions_container_ = nullptr;
   ChromeLabsButton* chrome_labs_button_ = nullptr;
   media_router::CastToolbarButton* cast_ = nullptr;
-  ToolbarButton* read_later_button_ = nullptr;
+  ReadLaterToolbarButton* read_later_button_ = nullptr;
   ToolbarAccountIconContainerView* toolbar_account_icon_container_ = nullptr;
   AvatarToolbarButton* avatar_ = nullptr;
   MediaToolbarButtonView* media_button_ = nullptr;
-  send_tab_to_self::SendTabToSelfToolbarButtonView* send_tab_to_self_button_ =
+  send_tab_to_self::SendTabToSelfToolbarIconView* send_tab_to_self_button_ =
       nullptr;
   BrowserAppMenuButton* app_menu_button_ = nullptr;
 

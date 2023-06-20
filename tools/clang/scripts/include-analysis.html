@@ -29,6 +29,8 @@
 
 <p>Number of files: <span id="numFiles">x</span>. Total file size: <span id="totFileSize">x</span> bytes.</p>
 
+<p><a href="https://commondatastorage.googleapis.com/chromium-browser-clang/chrome_includes-index.html">Archive</a></p>
+
 <button onClick="changeState({view: 'files'})">Per-File Analysis</button>
 <button onClick="changeState({view: 'edges'})">Per-Edge Analysis</button>
 
@@ -143,7 +145,7 @@ const numRoots = data.roots.length;
 
 document.getElementById('buildTarget').textContent = data.target;
 document.getElementById('buildRevision').innerHTML =
-    `<a href="https://crrev.com/${data.revision}">${data.revision}</a>`;
+    `<a href="https://chromium.googlesource.com/chromium/src/+/${data.revision}">${data.revision}</a>`;
 document.getElementById('analysisDate').textContent = data.date;
 
 document.getElementById('numRoots').textContent = fmt(numRoots);

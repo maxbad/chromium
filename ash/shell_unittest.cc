@@ -145,6 +145,10 @@ std::unique_ptr<views::WidgetDelegateView> CreateModalWidgetDelegate() {
 class SimpleMenuDelegate : public ui::SimpleMenuModel::Delegate {
  public:
   SimpleMenuDelegate() = default;
+
+  SimpleMenuDelegate(const SimpleMenuDelegate&) = delete;
+  SimpleMenuDelegate& operator=(const SimpleMenuDelegate&) = delete;
+
   ~SimpleMenuDelegate() override = default;
 
   bool IsCommandIdChecked(int command_id) const override { return false; }
@@ -152,9 +156,6 @@ class SimpleMenuDelegate : public ui::SimpleMenuModel::Delegate {
   bool IsCommandIdEnabled(int command_id) const override { return true; }
 
   void ExecuteCommand(int command_id, int event_flags) override {}
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(SimpleMenuDelegate);
 };
 
 }  // namespace
@@ -522,8 +523,6 @@ TEST_F(ShellTest, EnvPreTargetHandler) {
 TEST_F(ShellTest, NoWindowTabFocus) {
   ExpectAllContainers();
 
-  auto* generator = GetEventGenerator();
-
   StatusAreaWidget* status_area_widget =
       GetPrimaryShelf()->status_area_widget();
   ShelfNavigationWidget* home_button = GetPrimaryShelf()->navigation_widget();
@@ -533,15 +532,13 @@ TEST_F(ShellTest, NoWindowTabFocus) {
 
   // Hit tab with window open, and expect that focus is not on the navigation
   // widget or status widget.
-  generator->PressKey(ui::VKEY_TAB, ui::EF_NONE);
-  generator->ReleaseKey(ui::VKEY_TAB, ui::EF_NONE);
+  PressAndReleaseKey(ui::VKEY_TAB);
   EXPECT_FALSE(home_button->GetNativeView()->HasFocus());
   EXPECT_FALSE(status_area_widget->GetNativeView()->HasFocus());
 
   // Minimize the window, hit tab and expect that focus is on the launcher.
   widget->Minimize();
-  generator->PressKey(ui::VKEY_TAB, ui::EF_NONE);
-  generator->ReleaseKey(ui::VKEY_TAB, ui::EF_NONE);
+  PressAndReleaseKey(ui::VKEY_TAB);
   EXPECT_TRUE(home_button->GetNativeView()->HasFocus());
 
   // Show (to steal focus back before continuing testing) and close the window.
@@ -552,16 +549,13 @@ TEST_F(ShellTest, NoWindowTabFocus) {
   // Confirm that pressing tab when overview mode is open does not go to home
   // button. Tab should be handled by overview mode and not hit the shell event
   // handler.
-  auto* overview_controller = Shell::Get()->overview_controller();
-  overview_controller->StartOverview();
-  generator->PressKey(ui::VKEY_TAB, ui::EF_NONE);
-  generator->ReleaseKey(ui::VKEY_TAB, ui::EF_NONE);
+  EnterOverview();
+  PressAndReleaseKey(ui::VKEY_TAB);
   EXPECT_FALSE(home_button->GetNativeView()->HasFocus());
-  overview_controller->EndOverview();
+  ExitOverview();
 
   // Hit shift tab and expect that focus is on status widget.
-  generator->PressKey(ui::VKEY_TAB, ui::EF_SHIFT_DOWN);
-  generator->ReleaseKey(ui::VKEY_TAB, ui::EF_SHIFT_DOWN);
+  PressAndReleaseKey(ui::VKEY_TAB, ui::EF_SHIFT_DOWN);
   EXPECT_TRUE(status_area_widget->GetNativeView()->HasFocus());
 }
 
@@ -575,13 +569,14 @@ TEST_F(ShellTest, NoWindowTabFocus) {
 class ShellTest2 : public AshTestBase {
  public:
   ShellTest2() = default;
+
+  ShellTest2(const ShellTest2&) = delete;
+  ShellTest2& operator=(const ShellTest2&) = delete;
+
   ~ShellTest2() override = default;
 
  protected:
   std::unique_ptr<aura::Window> window_;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(ShellTest2);
 };
 
 TEST_F(ShellTest2, DontCrashWhenWindowDeleted) {

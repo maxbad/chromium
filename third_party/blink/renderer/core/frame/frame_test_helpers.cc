@@ -46,7 +46,9 @@
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
 #include "third_party/blink/public/common/frame/frame_policy.h"
 #include "third_party/blink/public/common/tokens/tokens.h"
+#include "third_party/blink/public/mojom/frame/intrinsic_sizing_info.mojom-blink.h"
 #include "third_party/blink/public/mojom/frame/tree_scope_type.mojom-blink.h"
+#include "third_party/blink/public/mojom/input/touch_event.mojom-blink.h"
 #include "third_party/blink/public/mojom/page/widget.mojom-blink.h"
 #include "third_party/blink/public/platform/interface_registry.h"
 #include "third_party/blink/public/platform/platform.h"
@@ -74,6 +76,7 @@
 #include "third_party/blink/renderer/platform/scheduler/public/thread.h"
 #include "third_party/blink/renderer/platform/testing/unit_test_helpers.h"
 #include "third_party/blink/renderer/platform/testing/url_test_helpers.h"
+#include "third_party/blink/renderer/platform/wtf/casting.h"
 #include "third_party/blink/renderer/platform/wtf/functional.h"
 #include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
@@ -252,13 +255,13 @@ void FillNavigationParamsResponse(WebNavigationParams* params) {
 
 WebMouseEvent CreateMouseEvent(WebInputEvent::Type type,
                                WebMouseEvent::Button button,
-                               const IntPoint& point,
+                               const gfx::Point& point,
                                int modifiers) {
   WebMouseEvent result(type, modifiers,
                        WebInputEvent::GetStaticTimeStampForTests());
   result.pointer_type = WebPointerProperties::PointerType::kMouse;
-  result.SetPositionInWidget(point.X(), point.Y());
-  result.SetPositionInScreen(point.X(), point.Y());
+  result.SetPositionInWidget(point.x(), point.y());
+  result.SetPositionInScreen(point.x(), point.y());
   result.button = button;
   result.click_count = 1;
   return result;
@@ -558,7 +561,8 @@ TestWebFrameWidget* WebViewHelper::CreateFrameWidgetAndInitializeCompositing(
   // The WebWidget requires the compositor to be set before it is used.
   cc::LayerTreeSettings layer_tree_settings =
       GetSynchronousSingleThreadLayerTreeSettings();
-  ScreenInfos initial_screen_infos(frame_widget->GetInitialScreenInfo());
+  display::ScreenInfos initial_screen_infos(
+      frame_widget->GetInitialScreenInfo());
   frame_widget->InitializeCompositing(frame_widget->GetAgentGroupScheduler(),
                                       initial_screen_infos,
                                       &layer_tree_settings);
@@ -612,15 +616,18 @@ void WebViewHelper::InitializeWebView(TestWebViewClient* web_view_client,
                                       class WebView* opener) {
   test_web_view_client_ =
       CreateDefaultClientIfNeeded(web_view_client, owned_test_web_view_client_);
-  web_view_ = static_cast<WebViewImpl*>(
+  web_view_ = To<WebViewImpl>(
       WebView::Create(test_web_view_client_,
                       /*is_hidden=*/false,
+                      /*is_prerendering=*/false,
                       /*is_inside_portal=*/false,
+                      /*is_fenced_frame=*/false,
                       /*compositing_enabled=*/true,
                       /*widgets_never_composited=*/false,
                       /*opener=*/opener, mojo::NullAssociatedReceiver(),
                       *agent_group_scheduler_,
-                      /*session_storage_namespace_id=*/base::EmptyString()));
+                      /*session_storage_namespace_id=*/base::EmptyString(),
+                      /*page_base_background_color=*/absl::nullopt));
   // This property must be set at initialization time, it is not supported to be
   // changed afterward, and does nothing.
   web_view_->GetSettings()->SetViewportEnabled(viewport_enabled_);
@@ -636,7 +643,7 @@ void WebViewHelper::InitializeWebView(TestWebViewClient* web_view_client,
   // If a test turned off this settings, opened WebViews should propagate that.
   if (opener) {
     web_view_->GetSettings()->SetAllowUniversalAccessFromFileURLs(
-        static_cast<WebViewImpl*>(opener)
+        To<WebViewImpl>(opener)
             ->GetPage()
             ->GetSettings()
             .GetAllowUniversalAccessFromFileURLs());
@@ -672,7 +679,7 @@ WebLocalFrame* TestWebFrameClient::CreateChildFrame(
     const WebString& fallback_name,
     const FramePolicy& frame_policy,
     const WebFrameOwnerProperties&,
-    mojom::blink::FrameOwnerElementType,
+    FrameOwnerElementType,
     WebPolicyContainerBindParams policy_container_bind_params) {
   MockPolicyContainerHost mock_policy_container_host;
   mock_policy_container_host.BindWithNewEndpoint(
@@ -710,7 +717,7 @@ void TestWebFrameClient::BeginNavigation(
     std::unique_ptr<WebNavigationInfo> info) {
   navigation_callback_.Cancel();
   if (DocumentLoader::WillLoadUrlAsEmpty(info->url_request.Url()) &&
-      !frame_->HasCommittedFirstRealLoad()) {
+      frame_->IsOnInitialEmptyDocument()) {
     CommitNavigation(std::move(info));
     return;
   }
@@ -804,8 +811,8 @@ TestWidgetInputHandlerHost* TestWebFrameWidget::GetInputHandlerHost() {
   return widget_input_handler_host_.get();
 }
 
-ScreenInfo TestWebFrameWidget::GetInitialScreenInfo() {
-  return ScreenInfo();
+display::ScreenInfo TestWebFrameWidget::GetInitialScreenInfo() {
+  return display::ScreenInfo();
 }
 
 cc::FakeLayerTreeFrameSink* TestWebFrameWidget::LastCreatedFrameSink() {
@@ -861,6 +868,8 @@ void TestWebFrameWidgetHost::UpdateTooltipFromKeyboard(
     base::i18n::TextDirection text_direction_hint,
     const gfx::Rect& bounds) {}
 
+void TestWebFrameWidgetHost::ClearKeyboardTriggeredTooltip() {}
+
 void TestWebFrameWidgetHost::TextInputStateChanged(
     ui::mojom::blink::TextInputStatePtr state) {
   if (state->show_ime_if_needed)
@@ -905,8 +914,6 @@ void TestWebFrameWidgetHost::AutoscrollStart(const gfx::PointF& position) {}
 void TestWebFrameWidgetHost::AutoscrollFling(const gfx::Vector2dF& position) {}
 
 void TestWebFrameWidgetHost::AutoscrollEnd() {}
-
-void TestWebFrameWidgetHost::DidFirstVisuallyNonEmptyPaint() {}
 
 void TestWebFrameWidgetHost::StartDragging(
     const blink::WebDragData& drag_data,

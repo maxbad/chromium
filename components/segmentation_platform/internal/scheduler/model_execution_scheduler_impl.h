@@ -8,11 +8,15 @@
 #include "components/segmentation_platform/internal/scheduler/model_execution_scheduler.h"
 
 #include "base/cancelable_callback.h"
-#include "base/logging.h"
 #include "base/memory/weak_ptr.h"
 #include "components/optimization_guide/proto/models.pb.h"
 #include "components/segmentation_platform/internal/execution/model_execution_manager.h"
 #include "components/segmentation_platform/internal/execution/model_execution_status.h"
+#include "components/segmentation_platform/internal/platform_options.h"
+
+namespace base {
+class Clock;
+}  // namespace base
 
 namespace segmentation_platform {
 
@@ -21,12 +25,16 @@ class SegmentInfo;
 }  // namespace proto
 
 class SegmentInfoDatabase;
+class SignalStorageConfig;
 
 class ModelExecutionSchedulerImpl : public ModelExecutionScheduler {
  public:
-  ModelExecutionSchedulerImpl(Observer* observer,
+  ModelExecutionSchedulerImpl(std::vector<Observer*>&& observers,
                               SegmentInfoDatabase* segment_database,
-                              ModelExecutionManager* model_execution_manager);
+                              SignalStorageConfig* signal_storage_config,
+                              ModelExecutionManager* model_execution_manager,
+                              base::Clock* clock,
+                              const PlatformOptions& platform_options);
   ~ModelExecutionSchedulerImpl() override;
 
   // Disallow copy/assign.
@@ -35,7 +43,7 @@ class ModelExecutionSchedulerImpl : public ModelExecutionScheduler {
       delete;
 
   // ModelExecutionScheduler overrides.
-  void OnNewModelInfoReady(OptimizationTarget segment_id) override;
+  void OnNewModelInfoReady(const proto::SegmentInfo& segment_info) override;
   void RequestModelExecutionForEligibleSegments(bool expired_only) override;
   void RequestModelExecution(OptimizationTarget segment_id) override;
   void OnModelExecutionCompleted(
@@ -47,18 +55,29 @@ class ModelExecutionSchedulerImpl : public ModelExecutionScheduler {
       bool expired_only,
       std::vector<std::pair<OptimizationTarget, proto::SegmentInfo>>
           all_segments);
+  bool ShouldExecuteSegment(bool expired_only,
+                            const proto::SegmentInfo& segment_info);
+  void CancelOutstandingExecutionRequests(OptimizationTarget segment_id);
 
   void OnResultSaved(OptimizationTarget segment_id, bool success);
 
-  // Observer listening to model exeuction events. Required by the segment
+  // Observers listening to model exeuction events. Required by the segment
   // selection pipeline.
-  Observer* observer_;
+  std::vector<Observer*> observers_;
 
   // The database storing metadata and results.
   SegmentInfoDatabase* segment_database_;
 
+  // Used for confirming if the signals have been collected long enough.
+  SignalStorageConfig* signal_storage_config_;
+
   // The class that executes the models.
   ModelExecutionManager* model_execution_manager_;
+
+  // The time provider.
+  base::Clock* clock_;
+
+  const PlatformOptions platform_options_;
 
   // In-flight model execution requests. Will be killed if we get a model
   // update.

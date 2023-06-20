@@ -20,12 +20,16 @@ class SpeculationRule;
 // provides rules to identify URLs and corresponding conditions for speculation,
 // grouped by the action that is suggested.
 //
-// https://jeremyroman.github.io/alternate-loading-modes/#speculation-rule-set
+// https://wicg.github.io/nav-speculation/speculation-rules.html#speculation-rule-set
 class CORE_EXPORT SpeculationRuleSet final
     : public GarbageCollected<SpeculationRuleSet> {
  public:
+  // If provided, |out_error| may be populated with an error/warning message.
+  // A warning may be present even if parsing succeeds, to indicate a case that,
+  // though valid, is likely to be an error.
   static SpeculationRuleSet* ParseInline(const String& source_text,
-                                         const KURL& base_url);
+                                         const KURL& base_url,
+                                         String* out_error = nullptr);
 
   const HeapVector<Member<SpeculationRule>>& prefetch_rules() const {
     return prefetch_rules_;

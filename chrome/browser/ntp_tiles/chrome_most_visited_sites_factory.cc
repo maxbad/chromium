@@ -5,7 +5,6 @@
 #include "chrome/browser/ntp_tiles/chrome_most_visited_sites_factory.h"
 
 #include <utility>
-#include <vector>
 
 #include "base/bind.h"
 #include "base/callback.h"
@@ -18,7 +17,6 @@
 #include "chrome/browser/ntp_tiles/chrome_custom_links_manager_factory.h"
 #include "chrome/browser/ntp_tiles/chrome_popular_sites_factory.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/search/suggestions/suggestions_service_factory.h"
 #include "chrome/common/buildflags.h"
 #include "components/history/core/browser/top_sites.h"
 #include "components/image_fetcher/core/image_fetcher_impl.h"
@@ -38,8 +36,6 @@
 #include "chrome/browser/supervised_user/supervised_user_url_filter.h"
 #endif
 
-using suggestions::SuggestionsServiceFactory;
-
 #if BUILDFLAG(ENABLE_SUPERVISED_USERS)
 namespace {
 
@@ -51,7 +47,6 @@ class SupervisorBridge : public ntp_tiles::MostVisitedSitesSupervisor,
 
   void SetObserver(Observer* observer) override;
   bool IsBlocked(const GURL& url) override;
-  std::vector<MostVisitedSitesSupervisor::Allowlist> GetAllowlists() override;
   bool IsChildProfile() override;
 
   // SupervisedUserServiceObserver implementation.
@@ -90,12 +85,6 @@ bool SupervisorBridge::IsBlocked(const GURL& url) {
          SupervisedUserURLFilter::FilteringBehavior::BLOCK;
 }
 
-std::vector<ntp_tiles::MostVisitedSitesSupervisor::Allowlist>
-SupervisorBridge::GetAllowlists() {
-  // TODO(crbug.com/1149782): Remove allowlists from New Tab Page.
-  return {};
-}
-
 bool SupervisorBridge::IsChildProfile() {
   return profile_->IsChild();
 }
@@ -119,7 +108,6 @@ ChromeMostVisitedSitesFactory::NewForProfile(Profile* profile) {
 
   auto most_visited_sites = std::make_unique<ntp_tiles::MostVisitedSites>(
       profile->GetPrefs(), TopSitesFactory::GetForProfile(profile),
-      SuggestionsServiceFactory::GetForProfile(profile),
 #if defined(OS_ANDROID)
       ChromePopularSitesFactory::NewForProfile(profile),
 #else

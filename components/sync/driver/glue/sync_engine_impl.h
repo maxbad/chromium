@@ -11,11 +11,10 @@
 #include <vector>
 
 #include "base/callback_forward.h"
-#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/sequence_checker.h"
-#include "base/sequenced_task_runner.h"
+#include "base/task/sequenced_task_runner.h"
 #include "components/invalidation/public/invalidation_handler.h"
 #include "components/sync/base/extensions_activity.h"
 #include "components/sync/base/model_type.h"
@@ -60,6 +59,10 @@ class SyncEngineImpl : public SyncEngine,
                  const base::FilePath& sync_data_folder,
                  scoped_refptr<base::SequencedTaskRunner> sync_task_runner,
                  const base::RepeatingClosure& sync_transport_data_cleared_cb);
+
+  SyncEngineImpl(const SyncEngineImpl&) = delete;
+  SyncEngineImpl& operator=(const SyncEngineImpl&) = delete;
+
   ~SyncEngineImpl() override;
 
   // SyncEngine implementation.
@@ -75,18 +78,16 @@ class SyncEngineImpl : public SyncEngine,
   void StartSyncingWithServer() override;
   void SetEncryptionPassphrase(const std::string& passphrase) override;
   void SetDecryptionPassphrase(const std::string& passphrase) override;
-  void SetKeystoreEncryptionBootstrapToken(const std::string& token) override;
   void AddTrustedVaultDecryptionKeys(
       const std::vector<std::vector<uint8_t>>& keys,
       base::OnceClosure done_cb) override;
   void StopSyncingForShutdown() override;
   void Shutdown(ShutdownReason reason) override;
   void ConfigureDataTypes(ConfigureParams params) override;
-  void ActivateDataType(ModelType type,
-                        std::unique_ptr<DataTypeActivationResponse>) override;
-  void DeactivateDataType(ModelType type) override;
-  void ActivateProxyDataType(ModelType type) override;
-  void DeactivateProxyDataType(ModelType type) override;
+  void ConnectDataType(ModelType type,
+                       std::unique_ptr<DataTypeActivationResponse>) override;
+  void DisconnectDataType(ModelType type) override;
+  void SetProxyTabsDatatypeEnabled(bool enabled) override;
   const Status& GetDetailedStatus() const override;
   void HasUnsyncedItemsForTest(
       base::OnceCallback<void(bool)> cb) const override;
@@ -115,11 +116,8 @@ class SyncEngineImpl : public SyncEngine,
   friend class SyncEngineBackend;
 
   // Called when the syncer has finished performing a configuration.
-  void FinishConfigureDataTypesOnFrontendLoop(
-      const ModelTypeSet enabled_types,
-      const ModelTypeSet succeeded_configuration_types,
-      const ModelTypeSet failed_configuration_types,
-      base::OnceCallback<void(ModelTypeSet, ModelTypeSet)> ready_task);
+  void FinishConfigureDataTypesOnFrontendLoop(const ModelTypeSet enabled_types,
+                                              base::OnceClosure ready_task);
 
   // Reports backend initialization success.  Includes some objects from sync
   // manager initialization to be passed back to the UI thread.
@@ -223,8 +221,6 @@ class SyncEngineImpl : public SyncEngine,
   SEQUENCE_CHECKER(sequence_checker_);
 
   base::WeakPtrFactory<SyncEngineImpl> weak_ptr_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(SyncEngineImpl);
 };
 
 }  // namespace syncer

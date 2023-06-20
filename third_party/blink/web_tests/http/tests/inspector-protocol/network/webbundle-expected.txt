@@ -14,8 +14,10 @@ requestWillBeSent[
                 User-Agent : <string>
                 sec-ch-ua : "content_shell";v="999"
                 sec-ch-ua-mobile : ?0
+                sec-ch-ua-platform : "Unknown"
             }
             initialPriority : VeryHigh
+            isSameSite : true
             method : GET
             mixedContentType : none
             referrerPolicy : strict-origin-when-cross-origin
@@ -43,8 +45,10 @@ requestWillBeSent[
                 User-Agent : <string>
                 sec-ch-ua : "content_shell";v="999"
                 sec-ch-ua-mobile : ?0
+                sec-ch-ua-platform : "Unknown"
             }
             initialPriority : High
+            isSameSite : true
             method : GET
             mixedContentType : none
             referrerPolicy : strict-origin-when-cross-origin
@@ -72,6 +76,7 @@ requestWillBeSent[
                 User-Agent : <string>
             }
             initialPriority : High
+            isSameSite : false
             method : GET
             mixedContentType : none
             referrerPolicy : strict-origin-when-cross-origin

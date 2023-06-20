@@ -25,6 +25,7 @@
 
 #include "third_party/blink/renderer/core/layout/layout_multi_column_flow_thread.h"
 
+#include "third_party/blink/renderer/core/css/resolver/style_resolver.h"
 #include "third_party/blink/renderer/core/layout/layout_multi_column_set.h"
 #include "third_party/blink/renderer/core/layout/layout_multi_column_spanner_placeholder.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
@@ -50,12 +51,18 @@ LayoutMultiColumnFlowThread::LayoutMultiColumnFlowThread(bool needs_paint_layer)
 
 LayoutMultiColumnFlowThread::~LayoutMultiColumnFlowThread() = default;
 
+void LayoutMultiColumnFlowThread::Trace(Visitor* visitor) const {
+  visitor->Trace(last_set_worked_on_);
+  LayoutFlowThread::Trace(visitor);
+  FragmentationContext::Trace(visitor);
+}
+
 LayoutMultiColumnFlowThread* LayoutMultiColumnFlowThread::CreateAnonymous(
     Document& document,
     const ComputedStyle& parent_style,
     bool needs_paint_layer) {
   LayoutMultiColumnFlowThread* layout_object =
-      new LayoutMultiColumnFlowThread(needs_paint_layer);
+      MakeGarbageCollected<LayoutMultiColumnFlowThread>(needs_paint_layer);
   layout_object->SetDocumentForAnonymous(&document);
   layout_object->SetStyle(
       document.GetStyleResolver().CreateAnonymousStyleWithDisplay(
@@ -766,7 +773,6 @@ void LayoutMultiColumnFlowThread::FinishLayoutFromNG(
   for (LayoutBox* column_box = FirstMultiColumnBox(); column_box;
        column_box = column_box->NextSiblingMultiColumnBox()) {
     column_box->ClearNeedsLayout();
-    column_box->UpdateAfterLayout();
   }
 
   // If we have a trailing column set, finish it.
@@ -778,7 +784,6 @@ void LayoutMultiColumnFlowThread::FinishLayoutFromNG(
 
   ValidateColumnSets();
   SetLogicalHeight(flow_thread_offset);
-  UpdateAfterLayout();
   ClearNeedsLayout();
   last_set_worked_on_ = nullptr;
 }
@@ -1082,7 +1087,7 @@ void LayoutMultiColumnFlowThread::SkipColumnSpanner(
   // and where such out-of-flow objects might be, just go through the whole
   // subtree.
   for (LayoutObject* descendant = layout_object->SlowFirstChild(); descendant;
-       descendant = descendant->NextInPreOrder()) {
+       descendant = descendant->NextInPreOrder(layout_object)) {
     if (descendant->IsBox() && descendant->IsOutOfFlowPositioned()) {
       descendant->ContainingBlock()->InsertPositionedObject(
           To<LayoutBox>(descendant));
@@ -1349,6 +1354,9 @@ void LayoutMultiColumnFlowThread::FlowThreadDescendantStyleWillChange(
   if (NeedsToRemoveFromFlowThread(*descendant, descendant->StyleRef(),
                                   new_style)) {
     FlowThreadDescendantWillBeRemoved(descendant);
+#if DCHECK_IS_ON()
+    style_changed_box_ = nullptr;
+#endif
     return;
   }
 #if DCHECK_IS_ON()
@@ -1368,6 +1376,12 @@ void LayoutMultiColumnFlowThread::FlowThreadDescendantStyleDidChange(
     StyleDifference diff,
     const ComputedStyle& old_style) {
   NOT_DESTROYED();
+
+#if DCHECK_IS_ON()
+  const auto* style_changed_box = style_changed_box_;
+  style_changed_box_ = nullptr;
+#endif
+
   bool toggle_spanners_if_needed = toggle_spanners_if_needed_;
   toggle_spanners_if_needed_ = false;
 
@@ -1394,16 +1408,20 @@ void LayoutMultiColumnFlowThread::FlowThreadDescendantStyleDidChange(
 
   if (!toggle_spanners_if_needed)
     return;
+
+  if (could_contain_spanners_ ==
+      CanContainSpannerInParentFragmentationContext(*descendant))
+    return;
+
 #if DCHECK_IS_ON()
   // Make sure that we were preceded by a call to
   // flowThreadDescendantStyleWillChange() with the same descendant as we have
   // now.
-  DCHECK_EQ(style_changed_box_, descendant);
+  if (style_changed_box)
+    DCHECK_EQ(style_changed_box, descendant);
 #endif
 
-  if (could_contain_spanners_ !=
-      CanContainSpannerInParentFragmentationContext(*descendant))
-    ToggleSpannersInSubtree(descendant);
+  ToggleSpannersInSubtree(descendant);
 }
 
 void LayoutMultiColumnFlowThread::ToggleSpannersInSubtree(

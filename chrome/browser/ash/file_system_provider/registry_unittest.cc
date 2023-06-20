@@ -23,7 +23,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 
-namespace chromeos {
+namespace ash {
 namespace file_system_provider {
 namespace {
 
@@ -78,7 +78,7 @@ void RememberFakeFileSystem(TestingProfile* profile,
   auto persistent_origins_value = std::make_unique<base::ListValue>();
   for (const auto& subscriber_it : watcher.subscribers) {
     if (subscriber_it.second.persistent)
-      persistent_origins_value->AppendString(subscriber_it.first.spec());
+      persistent_origins_value->Append(subscriber_it.first.spec());
   }
 
   watcher_value->SetKey(
@@ -193,15 +193,15 @@ TEST_F(FileSystemProviderRegistryTest, RememberFileSystem) {
   const base::DictionaryValue* file_system = NULL;
   ASSERT_TRUE(file_system_value->GetAsDictionary(&file_system));
 
-  std::string file_system_id;
-  EXPECT_TRUE(file_system->GetStringWithoutPathExpansion(kPrefKeyFileSystemId,
-                                                         &file_system_id));
-  EXPECT_EQ(kFileSystemId, file_system_id);
+  const std::string* file_system_id =
+      file_system->FindStringKey(kPrefKeyFileSystemId);
+  EXPECT_TRUE(file_system_id);
+  EXPECT_EQ(kFileSystemId, *file_system_id);
 
-  std::string display_name;
-  EXPECT_TRUE(file_system->GetStringWithoutPathExpansion(kPrefKeyDisplayName,
-                                                         &display_name));
-  EXPECT_EQ(kDisplayName, display_name);
+  const std::string* display_name =
+      file_system->FindStringKey(kPrefKeyDisplayName);
+  EXPECT_TRUE(display_name);
+  EXPECT_EQ(kDisplayName, *display_name);
 
   absl::optional<bool> writable = file_system->FindBoolKey(kPrefKeyWritable);
   EXPECT_TRUE(writable.has_value());
@@ -225,26 +225,26 @@ TEST_F(FileSystemProviderRegistryTest, RememberFileSystem) {
   ASSERT_TRUE(watchers_value->GetDictionaryWithoutPathExpansion(
       fake_watcher_.entry_path.value(), &watcher));
 
-  std::string entry_path;
-  EXPECT_TRUE(watcher->GetStringWithoutPathExpansion(kPrefKeyWatcherEntryPath,
-                                                     &entry_path));
-  EXPECT_EQ(fake_watcher_.entry_path.value(), entry_path);
+  const std::string* entry_path =
+      watcher->FindStringKey(kPrefKeyWatcherEntryPath);
+  EXPECT_TRUE(entry_path);
+  EXPECT_EQ(fake_watcher_.entry_path.value(), *entry_path);
 
   absl::optional<bool> recursive =
       watcher->FindBoolKey(kPrefKeyWatcherRecursive);
   EXPECT_TRUE(recursive.has_value());
   EXPECT_EQ(fake_watcher_.recursive, recursive.value());
 
-  std::string last_tag;
-  EXPECT_TRUE(watcher->GetStringWithoutPathExpansion(kPrefKeyWatcherLastTag,
-                                                     &last_tag));
-  EXPECT_EQ(fake_watcher_.last_tag, last_tag);
+  const std::string* last_tag = watcher->FindStringKey(kPrefKeyWatcherLastTag);
+  EXPECT_TRUE(last_tag);
+  EXPECT_EQ(fake_watcher_.last_tag, *last_tag);
 
   const base::ListValue* persistent_origins = NULL;
   ASSERT_TRUE(watcher->GetListWithoutPathExpansion(
       kPrefKeyWatcherPersistentOrigins, &persistent_origins));
-  ASSERT_GT(fake_watcher_.subscribers.size(), persistent_origins->GetSize());
-  ASSERT_EQ(1u, persistent_origins->GetSize());
+  ASSERT_GT(fake_watcher_.subscribers.size(),
+            persistent_origins->GetList().size());
+  ASSERT_EQ(1u, persistent_origins->GetList().size());
   std::string persistent_origin;
   EXPECT_TRUE(persistent_origins->GetString(0, &persistent_origin));
   const auto& fake_subscriber_it =
@@ -319,11 +319,10 @@ TEST_F(FileSystemProviderRegistryTest, UpdateWatcherTag) {
   ASSERT_TRUE(watchers_value->GetDictionaryWithoutPathExpansion(
       fake_watcher_.entry_path.value(), &watcher));
 
-  std::string last_tag;
-  EXPECT_TRUE(watcher->GetStringWithoutPathExpansion(kPrefKeyWatcherLastTag,
-                                                     &last_tag));
-  EXPECT_EQ(fake_watcher_.last_tag, last_tag);
+  const std::string* last_tag = watcher->FindStringKey(kPrefKeyWatcherLastTag);
+  EXPECT_TRUE(last_tag);
+  EXPECT_EQ(fake_watcher_.last_tag, *last_tag);
 }
 
 }  // namespace file_system_provider
-}  // namespace chromeos
+}  // namespace ash

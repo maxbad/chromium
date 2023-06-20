@@ -127,7 +127,7 @@ std::unique_ptr<AuthenticatorRequestSheetView> CreateSheetViewForCurrentStepOf(
           std::make_unique<AuthenticatorBlePowerOnManualSheetModel>(
               dialog_model));
       break;
-    case Step::kPlatformAuthenticatorOffTheRecordInterstitial:
+    case Step::kOffTheRecordInterstitial:
       sheet_view = std::make_unique<AuthenticatorRequestSheetView>(
           std::make_unique<AuthenticatorOffTheRecordInterstitialSheetModel>(
               dialog_model));
@@ -140,10 +140,6 @@ std::unique_ptr<AuthenticatorRequestSheetView> CreateSheetViewForCurrentStepOf(
       sheet_view = std::make_unique<AuthenticatorRequestSheetView>(
           std::make_unique<AuthenticatorAndroidAccessorySheetModel>(
               dialog_model));
-      break;
-    case Step::kCableV2Activate:
-      sheet_view = std::make_unique<AuthenticatorRequestSheetView>(
-          std::make_unique<AuthenticatorPaaskV2SheetModel>(dialog_model));
       break;
     case Step::kCableV2QRCode:
       sheet_view = std::make_unique<AuthenticatorQRSheetView>(

@@ -15,9 +15,11 @@
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/content_switches.h"
 #include "content/public/test/browser_test.h"
 #include "content/public/test/hit_test_region_observer.h"
 #include "net/dns/mock_host_resolver.h"
+#include "ui/base/ui_base_features.h"
 #include "ui/events/test/event_generator.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/views/corewm/tooltip_aura.h"
@@ -108,10 +110,12 @@ class TooltipBrowserTest : public InProcessBrowserTest {
     tooltip_monitor_ = std::make_unique<TooltipWidgetMonitor>();
   }
 
+  content::WebContents* web_contents() { return web_contents_; }
+
  protected:
   void NavigateToURL(const std::string& relative_url) {
-    ui_test_utils::NavigateToURL(
-        browser(), embedded_test_server()->GetURL("a.com", relative_url));
+    ASSERT_TRUE(ui_test_utils::NavigateToURL(
+        browser(), embedded_test_server()->GetURL("a.com", relative_url)));
     web_contents_ = browser()->tab_strip_model()->GetActiveWebContents();
     rwhv_ = web_contents_->GetRenderWidgetHostView();
     content::WaitForHitTestData(web_contents_->GetMainFrame());
@@ -161,6 +165,13 @@ class TooltipBrowserTest : public InProcessBrowserTest {
     return gfx::Point(x, y) + rwhv_->GetViewBounds().OffsetFromOrigin();
   }
 
+  void SetUpCommandLine(base::CommandLine* command_line) override {
+    command_line->AppendSwitchASCII(switches::kEnableBlinkFeatures,
+                                    "KeyboardAccessibleTooltip");
+    scoped_feature_list_.InitWithFeatures(
+        {features::kKeyboardAccessibleTooltip}, {});
+  }
+
   ui::test::EventGenerator* event_generator() { return event_generator_.get(); }
   TooltipControllerTestHelper* helper() { return helper_.get(); }
   TooltipWidgetMonitor* tooltip_monitor() { return tooltip_monitor_.get(); }
@@ -172,6 +183,8 @@ class TooltipBrowserTest : public InProcessBrowserTest {
 
   std::unique_ptr<TooltipControllerTestHelper> helper_;
   std::unique_ptr<TooltipWidgetMonitor> tooltip_monitor_ = nullptr;
+
+  base::test::ScopedFeatureList scoped_feature_list_;
 };  // class TooltipBrowserTest
 
 IN_PROC_BROWSER_TEST_F(TooltipBrowserTest,
@@ -194,9 +207,16 @@ IN_PROC_BROWSER_TEST_F(TooltipBrowserTest,
   helper()->HideAndReset();
 }
 
-// Disabled http://crbug.com/1212403
+#if defined(OS_CHROMEOS) || defined(OS_LINUX)
+// https://crbug.com/1212403. Flaky on linux-chromeos-rel and other linux bots.
+#define MAYBE_ShowTooltipFromWebContentWithKeyboard \
+  DISABLED_ShowTooltipFromWebContentWithKeyboard
+#else
+#define MAYBE_ShowTooltipFromWebContentWithKeyboard \
+  ShowTooltipFromWebContentWithKeyboard
+#endif
 IN_PROC_BROWSER_TEST_F(TooltipBrowserTest,
-                       DISABLED_ShowTooltipFromWebContentWithKeyboard) {
+                       MAYBE_ShowTooltipFromWebContentWithKeyboard) {
   if (SkipTestForOldWinVersion())
     return;
 
@@ -213,9 +233,17 @@ IN_PROC_BROWSER_TEST_F(TooltipBrowserTest,
   helper()->HideAndReset();
 }
 
-// Disabled http://crbug.com/1212403
+#if defined(OS_CHROMEOS) || defined(OS_WIN)
+// https://crbug.com/1212403. Flaky on linux-chromeos-rel.
+// https://crbug.com/1241736. Flaky on Win.
+#define MAYBE_ShowTooltipFromIFrameWithKeyboard \
+  DISABLED_ShowTooltipFromIFrameWithKeyboard
+#else
+#define MAYBE_ShowTooltipFromIFrameWithKeyboard \
+  ShowTooltipFromIFrameWithKeyboard
+#endif
 IN_PROC_BROWSER_TEST_F(TooltipBrowserTest,
-                       DISABLED_ShowTooltipFromIFrameWithKeyboard) {
+                       MAYBE_ShowTooltipFromIFrameWithKeyboard) {
   if (SkipTestForOldWinVersion())
     return;
 
@@ -257,8 +285,13 @@ IN_PROC_BROWSER_TEST_F(TooltipBrowserTest,
   helper()->HideAndReset();
 }
 
-// Disabled http://crbug.com/1212403
-IN_PROC_BROWSER_TEST_F(TooltipBrowserTest, DISABLED_HideTooltipOnKeyPress) {
+#if defined(OS_CHROMEOS)
+// https://crbug.com/1212403. Flaky on linux-chromeos-rel.
+#define MAYBE_HideTooltipOnKeyPress DISABLED_HideTooltipOnKeyPress
+#else
+#define MAYBE_HideTooltipOnKeyPress HideTooltipOnKeyPress
+#endif
+IN_PROC_BROWSER_TEST_F(TooltipBrowserTest, MAYBE_HideTooltipOnKeyPress) {
   if (SkipTestForOldWinVersion())
     return;
 
@@ -292,5 +325,64 @@ IN_PROC_BROWSER_TEST_F(TooltipBrowserTest, DISABLED_HideTooltipOnKeyPress) {
   event_generator()->PressKey(ui::VKEY_A, ui::EF_NONE);
   event_generator()->ReleaseKey(ui::VKEY_A, ui::EF_NONE);
   tooltip_monitor()->WaitUntilTooltipClosed();
+  EXPECT_FALSE(helper()->IsTooltipVisible());
+}
+
+#if defined(OS_CHROMEOS)
+// https://crbug.com/1212403. Flaky on linux-chromeos-rel.
+#define MAYBE_ScriptFocusHidesKeyboardTriggeredTooltip \
+  DISABLED_ScriptFocusHidesKeyboardTriggeredTooltip
+#else
+#define MAYBE_ScriptFocusHidesKeyboardTriggeredTooltip \
+  ScriptFocusHidesKeyboardTriggeredTooltip
+#endif
+IN_PROC_BROWSER_TEST_F(TooltipBrowserTest,
+                       MAYBE_ScriptFocusHidesKeyboardTriggeredTooltip) {
+  if (SkipTestForOldWinVersion())
+    return;
+
+  NavigateToURL("/tooltip_two_buttons.html");
+  std::u16string expected_text_1 = u"my tooltip 1";
+  std::u16string expected_text_2 = u"my tooltip 2";
+
+  // Trigger the tooltip from the keyboard with a TAB keypress.
+  event_generator()->PressKey(ui::VKEY_TAB, ui::EF_NONE);
+  event_generator()->ReleaseKey(ui::VKEY_TAB, ui::EF_NONE);
+  tooltip_monitor()->WaitUntilTooltipShown();
+  EXPECT_TRUE(helper()->IsTooltipVisible());
+  EXPECT_EQ(expected_text_1, helper()->GetTooltipText());
+  EXPECT_TRUE(tooltip_monitor()->IsWidgetActive());
+
+  // Validate that a blur event on another element than our focused one doesn't
+  // hide the tooltip.
+  std::string javascript = "document.getElementById('b2').blur();";
+  EXPECT_TRUE(content::ExecuteScript(web_contents(), javascript));
+
+  EXPECT_TRUE(helper()->IsTooltipVisible());
+  EXPECT_EQ(expected_text_1, helper()->GetTooltipText());
+  EXPECT_TRUE(tooltip_monitor()->IsWidgetActive());
+
+  // Validate that a focus on another element will hide the tooltip.
+  javascript = "document.getElementById('b2').focus();";
+  EXPECT_TRUE(content::ExecuteScript(web_contents(), javascript));
+
+  tooltip_monitor()->WaitUntilTooltipClosed();
+  EXPECT_FALSE(tooltip_monitor()->IsWidgetActive());
+  EXPECT_FALSE(helper()->IsTooltipVisible());
+
+  // Move the focus again to the first button to test the blur on the focused
+  // element.
+  event_generator()->PressKey(ui::VKEY_TAB, ui::EF_SHIFT_DOWN);
+  event_generator()->ReleaseKey(ui::VKEY_TAB, ui::EF_SHIFT_DOWN);
+  tooltip_monitor()->WaitUntilTooltipShown();
+  EXPECT_TRUE(helper()->IsTooltipVisible());
+  EXPECT_EQ(expected_text_1, helper()->GetTooltipText());
+  EXPECT_TRUE(tooltip_monitor()->IsWidgetActive());
+
+  // Validate that the blur call hides the tooltip.
+  javascript = "document.getElementById('b1').blur();";
+  EXPECT_TRUE(content::ExecuteScript(web_contents(), javascript));
+
+  EXPECT_FALSE(tooltip_monitor()->IsWidgetActive());
   EXPECT_FALSE(helper()->IsTooltipVisible());
 }

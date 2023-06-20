@@ -4,7 +4,6 @@
 
 #include "third_party/blink/renderer/platform/webrtc/convert_to_webrtc_video_frame_buffer.h"
 
-#include "base/callback_helpers.h"
 #include "base/containers/contains.h"
 #include "base/containers/span.h"
 #include "base/logging.h"
@@ -195,7 +194,10 @@ scoped_refptr<media::VideoFrame> MakeScaledI420VideoFrame(
   // ARGB pixel format may be produced by readback of texture backed frames.
   DCHECK(source_frame->format() == media::PIXEL_FORMAT_I420 ||
          source_frame->format() == media::PIXEL_FORMAT_I420A ||
-         source_frame->format() == media::PIXEL_FORMAT_ARGB);
+         source_frame->format() == media::PIXEL_FORMAT_ARGB ||
+         source_frame->format() == media::PIXEL_FORMAT_XRGB ||
+         source_frame->format() == media::PIXEL_FORMAT_ABGR ||
+         source_frame->format() == media::PIXEL_FORMAT_XBGR);
   const bool has_alpha = source_frame->format() == media::PIXEL_FORMAT_I420A;
   // Convert to I420 and scale to the natural size specified in
   // |source_frame|.
@@ -239,35 +241,41 @@ scoped_refptr<media::VideoFrame> MakeScaledI420VideoFrame(
                         dst_frame->coded_size().width(),
                         dst_frame->coded_size().height(), libyuv::kFilterBox);
       break;
-    case media::PIXEL_FORMAT_ARGB: {
+    case media::PIXEL_FORMAT_XRGB:
+    case media::PIXEL_FORMAT_ARGB:
+    case media::PIXEL_FORMAT_XBGR:
+    case media::PIXEL_FORMAT_ABGR: {
+      auto convert_func = (source_frame->format() == media::PIXEL_FORMAT_XRGB ||
+                           source_frame->format() == media::PIXEL_FORMAT_ARGB)
+                              ? libyuv::ARGBToI420
+                              : libyuv::ABGRToI420;
+
       auto visible_size = source_frame->visible_rect().size();
       if (visible_size == dst_frame->coded_size()) {
         // Direct conversion to dst_frame with no scaling.
-        libyuv::ARGBToI420(
-            source_frame->visible_data(media::VideoFrame::kARGBPlane),
-            source_frame->stride(media::VideoFrame::kARGBPlane),
-            dst_frame->data(media::VideoFrame::kYPlane),
-            dst_frame->stride(media::VideoFrame::kYPlane),
-            dst_frame->data(media::VideoFrame::kUPlane),
-            dst_frame->stride(media::VideoFrame::kUPlane),
-            dst_frame->data(media::VideoFrame::kVPlane),
-            dst_frame->stride(media::VideoFrame::kVPlane), visible_size.width(),
-            visible_size.height());
+        convert_func(source_frame->visible_data(media::VideoFrame::kARGBPlane),
+                     source_frame->stride(media::VideoFrame::kARGBPlane),
+                     dst_frame->data(media::VideoFrame::kYPlane),
+                     dst_frame->stride(media::VideoFrame::kYPlane),
+                     dst_frame->data(media::VideoFrame::kUPlane),
+                     dst_frame->stride(media::VideoFrame::kUPlane),
+                     dst_frame->data(media::VideoFrame::kVPlane),
+                     dst_frame->stride(media::VideoFrame::kVPlane),
+                     visible_size.width(), visible_size.height());
       } else {
         // Convert to I420 tmp image and then scale to the dst_frame.
         auto tmp_frame = shared_resources->CreateTemporaryFrame(
             media::PIXEL_FORMAT_I420, visible_size, gfx::Rect(visible_size),
             visible_size, source_frame->timestamp());
-        libyuv::ARGBToI420(
-            source_frame->visible_data(media::VideoFrame::kARGBPlane),
-            source_frame->stride(media::VideoFrame::kARGBPlane),
-            tmp_frame->data(media::VideoFrame::kYPlane),
-            tmp_frame->stride(media::VideoFrame::kYPlane),
-            tmp_frame->data(media::VideoFrame::kUPlane),
-            tmp_frame->stride(media::VideoFrame::kUPlane),
-            tmp_frame->data(media::VideoFrame::kVPlane),
-            tmp_frame->stride(media::VideoFrame::kVPlane), visible_size.width(),
-            visible_size.height());
+        convert_func(source_frame->visible_data(media::VideoFrame::kARGBPlane),
+                     source_frame->stride(media::VideoFrame::kARGBPlane),
+                     tmp_frame->data(media::VideoFrame::kYPlane),
+                     tmp_frame->stride(media::VideoFrame::kYPlane),
+                     tmp_frame->data(media::VideoFrame::kUPlane),
+                     tmp_frame->stride(media::VideoFrame::kUPlane),
+                     tmp_frame->data(media::VideoFrame::kVPlane),
+                     tmp_frame->stride(media::VideoFrame::kVPlane),
+                     visible_size.width(), visible_size.height());
         libyuv::I420Scale(tmp_frame->data(media::VideoFrame::kYPlane),
                           tmp_frame->stride(media::VideoFrame::kYPlane),
                           tmp_frame->data(media::VideoFrame::kUPlane),
@@ -327,7 +335,10 @@ scoped_refptr<media::VideoFrame> MaybeConvertAndScaleFrame(
   RTC_DCHECK(source_frame->format() == media::PIXEL_FORMAT_I420 ||
              source_frame->format() == media::PIXEL_FORMAT_I420A ||
              source_frame->format() == media::PIXEL_FORMAT_NV12 ||
-             source_frame->format() == media::PIXEL_FORMAT_ARGB);
+             source_frame->format() == media::PIXEL_FORMAT_ARGB ||
+             source_frame->format() == media::PIXEL_FORMAT_XRGB ||
+             source_frame->format() == media::PIXEL_FORMAT_ABGR ||
+             source_frame->format() == media::PIXEL_FORMAT_XBGR);
   RTC_DCHECK(shared_resources);
 
   const bool source_is_i420 =
@@ -372,7 +383,9 @@ GetPixelFormatsMappableToWebRtcVideoFrameBuffer() {
   static constexpr const media::VideoPixelFormat
       kGetPixelFormatsMappableToWebRtcVideoFrameBuffer[] = {
           media::PIXEL_FORMAT_I420, media::PIXEL_FORMAT_I420A,
-          media::PIXEL_FORMAT_NV12};
+          media::PIXEL_FORMAT_NV12, media::PIXEL_FORMAT_ARGB,
+          media::PIXEL_FORMAT_XRGB, media::PIXEL_FORMAT_ABGR,
+          media::PIXEL_FORMAT_XBGR};
   return base::make_span(kGetPixelFormatsMappableToWebRtcVideoFrameBuffer);
 }
 
@@ -490,10 +503,9 @@ scoped_refptr<media::VideoFrame> ConvertFromMappedWebRtcVideoFrameBuffer(
       return nullptr;
   }
   // The bind ensures that we keep a reference to the underlying buffer.
-  video_frame->AddDestructionObserver(
-      ConvertToBaseOnceCallback(CrossThreadBindOnce(
-          base::DoNothing::Once<const scoped_refptr<rtc::RefCountInterface>&>(),
-          scoped_refptr<webrtc::VideoFrameBuffer>(buffer))));
+  video_frame->AddDestructionObserver(ConvertToBaseOnceCallback(
+      CrossThreadBindOnce([](const scoped_refptr<rtc::RefCountInterface>&) {},
+                          scoped_refptr<webrtc::VideoFrameBuffer>(buffer))));
   return video_frame;
 }
 

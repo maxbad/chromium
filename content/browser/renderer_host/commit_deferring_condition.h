@@ -9,11 +9,21 @@
 
 namespace content {
 
-// Base class allowing clients to defer a navigation that's ready to commit.
-// See commit_deferring_condition_runner.h for more details.
+// Base class allowing clients to defer an activation or a navigation that's
+// ready to commit. See commit_deferring_condition_runner.h for more details.
 class CommitDeferringCondition {
  public:
-  enum Result {
+  enum class NavigationType {
+    kPrerenderedPageActivation,
+
+    // Other navigations including same-document navigations and restores from
+    // BackForwardCache.
+    // TODO(https://crbug.com/1226442): Split this into kBackForwardCache and
+    // kNewDocumentLoad.
+    kOther,
+  };
+
+  enum class Result {
     // Returned when the condition is satisfied and the client can
     // synchronously proceed to commit the navigation.
     kProceed,

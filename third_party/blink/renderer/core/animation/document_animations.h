@@ -31,6 +31,8 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_ANIMATION_DOCUMENT_ANIMATIONS_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_ANIMATION_DOCUMENT_ANIMATIONS_H_
 
+#include "base/auto_reset.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/blink/renderer/core/animation/animation.h"
 #include "third_party/blink/renderer/core/dom/document_lifecycle.h"
 #include "third_party/blink/renderer/platform/heap/member.h"
@@ -87,6 +89,20 @@ class CORE_EXPORT DocumentAnimations final
   //
   // https://github.com/w3c/csswg-drafts/issues/5261
   void ValidateTimelines();
+
+  // Add an element to the set of elements with a pending animation update.
+  // The elements in the set can be applied later using,
+  // ApplyPendingElementUpdates.
+  //
+  // It's invalid to call this function if there is no current
+  // CSSAnimationUpdateScope.
+  void AddElementWithPendingAnimationUpdate(Element&);
+
+  // Apply pending updates for any elements previously added during AddElement-
+  // WithPendingAnimationUpdate.
+  void ApplyPendingElementUpdates();
+
+  void AddPendingOldStyleForElement(Element&);
 
   const HeapHashSet<WeakMember<AnimationTimeline>>& GetTimelinesForTesting()
       const {

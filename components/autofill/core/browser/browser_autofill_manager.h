@@ -15,7 +15,6 @@
 #include "base/compiler_specific.h"
 #include "base/containers/circular_deque.h"
 #include "base/gtest_prod_util.h"
-#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
@@ -28,19 +27,19 @@
 #include "components/autofill/core/browser/autofill_manager.h"
 #include "components/autofill/core/browser/field_filler.h"
 #include "components/autofill/core/browser/form_types.h"
-#include "components/autofill/core/browser/metrics/address_form_event_logger.h"
-#include "components/autofill/core/browser/metrics/credit_card_form_event_logger.h"
+#include "components/autofill/core/browser/metrics/form_events/address_form_event_logger.h"
+#include "components/autofill/core/browser/metrics/form_events/credit_card_form_event_logger.h"
 #include "components/autofill/core/browser/payments/autofill_offer_manager.h"
 #include "components/autofill/core/browser/payments/card_unmask_delegate.h"
 #include "components/autofill/core/browser/payments/credit_card_access_manager.h"
 #include "components/autofill/core/browser/payments/full_card_request.h"
 #include "components/autofill/core/browser/personal_data_manager.h"
+#include "components/autofill/core/browser/single_field_form_fill_router.h"
 #include "components/autofill/core/browser/sync_utils.h"
 #include "components/autofill/core/browser/ui/popup_types.h"
 #include "components/autofill/core/common/dense_set.h"
 #include "components/autofill/core/common/form_data.h"
 #include "components/autofill/core/common/signatures.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/abseil-cpp/absl/types/variant.h"
 
 namespace gfx {
@@ -75,15 +74,18 @@ enum class ValuePatternsMetric {
 
 // Manages saving and restoring the user's personal information entered into web
 // forms. One per frame; owned by the AutofillDriver.
-class BrowserAutofillManager
-    : public AutofillManager,
-      public AutocompleteHistoryManager::SuggestionsHandler,
-      public CreditCardAccessManager::Accessor {
+class BrowserAutofillManager : public AutofillManager,
+                               public SingleFieldFormFiller::SuggestionsHandler,
+                               public CreditCardAccessManager::Accessor {
  public:
   BrowserAutofillManager(AutofillDriver* driver,
                          AutofillClient* client,
                          const std::string& app_locale,
                          AutofillDownloadManagerState enable_download_manager);
+
+  BrowserAutofillManager(const BrowserAutofillManager&) = delete;
+  BrowserAutofillManager& operator=(const BrowserAutofillManager&) = delete;
+
   ~BrowserAutofillManager() override;
 
   void ShowAutofillSettings(bool show_credit_card_settings);
@@ -127,7 +129,9 @@ class BrowserAutofillManager
 #endif
 
   // Called from our external delegate so they cannot be private.
-  virtual void FillOrPreviewForm(AutofillDriver::RendererFormDataAction action,
+  // FillCreditCardForm() is also called by Autofill Assistant through
+  // ContentAutofillDriver::FillFormForAssistant().
+  virtual void FillOrPreviewForm(mojom::RendererFormDataAction action,
                                  int query_id,
                                  const FormData& form,
                                  const FormFieldData& field,
@@ -141,10 +145,18 @@ class BrowserAutofillManager
                           const FormData& form,
                           const FormFieldData& field);
 
-  // Called from autofill assistant.
+  // Called only from Autofill Assistant through
+  // ContentAutofillDriver::FillFormForAssistant().
   virtual void FillProfileForm(const autofill::AutofillProfile& profile,
                                const FormData& form,
                                const FormFieldData& field);
+
+  // Fetches the related virtual card information given the related actual card
+  // |guid| and fills the information into the form.
+  virtual void FillVirtualCardInformation(const std::string& guid,
+                                          int query_id,
+                                          const FormData& form,
+                                          const FormFieldData& field);
 
   // Returns true if the value/identifier is deletable. Fills out
   // |title| and |body| with relevant user-facing text.
@@ -157,12 +169,13 @@ class BrowserAutofillManager
   // from the database. Returns true if deletion is allowed.
   bool RemoveAutofillProfileOrCreditCard(int unique_id);
 
-  // Remove the specified Autocomplete entry.
-  void RemoveAutocompleteEntry(const std::u16string& name,
-                               const std::u16string& value);
+  // Remove the specified suggestion from single field filling.
+  void RemoveCurrentSingleFieldSuggestion(const std::u16string& name,
+                                          const std::u16string& value);
 
-  // Invoked when the user selected |value| in the Autocomplete drop-down.
-  void OnAutocompleteEntrySelected(const std::u16string& value);
+  // Invoked when the user selected |value| in a suggestions list from single
+  // field filling.
+  void OnSingleFieldSuggestionSelected(const std::u16string& value);
 
   // Invoked when the user selects the "Hide Suggestions" item in the
   // Autocomplete drop-down.
@@ -223,7 +236,7 @@ class BrowserAutofillManager
       const std::vector<FormStructure*>& forms) override;
   void Reset() override;
 
-  // AutocompleteHistoryManager::SuggestionsHandler:
+  // SingleFieldFormFiller::SuggestionsHandler:
   void OnSuggestionsReturned(
       int query_id,
       bool autoselect_first_suggestion,
@@ -302,15 +315,12 @@ class BrowserAutofillManager
 
  protected:
   // Test code should prefer to use this constructor.
-  BrowserAutofillManager(
-      AutofillDriver* driver,
-      AutofillClient* client,
-      PersonalDataManager* personal_data,
-      AutocompleteHistoryManager* autocomplete_history_manager,
-      const std::string app_locale = "en-US",
-      AutofillDownloadManagerState enable_download_manager =
-          DISABLE_AUTOFILL_DOWNLOAD_MANAGER,
-      std::unique_ptr<CreditCardAccessManager> cc_access_manager = nullptr);
+  BrowserAutofillManager(AutofillDriver* driver,
+                         AutofillClient* client,
+                         PersonalDataManager* personal_data,
+                         const std::string app_locale = "en-US",
+                         AutofillDownloadManagerState enable_download_manager =
+                             DISABLE_AUTOFILL_DOWNLOAD_MANAGER);
 
   // Uploads the form data to the Autofill server. |observed_submission|
   // indicates that upload is the result of a submission event.
@@ -351,11 +361,11 @@ class BrowserAutofillManager
   void OnTextFieldDidScrollImpl(const FormData& form,
                                 const FormFieldData& field,
                                 const gfx::RectF& bounding_box) override {}
-  void OnQueryFormFieldAutofillImpl(int query_id,
-                                    const FormData& form,
-                                    const FormFieldData& field,
-                                    const gfx::RectF& transformed_box,
-                                    bool autoselect_first_suggestion) override;
+  void OnAskForValuesToFillImpl(int query_id,
+                                const FormData& form,
+                                const FormFieldData& field,
+                                const gfx::RectF& transformed_box,
+                                bool autoselect_first_suggestion) override;
   void OnSelectControlDidChangeImpl(const FormData& form,
                                     const FormFieldData& field,
                                     const gfx::RectF& bounding_box) override;
@@ -367,6 +377,18 @@ class BrowserAutofillManager
 
   // Exposed for testing.
   FormData* pending_form_data() { return pending_form_data_.get(); }
+
+#ifdef UNIT_TEST
+  void set_single_field_form_fill_router_for_test(
+      std::unique_ptr<SingleFieldFormFillRouter> router) {
+    single_field_form_fill_router_ = std::move(router);
+  }
+
+  void set_credit_card_access_manager_for_test(
+      std::unique_ptr<CreditCardAccessManager> manager) {
+    credit_card_access_manager_ = std::move(manager);
+  }
+#endif  // UNIT_TEST
 
  private:
   FRIEND_TEST_ALL_PREFIXES(BrowserAutofillManagerTest,
@@ -462,7 +484,7 @@ class BrowserAutofillManager
 
   // CreditCardAccessManager::Accessor
   void OnCreditCardFetched(
-      bool did_succeed,
+      CreditCardFetchResult result,
       const CreditCard* credit_card = nullptr,
       const std::u16string& cvc = std::u16string()) override;
 
@@ -485,16 +507,15 @@ class BrowserAutofillManager
 
   // Fills or previews the credit card form.
   // Assumes the form and field are valid.
-  void FillOrPreviewCreditCardForm(
-      AutofillDriver::RendererFormDataAction action,
-      int query_id,
-      const FormData& form,
-      const FormFieldData& field,
-      const CreditCard* credit_card);
+  void FillOrPreviewCreditCardForm(mojom::RendererFormDataAction action,
+                                   int query_id,
+                                   const FormData& form,
+                                   const FormFieldData& field,
+                                   const CreditCard* credit_card);
 
   // Fills or previews the profile form.
   // Assumes the form and field are valid.
-  void FillOrPreviewProfileForm(AutofillDriver::RendererFormDataAction action,
+  void FillOrPreviewProfileForm(mojom::RendererFormDataAction action,
                                 int query_id,
                                 const FormData& form,
                                 const FormFieldData& field,
@@ -502,7 +523,7 @@ class BrowserAutofillManager
 
   // Fills or previews |data_model| in the |form|.
   void FillOrPreviewDataModelForm(
-      AutofillDriver::RendererFormDataAction action,
+      mojom::RendererFormDataAction action,
       int query_id,
       const FormData& form,
       const FormFieldData& field,
@@ -595,6 +616,7 @@ class BrowserAutofillManager
       bool should_notify,
       const std::u16string& cvc,
       uint32_t profile_form_bitmask,
+      mojom::RendererFormDataAction action,
       std::string* failure_to_fill);
 
   // TODO(crbug/896689): Remove code duplication once experiment is finished.
@@ -663,9 +685,9 @@ class BrowserAutofillManager
 
   base::circular_deque<std::string> autofilled_form_signatures_;
 
-  // Handles single-field autocomplete form data.
-  // May be NULL.  NULL indicates OTR.
-  base::WeakPtr<AutocompleteHistoryManager> autocomplete_history_manager_;
+  // Handles routing single-field form filling requests, such as for
+  // Autocomplete and merchant promo codes.
+  std::unique_ptr<SingleFieldFormFillRouter> single_field_form_fill_router_;
 
   // Utilities for logging form events.
   std::unique_ptr<AddressFormEventLogger> address_form_event_logger_;
@@ -712,7 +734,7 @@ class BrowserAutofillManager
 
   // Collected information about the autofill form where a credit card will be
   // filled.
-  AutofillDriver::RendererFormDataAction credit_card_action_;
+  mojom::RendererFormDataAction credit_card_action_;
   int credit_card_query_id_ = -1;
   FormData credit_card_form_;
   FormFieldData credit_card_field_;
@@ -748,7 +770,6 @@ class BrowserAutofillManager
   friend class FormStructureBrowserTest;
   friend class GetMatchingTypesTest;
   friend class CreditCardAccessoryControllerTest;
-  DISALLOW_COPY_AND_ASSIGN(BrowserAutofillManager);
 };
 
 }  // namespace autofill

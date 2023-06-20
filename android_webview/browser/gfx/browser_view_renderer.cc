@@ -7,7 +7,6 @@
 #include <memory>
 #include <utility>
 
-#include "android_webview/browser/gfx/aw_attaching_to_window_recorder.h"
 #include "android_webview/browser/gfx/browser_view_renderer_client.h"
 #include "android_webview/browser/gfx/compositor_frame_consumer.h"
 #include "android_webview/browser/gfx/root_frame_sink.h"
@@ -36,8 +35,8 @@
 #include "third_party/skia/include/core/SkPicture.h"
 #include "third_party/skia/include/core/SkPictureRecorder.h"
 #include "ui/gfx/geometry/point.h"
-#include "ui/gfx/geometry/scroll_offset.h"
 #include "ui/gfx/geometry/vector2d_conversions.h"
+#include "ui/gfx/geometry/vector2d_f.h"
 
 namespace android_webview {
 
@@ -115,17 +114,14 @@ BrowserViewRenderer::BrowserViewRenderer(
       max_page_scale_factor_(0.f),
       on_new_picture_enable_(false),
       clear_view_(false),
-      offscreen_pre_raster_(false),
-      recorder_(base::MakeRefCounted<AwAttachingToWindowRecorder>()) {
+      offscreen_pre_raster_(false) {
   begin_frame_source_ = std::make_unique<BeginFrameSourceWebView>();
   root_frame_sink_proxy_ = std::make_unique<RootFrameSinkProxy>(
       ui_task_runner_, this, begin_frame_source_.get());
   UpdateBeginFrameSource();
-  recorder_->Start();
 }
 
 BrowserViewRenderer::~BrowserViewRenderer() {
-  recorder_->OnDestroyed();
   DCHECK(compositor_map_.empty());
   DCHECK(!current_compositor_frame_consumer_);
 
@@ -438,12 +434,10 @@ sk_sp<SkPicture> BrowserViewRenderer::CapturePicture(int width,
       // value when scroll_reset is out of scope.
       base::AutoReset<gfx::Vector2dF> scroll_reset(&scroll_offset_unscaled_,
                                                    gfx::Vector2dF());
-      compositor_->DidChangeRootLayerScrollOffset(
-          gfx::ScrollOffset(scroll_offset_unscaled_));
+      compositor_->DidChangeRootLayerScrollOffset(scroll_offset_unscaled_);
       CompositeSW(rec_canvas, /*software_canvas=*/false);
     }
-    compositor_->DidChangeRootLayerScrollOffset(
-        gfx::ScrollOffset(scroll_offset_unscaled_));
+    compositor_->DidChangeRootLayerScrollOffset(scroll_offset_unscaled_);
   }
   return recorder.finishRecordingAsPicture();
 }
@@ -527,7 +521,6 @@ void BrowserViewRenderer::OnAttachedToWindow(int width, int height) {
   if (offscreen_pre_raster_)
     ComputeTileRectAndUpdateMemoryPolicy();
   UpdateBeginFrameSource();
-  recorder_->OnAttachedToWindow();
 }
 
 void BrowserViewRenderer::OnDetachedFromWindow() {
@@ -702,8 +695,7 @@ void BrowserViewRenderer::ScrollTo(const gfx::Vector2d& scroll_offset) {
                        scroll_offset_unscaled.y());
 
   if (compositor_)
-    compositor_->DidChangeRootLayerScrollOffset(
-        gfx::ScrollOffset(scroll_offset_unscaled));
+    compositor_->DidChangeRootLayerScrollOffset(scroll_offset_unscaled);
 }
 
 void BrowserViewRenderer::RestoreScrollAfterTransition(

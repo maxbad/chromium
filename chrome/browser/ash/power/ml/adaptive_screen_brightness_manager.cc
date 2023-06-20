@@ -7,8 +7,8 @@
 #include <cmath>
 #include <utility>
 
+#include "ash/constants/ash_pref_names.h"
 #include "ash/constants/devicetype.h"
-#include "ash/public/cpp/ash_pref_names.h"
 #include "base/bind.h"
 #include "base/process/launch.h"
 #include "base/task/post_task.h"
@@ -37,13 +37,13 @@
 #include "ui/aura/env.h"
 #include "ui/compositor/compositor.h"
 
-namespace chromeos {
+namespace ash {
 namespace power {
 namespace ml {
 
 namespace {
 // Count number of key, mouse and touch events in the past hour.
-constexpr auto kUserInputEventsDuration = base::TimeDelta::FromHours(1);
+constexpr auto kUserInputEventsDuration = base::Hours(1);
 
 // Granularity of input events is per minute.
 constexpr int kNumUserInputEventsBuckets = kUserInputEventsDuration.InMinutes();
@@ -57,8 +57,9 @@ Browser* GetFocusedOrTopmostVisibleBrowser() {
   BrowserList* browser_list = BrowserList::GetInstance();
   DCHECK(browser_list);
 
-  for (auto browser_iterator = browser_list->begin_last_active();
-       browser_iterator != browser_list->end_last_active();
+  for (auto browser_iterator =
+           browser_list->begin_browsers_ordered_by_activation();
+       browser_iterator != browser_list->end_browsers_ordered_by_activation();
        ++browser_iterator) {
     browser = *browser_iterator;
     if (browser->profile()->IsOffTheRecord() || !browser->window()->IsVisible())
@@ -148,7 +149,7 @@ AdaptiveScreenBrightnessManager::~AdaptiveScreenBrightnessManager() = default;
 
 std::unique_ptr<AdaptiveScreenBrightnessManager>
 AdaptiveScreenBrightnessManager::CreateInstance() {
-  if (chromeos::GetDeviceType() != chromeos::DeviceType::kChromebook)
+  if (GetDeviceType() != DeviceType::kChromebook)
     return nullptr;
 
   chromeos::PowerManagerClient* const power_manager_client =
@@ -480,4 +481,4 @@ void AdaptiveScreenBrightnessManager::LogEvent() {
 
 }  // namespace ml
 }  // namespace power
-}  // namespace chromeos
+}  // namespace ash

@@ -54,9 +54,9 @@ class WebRequestProxyingURLLoaderFactory
     InProgressRequest(
         WebRequestProxyingURLLoaderFactory* factory,
         uint64_t request_id,
+        int32_t network_service_request_id,
         int32_t view_routing_id,
         int32_t frame_routing_id,
-        int32_t network_service_request_id,
         uint32_t options,
         ukm::SourceIdObj ukm_source_id,
         const network::ResourceRequest& request,
@@ -68,6 +68,10 @@ class WebRequestProxyingURLLoaderFactory
                       uint64_t request_id,
                       int32_t frame_routing_id,
                       const network::ResourceRequest& request);
+
+    InProgressRequest(const InProgressRequest&) = delete;
+    InProgressRequest& operator=(const InProgressRequest&) = delete;
+
     ~InProgressRequest() override;
 
     void Restart();
@@ -150,7 +154,10 @@ class WebRequestProxyingURLLoaderFactory
     void ContinueToStartRequest(State state_on_error, int error_code);
     void ContinueToStartRequestWithOk();
     void ContinueToHandleOverrideHeaders(int error_code);
-    void ContinueToResponseStarted(int error_code);
+    void OverwriteHeadersAndContinueToResponseStarted(int error_code);
+    void AssignParsedHeadersAndContinueToResponseStarted(
+        network::mojom::ParsedHeadersPtr parsed_headers);
+    void ContinueToResponseStarted();
     void ContinueAuthRequest(const net::AuthChallengeInfo& auth_info,
                              WebRequestAPI::AuthRequestCallback callback,
                              int error_code);
@@ -232,20 +239,18 @@ class WebRequestProxyingURLLoaderFactory
     // extensions made to headers in their callbacks.
     struct FollowRedirectParams {
       FollowRedirectParams();
+      FollowRedirectParams(const FollowRedirectParams&) = delete;
+      FollowRedirectParams& operator=(const FollowRedirectParams&) = delete;
       ~FollowRedirectParams();
       std::vector<std::string> removed_headers;
       net::HttpRequestHeaders modified_headers;
       net::HttpRequestHeaders modified_cors_exempt_headers;
       absl::optional<GURL> new_url;
-
-      DISALLOW_COPY_AND_ASSIGN(FollowRedirectParams);
     };
     std::unique_ptr<FollowRedirectParams> pending_follow_redirect_params_;
     State state_ = State::kInProgress;
 
     base::WeakPtrFactory<InProgressRequest> weak_factory_{this};
-
-    DISALLOW_COPY_AND_ASSIGN(InProgressRequest);
   };
 
   WebRequestProxyingURLLoaderFactory(
@@ -264,6 +269,11 @@ class WebRequestProxyingURLLoaderFactory
           header_client_receiver,
       WebRequestAPI::ProxySet* proxies,
       content::ContentBrowserClient::URLLoaderFactoryType loader_factory_type);
+
+  WebRequestProxyingURLLoaderFactory(
+      const WebRequestProxyingURLLoaderFactory&) = delete;
+  WebRequestProxyingURLLoaderFactory& operator=(
+      const WebRequestProxyingURLLoaderFactory&) = delete;
 
   ~WebRequestProxyingURLLoaderFactory() override;
 
@@ -358,8 +368,6 @@ class WebRequestProxyingURLLoaderFactory
   base::CallbackListSubscription shutdown_notifier_subscription_;
 
   base::WeakPtrFactory<WebRequestProxyingURLLoaderFactory> weak_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(WebRequestProxyingURLLoaderFactory);
 };
 
 }  // namespace extensions

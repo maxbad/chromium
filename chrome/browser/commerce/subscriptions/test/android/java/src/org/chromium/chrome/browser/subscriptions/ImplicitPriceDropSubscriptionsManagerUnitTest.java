@@ -30,8 +30,10 @@ import org.mockito.MockitoAnnotations;
 import org.robolectric.annotation.Config;
 
 import org.chromium.base.Callback;
+import org.chromium.base.FeatureList;
 import org.chromium.base.UserDataHost;
 import org.chromium.base.test.BaseRobolectricTestRunner;
+import org.chromium.chrome.browser.flags.ChromeFeatureList;
 import org.chromium.chrome.browser.lifecycle.ActivityLifecycleDispatcher;
 import org.chromium.chrome.browser.lifecycle.PauseResumeWithNativeObserver;
 import org.chromium.chrome.browser.preferences.SharedPreferencesManager;
@@ -46,7 +48,6 @@ import org.chromium.chrome.browser.tabmodel.TabModel;
 import org.chromium.chrome.browser.tabmodel.TabModelObserver;
 import org.chromium.chrome.browser.tabmodel.TabModelSelector;
 import org.chromium.chrome.browser.tasks.tab_management.PriceTrackingUtilities;
-import org.chromium.chrome.browser.tasks.tab_management.TabUiFeatureUtilities;
 import org.chromium.chrome.test.util.browser.Features;
 import org.chromium.components.browser_ui.notifications.MockNotificationManagerProxy;
 import org.chromium.url.GURL;
@@ -105,6 +106,7 @@ public class ImplicitPriceDropSubscriptionsManagerUnitTest {
     private SharedPreferencesManager mSharedPreferencesManager;
     private MockNotificationManagerProxy mMockNotificationManager;
     private PriceDropNotificationManager mPriceDropNotificationManager;
+    private FeatureList.TestValues mTestValues;
 
     @Before
     public void setUp() {
@@ -117,8 +119,7 @@ public class ImplicitPriceDropSubscriptionsManagerUnitTest {
         doReturn(OFFER1_ID).when(mShoppingPersistedTabData1).getMainOfferId();
         doReturn(OFFER2_ID).when(mShoppingPersistedTabData2).getMainOfferId();
         long fakeTimestamp = System.currentTimeMillis()
-                - TimeUnit.SECONDS.toMillis(
-                        ShoppingPersistedTabData.STALE_TAB_THRESHOLD_SECONDS.getValue())
+                - TimeUnit.SECONDS.toMillis(ShoppingPersistedTabData.getStaleTabThresholdSeconds())
                 + TimeUnit.DAYS.toMillis(7);
         doReturn(fakeTimestamp).when(mCriticalPersistedTabData1).getTimestampMillis();
         doReturn(fakeTimestamp).when(mCriticalPersistedTabData2).getTimestampMillis();
@@ -138,10 +139,16 @@ public class ImplicitPriceDropSubscriptionsManagerUnitTest {
         mSharedPreferencesManager.writeLong(
                 ImplicitPriceDropSubscriptionsManager.CHROME_MANAGED_SUBSCRIPTIONS_TIMESTAMP,
                 System.currentTimeMillis()
-                        - ImplicitPriceDropSubscriptionsManager
-                                  .CHROME_MANAGED_SUBSCRIPTIONS_TIME_THRESHOLD_MS);
+                        - TimeUnit.SECONDS.toMillis(
+                                CommerceSubscriptionsServiceConfig.getStaleTabLowerBoundSeconds()));
         PriceTrackingUtilities.setIsSignedInAndSyncEnabledForTesting(true);
-        TabUiFeatureUtilities.ENABLE_PRICE_NOTIFICATION.setForTesting(true);
+
+        mTestValues = new FeatureList.TestValues();
+        mTestValues.addFeatureFlagOverride(ChromeFeatureList.COMMERCE_PRICE_TRACKING, true);
+        mTestValues.addFieldTrialParamOverride(ChromeFeatureList.COMMERCE_PRICE_TRACKING,
+                PriceTrackingUtilities.PRICE_NOTIFICATION_PARAM, "true");
+        FeatureList.setTestValues(mTestValues);
+
         mMockNotificationManager = new MockNotificationManagerProxy();
         mMockNotificationManager.setNotificationsEnabled(true);
         PriceDropNotificationManager.setNotificationManagerForTesting(mMockNotificationManager);
@@ -183,7 +190,10 @@ public class ImplicitPriceDropSubscriptionsManagerUnitTest {
     public void testInitialSubscription_FeatureDisabled() {
         doReturn(2).when(mTabModel).getCount();
 
-        TabUiFeatureUtilities.ENABLE_PRICE_NOTIFICATION.setForTesting(false);
+        mTestValues.addFieldTrialParamOverride(ChromeFeatureList.COMMERCE_PRICE_TRACKING,
+                PriceTrackingUtilities.PRICE_NOTIFICATION_PARAM, "false");
+        FeatureList.setTestValues(mTestValues);
+
         mImplicitSubscriptionsManager.initializeSubscriptions();
 
         verify(mSubscriptionsManager, times(0)).subscribe(any(List.class), any(Callback.class));
@@ -215,8 +225,7 @@ public class ImplicitPriceDropSubscriptionsManagerUnitTest {
     @Test
     public void testInitialSubscription_TabTooOld() {
         doReturn(System.currentTimeMillis()
-                - TimeUnit.SECONDS.toMillis(
-                        ShoppingPersistedTabData.STALE_TAB_THRESHOLD_SECONDS.getValue())
+                - TimeUnit.SECONDS.toMillis(ShoppingPersistedTabData.getStaleTabThresholdSeconds())
                 - TimeUnit.DAYS.toMillis(7))
                 .when(mCriticalPersistedTabData1)
                 .getTimestampMillis();

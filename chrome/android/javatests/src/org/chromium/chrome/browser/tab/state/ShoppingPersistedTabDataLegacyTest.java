@@ -6,7 +6,7 @@ package org.chromium.chrome.browser.tab.state;
 
 import static org.mockito.Mockito.doReturn;
 
-import android.support.test.filters.SmallTest;
+import androidx.test.filters.SmallTest;
 
 import org.junit.Assert;
 import org.junit.Before;
@@ -41,7 +41,7 @@ import java.util.concurrent.TimeUnit;
  * implementation.
  */
 @RunWith(BaseJUnit4ClassRunner.class)
-@EnableFeatures({ChromeFeatureList.TAB_GRID_LAYOUT_ANDROID + "<Study"})
+@EnableFeatures({ChromeFeatureList.COMMERCE_PRICE_TRACKING + "<Study"})
 @CommandLineFlags.
 Add({ChromeSwitches.DISABLE_FIRST_RUN_EXPERIENCE, "force-fieldtrials=Study/Group"})
 public class ShoppingPersistedTabDataLegacyTest {
@@ -67,7 +67,8 @@ public class ShoppingPersistedTabDataLegacyTest {
                 mOptimizationGuideBridgeJniMock,
                 HintsProto.OptimizationType.SHOPPING_PAGE_PREDICTOR.getNumber(),
                 OptimizationGuideDecision.TRUE, null);
-        PersistedTabDataConfiguration.setUseTestConfig(true);
+        TestThreadUtils.runOnUiThreadBlocking(
+                () -> PersistedTabDataConfiguration.setUseTestConfig(true));
     }
 
     @SmallTest

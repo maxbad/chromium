@@ -16,10 +16,11 @@ import static org.mockito.Mockito.when;
 import static org.chromium.base.test.util.Restriction.RESTRICTION_TYPE_LOW_END_DEVICE;
 import static org.chromium.base.test.util.Restriction.RESTRICTION_TYPE_NON_LOW_END_DEVICE;
 import static org.chromium.chrome.browser.tab.TabCreationState.LIVE_IN_BACKGROUND;
-import static org.chromium.chrome.test.util.ViewUtils.createMotionEvent;
+import static org.chromium.ui.test.util.ViewUtils.createMotionEvent;
 
 import android.content.Context;
 import android.support.test.InstrumentationRegistry;
+import android.view.ContextThemeWrapper;
 import android.view.MotionEvent;
 import android.view.MotionEvent.PointerCoords;
 import android.view.MotionEvent.PointerProperties;
@@ -42,6 +43,7 @@ import org.mockito.stubbing.Answer;
 
 import org.chromium.base.Log;
 import org.chromium.base.MathUtils;
+import org.chromium.base.jank_tracker.DummyJankTracker;
 import org.chromium.base.supplier.ObservableSupplierImpl;
 import org.chromium.base.supplier.OneshotSupplierImpl;
 import org.chromium.base.test.UiThreadTest;
@@ -52,6 +54,7 @@ import org.chromium.base.test.util.DisableIf;
 import org.chromium.base.test.util.DisabledTest;
 import org.chromium.base.test.util.Feature;
 import org.chromium.base.test.util.Restriction;
+import org.chromium.chrome.R;
 import org.chromium.chrome.browser.accessibility_tab_switcher.OverviewListLayout;
 import org.chromium.chrome.browser.compositor.layouts.content.TabContentManager;
 import org.chromium.chrome.browser.flags.CachedFeatureFlags;
@@ -179,12 +182,13 @@ public class LayoutManagerTest implements MockTabModelDelegate {
 
     private void initializeLayoutManagerPhone(int standardTabCount, int incognitoTabCount,
             int standardIndexSelected, int incognitoIndexSelected, boolean incognitoSelected) {
-        Context context = InstrumentationRegistry.getContext();
+        Context context =
+                new ContextThemeWrapper(InstrumentationRegistry.getContext(), R.style.ColorOverlay);
 
         mDpToPx = context.getResources().getDisplayMetrics().density;
 
         when(mStartSurface.getController()).thenReturn(mStartSurfaceController);
-        when(mStartSurface.getTabListDelegate()).thenReturn(mTabListDelegate);
+        when(mStartSurface.getGridTabListDelegate()).thenReturn(mTabListDelegate);
         when(mStartSurface.getTabGridDialogVisibilitySupplier()).thenReturn(() -> false);
 
         mTabModelSelector = new MockTabModelSelector(standardTabCount, incognitoTabCount, this);
@@ -214,7 +218,7 @@ public class LayoutManagerTest implements MockTabModelDelegate {
 
         mManagerPhone = new LayoutManagerChromePhone(layoutManagerHost, container, mStartSurface,
                 tabContentManagerSupplier, null, overviewModeBehaviorSupplier,
-                () -> mTopUiThemeColorProvider);
+                () -> mTopUiThemeColorProvider, new DummyJankTracker());
         verify(mStartSurfaceController)
                 .addOverviewModeObserver(mStartSurfaceOverviewModeCaptor.capture());
 
@@ -737,7 +741,7 @@ public class LayoutManagerTest implements MockTabModelDelegate {
 
             Assert.assertEquals(expectedTabListMode,
                     startSurfaceLayout.getStartSurfaceForTesting()
-                            .getTabListDelegate()
+                            .getGridTabListDelegate()
                             .getListModeForTesting());
         });
     }

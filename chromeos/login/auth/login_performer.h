@@ -10,7 +10,6 @@
 
 #include "base/callback.h"
 #include "base/component_export.h"
-#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "chromeos/login/auth/auth_status_consumer.h"
@@ -62,6 +61,10 @@ class COMPONENT_EXPORT(CHROMEOS_LOGIN_AUTH) LoginPerformer
 
   LoginPerformer(scoped_refptr<base::SequencedTaskRunner> task_runner,
                  Delegate* delegate);
+
+  LoginPerformer(const LoginPerformer&) = delete;
+  LoginPerformer& operator=(const LoginPerformer&) = delete;
+
   ~LoginPerformer() override;
 
   // Performs a login for |user_context|.
@@ -77,8 +80,7 @@ class COMPONENT_EXPORT(CHROMEOS_LOGIN_AUTH) LoginPerformer
   void LoginAsPublicSession(const UserContext& user_context);
 
   // Performs a login into the kiosk mode account with |app_account_id|.
-  void LoginAsKioskAccount(const AccountId& app_account_id,
-                           bool use_guest_mount);
+  void LoginAsKioskAccount(const AccountId& app_account_id);
 
   // Performs a login into the ARC kiosk mode account with |arc_app_account_id|.
   void LoginAsArcKioskAccount(const AccountId& arc_app_account_id);
@@ -208,7 +210,6 @@ class COMPONENT_EXPORT(CHROMEOS_LOGIN_AUTH) LoginPerformer
   AuthorizationMode auth_mode_ = AuthorizationMode::kInternal;
 
   base::WeakPtrFactory<LoginPerformer> weak_factory_{this};
-  DISALLOW_COPY_AND_ASSIGN(LoginPerformer);
 };
 
 }  // namespace chromeos

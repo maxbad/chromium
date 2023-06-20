@@ -14,7 +14,7 @@
 #include "base/run_loop.h"
 #include "base/test/bind.h"
 #include "base/test/task_environment.h"
-#include "chrome/browser/chromeos/file_manager/path_util.h"
+#include "chrome/browser/ash/file_manager/path_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sharesheet/sharesheet_types.h"
 #include "chrome/browser/webshare/prepare_directory_task.h"
@@ -67,6 +67,7 @@ class SharesheetClientUnitTest : public ChromeRenderViewHostTestHarness {
       content::WebContents* web_contents,
       const std::vector<base::FilePath>& file_paths,
       const std::vector<std::string>& content_types,
+      const std::vector<uint64_t>& file_sizes,
       const std::string& text,
       const std::string& title,
       sharesheet::DeliveredCallback delivered_callback) {
@@ -91,12 +92,12 @@ TEST_F(SharesheetClientUnitTest, TestDenyInIncognitoAfterDelay) {
           [&error](blink::mojom::ShareError in_error) { error = in_error; }));
 
   // Should be cancelled after 1-2 seconds. So 500ms is not enough.
-  task_environment()->FastForwardBy(base::TimeDelta::FromMilliseconds(500));
+  task_environment()->FastForwardBy(base::Milliseconds(500));
   EXPECT_EQ(error, blink::mojom::ShareError::INTERNAL_ERROR);
 
   // But 5*500ms > 2 seconds, so it should now be cancelled.
   for (int n = 0; n < 4; n++)
-    task_environment()->FastForwardBy(base::TimeDelta::FromMilliseconds(500));
+    task_environment()->FastForwardBy(base::Milliseconds(500));
   EXPECT_EQ(error, blink::mojom::ShareError::CANCELED);
 }
 

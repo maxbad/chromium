@@ -17,6 +17,7 @@
 #include "media/base/video_types.h"
 #include "media/capture/video/video_capture_feedback.h"
 #include "media/video/gpu_video_accelerator_factories.h"
+#include "media/video/renderable_gpu_memory_buffer_video_frame_pool.h"
 #include "third_party/blink/renderer/platform/platform_export.h"
 #include "third_party/webrtc/api/scoped_refptr.h"
 #include "third_party/webrtc/api/video/video_frame_buffer.h"
@@ -24,29 +25,6 @@
 #include "ui/gfx/geometry/size.h"
 
 namespace blink {
-
-// Controls whether to use the WebRtcVideoFrameAdapter or the
-// LegacyWebRtcVideoFrameAdapter as the adapter of media::VideoFrames.
-PLATFORM_EXPORT extern const base::Feature kWebRtcUseModernFrameAdapter;
-
-// TODO(https://crbug.com/1191986): When kWebRtcUseModernFrameAdapter is shipped
-// to 100%, delete the legacy adapter and this interface.
-class PLATFORM_EXPORT WebRtcVideoFrameAdapterInterface
-    : public webrtc::VideoFrameBuffer {
- public:
-  WebRtcVideoFrameAdapterInterface() = default;
-  ~WebRtcVideoFrameAdapterInterface() override = default;
-
-  virtual bool SupportsOptimizedScaling() const = 0;
-  virtual scoped_refptr<media::VideoFrame> getMediaVideoFrame() const = 0;
-};
-
-// Constructs a WebRtcVideoFrameAdapter or LegacyWebRtcVideoFrameAdapter with
-// null passed in as the shared resources. In order to pass in the type-specific
-// shared resources you need to manually check if kWebRtcUseModernFrameAdapter
-// is enabled and invoke the type-specific constructor.
-PLATFORM_EXPORT rtc::scoped_refptr<WebRtcVideoFrameAdapterInterface>
-CreateWebRtcVideoFrameAdapter(scoped_refptr<media::VideoFrame> frame);
 
 // The WebRtcVideoFrameAdapter implements webrtc::VideoFrameBuffer and is backed
 // by one or more media::VideoFrames.
@@ -68,7 +46,7 @@ CreateWebRtcVideoFrameAdapter(scoped_refptr<media::VideoFrame> frame);
 // or to the frame feeddback so that we may optionally use this information to
 // optimize future captured frames for these sizes.
 class PLATFORM_EXPORT WebRtcVideoFrameAdapter
-    : public WebRtcVideoFrameAdapterInterface {
+    : public webrtc::VideoFrameBuffer {
  public:
   class PLATFORM_EXPORT SharedResources
       : public base::RefCountedThreadSafe<SharedResources> {
@@ -126,6 +104,9 @@ class PLATFORM_EXPORT WebRtcVideoFrameAdapter
     media::VideoFramePool pool_;
     media::VideoFramePool pool_for_mapped_frames_;
     media::VideoFramePool pool_for_tmp_frames_;
+
+    std::unique_ptr<media::RenderableGpuMemoryBufferVideoFramePool>
+        accelerated_frame_pool_;
 
     base::Lock context_provider_lock_;
     scoped_refptr<viz::RasterContextProvider> raster_context_provider_
@@ -207,10 +188,7 @@ class PLATFORM_EXPORT WebRtcVideoFrameAdapter
       std::vector<scoped_refptr<media::VideoFrame>> scaled_frames,
       scoped_refptr<SharedResources> shared_resources);
 
-  bool SupportsOptimizedScaling() const override { return true; }
-  scoped_refptr<media::VideoFrame> getMediaVideoFrame() const override {
-    return frame_;
-  }
+  scoped_refptr<media::VideoFrame> getMediaVideoFrame() const { return frame_; }
 
   // Regardless of the pixel format used internally, kNative is returned
   // indicating that GetMappedFrameBuffer() or ToI420() is required to obtain

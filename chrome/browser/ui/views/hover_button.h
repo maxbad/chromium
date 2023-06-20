@@ -9,10 +9,10 @@
 
 #include "base/gtest_prod_util.h"
 #include "base/scoped_observation.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "ui/base/metadata/metadata_header_macros.h"
 #include "ui/views/controls/button/button.h"
 #include "ui/views/controls/button/menu_button.h"
+#include "ui/views/metadata/view_factory.h"
 
 namespace media_router {
 FORWARD_DECLARE_TEST(CastDialogSinkButtonTest, SetTitleLabel);
@@ -54,6 +54,8 @@ class HoverButton : public views::LabelButton {
   // When |resize_row_for_secondary_icon| is false, the button tries to
   // accommodate the view's preferred size by reducing the top and bottom
   // insets appropriately up to a value of 0.
+  // Warning: |icon_view| must have a fixed size and be correctly set during its
+  // constructor for the HoverButton to layout correctly.
   HoverButton(PressedCallback callback,
               std::unique_ptr<views::View> icon_view,
               const std::u16string& title,
@@ -114,5 +116,11 @@ class HoverButton : public views::LabelButton {
   base::ScopedObservation<views::View, views::ViewObserver> label_observation_{
       this};
 };
+
+BEGIN_VIEW_BUILDER(, HoverButton, views::LabelButton)
+VIEW_BUILDER_METHOD(SetTitleTextStyle, views::style::TextStyle, SkColor)
+END_VIEW_BUILDER
+
+DEFINE_VIEW_BUILDER(, HoverButton)
 
 #endif  // CHROME_BROWSER_UI_VIEWS_HOVER_BUTTON_H_

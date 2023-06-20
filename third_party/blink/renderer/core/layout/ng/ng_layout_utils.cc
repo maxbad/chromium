@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/core/layout/ng/ng_layout_utils.h"
 
+#include "third_party/blink/renderer/core/html/html_element.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_box_fragment.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_constraint_space.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_layout_result.h"
@@ -75,12 +76,12 @@ bool BlockSizeMayChange(const NGBlockNode& node,
                         const NGConstraintSpace& old_space,
                         const NGLayoutResult& layout_result) {
   DCHECK_EQ(new_space.IsFixedBlockSize(), old_space.IsFixedBlockSize());
-  DCHECK_EQ(new_space.IsFixedBlockSizeIndefinite(),
-            old_space.IsFixedBlockSizeIndefinite());
+  DCHECK_EQ(new_space.IsInitialBlockSizeIndefinite(),
+            old_space.IsInitialBlockSizeIndefinite());
   DCHECK_EQ(new_space.BlockAutoBehavior(), old_space.BlockAutoBehavior());
   DCHECK_EQ(new_space.IsTableCellChild(), old_space.IsTableCellChild());
-  DCHECK_EQ(new_space.IsMeasuringRestrictedBlockSizeTableCellChild(),
-            old_space.IsMeasuringRestrictedBlockSizeTableCellChild());
+  DCHECK_EQ(new_space.IsRestrictedBlockSizeTableCellChild(),
+            old_space.IsRestrictedBlockSizeTableCellChild());
 
   if (node.IsQuirkyAndFillsViewport())
     return true;
@@ -321,13 +322,6 @@ NGLayoutCacheStatus CalculateSizeBasedLayoutCacheStatusWithGeometry(
   }
 
   if (has_descendant_that_depends_on_percentage_block_size) {
-    // %-block-size children of table-cells have different behavior if they are
-    // in the "measure" or "layout" phase.
-    // Instead of trying to capture that logic here, we always miss the cache.
-    if (new_space.IsTableCell() &&
-        new_space.IsFixedBlockSize() != old_space.IsFixedBlockSize())
-      return NGLayoutCacheStatus::kNeedsLayout;
-
     // If our initial block-size is definite, we know that if we change our
     // block-size we'll affect any descendant that depends on the resulting
     // percentage block-size.

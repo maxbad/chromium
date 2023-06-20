@@ -6,10 +6,10 @@
 
 #include <utility>
 
+#include "base/android/callback_android.h"
 #include "base/android/jni_android.h"
 #include "base/android/jni_array.h"
 #include "base/android/jni_string.h"
-#include "base/macros.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "chrome/android/chrome_jni_headers/BrowsingHistoryBridge_jni.h"
@@ -52,13 +52,15 @@ void BrowsingHistoryBridge::QueryHistory(
     JNIEnv* env,
     const JavaParamRef<jobject>& obj,
     const JavaParamRef<jobject>& j_result_obj,
-    jstring j_query) {
+    jstring j_query,
+    jboolean j_host_only) {
   j_query_result_obj_.Reset(env, j_result_obj);
   query_history_continuation_.Reset();
 
   history::QueryOptions options;
   options.max_count = kMaxQueryCount;
   options.duplicate_policy = history::QueryOptions::REMOVE_DUPLICATES_PER_DAY;
+  options.host_only = j_host_only;
 
   browsing_history_service_->QueryHistory(
       base::android::ConvertJavaStringToUTF16(env, j_query), options);
@@ -71,6 +73,17 @@ void BrowsingHistoryBridge::QueryHistoryContinuation(
   DCHECK(query_history_continuation_);
   j_query_result_obj_.Reset(env, j_result_obj);
   std::move(query_history_continuation_).Run();
+}
+
+void BrowsingHistoryBridge::GetLastVisitToHostBeforeRecentNavigations(
+    JNIEnv* env,
+    const JavaParamRef<jobject>& obj,
+    jstring j_host_name,
+    const JavaParamRef<jobject>& jcallback) {
+  browsing_history_service_->GetLastVisitToHostBeforeRecentNavigations(
+      base::android::ConvertJavaStringToUTF8(env, j_host_name),
+      base::BindOnce(&base::android::RunTimeCallbackAndroid,
+                     base::android::ScopedJavaGlobalRef<jobject>(jcallback)));
 }
 
 void BrowsingHistoryBridge::OnQueryComplete(

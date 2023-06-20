@@ -25,6 +25,13 @@
 - (AppLaunchConfiguration)appConfigurationForTestCase {
   AppLaunchConfiguration config;
   config.relaunch_policy = ForceRelaunchByCleanShutdown;
+  config.additional_args.push_back(
+      std::string("--enable-features=StartSurface<StartSurface"));
+  config.additional_args.push_back(
+      std::string("--force-fieldtrials=StartSurface/ShrinkLogo"));
+  config.additional_args.push_back(
+      std::string("--force-fieldtrial-params=StartSurface.ShrinkLogo:"
+                  "ReturnToStartSurfaceInactiveDurationInSeconds/0"));
   return config;
 }
 
@@ -42,7 +49,7 @@
   [ChromeEarlGrey loadURL:destinationUrl];
 
   [[AppLaunchManager sharedManager]
-      ensureAppLaunchedWithConfiguration:self.appConfigurationForTestCase];
+      ensureAppLaunchedWithConfiguration:[self appConfigurationForTestCase]];
 
   [ChromeTestCase removeAnyOpenMenusAndInfoBars];
   // Assert NTP is visible by checking that the fake omnibox is here.

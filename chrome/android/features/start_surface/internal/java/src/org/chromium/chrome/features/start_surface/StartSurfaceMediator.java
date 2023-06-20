@@ -19,7 +19,7 @@ import static org.chromium.chrome.browser.tasks.TasksSurfaceProperties.RESET_TAS
 import static org.chromium.chrome.browser.tasks.TasksSurfaceProperties.TAB_SWITCHER_TITLE_TOP_MARGIN;
 import static org.chromium.chrome.browser.tasks.TasksSurfaceProperties.TASKS_SURFACE_BODY_TOP_MARGIN;
 import static org.chromium.chrome.features.start_surface.StartSurfaceProperties.BOTTOM_BAR_HEIGHT;
-import static org.chromium.chrome.features.start_surface.StartSurfaceProperties.FEED_SURFACE_COORDINATOR;
+import static org.chromium.chrome.features.start_surface.StartSurfaceProperties.EXPLORE_SURFACE_COORDINATOR;
 import static org.chromium.chrome.features.start_surface.StartSurfaceProperties.IS_EXPLORE_SURFACE_VISIBLE;
 import static org.chromium.chrome.features.start_surface.StartSurfaceProperties.IS_SECONDARY_SURFACE_VISIBLE;
 import static org.chromium.chrome.features.start_surface.StartSurfaceProperties.IS_SHOWING_OVERVIEW;
@@ -30,18 +30,18 @@ import android.content.Context;
 import android.content.res.Resources;
 import android.view.View;
 
-import androidx.annotation.IntDef;
 import androidx.annotation.Nullable;
 import androidx.annotation.VisibleForTesting;
 
 import org.chromium.base.ObserverList;
 import org.chromium.base.StrictModeContext;
 import org.chromium.base.ThreadUtils;
+import org.chromium.base.jank_tracker.JankScenario;
+import org.chromium.base.jank_tracker.JankTracker;
 import org.chromium.base.metrics.RecordHistogram;
 import org.chromium.base.metrics.RecordUserAction;
 import org.chromium.base.supplier.OneshotSupplier;
 import org.chromium.chrome.browser.browser_controls.BrowserControlsStateProvider;
-import org.chromium.chrome.browser.feed.FeedSurfaceCoordinator;
 import org.chromium.chrome.browser.flags.CachedFeatureFlags;
 import org.chromium.chrome.browser.flags.ChromeFeatureList;
 import org.chromium.chrome.browser.lens.LensEntryPoint;
@@ -51,6 +51,7 @@ import org.chromium.chrome.browser.omnibox.OmniboxStub;
 import org.chromium.chrome.browser.omnibox.UrlFocusChangeListener;
 import org.chromium.chrome.browser.preferences.ChromePreferenceKeys;
 import org.chromium.chrome.browser.preferences.Pref;
+import org.chromium.chrome.browser.profiles.Profile;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.tab.TabLaunchType;
 import org.chromium.chrome.browser.tabmodel.TabModel;
@@ -61,23 +62,15 @@ import org.chromium.chrome.browser.tasks.pseudotab.PseudoTab;
 import org.chromium.chrome.browser.tasks.tab_management.TabSwitcher;
 import org.chromium.chrome.start_surface.R;
 import org.chromium.components.prefs.PrefService;
+import org.chromium.content_public.browser.BrowserStartupController;
 import org.chromium.ui.modelutil.PropertyModel;
 import org.chromium.ui.util.ColorUtils;
 
-import java.lang.annotation.Retention;
-import java.lang.annotation.RetentionPolicy;
 import java.util.List;
 
 /** The mediator implements the logic to interact with the surfaces and caller. */
-class StartSurfaceMediator
-        implements StartSurface.Controller, TabSwitcher.OverviewModeObserver, View.OnClickListener {
-    @IntDef({SurfaceMode.NO_START_SURFACE, SurfaceMode.SINGLE_PANE})
-    @Retention(RetentionPolicy.SOURCE)
-    @interface SurfaceMode {
-        int NO_START_SURFACE = 0;
-        int SINGLE_PANE = 1;
-    }
-
+class StartSurfaceMediator implements StartSurface.Controller, TabSwitcher.OverviewModeObserver,
+                                      View.OnClickListener, StartSurface.OnTabSelectingListener {
     /** Interface to initialize a secondary tasks surface for more tabs. */
     interface SecondaryTasksSurfaceInitializer {
         /**
@@ -105,9 +98,9 @@ class StartSurfaceMediator
     private final PropertyModel mPropertyModel;
     @Nullable
     private final SecondaryTasksSurfaceInitializer mSecondaryTasksSurfaceInitializer;
-    @SurfaceMode
-    private final int mSurfaceMode;
+    private final boolean mIsStartSurfaceEnabled;
     private final ObserverList<StartSurface.StateObserver> mStateObservers = new ObserverList<>();
+    private final boolean mHadWarmStart;
 
     // Boolean histogram used to record whether cached
     // ChromePreferenceKeys.FEED_ARTICLES_LIST_VISIBLE is consistent with
@@ -116,7 +109,7 @@ class StartSurfaceMediator
     static final String FEED_VISIBILITY_CONSISTENCY =
             "Startup.Android.CachedFeedVisibilityConsistency";
     @Nullable
-    private ExploreSurfaceCoordinator.FeedSurfaceController mFeedSurfaceController;
+    private ExploreSurfaceCoordinatorFactory mExploreSurfaceCoordinatorFactory;
     @Nullable
     private TabSwitcher.Controller mSecondaryTasksSurfaceController;
     @Nullable
@@ -161,32 +154,37 @@ class StartSurfaceMediator
      */
     @Nullable
     private Boolean mFeedVisibilityInSharedPreferenceOnStartUp;
-    private boolean mHadWarmStart;
+    private boolean mHasFeedPlaceholderShown;
+    private final JankTracker mJankTracker;
     private boolean mHideMVForNewSurface;
     private boolean mHideTabCarouselForNewSurface;
+    private boolean mHideOverviewOnTabSelecting = true;
+    private StartSurface.OnTabSelectingListener mOnTabSelectingListener;
 
     StartSurfaceMediator(TabSwitcher.Controller controller, TabModelSelector tabModelSelector,
             @Nullable PropertyModel propertyModel,
             @Nullable SecondaryTasksSurfaceInitializer secondaryTasksSurfaceInitializer,
-            @SurfaceMode int surfaceMode, Context context,
+            boolean isStartSurfaceEnabled, Context context,
             BrowserControlsStateProvider browserControlsStateProvider,
             ActivityStateChecker activityStateChecker, boolean excludeMVTiles,
-            OneshotSupplier<StartSurface> startSurfaceSupplier, boolean hadWarmStart) {
+            OneshotSupplier<StartSurface> startSurfaceSupplier, boolean hadWarmStart,
+            JankTracker jankTracker) {
         mController = controller;
         mTabModelSelector = tabModelSelector;
         mPropertyModel = propertyModel;
         mSecondaryTasksSurfaceInitializer = secondaryTasksSurfaceInitializer;
-        mSurfaceMode = surfaceMode;
+        mIsStartSurfaceEnabled = isStartSurfaceEnabled;
         mContext = context;
         mBrowserControlsStateProvider = browserControlsStateProvider;
         mActivityStateChecker = activityStateChecker;
         mExcludeMVTiles = excludeMVTiles;
         mStartSurfaceSupplier = startSurfaceSupplier;
         mHadWarmStart = hadWarmStart;
+        mJankTracker = jankTracker;
         mLaunchOrigin = NewTabPageLaunchOrigin.UNKNOWN;
 
         if (mPropertyModel != null) {
-            assert mSurfaceMode == SurfaceMode.SINGLE_PANE;
+            assert mIsStartSurfaceEnabled;
 
             mIsIncognito = mTabModelSelector.isIncognitoSelected();
 
@@ -227,6 +225,17 @@ class StartSurfaceMediator
                     }
                     setTabCarouselVisibility(
                             mTabModelSelector.getModel(false).getCount() > 0 && !mIsIncognito);
+                }
+
+                @Override
+                public void willAddTab(Tab tab, @TabLaunchType int type) {
+                    // When the tab model is empty and a new background tab is added, it is
+                    // immediately selected, which normally causes the overview to hide. We
+                    // don't want to hide the overview when creating a tab in the background, so
+                    // when a background tab is added to an empty tab model, we should skip the next
+                    // onTabSelecting().
+                    mHideOverviewOnTabSelecting = mTabModelSelector.getModel(false).getCount() != 0
+                            || type != TabLaunchType.FROM_LONGPRESS_BACKGROUND;
                 }
             };
             if (mTabModelSelector.getModels().isEmpty()) {
@@ -274,14 +283,8 @@ class StartSurfaceMediator
             mUrlFocusChangeListener = new UrlFocusChangeListener() {
                 @Override
                 public void onUrlFocusChange(boolean hasFocus) {
-                    if (hasFakeSearchBox()) {
-                        if (mPropertyModel.get(IS_SECONDARY_SURFACE_VISIBLE)) {
-                            mSecondaryTasksSurfacePropertyModel.set(
-                                    IS_FAKE_SEARCH_BOX_VISIBLE, !hasFocus);
-                        } else {
-                            setFakeBoxVisibility(!hasFocus);
-                        }
-                    }
+                    assert !mPropertyModel.get(IS_SECONDARY_SURFACE_VISIBLE);
+                    if (hasFakeSearchBox()) setFakeBoxVisibility(!hasFocus);
                     notifyStateChange();
                 }
             };
@@ -302,10 +305,10 @@ class StartSurfaceMediator
     }
 
     void initWithNative(@Nullable OmniboxStub omniboxStub,
-            @Nullable ExploreSurfaceCoordinator.FeedSurfaceController feedSurfaceController,
+            @Nullable ExploreSurfaceCoordinatorFactory exploreSurfaceCoordinatorFactory,
             PrefService prefService) {
         mOmniboxStub = omniboxStub;
-        mFeedSurfaceController = feedSurfaceController;
+        mExploreSurfaceCoordinatorFactory = exploreSurfaceCoordinatorFactory;
         if (mPropertyModel != null) {
             assert mOmniboxStub != null;
 
@@ -320,7 +323,7 @@ class StartSurfaceMediator
             if (mController.overviewVisible()) {
                 mOmniboxStub.addUrlFocusChangeListener(mUrlFocusChangeListener);
                 if (mStartSurfaceState == StartSurfaceState.SHOWN_HOMEPAGE
-                        && mFeedSurfaceController != null) {
+                        && mExploreSurfaceCoordinatorFactory != null) {
                     setExploreSurfaceVisibility(!mIsIncognito);
                 }
             }
@@ -365,36 +368,6 @@ class StartSurfaceMediator
 
         if (mPropertyModel == null || state == mStartSurfaceState) return;
 
-        // When entering the Start surface by tapping home button or new tab page, we need to reset
-        // the scrolling position.
-        if (state == StartSurfaceState.SHOWING_HOMEPAGE) {
-            mPropertyModel.set(RESET_TASK_SURFACE_HEADER_SCROLL_POSITION, true);
-            mPropertyModel.set(RESET_FEED_SURFACE_SCROLL_POSITION, true);
-
-            String newHomeSurface =
-                    StartSurfaceConfiguration.NEW_SURFACE_FROM_HOME_BUTTON.getValue();
-            switch (newHomeSurface) {
-                case "hide_tab_switcher_only":
-                    mHideMVForNewSurface = false;
-                    mHideTabCarouselForNewSurface = true;
-                    break;
-                case "hide_mv_tiles_and_tab_switcher":
-                    mHideMVForNewSurface = true;
-                    mHideTabCarouselForNewSurface = true;
-                    break;
-                default:
-                    mHideMVForNewSurface = false;
-                    mHideTabCarouselForNewSurface = false;
-            }
-        }
-
-        // Every time Chrome is started, no matter warm start or cold start, show MV tiles & tab
-        // carousel.
-        if (state == StartSurfaceState.SHOWING_START && !mTabModelSelector.isIncognitoSelected()) {
-            mHideMVForNewSurface = false;
-            mHideTabCarouselForNewSurface = false;
-        }
-
         // Cache previous state.
         if (mStartSurfaceState != StartSurfaceState.NOT_SHOWN) {
             mPreviousStartSurfaceState = mStartSurfaceState;
@@ -418,6 +391,23 @@ class StartSurfaceMediator
         }
         notifyStateChange();
 
+        // Start/Stop tracking jank for Homepage and Tab switcher. It is okay if finish or start are
+        // called multiple times consecutively.
+        switch (mStartSurfaceState) {
+            case StartSurfaceState.NOT_SHOWN:
+                mJankTracker.finishTrackingScenario(JankScenario.START_SURFACE_HOMEPAGE);
+                mJankTracker.finishTrackingScenario(JankScenario.START_SURFACE_TAB_SWITCHER);
+                break;
+            case StartSurfaceState.SHOWN_HOMEPAGE:
+                mJankTracker.startTrackingScenario(JankScenario.START_SURFACE_HOMEPAGE);
+                mJankTracker.finishTrackingScenario(JankScenario.START_SURFACE_TAB_SWITCHER);
+                break;
+            case StartSurfaceState.SHOWN_TABSWITCHER:
+                mJankTracker.finishTrackingScenario(JankScenario.START_SURFACE_HOMEPAGE);
+                mJankTracker.startTrackingScenario(JankScenario.START_SURFACE_TAB_SWITCHER);
+                break;
+        }
+
         setLaunchOrigin(launchOrigin);
         // Metrics collection
         if (mStartSurfaceState == StartSurfaceState.SHOWN_HOMEPAGE) {
@@ -433,14 +423,16 @@ class StartSurfaceMediator
     }
 
     private void setLaunchOrigin(@NewTabPageLaunchOrigin int launchOrigin) {
-        if (mLaunchOrigin == launchOrigin) return;
+        if (launchOrigin == NewTabPageLaunchOrigin.WEB_FEED) {
+            StartSurfaceUserData.getInstance().saveFeedInstanceState(null);
+        }
         mLaunchOrigin = launchOrigin;
-        // If the FeedSurfaceCoordinator is already initialized, set the TabId.
+        // If the ExploreSurfaceCoordinator is already initialized, set the TabId.
         if (mPropertyModel == null) return;
-        FeedSurfaceCoordinator feedSurfaceCoordinator =
-                mPropertyModel.get(FEED_SURFACE_COORDINATOR);
-        if (feedSurfaceCoordinator != null) {
-            feedSurfaceCoordinator.setTabIdFromLaunchOrigin(mLaunchOrigin);
+        ExploreSurfaceCoordinator exploreSurfaceCoordinator =
+                mPropertyModel.get(EXPLORE_SURFACE_COORDINATOR);
+        if (exploreSurfaceCoordinator != null) {
+            exploreSurfaceCoordinator.setTabIdFromLaunchOrigin(mLaunchOrigin);
         }
     }
 
@@ -448,14 +440,49 @@ class StartSurfaceMediator
     // two different things, audit the wording usage and see if we can rename this method to
     // setStartSurfaceStateInternal.
     private void setOverviewStateInternal() {
-        if (mStartSurfaceState == StartSurfaceState.SHOWN_HOMEPAGE) {
-            setExploreSurfaceVisibility(!mIsIncognito && mFeedSurfaceController != null);
+        if (mStartSurfaceState == StartSurfaceState.SHOWING_HOMEPAGE) {
+            // When entering the Start surface by tapping home button or new tab page, we need to
+            // reset the scrolling position.
+            mPropertyModel.set(RESET_TASK_SURFACE_HEADER_SCROLL_POSITION, true);
+            mPropertyModel.set(RESET_FEED_SURFACE_SCROLL_POSITION, true);
+            StartSurfaceUserData.getInstance().saveFeedInstanceState(null);
+
+            String newHomeSurface =
+                    StartSurfaceConfiguration.NEW_SURFACE_FROM_HOME_BUTTON.getValue();
+            switch (newHomeSurface) {
+                case "hide_tab_switcher_only":
+                    mHideMVForNewSurface = false;
+                    mHideTabCarouselForNewSurface = true;
+                    break;
+                case "hide_mv_tiles_and_tab_switcher":
+                    mHideMVForNewSurface = true;
+                    mHideTabCarouselForNewSurface = true;
+                    break;
+                default:
+                    mHideMVForNewSurface = false;
+                    mHideTabCarouselForNewSurface = false;
+            }
+        } else if (mStartSurfaceState == StartSurfaceState.SHOWING_START) {
+            if (!mTabModelSelector.isIncognitoSelected()) {
+                // Every time Chrome is started, no matter warm start or cold start, show MV tiles &
+                // tab carousel.
+                mHideMVForNewSurface = false;
+                mHideTabCarouselForNewSurface = false;
+            }
+        } else if (mStartSurfaceState == StartSurfaceState.SHOWING_TABSWITCHER) {
+            // Set secondary surface visible to make sure tab list recyclerview is updated in time
+            // (before GTS animations start). We need to skip
+            // mSecondaryTasksSurfaceController#showOverview here since it will hide GTS animations.
+            setSecondaryTasksSurfaceVisibility(
+                    /* isVisible= */ true, /* skipUpdateController = */ true);
+        } else if (mStartSurfaceState == StartSurfaceState.SHOWN_HOMEPAGE) {
+            setExploreSurfaceVisibility(!mIsIncognito && mExploreSurfaceCoordinatorFactory != null);
             boolean hasNormalTab;
             if (CachedFeatureFlags.isEnabled(ChromeFeatureList.INSTANT_START)
                     && !mTabModelSelector.isTabStateInitialized()) {
                 List<PseudoTab> allTabs;
                 try (StrictModeContext ignored = StrictModeContext.allowDiskReads()) {
-                    allTabs = PseudoTab.getAllPseudoTabsFromStateFile();
+                    allTabs = PseudoTab.getAllPseudoTabsFromStateFile(mContext);
                 }
                 hasNormalTab = allTabs != null && !allTabs.isEmpty();
             } else {
@@ -468,7 +495,7 @@ class StartSurfaceMediator
                     hasNormalTab && !mIsIncognito && !mHideTabCarouselForNewSurface);
             setMVTilesVisibility(!mIsIncognito && !mHideMVForNewSurface);
             setFakeBoxVisibility(!mIsIncognito);
-            setSecondaryTasksSurfaceVisibility(mIsIncognito);
+            setSecondaryTasksSurfaceVisibility(mIsIncognito, /* skipUpdateController = */ false);
 
             // Only pad single pane home page since tabs grid has already been padding for the
             // bottom bar.
@@ -483,11 +510,13 @@ class StartSurfaceMediator
             setTabCarouselVisibility(false);
             setMVTilesVisibility(false);
             setFakeBoxVisibility(false);
-            setSecondaryTasksSurfaceVisibility(true);
+            setSecondaryTasksSurfaceVisibility(
+                    /* isVisible= */ true, /* skipUpdateController = */ false);
             setExploreSurfaceVisibility(false);
         } else if (mStartSurfaceState == StartSurfaceState.NOT_SHOWN) {
             if (mSecondaryTasksSurfacePropertyModel != null) {
-                setSecondaryTasksSurfaceVisibility(false);
+                setSecondaryTasksSurfaceVisibility(
+                        /* isVisible= */ false, /* skipUpdateController = */ false);
             }
         }
 
@@ -497,11 +526,15 @@ class StartSurfaceMediator
         }
     }
 
-    @VisibleForTesting
     @Override
     @StartSurfaceState
     public int getStartSurfaceState() {
         return mStartSurfaceState;
+    }
+
+    @Override
+    public int getPreviousStartSurfaceState() {
+        return mPreviousStartSurfaceState;
     }
 
     @Override
@@ -541,18 +574,15 @@ class StartSurfaceMediator
             assert (isShownState(shownState));
             setOverviewState(shownState);
 
-            // Make sure FeedSurfaceCoordinator is built before the explore surface is showing by
-            // default.
+            // Make sure ExploreSurfaceCoordinator is built before the explore surface is showing
+            // by default.
             if (mPropertyModel.get(IS_EXPLORE_SURFACE_VISIBLE)
-                    && mPropertyModel.get(FEED_SURFACE_COORDINATOR) == null
+                    && mPropertyModel.get(EXPLORE_SURFACE_COORDINATOR) == null
                     && !mActivityStateChecker.isFinishingOrDestroyed()
-                    && mFeedSurfaceController != null) {
-                mPropertyModel.set(FEED_SURFACE_COORDINATOR,
-                        mFeedSurfaceController.createFeedSurfaceCoordinator(
-                                ColorUtils.inNightMode(mContext), shouldShowFeedPlaceholder(),
-                                mLaunchOrigin));
-            } else {
-                showFeedSurfaceCoordinator();
+                    && mExploreSurfaceCoordinatorFactory != null) {
+                mPropertyModel.set(EXPLORE_SURFACE_COORDINATOR,
+                        mExploreSurfaceCoordinatorFactory.create(ColorUtils.inNightMode(mContext),
+                                mHasFeedPlaceholderShown, mLaunchOrigin));
             }
             mTabModelSelector.addObserver(mTabModelSelectorObserver);
 
@@ -611,10 +641,10 @@ class StartSurfaceMediator
     void onOverviewShownAtLaunch(long activityCreationTimeMs) {
         mController.onOverviewShownAtLaunch(activityCreationTimeMs);
         if (mPropertyModel != null) {
-            FeedSurfaceCoordinator feedSurfaceCoordinator =
-                    mPropertyModel.get(FEED_SURFACE_COORDINATOR);
-            if (feedSurfaceCoordinator != null) {
-                feedSurfaceCoordinator.onOverviewShownAtLaunch(activityCreationTimeMs);
+            ExploreSurfaceCoordinator exploreSurfaceCoordinator =
+                    mPropertyModel.get(EXPLORE_SURFACE_COORDINATOR);
+            if (exploreSurfaceCoordinator != null) {
+                exploreSurfaceCoordinator.onOverviewShownAtLaunch(activityCreationTimeMs);
             }
         }
 
@@ -645,6 +675,11 @@ class StartSurfaceMediator
         for (StartSurface.OverviewModeObserver observer : mObservers) {
             observer.finishedShowing();
         }
+
+        if (BrowserStartupController.getInstance().isFullBrowserStarted()
+                && StartSurfaceConfiguration.WARM_UP_RENDERER.getValue()) {
+            StartSurfaceConfigurationJni.get().warmupRenderer(Profile.getLastUsedRegularProfile());
+        }
     }
 
     @Override
@@ -655,13 +690,7 @@ class StartSurfaceMediator
             }
             mPropertyModel.set(IS_SHOWING_OVERVIEW, false);
 
-            if (mTabModelSelector.getCurrentTab() == null
-                    || mTabModelSelector.getCurrentTab().getLaunchType()
-                            != TabLaunchType.FROM_START_SURFACE) {
-                destroyFeedSurfaceCoordinator();
-            } else {
-                hideFeedSurfaceCoordinator();
-            }
+            destroyExploreSurfaceCoordinator();
             if (mNormalTabModelObserver != null) {
                 if (mNormalTabModel != null) {
                     mNormalTabModel.removeObserver(mNormalTabModelObserver);
@@ -690,19 +719,11 @@ class StartSurfaceMediator
         }
     }
 
-    private void destroyFeedSurfaceCoordinator() {
-        FeedSurfaceCoordinator feedSurfaceCoordinator =
-                mPropertyModel.get(FEED_SURFACE_COORDINATOR);
-        if (feedSurfaceCoordinator != null) feedSurfaceCoordinator.destroy();
-        mPropertyModel.set(FEED_SURFACE_COORDINATOR, null);
-    }
-
-    private void hideFeedSurfaceCoordinator() {
-        if (mFeedSurfaceController != null) mFeedSurfaceController.hideFeedSurface();
-    }
-
-    private void showFeedSurfaceCoordinator() {
-        if (mFeedSurfaceController != null) mFeedSurfaceController.showFeedSurface();
+    private void destroyExploreSurfaceCoordinator() {
+        ExploreSurfaceCoordinator exploreSurfaceCoordinator =
+                mPropertyModel.get(EXPLORE_SURFACE_COORDINATOR);
+        if (exploreSurfaceCoordinator != null) exploreSurfaceCoordinator.destroy();
+        mPropertyModel.set(EXPLORE_SURFACE_COORDINATOR, null);
     }
 
     // TODO(crbug.com/982018): turn into onClickMoreTabs() and hide the OnClickListener signature
@@ -720,15 +741,36 @@ class StartSurfaceMediator
         setOverviewState(StartSurfaceState.SHOWN_TABSWITCHER);
     }
 
+    // StartSurface.OnTabSelectingListener
+    @Override
+    public void onTabSelecting(long time, int tabId) {
+        if (!mHideOverviewOnTabSelecting) {
+            mHideOverviewOnTabSelecting = true;
+            return;
+        }
+        assert mOnTabSelectingListener != null;
+        mOnTabSelectingListener.onTabSelecting(time, tabId);
+    }
+
     public boolean shouldShowFeedPlaceholder() {
         if (mFeedVisibilityInSharedPreferenceOnStartUp == null) {
             mFeedVisibilityInSharedPreferenceOnStartUp =
                     StartSurfaceConfiguration.getFeedArticlesVisibility();
         }
 
-        return mSurfaceMode == SurfaceMode.SINGLE_PANE
+        return mIsStartSurfaceEnabled
                 && CachedFeatureFlags.isEnabled(ChromeFeatureList.INSTANT_START)
-                && StartSurfaceConfiguration.getFeedArticlesVisibility() && !mHadWarmStart;
+                && StartSurfaceConfiguration.getFeedArticlesVisibility() && !mHadWarmStart
+                && !mHasFeedPlaceholderShown;
+    }
+
+    public void setSecondaryTasksSurfaceController(
+            TabSwitcher.Controller secondaryTasksSurfaceController) {
+        mSecondaryTasksSurfaceController = secondaryTasksSurfaceController;
+    }
+
+    void setFeedPlaceholderHasShown() {
+        mHasFeedPlaceholderShown = true;
     }
 
     /** This interface builds the feed surface coordinator when showing if needed. */
@@ -736,15 +778,22 @@ class StartSurfaceMediator
         if (isVisible == mPropertyModel.get(IS_EXPLORE_SURFACE_VISIBLE)) return;
 
         if (isVisible && mPropertyModel.get(IS_SHOWING_OVERVIEW)
-                && mPropertyModel.get(FEED_SURFACE_COORDINATOR) == null
+                && mPropertyModel.get(EXPLORE_SURFACE_COORDINATOR) == null
                 && !mActivityStateChecker.isFinishingOrDestroyed()) {
-            mPropertyModel.set(FEED_SURFACE_COORDINATOR,
-                    mFeedSurfaceController.createFeedSurfaceCoordinator(
-                            ColorUtils.inNightMode(mContext), shouldShowFeedPlaceholder(),
-                            mLaunchOrigin));
+            mPropertyModel.set(EXPLORE_SURFACE_COORDINATOR,
+                    mExploreSurfaceCoordinatorFactory.create(ColorUtils.inNightMode(mContext),
+                            mHasFeedPlaceholderShown, mLaunchOrigin));
         }
 
         mPropertyModel.set(IS_EXPLORE_SURFACE_VISIBLE, isVisible);
+
+        // Pull-to-refresh is not supported when explore surface is not visible, i.e. in tab
+        // switcher mode.
+        ExploreSurfaceCoordinator exploreSurfaceCoordinator =
+                mPropertyModel.get(EXPLORE_SURFACE_COORDINATOR);
+        if (exploreSurfaceCoordinator != null) {
+            exploreSurfaceCoordinator.enableSwipeRefresh(isVisible);
+        }
     }
 
     private void updateIncognitoMode(boolean isIncognito) {
@@ -760,24 +809,31 @@ class StartSurfaceMediator
         if (mPropertyModel.get(IS_SHOWING_OVERVIEW)) notifyStateChange();
     }
 
-    private void setSecondaryTasksSurfaceVisibility(boolean isVisible) {
-        assert mSurfaceMode == SurfaceMode.SINGLE_PANE;
+    /**
+     * Set the visibility of secondary tasks surface. Secondary tasks surface is used for showing
+     * normal grid tab switcher and incognito gird tab switcher.
+     * @param isVisible Whether secondary tasks surface is visible.
+     * @param skipUpdateController Whether to skip mSecondaryTasksSurfaceController#showOverview and
+     *         mSecondaryTasksSurfaceController#hideOverview.
+     */
+    private void setSecondaryTasksSurfaceVisibility(
+            boolean isVisible, boolean skipUpdateController) {
+        assert mIsStartSurfaceEnabled;
 
         if (isVisible) {
             if (mSecondaryTasksSurfacePropertyModel == null) {
                 mSecondaryTasksSurfaceController = mSecondaryTasksSurfaceInitializer.initialize();
             }
             if (mSecondaryTasksSurfacePropertyModel != null) {
-                mSecondaryTasksSurfacePropertyModel.set(IS_FAKE_SEARCH_BOX_VISIBLE,
-                        mIsIncognito && mStartSurfaceState == StartSurfaceState.SHOWN_HOMEPAGE);
+                mSecondaryTasksSurfacePropertyModel.set(IS_FAKE_SEARCH_BOX_VISIBLE, false);
                 mSecondaryTasksSurfacePropertyModel.set(IS_INCOGNITO, mIsIncognito);
             }
-            if (mSecondaryTasksSurfaceController != null) {
-                mSecondaryTasksSurfaceController.showOverview(false);
+            if (mSecondaryTasksSurfaceController != null && !skipUpdateController) {
+                mSecondaryTasksSurfaceController.showOverview(/* animate = */ true);
             }
         } else {
-            if (mSecondaryTasksSurfaceController != null) {
-                mSecondaryTasksSurfaceController.hideOverview(false);
+            if (mSecondaryTasksSurfaceController != null && !skipUpdateController) {
+                mSecondaryTasksSurfaceController.hideOverview(/* animate = */ false);
             }
         }
         mPropertyModel.set(IS_SECONDARY_SURFACE_VISIBLE, isVisible);
@@ -802,18 +858,13 @@ class StartSurfaceMediator
     @VisibleForTesting
     public boolean shouldShowTabSwitcherToolbar() {
         // Always show in TABSWITCHER
-        if (mStartSurfaceState == StartSurfaceState.SHOWN_TABSWITCHER) return true;
-
-        if (mPropertyModel.get(IS_SECONDARY_SURFACE_VISIBLE)) {
-            // Always show on the stack tab switcher secondary surface.
-            if (mSecondaryTasksSurfacePropertyModel == null) return true;
-
-            // Hide when focusing the Omnibox on the secondary surface.
-            return mSecondaryTasksSurfacePropertyModel.get(IS_FAKE_SEARCH_BOX_VISIBLE);
+        if (mStartSurfaceState == StartSurfaceState.SHOWN_TABSWITCHER
+                || mPropertyModel.get(IS_SECONDARY_SURFACE_VISIBLE)) {
+            return true;
         }
 
         // Hide when focusing the Omnibox on the primary surface.
-        return mPropertyModel.get(IS_FAKE_SEARCH_BOX_VISIBLE);
+        return hasFakeSearchBox() && mPropertyModel.get(IS_FAKE_SEARCH_BOX_VISIBLE);
     }
 
     private void setTabCarouselVisibility(boolean isVisible) {
@@ -869,7 +920,7 @@ class StartSurfaceMediator
     // computeStartSurfaceState.
     @StartSurfaceState
     private int computeOverviewStateShown() {
-        if (mSurfaceMode == SurfaceMode.SINGLE_PANE) {
+        if (mIsStartSurfaceEnabled) {
             if (mStartSurfaceState == StartSurfaceState.SHOWING_PREVIOUS) {
                 assert mPreviousStartSurfaceState == StartSurfaceState.SHOWN_HOMEPAGE
                         || mPreviousStartSurfaceState == StartSurfaceState.SHOWN_TABSWITCHER
@@ -906,5 +957,9 @@ class StartSurfaceMediator
 
     TabSwitcher.Controller getSecondaryTasksSurfaceController() {
         return mSecondaryTasksSurfaceController;
+    }
+
+    void setOnTabSelectingListener(StartSurface.OnTabSelectingListener onTabSelectingListener) {
+        mOnTabSelectingListener = onTabSelectingListener;
     }
 }

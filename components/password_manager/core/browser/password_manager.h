@@ -12,8 +12,6 @@
 
 #include "base/callback.h"
 #include "base/gtest_prod_util.h"
-#include "base/macros.h"
-#include "base/observer_list.h"
 #include "build/build_config.h"
 #include "components/autofill/core/common/password_form_fill_data.h"
 #include "components/autofill/core/common/password_generation_util.h"
@@ -45,7 +43,6 @@ class FormStructure;
 
 namespace password_manager {
 
-class BrowserSavePasswordProgressLogger;
 class PasswordManagerClient;
 class PasswordManagerDriver;
 class PasswordFormManagerForUI;
@@ -64,6 +61,10 @@ class PasswordManager : public PasswordManagerInterface {
   static void RegisterLocalPrefs(PrefRegistrySimple* registry);
 
   explicit PasswordManager(PasswordManagerClient* client);
+
+  PasswordManager(const PasswordManager&) = delete;
+  PasswordManager& operator=(const PasswordManager&) = delete;
+
   ~PasswordManager() override;
 
   // FormSubmissionObserver:
@@ -150,6 +151,7 @@ class PasswordManager : public PasswordManagerInterface {
   // |value| is the current value of the field.
   void OnUserModifiedNonPasswordField(PasswordManagerDriver* driver,
                                       autofill::FieldRendererId renderer_id,
+                                      const std::u16string& field_name,
                                       const std::u16string& value);
 
   // Handles user input and decides whether to show manual fallback for password
@@ -190,7 +192,6 @@ class PasswordManager : public PasswordManagerInterface {
   void set_leak_factory(std::unique_ptr<LeakDetectionCheckFactory> factory) {
     leak_delegate_.set_leak_factory(std::move(factory));
   }
-
 #endif  // defined(UNIT_TEST)
 
 #if !defined(OS_IOS)
@@ -210,6 +211,10 @@ class PasswordManager : public PasswordManagerInterface {
 
   // Returns true if a form manager is processing a password update.
   bool IsFormManagerPendingPasswordUpdate() const;
+
+  // Saves the current submitted password to the disk. Password manager must
+  // have a submitted manager.
+  void SaveSubmittedManager();
 
  private:
   FRIEND_TEST_ALL_PREFIXES(
@@ -290,8 +295,7 @@ class PasswordManager : public PasswordManagerInterface {
   // |main_frame_url_|.
   void RecordProvisionalSaveFailure(
       PasswordManagerMetricsRecorder::ProvisionalSaveFailure failure,
-      const GURL& form_origin,
-      BrowserSavePasswordProgressLogger* logger);
+      const GURL& form_origin);
 
   // Returns the manager which manages |form_id|. |driver| is needed to
   // determine the match. Returns nullptr when no matched manager is found.
@@ -376,8 +380,6 @@ class PasswordManager : public PasswordManagerInterface {
   LeakDetectionDelegate leak_delegate_;
 
   absl::optional<PossibleUsernameData> possible_username_;
-
-  DISALLOW_COPY_AND_ASSIGN(PasswordManager);
 };
 
 }  // namespace password_manager

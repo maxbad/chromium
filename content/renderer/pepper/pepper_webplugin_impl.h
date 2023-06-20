@@ -8,9 +8,8 @@
 #include <memory>
 #include <vector>
 
-#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
-#include "base/sequenced_task_runner_helpers.h"
+#include "base/task/sequenced_task_runner_helpers.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "ppapi/c/pp_var.h"
 #include "third_party/blink/public/mojom/input/focus_type.mojom-forward.h"
@@ -33,6 +32,9 @@ class PepperWebPluginImpl : public blink::WebPlugin {
   PepperWebPluginImpl(PluginModule* module,
                       const blink::WebPluginParams& params,
                       RenderFrameImpl* render_frame);
+
+  PepperWebPluginImpl(const PepperWebPluginImpl&) = delete;
+  PepperWebPluginImpl& operator=(const PepperWebPluginImpl&) = delete;
 
   PepperPluginInstanceImpl* instance() { return instance_.get(); }
 
@@ -69,7 +71,6 @@ class PepperWebPluginImpl : public blink::WebPlugin {
   blink::WebURL LinkAtPosition(const gfx::Point& position) const override;
   bool GetPrintPresetOptionsFromDocument(
       blink::WebPrintPresetOptions* preset_options) override;
-  bool IsPdfPlugin() override;
   bool StartFind(const blink::WebString& search_text,
                  bool case_sensitive,
                  int identifier) override;
@@ -82,7 +83,7 @@ class PepperWebPluginImpl : public blink::WebPlugin {
   void PrintEnd() override;
 
   bool CanRotateView() override;
-  void RotateView(RotationType type) override;
+  void RotateView(blink::WebPlugin::RotationType type) override;
   bool IsPlaceholder() override;
   void DidLoseMouseLock() override;
   void DidReceiveMouseLockResult(bool success) override;
@@ -121,8 +122,6 @@ class PepperWebPluginImpl : public blink::WebPlugin {
   gfx::Rect plugin_rect_;
   PP_Var instance_object_;
   blink::WebPluginContainer* container_;
-
-  DISALLOW_COPY_AND_ASSIGN(PepperWebPluginImpl);
 };
 
 }  // namespace content

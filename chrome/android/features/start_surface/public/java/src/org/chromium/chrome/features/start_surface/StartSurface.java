@@ -28,6 +28,12 @@ public interface StartSurface {
     void destroy();
 
     /**
+     * Called when the Start surface is hidden. It hides TasksSurfaces which are created when the
+     * Start surface is enabled.
+     */
+    void onHide();
+
+    /**
      * An observer that is notified when the start surface internal state, excluding
      * the states notified in {@link OverviewModeObserver}, is changed.
      *
@@ -169,10 +175,16 @@ public interface StartSurface {
         void enableRecordingFirstMeaningfulPaint(long activityCreateTimeMs);
 
         /**
-         * @return Whether the current {@link StartSurfaceState}.
+         * @return The current {@link StartSurfaceState}.
          */
         @StartSurfaceState
         int getStartSurfaceState();
+
+        /**
+         * @return The previous {@link StartSurfaceState}.
+         */
+        @StartSurfaceState
+        int getPreviousStartSurfaceState();
 
         /**
          * @return Whether the Start surface or the Tab switcher is shown or showing.
@@ -187,9 +199,17 @@ public interface StartSurface {
     Controller getController();
 
     /**
-     * @return TabListDelegate implementation that can be used to access the Tab List.
+     * Returns the TabListDelegate implementation that can be used to access the Tab list of the
+     * grid tab switcher surface.
      */
-    TabSwitcher.TabListDelegate getTabListDelegate();
+    TabSwitcher.TabListDelegate getGridTabListDelegate();
+
+    /**
+     * Returns the TabListDelegate implementation that can be used to access the Tab list of the
+     * carousel/single tab switcher when start surface is enabled; when start surface is disabled,
+     * null should be returned.
+     */
+    TabSwitcher.TabListDelegate getCarouselOrSingleTabListDelegate();
 
     /**
      * @return {@link Supplier} that provides dialog visibility.
@@ -197,9 +217,11 @@ public interface StartSurface {
     Supplier<Boolean> getTabGridDialogVisibilitySupplier();
 
     /**
-     * Called after the Chrome activity is launched. This is only called if the StartSurface is
-     * shown when Chrome is launched from cold start.
+     * Called after the Chrome activity is launched.
+     * @param isOverviewShownOnStartup Whether the StartSurace is shown when Chrome is launched from
+     *                                 cold start.
      * @param activityCreationTimeMs {@link SystemClock#elapsedRealtime} at activity creation.
      */
-    void onOverviewShownAtLaunch(final long activityCreationTimeMs);
+    void onOverviewShownAtLaunch(
+            boolean isOverviewShownOnStartup, final long activityCreationTimeMs);
 }

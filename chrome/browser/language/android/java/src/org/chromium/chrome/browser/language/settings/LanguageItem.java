@@ -10,9 +10,7 @@ import org.chromium.base.ContextUtils;
 import org.chromium.chrome.browser.language.AppLocaleUtils;
 import org.chromium.chrome.browser.language.GlobalAppLocaleController;
 import org.chromium.chrome.browser.language.R;
-import org.chromium.ui.base.ResourceBundle;
 
-import java.util.Arrays;
 import java.util.Comparator;
 import java.util.Locale;
 import java.util.Objects;
@@ -51,7 +49,7 @@ public class LanguageItem {
         mDisplayName = displayName;
         mNativeDisplayName = nativeDisplayName;
         mSupportTranslate = supportTranslate;
-        mSupportAppUI = isAvailableUiLanguage(code);
+        mSupportAppUI = AppLocaleUtils.isAvailableExactUiLanguage(code);
     }
 
     /**
@@ -78,18 +76,18 @@ public class LanguageItem {
     /**
      * @return Whether Chrome supports translate for this language.
      */
-    public boolean isSupported() {
+    public boolean isTranslateSupported() {
         return mSupportTranslate;
     }
 
     /**
      * Return true if this LanguageItem is a base language that supports translate.
-     * This filters out country variants that are not supported by Translate even if their base
-     * language is (e.g. en-US, en-IN, or es-MX).
+     * This filters out country variants that are not differentiated by Translate even if their base
+     * language is (e.g. en-GB, en-IN, or es-MX).
      * Todo(crbug.com/1180262): Make mSupportTranslate equivalent to this flag.
      * @return Whether or not this Language item is a base translatable language.
      */
-    public boolean isSupportedBaseLanguage() {
+    public boolean isSupportedBaseTranslateLanguage() {
         if (!mSupportTranslate) {
             return false;
         }
@@ -117,16 +115,24 @@ public class LanguageItem {
      * @return True if this language item represents the system default.
      */
     public boolean isSystemDefault() {
-        return TextUtils.equals(mCode, AppLocaleUtils.SYSTEM_LANGUAGE_VALUE);
+        return AppLocaleUtils.isFollowSystemLanguage(mCode);
     }
 
     /**
      * Return the hashCode of the language code for this LanguageItem. The language code can be
-     * used for the hash since two LanguageItems with equal langauge codes are equal.
+     * used for the hash since two LanguageItems with equal language codes are equal.
      */
     @Override
     public int hashCode() {
         return Objects.hashCode(mCode);
+    }
+
+    /**
+     * return String representation of the BCP-47 code for this language.
+     */
+    @Override
+    public String toString() {
+        return getCode();
     }
 
     /**
@@ -143,22 +149,13 @@ public class LanguageItem {
      * Create a LanguageItem representing the system default language.
      * @return LanguageItem
      */
-    public static LanguageItem makeSystemDefaultLanguageItem() {
+    public static LanguageItem makeFollowSystemLanguageItem() {
         String displayName = ContextUtils.getApplicationContext().getResources().getString(
                 R.string.default_lang_subtitle);
         String nativeName =
                 GlobalAppLocaleController.getInstance().getOriginalSystemLocale().getDisplayName(
                         Locale.getDefault());
-        return new LanguageItem(AppLocaleUtils.SYSTEM_LANGUAGE_VALUE, displayName, nativeName,
-                true /*supportTranslate*/);
-    }
-
-    /**
-     * Return true if the language is available as a UI language.
-     * @param language BCP-47 language tag representing a locale (e.g. "en-US")
-     */
-    public static boolean isAvailableUiLanguage(String language) {
-        if (Objects.equals(language, AppLocaleUtils.SYSTEM_LANGUAGE_VALUE)) return true;
-        return Arrays.binarySearch(ResourceBundle.getAvailableLocales(), language) >= 0;
+        return new LanguageItem(AppLocaleUtils.APP_LOCALE_USE_SYSTEM_LANGUAGE, displayName,
+                nativeName, true /*supportTranslate*/);
     }
 }

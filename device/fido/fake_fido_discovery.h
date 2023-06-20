@@ -65,11 +65,17 @@ class FakeFidoDiscovery : public FidoDeviceDiscovery,
   explicit FakeFidoDiscovery(FidoTransportProtocol transport,
                              StartMode mode = StartMode::kManual);
 
+  FakeFidoDiscovery(const FakeFidoDiscovery&) = delete;
+  FakeFidoDiscovery& operator=(const FakeFidoDiscovery&) = delete;
+
   // Blocks until start is requested.
   void WaitForCallToStart();
 
   // Simulates the discovery actually starting.
   void SimulateStarted(bool success);
+
+  // Combines WaitForCallToStart + SimulateStarted(true).
+  void WaitForCallToStartAndSimulateSuccess();
 
   // Tests are to directly call Add/RemoveDevice to simulate adding/removing
   // devices. Observers are automatically notified.
@@ -82,8 +88,6 @@ class FakeFidoDiscovery : public FidoDeviceDiscovery,
 
   const StartMode mode_;
   base::RunLoop wait_for_start_loop_;
-
-  DISALLOW_COPY_AND_ASSIGN(FakeFidoDiscovery);
 };
 
 // Overrides FidoDeviceDiscovery::Create* to construct FakeFidoDiscoveries.
@@ -92,6 +96,10 @@ class FakeFidoDiscoveryFactory : public device::FidoDiscoveryFactory {
   using StartMode = FakeFidoDiscovery::StartMode;
 
   FakeFidoDiscoveryFactory();
+
+  FakeFidoDiscoveryFactory(const FakeFidoDiscoveryFactory&) = delete;
+  FakeFidoDiscoveryFactory& operator=(const FakeFidoDiscoveryFactory&) = delete;
+
   ~FakeFidoDiscoveryFactory() override;
 
   // Constructs a fake discovery to be returned from the next call to
@@ -100,14 +108,12 @@ class FakeFidoDiscoveryFactory : public device::FidoDiscoveryFactory {
   //
   // It is an error not to call the relevant method prior to a call to
   // FidoDeviceDiscovery::Create with the respective transport.
-  FakeFidoDiscovery* ForgeNextHidDiscovery(
-      StartMode mode = StartMode::kAutomatic);
-  FakeFidoDiscovery* ForgeNextNfcDiscovery(
-      StartMode mode = StartMode::kAutomatic);
+  FakeFidoDiscovery* ForgeNextHidDiscovery(StartMode mode = StartMode::kManual);
+  FakeFidoDiscovery* ForgeNextNfcDiscovery(StartMode mode = StartMode::kManual);
   FakeFidoDiscovery* ForgeNextCableDiscovery(
-      StartMode mode = StartMode::kAutomatic);
+      StartMode mode = StartMode::kManual);
   FakeFidoDiscovery* ForgeNextPlatformDiscovery(
-      StartMode mode = StartMode::kAutomatic);
+      StartMode mode = StartMode::kManual);
 
   // device::FidoDiscoveryFactory:
   std::vector<std::unique_ptr<FidoDiscoveryBase>> Create(
@@ -118,8 +124,6 @@ class FakeFidoDiscoveryFactory : public device::FidoDiscoveryFactory {
   std::unique_ptr<FakeFidoDiscovery> next_nfc_discovery_;
   std::unique_ptr<FakeFidoDiscovery> next_cable_discovery_;
   std::unique_ptr<FakeFidoDiscovery> next_platform_discovery_;
-
-  DISALLOW_COPY_AND_ASSIGN(FakeFidoDiscoveryFactory);
 };
 
 }  // namespace test

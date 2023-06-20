@@ -16,8 +16,8 @@
 #include "base/memory/weak_ptr.h"
 #include "base/no_destructor.h"
 #include "base/run_loop.h"
-#include "base/single_thread_task_runner.h"
 #include "base/strings/string_piece.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "net/base/completion_once_callback.h"
 #include "net/base/io_buffer.h"
@@ -51,6 +51,9 @@ class CloseResultWaiter {
         have_result_(false),
         waiting_for_result_(false) {}
 
+  CloseResultWaiter(const CloseResultWaiter&) = delete;
+  CloseResultWaiter& operator=(const CloseResultWaiter&) = delete;
+
   int WaitForResult() {
     CHECK(!waiting_for_result_);
     while (!have_result_) {
@@ -72,8 +75,6 @@ class CloseResultWaiter {
   int result_;
   bool have_result_;
   bool waiting_for_result_;
-
-  DISALLOW_COPY_AND_ASSIGN(CloseResultWaiter);
 };
 
 class MockHttpStream : public HttpStream {
@@ -88,6 +89,10 @@ class MockHttpStream : public HttpStream {
         is_last_chunk_zero_size_(false),
         is_complete_(false),
         can_reuse_connection_(true) {}
+
+  MockHttpStream(const MockHttpStream&) = delete;
+  MockHttpStream& operator=(const MockHttpStream&) = delete;
+
   ~MockHttpStream() override = default;
 
   // HttpStream implementation.
@@ -186,8 +191,6 @@ class MockHttpStream : public HttpStream {
   bool can_reuse_connection_;
 
   base::WeakPtrFactory<MockHttpStream> weak_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(MockHttpStream);
 };
 
 int MockHttpStream::ReadResponseBody(IOBuffer* buf,
@@ -251,7 +254,7 @@ class HttpResponseBodyDrainerTest : public TestWithTaskEnvironment {
   ~HttpResponseBodyDrainerTest() override = default;
 
   HttpNetworkSession* CreateNetworkSession() {
-    HttpNetworkSession::Context context;
+    HttpNetworkSessionContext context;
     context.proxy_resolution_service = proxy_resolution_service_.get();
     context.ssl_config_service = ssl_config_service_.get();
     context.http_server_properties = http_server_properties_.get();
@@ -259,7 +262,7 @@ class HttpResponseBodyDrainerTest : public TestWithTaskEnvironment {
     context.transport_security_state = &transport_security_state_;
     context.ct_policy_enforcer = &ct_policy_enforcer_;
     context.quic_context = &quic_context_;
-    return new HttpNetworkSession(HttpNetworkSession::Params(), context);
+    return new HttpNetworkSession(HttpNetworkSessionParams(), context);
   }
 
   std::unique_ptr<ProxyResolutionService> proxy_resolution_service_;

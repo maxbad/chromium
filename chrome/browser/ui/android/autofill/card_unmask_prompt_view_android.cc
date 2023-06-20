@@ -48,6 +48,13 @@ void CardUnmaskPromptViewAndroid::Show() {
                              view_android->GetWindowAndroid()->GetJavaObject());
 }
 
+void CardUnmaskPromptViewAndroid::Dismiss() {
+  if (!java_object_internal_)
+    return;
+  Java_CardUnmaskBridge_dismiss(base::android::AttachCurrentThread(),
+                                java_object_internal_);
+}
+
 bool CardUnmaskPromptViewAndroid::CheckUserInputValidity(
     JNIEnv* env,
     const JavaParamRef<jobject>& obj,
@@ -62,13 +69,11 @@ void CardUnmaskPromptViewAndroid::OnUserInput(
     const JavaParamRef<jstring>& cvc,
     const JavaParamRef<jstring>& month,
     const JavaParamRef<jstring>& year,
-    jboolean should_store_locally,
     jboolean enable_fido_auth) {
   controller_->OnUnmaskPromptAccepted(
       base::android::ConvertJavaStringToUTF16(env, cvc),
       base::android::ConvertJavaStringToUTF16(env, month),
-      base::android::ConvertJavaStringToUTF16(env, year), should_store_locally,
-      enable_fido_auth);
+      base::android::ConvertJavaStringToUTF16(env, year), enable_fido_auth);
 }
 
 void CardUnmaskPromptViewAndroid::OnNewCardLinkClicked(
@@ -100,10 +105,7 @@ void CardUnmaskPromptViewAndroid::PromptDismissed(
 
 void CardUnmaskPromptViewAndroid::ControllerGone() {
   controller_ = nullptr;
-  JNIEnv* env = base::android::AttachCurrentThread();
-  if (!java_object_internal_)
-    return;
-  Java_CardUnmaskBridge_dismiss(env, java_object_internal_);
+  Dismiss();
 }
 
 void CardUnmaskPromptViewAndroid::DisableAndWaitForVerification() {

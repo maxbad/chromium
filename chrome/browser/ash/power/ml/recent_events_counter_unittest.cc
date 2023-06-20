@@ -7,13 +7,13 @@
 #include "base/time/time.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace chromeos {
+namespace ash {
 namespace power {
 namespace ml {
 
 TEST(RecentEventsCounterTest, TimeTest) {
-  base::TimeDelta minute = base::TimeDelta::FromMinutes(1);
-  RecentEventsCounter counter(base::TimeDelta::FromHours(1), 60);
+  base::TimeDelta minute = base::Minutes(1);
+  RecentEventsCounter counter(base::Hours(1), 60);
   ASSERT_EQ(counter.GetTotal(minute), 0);
 
   counter.Log(5 * minute);
@@ -48,8 +48,8 @@ TEST(RecentEventsCounterTest, TimeTest) {
 }
 
 TEST(RecentEventsCounterTest, TimeTestConsecutiveMinutes) {
-  base::TimeDelta minute = base::TimeDelta::FromMinutes(1);
-  RecentEventsCounter counter(base::TimeDelta::FromHours(1), 60);
+  base::TimeDelta minute = base::Minutes(1);
+  RecentEventsCounter counter(base::Hours(1), 60);
 
   for (int i = 0; i < 59; i++) {
     counter.Log(i * minute);
@@ -67,8 +67,8 @@ TEST(RecentEventsCounterTest, TimeTestConsecutiveMinutes) {
 
 // Tests that, when logging a slightly-newer event, stale buckets are cleared.
 TEST(RecentEventsCounterTest, SomeBucketsStale) {
-  base::TimeDelta minute = base::TimeDelta::FromMinutes(1);
-  RecentEventsCounter counter(base::TimeDelta::FromHours(1), 60);
+  base::TimeDelta minute = base::Minutes(1);
+  RecentEventsCounter counter(base::Hours(1), 60);
 
   // Start with 60 buckets covering [0, 60), with 1 event per bucket.
   for (int i = 0; i < 60; i++) {
@@ -88,8 +88,8 @@ TEST(RecentEventsCounterTest, SomeBucketsStale) {
 // Tests that, when logging an event more than `duration` newer than any
 // previous event, all buckets are cleared (since all will be stale).
 TEST(RecentEventsCounterTest, AllBucketsStale) {
-  base::TimeDelta minute = base::TimeDelta::FromMinutes(1);
-  RecentEventsCounter counter(base::TimeDelta::FromHours(1), 60);
+  base::TimeDelta minute = base::Minutes(1);
+  RecentEventsCounter counter(base::Hours(1), 60);
 
   // Start with 60 buckets covering [0, 60), with 1 event per bucket.
   for (int i = 0; i < 60; i++) {
@@ -107,4 +107,4 @@ TEST(RecentEventsCounterTest, AllBucketsStale) {
 
 }  // namespace ml
 }  // namespace power
-}  // namespace chromeos
+}  // namespace ash

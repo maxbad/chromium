@@ -5,8 +5,11 @@
 /** @fileoverview Test suite for the WebUI read later. */
 
 GEN_INCLUDE(['//chrome/test/data/webui/polymer_browser_test_base.js']);
+GEN('#include "chrome/browser/ui/ui_features.h"');
 GEN('#include "components/reading_list/features/reading_list_switches.h"');
 GEN('#include "content/public/test/browser_test.h"');
+
+/* eslint-disable no-var */
 
 class SidePanelBrowserTest extends PolymerTest {
   /** @override */
@@ -16,11 +19,15 @@ class SidePanelBrowserTest extends PolymerTest {
 
   /** @override */
   get featureList() {
-    return {enabled: ['reading_list::switches::kReadLater']};
+    return {
+      enabled: [
+        'features::kSidePanel',
+        'reading_list::switches::kReadLater',
+      ]
+    };
   }
 }
 
-// eslint-disable-next-line no-var
 var SidePanelAppTest = class extends SidePanelBrowserTest {
   /** @override */
   get browsePreload() {
@@ -32,7 +39,6 @@ TEST_F('SidePanelAppTest', 'All', function() {
   mocha.run();
 });
 
-// eslint-disable-next-line no-var
 var SidePanelBookmarksListTest = class extends SidePanelBrowserTest {
   /** @override */
   get browsePreload() {
@@ -45,7 +51,6 @@ TEST_F('SidePanelBookmarksListTest', 'All', function() {
 });
 
 
-// eslint-disable-next-line no-var
 var SidePanelBookmarkFolderTest = class extends SidePanelBrowserTest {
   /** @override */
   get browsePreload() {
@@ -54,5 +59,17 @@ var SidePanelBookmarkFolderTest = class extends SidePanelBrowserTest {
 };
 
 TEST_F('SidePanelBookmarkFolderTest', 'All', function() {
+  mocha.run();
+});
+
+
+var SidePanelBookmarksDragManagerTest = class extends SidePanelBrowserTest {
+  /** @override */
+  get browsePreload() {
+    return 'chrome://read-later.top-chrome/test_loader.html?module=read_later/side_panel/bookmarks_drag_manager_test.js';
+  }
+};
+
+TEST_F('SidePanelBookmarksDragManagerTest', 'All', function() {
   mocha.run();
 });

@@ -17,7 +17,6 @@
 #include "base/thread_annotations.h"
 #include "gpu/command_buffer/service/sequence_id.h"
 #include "gpu/ipc/common/gpu_channel.mojom.h"
-#include "gpu/ipc/common/gpu_messages.h"
 #include "gpu/ipc/service/gpu_ipc_service_export.h"
 #include "gpu/ipc/service/image_decode_accelerator_worker.h"
 #include "ui/gfx/geometry/size.h"
@@ -54,6 +53,10 @@ class GPU_IPC_SERVICE_EXPORT ImageDecodeAcceleratorStub
   ImageDecodeAcceleratorStub(ImageDecodeAcceleratorWorker* worker,
                              GpuChannel* channel,
                              int32_t route_id);
+
+  ImageDecodeAcceleratorStub(const ImageDecodeAcceleratorStub&) = delete;
+  ImageDecodeAcceleratorStub& operator=(const ImageDecodeAcceleratorStub&) =
+      delete;
 
   // Processes a decode request. Must be called on the IO thread.
   void ScheduleImageDecode(mojom::ScheduleImageDecodeParamsPtr params,
@@ -101,8 +104,6 @@ class GPU_IPC_SERVICE_EXPORT ImageDecodeAcceleratorStub
 
   scoped_refptr<base::SingleThreadTaskRunner> main_task_runner_;
   scoped_refptr<base::SingleThreadTaskRunner> io_task_runner_;
-
-  DISALLOW_COPY_AND_ASSIGN(ImageDecodeAcceleratorStub);
 };
 
 }  // namespace gpu

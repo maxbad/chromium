@@ -19,8 +19,7 @@
 #include "components/user_manager/user_names.h"
 #include "content/public/test/browser_task_environment.h"
 
-namespace chromeos {
-
+namespace ash {
 namespace {
 
 const char kSAMLUserId1[] = "12345";
@@ -28,11 +27,9 @@ const char kSAMLUserEmail1[] = "alice@corp.example.com";
 
 const char kSyncToken[] = "sync-token-1";
 
-constexpr base::TimeDelta kSyncTokenCheckInterval =
-    base::TimeDelta::FromMinutes(6);
+constexpr base::TimeDelta kSyncTokenCheckInterval = base::Minutes(6);
 
-constexpr base::TimeDelta kSyncTokenCheckBelowInterval =
-    base::TimeDelta::FromMinutes(4);
+constexpr base::TimeDelta kSyncTokenCheckBelowInterval = base::Minutes(4);
 
 class FakeUserManagerWithLocalState : public FakeChromeUserManager {
  public:
@@ -244,4 +241,4 @@ TEST_F(PasswordSyncTokenVerifierTest, ValidateSyncTokenHistogram) {
       "ChromeOS.SAML.InSessionPasswordSyncEvent", 0, 1);
 }
 
-}  // namespace chromeos
+}  // namespace ash

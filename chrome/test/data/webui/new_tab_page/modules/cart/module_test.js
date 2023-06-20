@@ -3,35 +3,32 @@
 // found in the LICENSE file.
 
 import {$$, chromeCartDescriptor, ChromeCartProxy} from 'chrome://new-tab-page/new_tab_page.js';
+import {assert} from 'chrome://resources/js/assert.m.js';
 import {loadTimeData} from 'chrome://resources/js/load_time_data.m.js';
+import {assertEquals, assertFalse, assertTrue} from 'chrome://test/chai_assert.js';
 import {fakeMetricsPrivate, MetricsTracker} from 'chrome://test/new_tab_page/metrics_test_support.js';
-import {assertNotStyle} from 'chrome://test/new_tab_page/test_support.js';
-import {TestBrowserProxy} from 'chrome://test/test_browser_proxy.m.js';
-import {eventToPromise, flushTasks, isVisible} from 'chrome://test/test_util.m.js';
+import {assertNotStyle, installMock} from 'chrome://test/new_tab_page/test_support.js';
+import {TestBrowserProxy} from 'chrome://test/test_browser_proxy.js';
+import {eventToPromise, flushTasks, isVisible} from 'chrome://test/test_util.js';
 
 suite('NewTabPageModulesChromeCartModuleTest', () => {
-  /**
-   * @implements {ChromeCartProxy}
-   * @extends {TestBrowserProxy}
-   */
-  let testProxy;
+  /** @type {!TestBrowserProxy} */
+  let handler;
 
-  /** @type {MetricsTracker} */
+  /** @type {!MetricsTracker} */
   let metrics;
 
   setup(() => {
-    PolymerTest.clearBody();
+    document.body.innerHTML = '';
 
-    testProxy = TestBrowserProxy.fromClass(ChromeCartProxy);
-    testProxy.handler =
-        TestBrowserProxy.fromClass(chromeCart.mojom.CartHandlerRemote);
-    ChromeCartProxy.setInstance(testProxy);
+    handler = installMock(
+        chromeCart.mojom.CartHandlerRemote, ChromeCartProxy.setHandler);
     metrics = fakeMetricsPrivate();
     // Not show welcome surface by default.
-    testProxy.handler.setResultFor(
+    handler.setResultFor(
         'getWarmWelcomeVisible', Promise.resolve({welcomeVisible: false}));
     // Not show consent card by default.
-    testProxy.handler.setResultFor(
+    handler.setResultFor(
         'getDiscountConsentCardVisible',
         Promise.resolve({consentVisible: false}));
   });
@@ -43,14 +40,13 @@ suite('NewTabPageModulesChromeCartModuleTest', () => {
 
     test('creates no module if no cart item', async () => {
       // Arrange.
-      testProxy.handler.setResultFor(
-          'getMerchantCarts', Promise.resolve({carts: []}));
+      handler.setResultFor('getMerchantCarts', Promise.resolve({carts: []}));
 
       // Act.
-      const moduleElement = await chromeCartDescriptor.initialize();
+      const moduleElement = await chromeCartDescriptor.initialize(0);
 
       // Assert.
-      assertEquals(1, testProxy.handler.getCallCount('getMerchantCarts'));
+      assertEquals(1, handler.getCallCount('getMerchantCarts'));
       assertEquals(null, moduleElement);
     });
 
@@ -84,13 +80,12 @@ suite('NewTabPageModulesChromeCartModuleTest', () => {
           ],
         },
       ];
-      testProxy.handler.setResultFor(
-          'getMerchantCarts', Promise.resolve({carts}));
+      handler.setResultFor('getMerchantCarts', Promise.resolve({carts}));
 
       // Act.
-      const moduleElement = await chromeCartDescriptor.initialize();
+      const moduleElement = assert(await chromeCartDescriptor.initialize(0));
       document.body.append(moduleElement);
-      moduleElement.$.cartItemRepeat.render();
+      $$(moduleElement, '#cartItemRepeat').render();
 
       // Assert.
       const cartItems = moduleElement.shadowRoot.querySelectorAll('.cart-item');
@@ -152,15 +147,14 @@ suite('NewTabPageModulesChromeCartModuleTest', () => {
           productImageUrls: [],
         },
       ];
-      testProxy.handler.setResultFor(
-          'getMerchantCarts', Promise.resolve({carts}));
-      testProxy.handler.setResultFor(
+      handler.setResultFor('getMerchantCarts', Promise.resolve({carts}));
+      handler.setResultFor(
           'getWarmWelcomeVisible', Promise.resolve({welcomeVisible: true}));
 
       // Arrange.
-      const moduleElement = await chromeCartDescriptor.initialize();
+      const moduleElement = assert(await chromeCartDescriptor.initialize(0));
       document.body.append(moduleElement);
-      moduleElement.$.cartItemRepeat.render();
+      $$(moduleElement, '#cartItemRepeat').render();
 
       // Assert.
       const headerChip =
@@ -191,17 +185,17 @@ suite('NewTabPageModulesChromeCartModuleTest', () => {
               ],
             },
           ];
-          testProxy.handler.setResultFor(
-              'getMerchantCarts', Promise.resolve({carts}));
+          handler.setResultFor('getMerchantCarts', Promise.resolve({carts}));
           loadTimeData.overrideValues({
             disableModuleToastMessage: 'hello $1',
             modulesCartLowerYour: 'world',
           });
 
           // Arrange.
-          const moduleElement = await chromeCartDescriptor.initialize();
+          const moduleElement =
+              assert(await chromeCartDescriptor.initialize(0));
           document.body.append(moduleElement);
-          moduleElement.$.cartItemRepeat.render();
+          $$(moduleElement, '#cartItemRepeat').render();
 
           // Act.
           const waitForDismissEvent =
@@ -217,15 +211,14 @@ suite('NewTabPageModulesChromeCartModuleTest', () => {
           assertEquals(
               loadTimeData.getString('modulesCartModuleMenuHideToastMessage'),
               hideToastMessage);
-          assertEquals(1, testProxy.handler.getCallCount('hideCartModule'));
+          assertEquals(1, handler.getCallCount('hideCartModule'));
           assertEquals(1, metrics.count('NewTabPage.Carts.HideModule'));
 
           // Act.
           hideRestoreCallback();
 
           // Assert.
-          assertEquals(
-              1, testProxy.handler.getCallCount('restoreHiddenCartModule'));
+          assertEquals(1, handler.getCallCount('restoreHiddenCartModule'));
           assertEquals(1, metrics.count('NewTabPage.Carts.UndoHideModule'));
 
           // Act.
@@ -263,18 +256,18 @@ suite('NewTabPageModulesChromeCartModuleTest', () => {
           productImageUrls: [],
         },
       ];
-      testProxy.handler.setResultFor(
-          'getMerchantCarts', Promise.resolve({carts}));
+      handler.setResultFor('getMerchantCarts', Promise.resolve({carts}));
 
       // Arrange.
-      const moduleElement = await chromeCartDescriptor.initialize();
+      const moduleElement = assert(await chromeCartDescriptor.initialize(0));
       document.body.append(moduleElement);
-      moduleElement.$.cartItemRepeat.render();
+      $$(moduleElement, '#cartItemRepeat').render();
 
       // Assert.
-      const cartItems = moduleElement.shadowRoot.querySelectorAll('.cart-item');
-      assertEquals(2, cartItems.length);
-      let menuButton = cartItems[0].querySelector('.icon-more-vert');
+      const cartContainers =
+          moduleElement.shadowRoot.querySelectorAll('.cart-container');
+      assertEquals(2, cartContainers.length);
+      let menuButton = cartContainers[0].querySelector('.icon-more-vert');
       const actionMenu = $$(moduleElement, '#cartActionMenu');
       assertFalse(actionMenu.open);
 
@@ -283,60 +276,63 @@ suite('NewTabPageModulesChromeCartModuleTest', () => {
 
       // Assert.
       assertTrue(actionMenu.open);
-      assertEquals(0, testProxy.handler.getCallCount('hideCart'));
+      assertEquals(0, handler.getCallCount('hideCart'));
 
       // Act
       actionMenu.querySelector('#hideCartButton').click();
       await flushTasks();
 
       // Assert.
-      assertEquals(1, testProxy.handler.getCallCount('hideCart'));
+      assertEquals(1, handler.getCallCount('hideCart'));
       assertTrue($$(moduleElement, '#dismissCartToast').open);
       assertEquals(
           loadTimeData.getStringF(
               'modulesCartCartMenuHideMerchantToastMessage', 'Foo'),
-          $$(moduleElement, '#dismissCartToastMessage').textContent.trim());
+          assert($$(moduleElement, '#dismissCartToastMessage'))
+              .textContent.trim());
       assertNotStyle(
-          $$(moduleElement, '#undoDismissCartButton'), 'display', 'none');
-      assertEquals(0, testProxy.handler.getCallCount('restoreHiddenCart'));
+          assert($$(moduleElement, '#undoDismissCartButton')), 'display',
+          'none');
+      assertEquals(0, handler.getCallCount('restoreHiddenCart'));
 
       // Act.
       $$(moduleElement, '#undoDismissCartButton').click();
       await flushTasks();
 
       // Assert.
-      assertEquals(1, testProxy.handler.getCallCount('restoreHiddenCart'));
+      assertEquals(1, handler.getCallCount('restoreHiddenCart'));
       assertFalse(actionMenu.open);
 
       // Act.
-      menuButton = cartItems[1].querySelector('.icon-more-vert');
+      menuButton = cartContainers[1].querySelector('.icon-more-vert');
       menuButton.click();
 
       // Assert.
       assertTrue(actionMenu.open);
-      assertEquals(0, testProxy.handler.getCallCount('removeCart'));
+      assertEquals(0, handler.getCallCount('removeCart'));
 
       // Act
       actionMenu.querySelector('#removeCartButton').click();
       await flushTasks();
 
       // Assert.
-      assertEquals(1, testProxy.handler.getCallCount('removeCart'));
+      assertEquals(1, handler.getCallCount('removeCart'));
       assertTrue($$(moduleElement, '#dismissCartToast').open);
       assertEquals(
           loadTimeData.getStringF(
               'modulesCartCartMenuRemoveMerchantToastMessage', 'Bar'),
           $$(moduleElement, '#dismissCartToastMessage').textContent.trim());
       assertNotStyle(
-          $$(moduleElement, '#undoDismissCartButton'), 'display', 'none');
-      assertEquals(0, testProxy.handler.getCallCount('restoreRemovedCart'));
+          assert($$(moduleElement, '#undoDismissCartButton')), 'display',
+          'none');
+      assertEquals(0, handler.getCallCount('restoreRemovedCart'));
 
       // Act
       $$(moduleElement, '#undoDismissCartButton').click();
       await flushTasks();
 
       // Assert.
-      assertEquals(1, testProxy.handler.getCallCount('restoreRemovedCart'));
+      assertEquals(1, handler.getCallCount('restoreRemovedCart'));
       assertFalse(actionMenu.open);
     });
 
@@ -350,43 +346,42 @@ suite('NewTabPageModulesChromeCartModuleTest', () => {
         },
       ];
       let carts = data;
-      testProxy.handler.setResultFor(
-          'getMerchantCarts', Promise.resolve({carts}));
+      handler.setResultFor('getMerchantCarts', Promise.resolve({carts}));
 
       // Arrange.
-      const moduleElement = await chromeCartDescriptor.initialize();
+      const moduleElement = assert(await chromeCartDescriptor.initialize(0));
       document.body.append(moduleElement);
-      moduleElement.$.cartItemRepeat.render();
+      $$(moduleElement, '#cartItemRepeat').render();
 
       // Assert.
-      let cartItems = moduleElement.shadowRoot.querySelectorAll('.cart-item');
-      assertEquals(1, cartItems.length);
+      let cartContainers =
+          moduleElement.shadowRoot.querySelectorAll('.cart-container');
+      assertEquals(1, cartContainers.length);
       const actionMenu = $$(moduleElement, '#cartActionMenu');
       assertFalse(actionMenu.open);
 
       // Act.
-      cartItems[0].querySelector('.icon-more-vert').click();
+      cartContainers[0].querySelector('.icon-more-vert').click();
 
       // Assert.
       assertTrue(actionMenu.open);
-      assertEquals(0, testProxy.handler.getCallCount('hideCart'));
+      assertEquals(0, handler.getCallCount('hideCart'));
 
       // Act.
       carts = [];
-      testProxy.handler.setResultFor(
-          'getMerchantCarts', Promise.resolve({carts}));
+      handler.setResultFor('getMerchantCarts', Promise.resolve({carts}));
       const waitForDismissEvent =
           eventToPromise('dismiss-module', moduleElement);
       actionMenu.querySelector('#hideCartButton').click();
       const hideEvent = await waitForDismissEvent;
       const hideToastMessage = hideEvent.detail.message;
       const hideRestoreCallback = hideEvent.detail.restoreCallback;
-      cartItems = moduleElement.shadowRoot.querySelectorAll('.cart-item');
+      cartContainers = moduleElement.shadowRoot.querySelectorAll('.cart-item');
 
       // Assert.
       assertFalse($$(moduleElement, '#dismissCartToast').open);
-      assertEquals(1, testProxy.handler.getCallCount('hideCart'));
-      assertEquals(0, cartItems.length);
+      assertEquals(1, handler.getCallCount('hideCart'));
+      assertEquals(0, cartContainers.length);
       assertEquals(
           loadTimeData.getStringF(
               'modulesCartCartMenuHideMerchantToastMessage', 'Foo'),
@@ -396,15 +391,14 @@ suite('NewTabPageModulesChromeCartModuleTest', () => {
 
       // Act.
       carts = data;
-      testProxy.handler.setResultFor(
-          'getMerchantCarts', Promise.resolve({carts}));
+      handler.setResultFor('getMerchantCarts', Promise.resolve({carts}));
       hideRestoreCallback();
       await flushTasks();
-      cartItems = moduleElement.shadowRoot.querySelectorAll('.cart-item');
+      cartContainers = moduleElement.shadowRoot.querySelectorAll('.cart-item');
 
       // Assert.
-      assertEquals(1, testProxy.handler.getCallCount('restoreHiddenCart'));
-      assertEquals(1, cartItems.length);
+      assertEquals(1, handler.getCallCount('restoreHiddenCart'));
+      assertEquals(1, cartContainers.length);
       assertEquals(
           1, metrics.count('NewTabPage.Carts.RestoreLastCartRestoresModule'));
     });
@@ -417,13 +411,12 @@ suite('NewTabPageModulesChromeCartModuleTest', () => {
         productImageUrls: [],
       };
       const carts = Array.from({length: 10}, () => dummyMerchant);
-      testProxy.handler.setResultFor(
-          'getMerchantCarts', Promise.resolve({carts}));
+      handler.setResultFor('getMerchantCarts', Promise.resolve({carts}));
 
       // Arrange.
-      const moduleElement = await chromeCartDescriptor.initialize();
+      const moduleElement = assert(await chromeCartDescriptor.initialize(0));
       document.body.append(moduleElement);
-      moduleElement.$.cartItemRepeat.render();
+      $$(moduleElement, '#cartItemRepeat').render();
       const cartCarousel =
           moduleElement.shadowRoot.querySelector('#cartCarousel');
       moduleElement.scrollBehavior = 'auto';
@@ -514,13 +507,12 @@ suite('NewTabPageModulesChromeCartModuleTest', () => {
         productImageUrls: [],
       };
       const carts = Array.from({length: 10}, () => dummyMerchant);
-      testProxy.handler.setResultFor(
-          'getMerchantCarts', Promise.resolve({carts}));
+      handler.setResultFor('getMerchantCarts', Promise.resolve({carts}));
 
       // Arrange.
-      const moduleElement = await chromeCartDescriptor.initialize();
+      const moduleElement = assert(await chromeCartDescriptor.initialize(0));
       document.body.append(moduleElement);
-      moduleElement.$.cartItemRepeat.render();
+      $$(moduleElement, '#cartItemRepeat').render();
       const cartCarousel =
           moduleElement.shadowRoot.querySelector('#cartCarousel');
       moduleElement.scrollBehavior = 'auto';
@@ -587,13 +579,12 @@ suite('NewTabPageModulesChromeCartModuleTest', () => {
         productImageUrls: [],
       };
       const carts = Array.from({length: 4}, () => dummyMerchant);
-      testProxy.handler.setResultFor(
-          'getMerchantCarts', Promise.resolve({carts}));
+      handler.setResultFor('getMerchantCarts', Promise.resolve({carts}));
 
       // Arrange.
-      const moduleElement = await chromeCartDescriptor.initialize();
+      const moduleElement = assert(await chromeCartDescriptor.initialize(0));
       document.body.append(moduleElement);
-      moduleElement.$.cartItemRepeat.render();
+      $$(moduleElement, '#cartItemRepeat').render();
 
       // Assert.
       const cartItems = moduleElement.shadowRoot.querySelectorAll('.cart-item');
@@ -654,13 +645,12 @@ suite('NewTabPageModulesChromeCartModuleTest', () => {
           discountText: '',
         },
       ];
-      testProxy.handler.setResultFor(
-          'getMerchantCarts', Promise.resolve({carts}));
+      handler.setResultFor('getMerchantCarts', Promise.resolve({carts}));
 
       // Act.
-      const moduleElement = await chromeCartDescriptor.initialize();
+      const moduleElement = assert(await chromeCartDescriptor.initialize(0));
       document.body.append(moduleElement);
-      moduleElement.$.cartItemRepeat.render();
+      $$(moduleElement, '#cartItemRepeat').render();
 
       // Assert.
       const cartItems = moduleElement.shadowRoot.querySelectorAll('.cart-item');
@@ -684,9 +674,8 @@ suite('NewTabPageModulesChromeCartModuleTest', () => {
           productImageUrls: [],
         },
       ];
-      testProxy.handler.setResultFor(
-          'getMerchantCarts', Promise.resolve({carts}));
-      testProxy.handler.setResultFor(
+      handler.setResultFor('getMerchantCarts', Promise.resolve({carts}));
+      handler.setResultFor(
           'getDiscountConsentCardVisible',
           Promise.resolve({consentVisible: true}));
       loadTimeData.overrideValues({
@@ -695,14 +684,14 @@ suite('NewTabPageModulesChromeCartModuleTest', () => {
       });
 
       // Arrange.
-      const moduleElement = await chromeCartDescriptor.initialize();
+      const moduleElement = assert(await chromeCartDescriptor.initialize(0));
       document.body.append(moduleElement);
-      moduleElement.$.consentCardElement.render();
+      $$(moduleElement, '#consentCardElement').render();
 
       // Assert.
-      const consentCard = $$(moduleElement, '#consentCard');
-      const consentToast = moduleElement.shadowRoot.querySelector(
-          '#confirmDiscountConsentToast');
+      const consentCard = assert($$(moduleElement, '#consentCard'));
+      const consentToast = assert(moduleElement.shadowRoot.querySelector(
+          '#confirmDiscountConsentToast'));
       assertEquals(true, isVisible(consentCard));
       assertEquals(false, consentToast.open);
       assertEquals(
@@ -714,6 +703,7 @@ suite('NewTabPageModulesChromeCartModuleTest', () => {
       assertEquals(
           loadTimeData.getString('modulesCartDiscountConsentAccept'),
           consentCard.querySelector('#actionButton').innerText);
+      assertEquals(0, metrics.count('NewTabPage.Carts.RejectDiscountConsent'));
 
       // Act.
       consentCard.querySelector('#cancelButton').click();
@@ -726,6 +716,7 @@ suite('NewTabPageModulesChromeCartModuleTest', () => {
           'Reject confirmation!',
           consentToast.querySelector('#confirmDiscountConsentMessage')
               .innerText);
+      assertEquals(1, metrics.count('NewTabPage.Carts.RejectDiscountConsent'));
 
       // Act.
       consentToast.querySelector('#confirmDiscountConsentButton').click();
@@ -736,10 +727,11 @@ suite('NewTabPageModulesChromeCartModuleTest', () => {
 
       // Act.
       moduleElement.showDiscountConsent = true;
-      moduleElement.$.consentCardElement.render();
+      $$(moduleElement, '#consentCardElement').render();
 
       // Assert.
       assertEquals(true, isVisible(consentCard));
+      assertEquals(0, metrics.count('NewTabPage.Carts.AcceptDiscountConsent'));
 
       // Act.
       consentCard.querySelector('#actionButton').click();
@@ -759,6 +751,7 @@ suite('NewTabPageModulesChromeCartModuleTest', () => {
       // Assert.
       assertEquals(false, consentToast.open);
       assertEquals(false, isVisible(consentCard));
+      assertEquals(1, metrics.count('NewTabPage.Carts.AcceptDiscountConsent'));
     });
 
     test('scroll with consent card', async () => {
@@ -769,16 +762,15 @@ suite('NewTabPageModulesChromeCartModuleTest', () => {
         productImageUrls: [],
       };
       const carts = Array.from({length: 10}, () => dummyMerchant);
-      testProxy.handler.setResultFor(
-          'getMerchantCarts', Promise.resolve({carts}));
-      testProxy.handler.setResultFor(
+      handler.setResultFor('getMerchantCarts', Promise.resolve({carts}));
+      handler.setResultFor(
           'getDiscountConsentCardVisible',
           Promise.resolve({consentVisible: true}));
 
       // Arrange.
-      const moduleElement = await chromeCartDescriptor.initialize();
+      const moduleElement = assert(await chromeCartDescriptor.initialize(0));
       document.body.append(moduleElement);
-      moduleElement.$.cartItemRepeat.render();
+      $$(moduleElement, '#cartItemRepeat').render();
       const cartCarousel =
           moduleElement.shadowRoot.querySelector('#cartCarousel');
       moduleElement.scrollBehavior = 'auto';
@@ -858,13 +850,12 @@ suite('NewTabPageModulesChromeCartModuleTest', () => {
           discountText: '15% off',
         },
       ];
-      testProxy.handler.setResultFor(
-          'getMerchantCarts', Promise.resolve({carts}));
+      handler.setResultFor('getMerchantCarts', Promise.resolve({carts}));
 
       // Act.
-      const moduleElement = await chromeCartDescriptor.initialize();
+      const moduleElement = assert(await chromeCartDescriptor.initialize(0));
       document.body.append(moduleElement);
-      moduleElement.$.cartItemRepeat.render();
+      $$(moduleElement, '#cartItemRepeat').render();
 
       // Assert.
       const cartItems = moduleElement.shadowRoot.querySelectorAll('.cart-item');
@@ -877,10 +868,12 @@ suite('NewTabPageModulesChromeCartModuleTest', () => {
       cartItems[1].querySelector('.thumbnail-container').click();
 
       // Assert.
-      Array(4).forEach(
-          index => assertEquals(
-              1, metrics.count('NewTabPage.Carts.ClickCart', index)));
-      assertEquals(0, testProxy.handler.getCallCount('getDiscountURL'));
+      assertEquals(4, handler.getCallCount('prepareForNavigation'));
+      for (let index = 0; index < 4; index++) {
+        assertEquals(1, metrics.count('NewTabPage.Carts.ClickCart', index));
+        assertEquals(true, handler.getArgs('prepareForNavigation')[index][1]);
+      }
+      assertEquals(0, handler.getCallCount('getDiscountURL'));
     });
 
     function checkScrollButtonVisibility(
@@ -905,7 +898,7 @@ suite('NewTabPageModulesChromeCartModuleTest', () => {
 
     function checkVisibleRange(moduleElement, startIndex, endIndex) {
       const carts = moduleElement.shadowRoot.querySelector('#cartCarousel')
-                        .querySelectorAll('.cart-item');
+                        .querySelectorAll('.cart-container');
       assertTrue(startIndex >= 0);
       assertTrue(endIndex < carts.length);
       for (let i = 0; i < carts.length; i++) {
@@ -920,7 +913,7 @@ suite('NewTabPageModulesChromeCartModuleTest', () => {
     function getVisibilityForIndex(moduleElement, index) {
       const cartCarousel =
           moduleElement.shadowRoot.querySelector('#cartCarousel');
-      const cart = cartCarousel.querySelectorAll('.cart-item')[index];
+      const cart = cartCarousel.querySelectorAll('.cart-container')[index];
       return (cart.offsetLeft > cartCarousel.scrollLeft) &&
           (cartCarousel.scrollLeft + cartCarousel.clientWidth) >
           (cart.offsetLeft + cart.offsetWidth);
@@ -960,16 +953,15 @@ suite('NewTabPageModulesChromeCartModuleTest', () => {
           discountText: '15% off',
         },
       ];
-      testProxy.handler.setResultFor(
-          'getMerchantCarts', Promise.resolve({carts}));
-      testProxy.handler.setResultFor(
+      handler.setResultFor('getMerchantCarts', Promise.resolve({carts}));
+      handler.setResultFor(
           'getDiscountURL',
           Promise.resolve({discountUrl: {url: 'https://www.foo.com'}}));
 
       // Act.
-      const moduleElement = await chromeCartDescriptor.initialize();
+      const moduleElement = assert(await chromeCartDescriptor.initialize(0));
       document.body.append(moduleElement);
-      moduleElement.$.cartItemRepeat.render();
+      $$(moduleElement, '#cartItemRepeat').render();
 
       // Assert.
       const cartItems = moduleElement.shadowRoot.querySelectorAll('.cart-item');
@@ -989,10 +981,12 @@ suite('NewTabPageModulesChromeCartModuleTest', () => {
           'https://ebay.com', 1, 4, moduleElement);
 
       // Act.
-      cartItems[0].querySelector('.icon-more-vert').click();
+      const cartContainers =
+          moduleElement.shadowRoot.querySelectorAll('.cart-container');
+      cartContainers[0].querySelector('.icon-more-vert').click();
 
       // Assert.
-      assertEquals(4, testProxy.handler.getCallCount('getDiscountURL'));
+      assertEquals(4, handler.getCallCount('getDiscountURL'));
     });
 
     async function testRBDCartClick(
@@ -1003,12 +997,10 @@ suite('NewTabPageModulesChromeCartModuleTest', () => {
 
       // Assert.
       assertEquals(0, metrics.count('NewTabPage.Carts.ClickCart', index));
-      assertEquals(
-          expectedCallCount, testProxy.handler.getCallCount('getDiscountURL'));
+      assertEquals(expectedCallCount, handler.getCallCount('getDiscountURL'));
       assertEquals(
           cartURL,
-          testProxy.handler.getArgs('getDiscountURL')[expectedCallCount - 1]
-              .url);
+          handler.getArgs('getDiscountURL')[expectedCallCount - 1].url);
 
       // Act.
       // Wait for the following click event triggered by the first click to
@@ -1021,5 +1013,64 @@ suite('NewTabPageModulesChromeCartModuleTest', () => {
           'https://www.foo.com/',
           moduleElement.shadowRoot.querySelectorAll('.cart-item')[index].href);
     }
+
+    test('record discount consent show', async () => {
+      // Arrange.
+      const carts = [
+        {
+          merchant: 'Foo',
+          cartUrl: {url: 'https://foo.com'},
+          productImageUrls: [],
+        },
+      ];
+      handler.setResultFor('getMerchantCarts', Promise.resolve({carts}));
+      handler.setResultFor(
+          'getDiscountConsentCardVisible',
+          Promise.resolve({consentVisible: true}));
+
+      assertEquals(0, metrics.count('NewTabPage.Carts.DiscountConsentShow', 1));
+
+      // Act.
+      const moduleElement = await chromeCartDescriptor.initialize(0);
+
+      // Assert.
+      assertEquals(1, metrics.count('NewTabPage.Carts.DiscountConsentShow', 1));
+    });
+
+    test('record discount carts count and index', async () => {
+      // Arrange.
+      const carts = [
+        {
+          merchant: 'Boo',
+          cartUrl: {url: 'https://Boo.com'},
+          productImageUrls: [],
+          discountText: '5% off'
+        },
+        {
+          merchant: 'Foo',
+          cartUrl: {url: 'https://foo.com'},
+          productImageUrls: [],
+        },
+        {
+          merchant: 'Koo',
+          cartUrl: {url: 'https://Koo.com'},
+          productImageUrls: [],
+          discountText: '10% off'
+        },
+      ];
+      handler.setResultFor('getMerchantCarts', Promise.resolve({carts}));
+
+      assertEquals(0, metrics.count('NewTabPage.Carts.DiscountCountAtLoad', 2));
+      assertEquals(0, metrics.count('NewTabPage.Carts.DiscountAt', 0));
+      assertEquals(0, metrics.count('NewTabPage.Carts.DiscountAt', 2));
+
+      // Act.
+      const moduleElement = await chromeCartDescriptor.initialize(0);
+
+      // Assert.
+      assertEquals(1, metrics.count('NewTabPage.Carts.DiscountCountAtLoad', 2));
+      assertEquals(1, metrics.count('NewTabPage.Carts.DiscountAt', 0));
+      assertEquals(1, metrics.count('NewTabPage.Carts.DiscountAt', 2));
+    });
   });
 });

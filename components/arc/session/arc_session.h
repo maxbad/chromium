@@ -9,16 +9,11 @@
 #include <string>
 
 #include "base/callback_forward.h"
-#include "base/macros.h"
 #include "base/observer_list.h"
 #include "components/arc/session/adb_sideloading_availability_delegate.h"
 #include "components/arc/session/arc_client_adapter.h"
 #include "components/arc/session/arc_stop_reason.h"
 #include "components/arc/session/arc_upgrade_params.h"
-
-namespace ash {
-class DefaultScaleFactorRetriever;
-}
 
 namespace chromeos {
 class SchedulerConfigurationManagerBase;
@@ -62,12 +57,14 @@ class ArcSession {
   // Creates a default instance of ArcSession.
   static std::unique_ptr<ArcSession> Create(
       ArcBridgeService* arc_bridge_service,
-      ash::DefaultScaleFactorRetriever* retriever,
       version_info::Channel channel,
       chromeos::SchedulerConfigurationManagerBase*
           scheduler_configuration_manager,
       AdbSideloadingAvailabilityDelegate*
           adb_sideloading_availability_delegate);
+
+  ArcSession(const ArcSession&) = delete;
+  ArcSession& operator=(const ArcSession&) = delete;
 
   virtual ~ArcSession();
 
@@ -109,6 +106,8 @@ class ArcSession {
       base::OnceCallback<void(bool success, const std::string& failure_reason)>;
   virtual void TrimVmMemory(TrimVmMemoryCallback callback) = 0;
 
+  virtual void SetDefaultDeviceScaleFactor(float scale_factor) = 0;
+
   void AddObserver(Observer* observer);
   void RemoveObserver(Observer* observer);
 
@@ -116,9 +115,6 @@ class ArcSession {
   ArcSession();
 
   base::ObserverList<Observer>::Unchecked observer_list_;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(ArcSession);
 };
 
 }  // namespace arc

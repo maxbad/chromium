@@ -17,10 +17,9 @@ CastWebViewFactory::CastWebViewFactory(content::BrowserContext* browser_context)
 CastWebViewFactory::~CastWebViewFactory() = default;
 
 std::unique_ptr<CastWebView> CastWebViewFactory::CreateWebView(
-    const CastWebView::CreateParams& params,
-    CastWebService* web_service,
-    const GURL& initial_url) {
-  return std::make_unique<CastWebViewDefault>(params, web_service,
+    mojom::CastWebViewParamsPtr params,
+    CastWebService* web_service) {
+  return std::make_unique<CastWebViewDefault>(std::move(params), web_service,
                                               browser_context_);
 }
 

@@ -233,8 +233,11 @@ AutofillOfferData GetCardLinkedOfferData1();
 // the one above.
 AutofillOfferData GetCardLinkedOfferData2();
 
-// Returns an Autofill promo code offer data full of dummy info.
-AutofillOfferData GetPromoCodeOfferData();
+// Returns an Autofill promo code offer data full of dummy info, using |origin|
+// if provided and expired if |is_expired| is true.
+AutofillOfferData GetPromoCodeOfferData(
+    GURL origin = GURL("http://www.example.com"),
+    bool is_expired = false);
 
 // A unit testing utility that is common to a number of the Autofill unit
 // tests.  |SetProfileInfo| provides a quick way to populate a profile with
@@ -370,7 +373,8 @@ std::vector<FormSignature> GetEncodedSignatures(
 void GenerateTestAutofillPopup(
     AutofillExternalDelegate* autofill_external_delegate);
 
-std::string ObfuscatedCardDigitsAsUTF8(const std::string& str);
+std::string ObfuscatedCardDigitsAsUTF8(const std::string& str,
+                                       int obfuscation_length = 4);
 
 // Returns 2-digit month string, like "02", "10".
 std::string NextMonth();

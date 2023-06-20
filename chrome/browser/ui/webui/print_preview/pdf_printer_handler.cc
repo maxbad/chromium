@@ -89,7 +89,7 @@ const AccountId& GetAccountId(Profile* profile) {
 gfx::Size GetDefaultPdfMediaSizeMicrons() {
   PrintingContextDelegate delegate;
   auto printing_context(PrintingContext::Create(&delegate));
-  if (PrintingContext::OK != printing_context->UsePdfSettings() ||
+  if (mojom::ResultCode::kSuccess != printing_context->UsePdfSettings() ||
       printing_context->settings().device_units_per_inch() <= 0) {
     return gfx::Size();
   }
@@ -157,10 +157,7 @@ base::Value GetPdfCapabilities(
 // Callback that stores a PDF file on disk.
 void PrintToPdfCallback(scoped_refptr<base::RefCountedMemory> data,
                         const base::FilePath& path) {
-  base::File file(path,
-                  base::File::FLAG_CREATE_ALWAYS | base::File::FLAG_WRITE);
-  file.WriteAtCurrentPos(reinterpret_cast<const char*>(data->front()),
-                         base::checked_cast<int>(data->size()));
+  base::WriteFile(path, *data);
 }
 
 // Callback that runs after `PrintToPdfCallback()` returns.

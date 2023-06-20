@@ -106,7 +106,7 @@ void LanguageDetectionController::OnTextCaptured(const base::Value& command,
   }
 
   UMA_HISTOGRAM_TIMES(kTranslateCaptureText,
-                      base::TimeDelta::FromMillisecondsD(*capture_text_time));
+                      base::Milliseconds(*capture_text_time));
 
   // If there is no language defined in httpEquiv, use the HTTP header.
   if (http_content_language->empty())
@@ -117,8 +117,7 @@ void LanguageDetectionController::OnTextCaptured(const base::Value& command,
       base::BindRepeating(&LanguageDetectionController::OnTextRetrieved,
                           weak_method_factory_.GetWeakPtr(), *has_notranslate,
                           *http_content_language, *html_lang, url),
-      base::TimeDelta::FromMilliseconds(
-          web::kJavaScriptFunctionCallDefaultTimeout));
+      base::Milliseconds(web::kJavaScriptFunctionCallDefaultTimeout));
 }
 
 void LanguageDetectionController::OnTextRetrieved(
@@ -133,9 +132,9 @@ void LanguageDetectionController::OnTextRetrieved(
   std::u16string text = text_content && text_content->is_string()
                             ? base::UTF8ToUTF16(text_content->GetString())
                             : std::u16string();
-  std::string language = translate::DeterminePageLanguage(
+  std::string language = DeterminePageLanguage(
       http_content_language, html_lang,
-      GetStringByClippingLastWord(text, translate::kMaxIndexChars),
+      GetStringByClippingLastWord(text, kMaxIndexChars),
       &model_detected_language, &is_model_reliable, model_reliability_score);
   if (language.empty())
     return;  // No language detected.

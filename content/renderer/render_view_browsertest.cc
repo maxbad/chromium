@@ -16,11 +16,12 @@
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/location.h"
+#include "base/macros.h"
 #include "base/run_loop.h"
-#include "base/single_thread_task_runner.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/test/bind.h"
 #include "base/test/gmock_callback_support.h"
 #include "base/threading/thread_task_runner_handle.h"
@@ -71,7 +72,8 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/blink/public/common/dom_storage/session_storage_namespace_id.h"
-#include "third_party/blink/public/common/origin_trials/origin_trial_policy.h"
+#include "third_party/blink/public/common/navigation/navigation_params.h"
+#include "third_party/blink/public/common/origin_trials/scoped_test_origin_trial_policy.h"
 #include "third_party/blink/public/common/origin_trials/trial_token_validator.h"
 #include "third_party/blink/public/common/page/page_zoom.h"
 #include "third_party/blink/public/common/switches.h"
@@ -126,23 +128,10 @@
 #include "base/win/windows_version.h"
 #endif
 
-#if defined(USE_AURA) && defined(USE_X11)
-#include "ui/events/event_constants.h"
-#include "ui/events/keycodes/keyboard_code_conversion.h"
-#include "ui/events/test/events_test_utils.h"
-#include "ui/events/test/events_test_utils_x11.h"
-#include "ui/events/x/x11_event_translation.h"
-#endif
-
 #if defined(USE_OZONE)
 #include "ui/events/keycodes/keyboard_code_conversion.h"
 #endif
 
-#if defined(USE_X11) && defined(USE_OZONE)
-#include "ui/base/ui_base_features.h"
-#endif
-
-using base::TimeDelta;
 using blink::TestWebFrameContentDumper;
 using blink::WebFrame;
 using blink::WebGestureEvent;
@@ -158,7 +147,7 @@ namespace {
 
 static const int kProxyRoutingId = 13;
 
-#if (defined(USE_AURA) && defined(USE_X11)) || defined(USE_OZONE)
+#if defined(USE_OZONE)
 // Converts MockKeyboard::Modifiers to ui::EventFlags.
 int ConvertMockKeyboardModifier(MockKeyboard::Modifiers modifiers) {
   static struct ModifierMap {
@@ -224,12 +213,12 @@ blink::mojom::FrameReplicationStatePtr ReconstructReplicationStateForTesting(
 
 // Returns mojom::CommonNavigationParams for a normal navigation to a data: url,
 // with navigation_start set to Now() plus the given offset.
-mojom::CommonNavigationParamsPtr MakeCommonNavigationParams(
-    TimeDelta navigation_start_offset) {
-  auto params = CreateCommonNavigationParams();
+blink::mojom::CommonNavigationParamsPtr MakeCommonNavigationParams(
+    base::TimeDelta navigation_start_offset) {
+  auto params = blink::CreateCommonNavigationParams();
   params->url = GURL("data:text/html,<div>Page</div>");
   params->navigation_start = base::TimeTicks::Now() + navigation_start_offset;
-  params->navigation_type = mojom::NavigationType::DIFFERENT_DOCUMENT;
+  params->navigation_type = blink::mojom::NavigationType::DIFFERENT_DOCUMENT;
   params->transition = ui::PAGE_TRANSITION_TYPED;
   return params;
 }
@@ -270,8 +259,9 @@ class MockedLocalFrameHostInterceptorTestRenderFrame : public TestRenderFrame {
   std::unique_ptr<MockedLocalFrameHostInterceptor> local_frame_host_;
 };
 
-mojom::CommitNavigationParamsPtr DummyCommitNavigationParams() {
-  mojom::CommitNavigationParamsPtr params = CreateCommitNavigationParams();
+blink::mojom::CommitNavigationParamsPtr DummyCommitNavigationParams() {
+  blink::mojom::CommitNavigationParamsPtr params =
+      blink::CreateCommitNavigationParams();
   params->sandbox_flags = network::mojom::WebSandboxFlags::kNone;
   return params;
 }
@@ -344,15 +334,16 @@ class RenderViewImplTest : public RenderViewTest {
     web_view_->EnableDeviceEmulation(params);
   }
 
-  void GoToOffsetWithParams(int offset,
-                            const blink::PageState& state,
-                            mojom::CommonNavigationParamsPtr common_params,
-                            mojom::CommitNavigationParamsPtr commit_params) {
+  void GoToOffsetWithParams(
+      int offset,
+      const blink::PageState& state,
+      blink::mojom::CommonNavigationParamsPtr common_params,
+      blink::mojom::CommitNavigationParamsPtr commit_params) {
     EXPECT_TRUE(common_params->transition & ui::PAGE_TRANSITION_FORWARD_BACK);
     blink::WebView* webview = web_view_;
     int pending_offset = offset + webview->HistoryBackListCount();
 
-    commit_params->page_state = state;
+    commit_params->page_state = state.ToEncodedData();
     commit_params->nav_entry_id = pending_offset + 1;
     commit_params->pending_history_list_offset = pending_offset;
     commit_params->current_history_list_offset =
@@ -378,49 +369,6 @@ class RenderViewImplTest : public RenderViewTest {
       T::Read(message, &param);
     return param;
   }
-
-#if defined(USE_X11)
-  int SendKeyEventX11(MockKeyboard::Layout layout,
-                      int key_code,
-                      MockKeyboard::Modifiers modifiers,
-                      std::u16string* output) {
-    // We ignore |layout|, which means we are only testing the layout of the
-    // current locale. TODO(mazda): fix this to respect |layout|.
-    CHECK(output);
-    const int flags = ConvertMockKeyboardModifier(modifiers);
-
-    ui::ScopedXI2Event xevent;
-    xevent.InitKeyEvent(ui::ET_KEY_PRESSED,
-                        static_cast<ui::KeyboardCode>(key_code), flags);
-    auto event1 = ui::BuildKeyEventFromXEvent(*xevent);
-    NativeWebKeyboardEvent keydown_event(*event1);
-    SendNativeKeyEvent(keydown_event);
-
-    // X11 doesn't actually have native character events, but give the test
-    // what it wants.
-    xevent.InitKeyEvent(ui::ET_KEY_PRESSED,
-                        static_cast<ui::KeyboardCode>(key_code), flags);
-    auto event2 = ui::BuildKeyEventFromXEvent(*xevent);
-    event2->set_character(
-        DomCodeToUsLayoutCharacter(event2->code(), event2->flags()));
-    ui::KeyEventTestApi test_event2(event2.get());
-    test_event2.set_is_char(true);
-    NativeWebKeyboardEvent char_event(*event2);
-    SendNativeKeyEvent(char_event);
-
-    xevent.InitKeyEvent(ui::ET_KEY_RELEASED,
-                        static_cast<ui::KeyboardCode>(key_code), flags);
-    auto event3 = ui::BuildKeyEventFromXEvent(*xevent);
-    NativeWebKeyboardEvent keyup_event(*event3);
-    SendNativeKeyEvent(keyup_event);
-
-    char16_t c = DomCodeToUsLayoutCharacter(
-        UsLayoutKeyboardCodeToDomCode(static_cast<ui::KeyboardCode>(key_code)),
-        flags);
-    output->assign(1, c);
-    return 1;
-  }
-#endif
 
 #if defined(USE_OZONE)
   int SendKeyEventOzone(MockKeyboard::Layout layout,
@@ -477,28 +425,22 @@ class RenderViewImplTest : public RenderViewTest {
     // WM_KEYDOWN, WM_CHAR, and WM_KEYUP.
     // WM_KEYDOWN and WM_KEYUP sends virtual-key codes. On the other hand,
     // WM_CHAR sends a composed Unicode character.
-    MSG msg1 = {NULL, WM_KEYDOWN, key_code, 0};
+    CHROME_MSG msg1 = {NULL, WM_KEYDOWN, static_cast<WPARAM>(key_code), 0};
     ui::KeyEvent evt1(msg1);
     NativeWebKeyboardEvent keydown_event(evt1);
     SendNativeKeyEvent(keydown_event);
 
-    MSG msg2 = {NULL, WM_CHAR, (*output)[0], 0};
+    CHROME_MSG msg2 = {NULL, WM_CHAR, (*output)[0], 0};
     ui::KeyEvent evt2(msg2);
     NativeWebKeyboardEvent char_event(evt2);
     SendNativeKeyEvent(char_event);
 
-    MSG msg3 = {NULL, WM_KEYUP, key_code, 0};
+    CHROME_MSG msg3 = {NULL, WM_KEYUP, static_cast<WPARAM>(key_code), 0};
     ui::KeyEvent evt3(msg3);
     NativeWebKeyboardEvent keyup_event(evt3);
     SendNativeKeyEvent(keyup_event);
 
     return length;
-#elif defined(USE_X11)
-#if defined(USE_OZONE)
-    if (features::IsUsingOzonePlatform())
-      return SendKeyEventOzone(layout, key_code, modifiers, output);
-#endif
-    return SendKeyEventX11(layout, key_code, modifiers, output);
 #elif defined(USE_OZONE)
     return SendKeyEventOzone(layout, key_code, modifiers, output);
 #else
@@ -571,7 +513,8 @@ class RenderViewImplScaleFactorTest : public RenderViewImplTest {
 
   blink::VisualProperties MakeVisualPropertiesWithDeviceScaleFactor(float dsf) {
     blink::VisualProperties visual_properties;
-    visual_properties.screen_infos = blink::ScreenInfos(blink::ScreenInfo());
+    visual_properties.screen_infos =
+        display::ScreenInfos(display::ScreenInfo());
     visual_properties.screen_infos.mutable_current().device_scale_factor = dsf;
     visual_properties.new_size = gfx::Size(100, 100);
     visual_properties.compositor_viewport_pixel_rect = gfx::Rect(200, 200);
@@ -731,9 +674,10 @@ TEST_F(RenderViewImplTest, OnNavStateChanged) {
 
 TEST_F(RenderViewImplTest, OnNavigationHttpPost) {
   // An http url will trigger a resource load so cannot be used here.
-  auto common_params = CreateCommonNavigationParams();
+  auto common_params = blink::CreateCommonNavigationParams();
   common_params->url = GURL("data:text/html,<div>Page</div>");
-  common_params->navigation_type = mojom::NavigationType::DIFFERENT_DOCUMENT;
+  common_params->navigation_type =
+      blink::mojom::NavigationType::DIFFERENT_DOCUMENT;
   common_params->transition = ui::PAGE_TRANSITION_TYPED;
   common_params->method = "POST";
 
@@ -810,12 +754,12 @@ class RenderViewImplUpdateTitleTest : public RenderViewImplTest {
 #define MAYBE_OnNavigationLoadDataWithBaseURL OnNavigationLoadDataWithBaseURL
 #endif
 TEST_F(RenderViewImplUpdateTitleTest, MAYBE_OnNavigationLoadDataWithBaseURL) {
-  auto common_params = CreateCommonNavigationParams();
+  auto common_params = blink::CreateCommonNavigationParams();
   common_params->url = GURL("data:text/html,");
-  common_params->navigation_type = mojom::NavigationType::DIFFERENT_DOCUMENT;
+  common_params->navigation_type =
+      blink::mojom::NavigationType::DIFFERENT_DOCUMENT;
   common_params->transition = ui::PAGE_TRANSITION_TYPED;
   common_params->base_url_for_data_url = GURL("about:blank");
-  common_params->history_url_for_data_url = GURL("about:blank");
   auto commit_params = DummyCommitNavigationParams();
   commit_params->data_url_as_string =
       "data:text/html,<html><head><title>Data page</title></head></html>";
@@ -1194,9 +1138,10 @@ TEST_F(RenderViewImplEnableZoomForDSFTest,
   EXPECT_TRUE(provisional_frame);
 
   // Navigate to other page, which triggers the swap in.
-  auto common_params = CreateCommonNavigationParams();
+  auto common_params = blink::CreateCommonNavigationParams();
   common_params->url = GURL("data:text/html,<div>Page</div>");
-  common_params->navigation_type = mojom::NavigationType::DIFFERENT_DOCUMENT;
+  common_params->navigation_type =
+      blink::mojom::NavigationType::DIFFERENT_DOCUMENT;
   common_params->transition = ui::PAGE_TRANSITION_TYPED;
 
   provisional_frame->Navigate(std::move(common_params),
@@ -1394,8 +1339,8 @@ TEST_F(RenderViewImplTextInputStateChanged, OnImeTypeChanged) {
     input_mode = updated_states()[0]->mode;
     EXPECT_EQ(ui::TEXT_INPUT_TYPE_PASSWORD, type);
 
-    for (size_t i = 0; i < base::size(kInputModeTestCases); i++) {
-      const InputModeTestCase* test_case = &kInputModeTestCases[i];
+    for (size_t test = 0; test < base::size(kInputModeTestCases); test++) {
+      const InputModeTestCase* test_case = &kInputModeTestCases[test];
       std::u16string javascript = base::ASCIIToUTF16(base::StringPrintf(
           "document.getElementById('%s').focus();", test_case->input_id));
       // Move the input focus to the target <input> element, where we should
@@ -1491,7 +1436,7 @@ TEST_F(RenderViewImplTextInputStateChanged,
       "document.body.focus();editContext.inputPanelPolicy=\"auto\";"
       "const control_bound = new DOMRect(10, 20, 30, 40);"
       "const selection_bound = new DOMRect(10, 20, 1, 5);"
-      "editContext.updateLayout(control_bound, selection_bound);");
+      "editContext.updateBounds(control_bound, selection_bound);");
   // This RunLoop is waiting for EditContext to be created and layout bounds
   // to be updated in the EditContext.
   base::RunLoop().RunUntilIdle();
@@ -1534,7 +1479,7 @@ TEST_F(RenderViewImplTextInputStateChanged,
       "document.body.focus();editContext.inputPanelPolicy=\"auto\";"
       "const control_bound = new DOMRect(10.14, 20.25, 30.15, 40.50);"
       "const selection_bound = new DOMRect(10, 20, 1, 5);"
-      "editContext.updateLayout(control_bound, selection_bound);");
+      "editContext.updateBounds(control_bound, selection_bound);");
   // This RunLoop is waiting for EditContext to be created and layout bounds
   // to be updated in the EditContext.
   base::RunLoop().RunUntilIdle();
@@ -1578,7 +1523,7 @@ TEST_F(RenderViewImplTextInputStateChanged,
       "const control_bound = new DOMRect(-3964254814208.000000,"
       "-60129542144.000000, 674309865472.000000, 64424509440.000000);"
       "const selection_bound = new DOMRect(10, 20, 1, 5);"
-      "editContext.updateLayout(control_bound, selection_bound);");
+      "editContext.updateBounds(control_bound, selection_bound);");
   // This RunLoop is waiting for EditContext to be created and layout bounds
   // to be updated in the EditContext.
   base::RunLoop().RunUntilIdle();
@@ -1811,7 +1756,7 @@ TEST_F(RenderViewImplTextInputStateChanged, VirtualKeyboardPolicyAutoToManual) {
 }
 
 TEST_F(RenderViewImplTextInputStateChanged,
-       VirtualKeyboardPolicyManualAndShowHideAPIsCalled) {
+       VirtualKeyboardPolicyManualAndShowHideAPIsCalledInInsecureContext) {
   // Load an HTML page consisting of two input fields.
   LoadHTML(
       "<html>"
@@ -1859,7 +1804,7 @@ TEST_F(RenderViewImplTextInputStateChanged,
   EXPECT_EQ(updated_states()[0]->vk_policy,
             ui::mojom::VirtualKeyboardPolicy::MANUAL);
   EXPECT_EQ(updated_states()[0]->last_vk_visibility_request,
-            ui::mojom::VirtualKeyboardVisibilityRequest::HIDE);
+            ui::mojom::VirtualKeyboardVisibilityRequest::NONE);
 }
 
 TEST_F(RenderViewImplTextInputStateChanged,
@@ -1996,7 +1941,8 @@ TEST_F(RenderViewImplTest, ImeComposition) {
         GetWidgetInputHandler()->ImeSetComposition(
             base::WideToUTF16(ime_message->ime_string),
             std::vector<ui::ImeTextSpan>(), gfx::Range::InvalidRange(),
-            ime_message->selection_start, ime_message->selection_end);
+            ime_message->selection_start, ime_message->selection_end,
+            base::DoNothing());
         break;
 
       case IME_COMMITTEXT:
@@ -2013,7 +1959,7 @@ TEST_F(RenderViewImplTest, ImeComposition) {
       case IME_CANCELCOMPOSITION:
         GetWidgetInputHandler()->ImeSetComposition(
             std::u16string(), std::vector<ui::ImeTextSpan>(),
-            gfx::Range::InvalidRange(), 0, 0);
+            gfx::Range::InvalidRange(), 0, 0, base::DoNothing());
         break;
     }
 
@@ -2092,8 +2038,9 @@ TEST_F(RenderViewImplTest, DroppedNavigationStaysInViewSourceMode) {
 
   // Start a load that will reach provisional state synchronously,
   // but won't complete synchronously.
-  auto common_params = CreateCommonNavigationParams();
-  common_params->navigation_type = mojom::NavigationType::DIFFERENT_DOCUMENT;
+  auto common_params = blink::CreateCommonNavigationParams();
+  common_params->navigation_type =
+      blink::mojom::NavigationType::DIFFERENT_DOCUMENT;
   common_params->url = GURL("data:text/html,test data");
   frame()->Navigate(std::move(common_params), DummyCommitNavigationParams());
 
@@ -2274,7 +2221,8 @@ TEST_F(RenderViewImplTest, GetCompositionCharacterBoundsTest) {
   // ASCII composition
   const std::u16string ascii_composition = u"aiueo";
   widget_input_handler->ImeSetComposition(
-      ascii_composition, empty_ime_text_span, gfx::Range::InvalidRange(), 0, 0);
+      ascii_composition, empty_ime_text_span, gfx::Range::InvalidRange(), 0, 0,
+      base::DoNothing());
   bounds = LastCompositionBounds();
   ASSERT_EQ(ascii_composition.size(), bounds.size());
 
@@ -2286,9 +2234,9 @@ TEST_F(RenderViewImplTest, GetCompositionCharacterBoundsTest) {
 
   // Non surrogate pair unicode character.
   const std::u16string unicode_composition = u"あいうえお";
-  widget_input_handler->ImeSetComposition(unicode_composition,
-                                          empty_ime_text_span,
-                                          gfx::Range::InvalidRange(), 0, 0);
+  widget_input_handler->ImeSetComposition(
+      unicode_composition, empty_ime_text_span, gfx::Range::InvalidRange(), 0,
+      0, base::DoNothing());
   bounds = LastCompositionBounds();
   ASSERT_EQ(unicode_composition.size(), bounds.size());
   for (const gfx::Rect& r : bounds)
@@ -2299,9 +2247,9 @@ TEST_F(RenderViewImplTest, GetCompositionCharacterBoundsTest) {
 
   // Surrogate pair character.
   const std::u16string surrogate_pair_char = u"𠮟";
-  widget_input_handler->ImeSetComposition(surrogate_pair_char,
-                                          empty_ime_text_span,
-                                          gfx::Range::InvalidRange(), 0, 0);
+  widget_input_handler->ImeSetComposition(
+      surrogate_pair_char, empty_ime_text_span, gfx::Range::InvalidRange(), 0,
+      0, base::DoNothing());
   bounds = LastCompositionBounds();
   ASSERT_EQ(surrogate_pair_char.size(), bounds.size());
   EXPECT_LT(0, bounds[0].width());
@@ -2317,9 +2265,9 @@ TEST_F(RenderViewImplTest, GetCompositionCharacterBoundsTest) {
   const size_t utf16_length = 8UL;
   const bool is_surrogate_pair_empty_rect[8] = {false, true,  false, false,
                                                 true,  false, false, true};
-  widget_input_handler->ImeSetComposition(surrogate_pair_mixed_composition,
-                                          empty_ime_text_span,
-                                          gfx::Range::InvalidRange(), 0, 0);
+  widget_input_handler->ImeSetComposition(
+      surrogate_pair_mixed_composition, empty_ime_text_span,
+      gfx::Range::InvalidRange(), 0, 0, base::DoNothing());
   bounds = LastCompositionBounds();
   ASSERT_EQ(utf16_length, bounds.size());
   for (size_t i = 0; i < utf16_length; ++i) {
@@ -2493,11 +2441,12 @@ TEST_F(RenderViewImplTest, NavigateSubframe) {
   LoadHTML("hello <iframe srcdoc='fail' name='frame'></iframe>");
 
   // Navigate the frame only.
-  auto common_params = CreateCommonNavigationParams();
+  auto common_params = blink::CreateCommonNavigationParams();
   common_params->url = GURL("data:text/html,world");
-  common_params->navigation_type = mojom::NavigationType::DIFFERENT_DOCUMENT;
+  common_params->navigation_type =
+      blink::mojom::NavigationType::DIFFERENT_DOCUMENT;
   common_params->transition = ui::PAGE_TRANSITION_TYPED;
-  common_params->navigation_start = base::TimeTicks::FromInternalValue(1);
+  common_params->navigation_start = base::TimeTicks::Now();
   auto commit_params = DummyCommitNavigationParams();
   commit_params->current_history_list_length = 1;
   commit_params->current_history_list_offset = 0;
@@ -2618,8 +2567,9 @@ class RendererErrorPageTest : public RenderViewImplTest {
 };
 
 TEST_F(RendererErrorPageTest, RegularError) {
-  auto common_params = CreateCommonNavigationParams();
-  common_params->navigation_type = mojom::NavigationType::DIFFERENT_DOCUMENT;
+  auto common_params = blink::CreateCommonNavigationParams();
+  common_params->navigation_type =
+      blink::mojom::NavigationType::DIFFERENT_DOCUMENT;
   common_params->url = GURL("http://example.com/error-page");
   TestRenderFrame* main_frame = static_cast<TestRenderFrame*>(frame());
   main_frame->NavigateWithError(
@@ -2695,7 +2645,7 @@ TEST_F(RenderViewImplTest, RendererNavigationStartTransmittedToBrowser) {
 // This test assumes that |frame()| contains an unaccessed initial document at
 // start.
 TEST_F(RenderViewImplTest, BrowserNavigationStart) {
-  auto common_params = MakeCommonNavigationParams(-TimeDelta::FromSeconds(1));
+  auto common_params = MakeCommonNavigationParams(-base::Seconds(1));
 
   FrameLoadWaiter waiter(frame());
   frame()->Navigate(common_params.Clone(), DummyCommitNavigationParams());
@@ -2713,13 +2663,12 @@ TEST_F(RenderViewImplTest, BrowserNavigationStartSanitized) {
   // Verify that a navigation that claims to have started in the future - 42
   // days from now is *not* reported as one that starts in the future; as we
   // sanitize the override allowing a maximum of ::Now().
-  auto late_common_params = MakeCommonNavigationParams(TimeDelta::FromDays(42));
+  auto late_common_params = MakeCommonNavigationParams(base::Days(42));
   late_common_params->method = "POST";
 
   frame()->Navigate(late_common_params.Clone(), DummyCommitNavigationParams());
   base::RunLoop().RunUntilIdle();
-  base::Time after_navigation =
-      base::Time::Now() + base::TimeDelta::FromDays(1);
+  base::Time after_navigation = base::Time::Now() + base::Days(1);
 
   base::Time late_nav_reported_start =
       base::Time::FromDoubleT(GetMainFrame()->Performance().NavigationStart());
@@ -2734,7 +2683,7 @@ TEST_F(RenderViewImplTest, NavigationStartWhenInitialDocumentWasAccessed) {
   // Trigger a didAccessInitialDocument notification.
   ExecuteJavaScriptForTests("document.title = 'Hi!';");
 
-  auto common_params = MakeCommonNavigationParams(-TimeDelta::FromSeconds(1));
+  auto common_params = MakeCommonNavigationParams(-base::Seconds(1));
   FrameLoadWaiter waiter(frame());
   frame()->Navigate(common_params.Clone(), DummyCommitNavigationParams());
   waiter.Wait();
@@ -2751,10 +2700,10 @@ TEST_F(RenderViewImplTest, NavigationStartForReload) {
   base::RunLoop().RunUntilIdle();
   render_thread_->sink().ClearMessages();
 
-  auto common_params = CreateCommonNavigationParams();
+  auto common_params = blink::CreateCommonNavigationParams();
   common_params->url = GURL(url_string);
   common_params->navigation_type =
-      mojom::NavigationType::RELOAD_ORIGINAL_REQUEST_URL;
+      blink::mojom::NavigationType::RELOAD_ORIGINAL_REQUEST_URL;
   common_params->transition = ui::PAGE_TRANSITION_RELOAD;
 
   // The browser navigation_start should not be used because beforeunload will
@@ -2780,12 +2729,12 @@ TEST_F(RenderViewImplTest, NavigationStartForSameProcessHistoryNavigation) {
   render_thread_->sink().ClearMessages();
 
   // Go back.
-  auto common_params_back = CreateCommonNavigationParams();
+  auto common_params_back = blink::CreateCommonNavigationParams();
   common_params_back->url =
       GURL("data:text/html;charset=utf-8,<div id=pagename>Page B</div>");
   common_params_back->transition = ui::PAGE_TRANSITION_FORWARD_BACK;
   common_params_back->navigation_type =
-      mojom::NavigationType::HISTORY_DIFFERENT_DOCUMENT;
+      blink::mojom::NavigationType::HISTORY_DIFFERENT_DOCUMENT;
   GoToOffsetWithParams(-1, back_state, common_params_back.Clone(),
                        DummyCommitNavigationParams());
   NavigationState* navigation_state = NavigationState::FromDocumentLoader(
@@ -2796,12 +2745,12 @@ TEST_F(RenderViewImplTest, NavigationStartForSameProcessHistoryNavigation) {
             navigation_state->common_params().navigation_start);
 
   // Go forward.
-  auto common_params_forward = CreateCommonNavigationParams();
+  auto common_params_forward = blink::CreateCommonNavigationParams();
   common_params_forward->url =
       GURL("data:text/html;charset=utf-8,<div id=pagename>Page C</div>");
   common_params_forward->transition = ui::PAGE_TRANSITION_FORWARD_BACK;
   common_params_forward->navigation_type =
-      mojom::NavigationType::HISTORY_DIFFERENT_DOCUMENT;
+      blink::mojom::NavigationType::HISTORY_DIFFERENT_DOCUMENT;
   GoToOffsetWithParams(1, forward_state, common_params_forward.Clone(),
                        DummyCommitNavigationParams());
   navigation_state = NavigationState::FromDocumentLoader(
@@ -2811,14 +2760,15 @@ TEST_F(RenderViewImplTest, NavigationStartForSameProcessHistoryNavigation) {
 }
 
 TEST_F(RenderViewImplTest, NavigationStartForCrossProcessHistoryNavigation) {
-  auto common_params = MakeCommonNavigationParams(-TimeDelta::FromSeconds(1));
+  auto common_params = MakeCommonNavigationParams(-base::Seconds(1));
   common_params->transition = ui::PAGE_TRANSITION_FORWARD_BACK;
   common_params->navigation_type =
-      mojom::NavigationType::HISTORY_DIFFERENT_DOCUMENT;
+      blink::mojom::NavigationType::HISTORY_DIFFERENT_DOCUMENT;
 
   auto commit_params = DummyCommitNavigationParams();
   commit_params->page_state = blink::PageState::CreateForTesting(
-      common_params->url, false, nullptr, nullptr);
+                                  common_params->url, false, nullptr, nullptr)
+                                  .ToEncodedData();
   commit_params->nav_entry_id = 42;
   commit_params->pending_history_list_offset = 1;
   commit_params->current_history_list_offset = 0;
@@ -2890,7 +2840,11 @@ TEST_F(RenderViewImplTest, HistoryIsProperlyUpdatedOnNavigation) {
   auto commit_params = DummyCommitNavigationParams();
   commit_params->current_history_list_offset = 1;
   commit_params->current_history_list_length = 2;
-  frame()->Navigate(CreateCommonNavigationParams(), std::move(commit_params));
+  auto common_params = blink::CreateCommonNavigationParams();
+  common_params->navigation_type =
+      blink::mojom::NavigationType::DIFFERENT_DOCUMENT;
+  common_params->should_replace_current_entry = true;
+  frame()->Navigate(std::move(common_params), std::move(commit_params));
 
   // The current history list in RenderView is updated.
   EXPECT_EQ(1, webview->HistoryBackListCount());
@@ -2912,7 +2866,11 @@ TEST_F(RenderViewImplTest, HistoryIsProperlyUpdatedOnHistoryNavigation) {
   commit_params->current_history_list_length = 25;
   commit_params->pending_history_list_offset = 12;
   commit_params->nav_entry_id = 777;
-  frame()->Navigate(CreateCommonNavigationParams(), std::move(commit_params));
+  auto common_params = blink::CreateCommonNavigationParams();
+  common_params->navigation_type =
+      blink::mojom::NavigationType::DIFFERENT_DOCUMENT;
+  common_params->should_replace_current_entry = true;
+  frame()->Navigate(std::move(common_params), std::move(commit_params));
 
   // The current history list in RenderView is updated.
   EXPECT_EQ(12, webview->HistoryBackListCount());
@@ -2933,7 +2891,8 @@ TEST_F(RenderViewImplTest, HistoryIsProperlyUpdatedOnShouldClearHistoryList) {
   commit_params->current_history_list_offset = 12;
   commit_params->current_history_list_length = 25;
   commit_params->should_clear_history_list = true;
-  frame()->Navigate(CreateCommonNavigationParams(), std::move(commit_params));
+  frame()->Navigate(blink::CreateCommonNavigationParams(),
+                    std::move(commit_params));
 
   // The current history list in RenderView is updated.
   EXPECT_EQ(0, webview->HistoryBackListCount());
@@ -2951,7 +2910,7 @@ class AddMessageToConsoleMockLocalFrameHost : public LocalFrameHostInterceptor {
   void DidAddMessageToConsole(
       blink::mojom::ConsoleMessageLevel log_level,
       const std::u16string& msg,
-      int32_t line_number,
+      uint32_t line_number,
       const absl::optional<std::u16string>& source_id,
       const absl::optional<std::u16string>& untrusted_stack_trace) override {
     if (did_add_message_to_console_callback_) {
@@ -3204,7 +3163,8 @@ TEST_F(RenderViewImplEnableZoomForDSFTest,
   // ASCII composition
   const std::u16string ascii_composition = u"aiueo";
   widget_input_handler->ImeSetComposition(
-      ascii_composition, empty_ime_text_span, gfx::Range::InvalidRange(), 0, 0);
+      ascii_composition, empty_ime_text_span, gfx::Range::InvalidRange(), 0, 0,
+      base::DoNothing());
   bounds_at_1x = LastCompositionBounds();
   ASSERT_EQ(ascii_composition.size(), bounds_at_1x.size());
 
@@ -3275,39 +3235,6 @@ TEST_F(RenderViewImplTest, ZoomLevelUpdate) {
 
 #endif
 
-namespace {
-
-// This is the public key which the test below will use to enable origin
-// trial features. Trial tokens for use in tests can be created with the
-// tool in /tools/origin_trials/generate_token.py, using the private key
-// contained in /tools/origin_trials/eftest.key.
-static const uint8_t kOriginTrialPublicKey[] = {
-    0x75, 0x10, 0xac, 0xf9, 0x3a, 0x1c, 0xb8, 0xa9, 0x28, 0x70, 0xd2,
-    0x9a, 0xd0, 0x0b, 0x59, 0xe1, 0xac, 0x2b, 0xb7, 0xd5, 0xca, 0x1f,
-    0x64, 0x90, 0x08, 0x8e, 0xa8, 0xe0, 0x56, 0x3a, 0x04, 0xd0,
-};
-
-}  // anonymous namespace
-
-// Origin Trial Policy which vends the test public key so that the token
-// can be validated.
-class TestOriginTrialPolicy : public blink::OriginTrialPolicy {
- public:
-  TestOriginTrialPolicy() {
-    public_keys_.emplace_back(
-        reinterpret_cast<const char*>(kOriginTrialPublicKey),
-        base::size(kOriginTrialPublicKey));
-  }
-  bool IsOriginTrialsSupported() const override { return true; }
-  std::vector<base::StringPiece> GetPublicKeys() const override {
-    return public_keys_;
-  }
-  bool IsOriginSecure(const GURL& url) const override { return true; }
-
- private:
-  std::vector<base::StringPiece> public_keys_;
-};
-
 TEST_F(RenderViewImplTest, OriginTrialDisabled) {
   // HTML Document with no origin trial.
   const char kHTMLWithNoOriginTrial[] =
@@ -3319,12 +3246,7 @@ TEST_F(RenderViewImplTest, OriginTrialDisabled) {
       "</html>";
 
   // Override the origin trial policy to use the test keys.
-  TestOriginTrialPolicy policy;
-  blink::TrialTokenValidator::SetOriginTrialPolicyGetter(base::BindRepeating(
-      [](TestOriginTrialPolicy* policy_ptr) -> blink::OriginTrialPolicy* {
-        return policy_ptr;
-      },
-      base::Unretained(&policy)));
+  blink::ScopedTestOriginTrialPolicy policy;
 
   // Set the document URL.
   LoadHTMLWithUrlOverride(kHTMLWithNoOriginTrial, "https://example.test/");
@@ -3357,12 +3279,7 @@ TEST_F(RenderViewImplTest, OriginTrialEnabled) {
       "</html>";
 
   // Override the origin trial policy to use the test keys.
-  TestOriginTrialPolicy policy;
-  blink::TrialTokenValidator::SetOriginTrialPolicyGetter(base::BindRepeating(
-      [](TestOriginTrialPolicy* policy_ptr) -> blink::OriginTrialPolicy* {
-        return policy_ptr;
-      },
-      base::Unretained(&policy)));
+  blink::ScopedTestOriginTrialPolicy policy;
 
   // Set the document URL so the origin is correct for the trial.
   LoadHTMLWithUrlOverride(kHTMLWithOriginTrial, "https://example.test/");

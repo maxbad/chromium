@@ -24,6 +24,7 @@
 #include "base/thread_annotations.h"
 #include "base/threading/sequence_local_storage_slot.h"
 #include "base/trace_event/trace_event.h"
+#include "base/trace_event/typed_macros.h"
 #include "build/build_config.h"
 #include "services/tracing/public/cpp/buildflags.h"
 #include "services/tracing/public/cpp/perfetto/perfetto_traced_process.h"
@@ -220,10 +221,8 @@ std::atomic<uint32_t>
 
 base::SequenceLocalStorageSlot<TracingSamplerProfiler>&
 GetSequenceLocalStorageProfilerSlot() {
-  static base::NoDestructor<
-      base::SequenceLocalStorageSlot<TracingSamplerProfiler>>
-      storage;
-  return *storage;
+  static base::SequenceLocalStorageSlot<TracingSamplerProfiler> storage;
+  return storage;
 }
 
 // Stores information about the StackFrame, to emit to the trace.
@@ -345,7 +344,7 @@ TracingSamplerProfiler::TracingProfileBuilder::TracingProfileBuilder(
     const base::RepeatingClosure& sample_callback_for_testing)
     : sampled_thread_id_(sampled_thread_id),
       trace_writer_(std::move(trace_writer)),
-      should_enable_filtering_(should_enable_filtering),
+      stack_profile_writer_(should_enable_filtering),
       sample_callback_for_testing_(sample_callback_for_testing) {}
 
 TracingSamplerProfiler::TracingProfileBuilder::~TracingProfileBuilder() {
@@ -369,23 +368,51 @@ TracingSamplerProfiler::TracingProfileBuilder::GetModuleCache() {
   return &module_cache_;
 }
 
+using SampleDebugProto =
+    perfetto::protos::pbzero::ChromeSamplingProfilerSampleCollected;
+
+void RecordSampleCompletedEvent(base::PlatformThreadId sampled_thread_id,
+                                size_t frame_count,
+                                SampleDebugProto::WriteStatus write_status) {
+  TRACE_EVENT_INSTANT(
+      TRACE_DISABLED_BY_DEFAULT("cpu_profiler"),
+      "TracingProfileBuilder::OnSampleCompleted",
+      [&](perfetto::EventContext ctx) {
+        auto* sample_event =
+            ctx.event<perfetto::protos::pbzero::ChromeTrackEvent>()
+                ->set_chrome_sampling_profiler_sample_completed();
+        sample_event->set_frame_count(frame_count);
+        sample_event->set_write_status(write_status);
+        sample_event->set_sampled_thread_id(sampled_thread_id);
+      });
+}
+
 void TracingSamplerProfiler::TracingProfileBuilder::OnSampleCompleted(
     std::vector<base::Frame> frames,
     base::TimeTicks sample_timestamp) {
+  const size_t frame_size = frames.size();
   base::AutoLock l(trace_writer_lock_);
   if (!trace_writer_) {
     if (buffered_samples_.size() < kMaxBufferedSamples) {
       buffered_samples_.emplace_back(
           BufferedSample(sample_timestamp, std::move(frames)));
     }
+    RecordSampleCompletedEvent(sampled_thread_id_, frame_size,
+                               SampleDebugProto::WRITE_STATUS_BUFFERING_SAMPLE);
     return;
   }
   if (!buffered_samples_.empty()) {
     for (const auto& sample : buffered_samples_) {
+      RecordSampleCompletedEvent(
+          sampled_thread_id_, frame_size,
+          SampleDebugProto::WRITE_STATUS_WRITING_BUFFERED);
       WriteSampleToTrace(sample);
     }
     buffered_samples_.clear();
   }
+  // TODO(b/201276114): Remove this event once the bug is fixed.
+  RecordSampleCompletedEvent(sampled_thread_id_, frame_size,
+                             SampleDebugProto::WRITE_STATUS_WRITING_TO_TRACE);
   WriteSampleToTrace(BufferedSample(sample_timestamp, std::move(frames)));
 
   if (sample_callback_for_testing_) {
@@ -405,12 +432,7 @@ void TracingSamplerProfiler::TracingProfileBuilder::WriteSampleToTrace(
   }
 
   if (reset_incremental_state_) {
-    interned_callstacks_.ResetEmittedState();
-    interned_frames_.ResetEmittedState();
-    interned_frame_names_.ResetEmittedState();
-    interned_module_names_.ResetEmittedState();
-    interned_module_ids_.ResetEmittedState();
-    interned_modules_.ResetEmittedState();
+    stack_profile_writer_.ResetEmittedState();
 
     auto trace_packet = trace_writer_->NewTracePacket();
     trace_packet->set_sequence_flags(
@@ -433,7 +455,8 @@ void TracingSamplerProfiler::TracingProfileBuilder::WriteSampleToTrace(
   // Delta encoded timestamps and interned data require incremental state.
   trace_packet->set_sequence_flags(
       perfetto::protos::pbzero::TracePacket::SEQ_NEEDS_INCREMENTAL_STATE);
-  auto callstack_id = GetCallstackIDAndMaybeEmit(frames, &trace_packet);
+  auto callstack_id =
+      stack_profile_writer_.GetCallstackIDAndMaybeEmit(frames, &trace_packet);
   auto* streaming_profile_packet = trace_packet->set_streaming_profile_packet();
   streaming_profile_packet->add_callstack_iid(callstack_id);
 
@@ -453,8 +476,13 @@ void TracingSamplerProfiler::TracingProfileBuilder::SetTraceWriter(
   trace_writer_ = std::move(writer);
 }
 
+TracingSamplerProfiler::StackProfileWriter::StackProfileWriter(
+    bool enable_filtering)
+    : should_enable_filtering_(enable_filtering) {}
+TracingSamplerProfiler::StackProfileWriter::~StackProfileWriter() = default;
+
 InterningID
-TracingSamplerProfiler::TracingProfileBuilder::GetCallstackIDAndMaybeEmit(
+TracingSamplerProfiler::StackProfileWriter::GetCallstackIDAndMaybeEmit(
     const std::vector<base::Frame>& frames,
     perfetto::TraceWriter::TracePacketHandle* trace_packet) {
   size_t ip_hash = 0;
@@ -586,6 +614,15 @@ TracingSamplerProfiler::TracingProfileBuilder::GetCallstackIDAndMaybeEmit(
   return interned_callstack.id;
 }
 
+void TracingSamplerProfiler::StackProfileWriter::ResetEmittedState() {
+  interned_callstacks_.ResetEmittedState();
+  interned_frames_.ResetEmittedState();
+  interned_frame_names_.ResetEmittedState();
+  interned_module_names_.ResetEmittedState();
+  interned_module_ids_.ResetEmittedState();
+  interned_modules_.ResetEmittedState();
+}
+
 // static
 void TracingSamplerProfiler::MangleModuleIDIfNeeded(std::string* module_id) {
 #if defined(OS_ANDROID) || defined(OS_LINUX) || defined(OS_CHROMEOS)
@@ -594,14 +631,16 @@ void TracingSamplerProfiler::MangleModuleIDIfNeeded(std::string* module_id) {
   // Example on version '66.0.3359.170' x64:
   //   Build-ID: "7f0715c2 86f8 b16c 10e4ad349cda3b9b 56c7a773
   //   Debug-ID  "C215077F F886 6CB1 10E4AD349CDA3B9B 0"
-  if (module_id->size() >= 32) {
-    *module_id =
-        base::StrCat({module_id->substr(6, 2), module_id->substr(4, 2),
-                      module_id->substr(2, 2), module_id->substr(0, 2),
-                      module_id->substr(10, 2), module_id->substr(8, 2),
-                      module_id->substr(14, 2), module_id->substr(12, 2),
-                      module_id->substr(16, 16), "0"});
+  if (module_id->size() < 32) {
+    module_id->resize(32, '0');
   }
+
+  *module_id =
+      base::StrCat({module_id->substr(6, 2), module_id->substr(4, 2),
+                    module_id->substr(2, 2), module_id->substr(0, 2),
+                    module_id->substr(10, 2), module_id->substr(8, 2),
+                    module_id->substr(14, 2), module_id->substr(12, 2),
+                    module_id->substr(16, 16), "0"});
 #endif
 }
 
@@ -730,7 +769,7 @@ void TracingSamplerProfiler::StartTracing(
 
   base::StackSamplingProfiler::SamplingParams params;
   params.samples_per_profile = std::numeric_limits<int>::max();
-  params.sampling_interval = base::TimeDelta::FromMilliseconds(50);
+  params.sampling_interval = base::Milliseconds(50);
 
   auto profile_builder = std::make_unique<TracingProfileBuilder>(
       sampled_thread_token_.id, std::move(trace_writer),

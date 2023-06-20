@@ -38,7 +38,24 @@ android_library("java") {
 }
 
 android_library("delegate_java") {
-  sources = [ "java/src/org/chromium/chrome/browser/policy/CloudManagementAndroidConnectionDelegate.java" ]
+  sources = [
+    "java/src/org/chromium/chrome/browser/policy/CloudManagementAndroidConnectionDelegate.java",
+    "java/src/org/chromium/chrome/browser/policy/CloudManagementAndroidConnectionDelegateImpl.java",
+  ]
+
+  # Add the actual implementation where necessary so that downstream
+  # targets can provide their own implementations.
+  jar_excluded_patterns =
+      [ "*/CloudManagementAndroidConnectionDelegateImpl.class" ]
+}
+
+android_library("delegate_public_impl_java") {
+  sources = [ "java/src/org/chromium/chrome/browser/policy/CloudManagementAndroidConnectionDelegateImpl.java" ]
+
+  deps = [
+    ":delegate_java",
+    ":util_java",
+  ]
 }
 
 generate_jni("jni_headers") {
@@ -68,5 +85,17 @@ android_library("junit") {
     "//third_party/android_deps:robolectric_all_java",
     "//third_party/androidx:androidx_test_runner_java",
     "//third_party/junit",
+  ]
+}
+
+static_library("android") {
+  sources = [
+    "cloud_management_android_connection.cc",
+    "cloud_management_android_connection.h",
+  ]
+
+  deps = [
+    ":jni_headers",
+    "//base",
   ]
 }

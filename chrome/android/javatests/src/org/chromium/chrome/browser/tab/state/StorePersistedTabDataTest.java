@@ -5,11 +5,12 @@
 package org.chromium.chrome.browser.tab.state;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
 
-import android.support.test.filters.SmallTest;
+import androidx.test.filters.SmallTest;
 
 import org.junit.After;
 import org.junit.Assert;
@@ -37,6 +38,7 @@ import org.chromium.chrome.test.ChromeBrowserTestRule;
 import org.chromium.chrome.test.util.browser.Features;
 import org.chromium.content_public.browser.test.util.TestThreadUtils;
 
+import java.nio.ByteBuffer;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
 
@@ -64,7 +66,8 @@ public class StorePersistedTabDataTest {
     public void setUp() {
         MockitoAnnotations.initMocks(this);
         mMocker.mock(EndpointFetcherJni.TEST_HOOKS, mEndpointFetcherJniMock);
-        PersistedTabDataConfiguration.setUseTestConfig(true);
+        TestThreadUtils.runOnUiThreadBlocking(
+                () -> PersistedTabDataConfiguration.setUseTestConfig(true));
         Profile.setLastUsedProfileForTesting(mProfileMock);
     }
 
@@ -291,7 +294,7 @@ public class StorePersistedTabDataTest {
         StorePersistedTabData storePersistedTabData = new StorePersistedTabData(tab,
                 new StorePersistedTabData.StoreHours(
                         SERIALIZE_DESERIALIZE_OPENING_TIME, SERIALIZE_DESERIALIZE_CLOSING_TIME));
-        byte[] serialized = storePersistedTabData.getSerializeSupplier().get();
+        ByteBuffer serialized = storePersistedTabData.getSerializeSupplier().get();
         StorePersistedTabData deserialized = new StorePersistedTabData(tab);
         deserialized.deserialize(serialized);
         Assert.assertEquals(
@@ -312,14 +315,14 @@ public class StorePersistedTabDataTest {
         doAnswer(new Answer<Void>() {
             @Override
             public Void answer(InvocationOnMock invocation) {
-                Callback callback = (Callback) invocation.getArguments()[8];
+                Callback callback = (Callback) invocation.getArguments()[9];
                 callback.onResult(new EndpointResponse(response));
                 return null;
             }
         })
                 .when(mEndpointFetcherJniMock)
                 .nativeFetchOAuth(any(Profile.class), anyString(), anyString(), anyString(),
-                        anyString(), any(String[].class), anyString(), anyLong(),
+                        anyString(), any(String[].class), anyString(), anyLong(), anyInt(),
                         any(Callback.class));
     }
 }

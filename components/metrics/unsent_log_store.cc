@@ -238,21 +238,23 @@ void UnsentLogStore::Purge() {
 }
 
 void UnsentLogStore::ReadLogsFromPrefList(const base::ListValue& list_value) {
-  if (list_value.empty()) {
+  if (list_value.GetList().empty()) {
     metrics_->RecordLogReadStatus(UnsentLogStoreMetrics::LIST_EMPTY);
     return;
   }
 
-  const size_t log_count = list_value.GetSize();
+  const size_t log_count = list_value.GetList().size();
 
   DCHECK(list_.empty());
   list_.resize(log_count);
 
   for (size_t i = 0; i < log_count; ++i) {
-    const base::DictionaryValue* dict;
+    const base::Value& value = list_value.GetList()[i];
+    const base::DictionaryValue* dict = nullptr;
+    if (value.is_dict())
+      dict = &base::Value::AsDictionaryValue(value);
     LogInfo info;
-    if (!list_value.GetDictionary(i, &dict) ||
-        !dict->GetString(kLogDataKey, &info.compressed_log_data) ||
+    if (!dict || !dict->GetString(kLogDataKey, &info.compressed_log_data) ||
         !dict->GetString(kLogHashKey, &info.hash) ||
         !dict->GetString(kLogTimestampKey, &info.timestamp) ||
         !dict->GetString(kLogSignatureKey, &info.signature)) {
@@ -334,7 +336,7 @@ void UnsentLogStore::TrimLogs() {
 }
 
 void UnsentLogStore::WriteLogsToPrefList(base::ListValue* list_value) const {
-  list_value->Clear();
+  list_value->ClearList();
 
   base::HistogramBase::Count unsent_samples_count = 0;
   size_t unsent_persisted_size = 0;

@@ -251,8 +251,14 @@ class MockTabStripModelObserver : public TabStripModelObserver {
       }
       case TabStripModelChange::kRemoved: {
         for (const auto& contents : change.GetRemove()->contents) {
-          if (contents.will_be_deleted)
-            PushCloseState(contents.contents, contents.index);
+          switch (contents.remove_reason) {
+            case TabStripModelChange::RemoveReason::kDeleted:
+            case TabStripModelChange::RemoveReason::kCached:
+              PushCloseState(contents.contents, contents.index);
+              break;
+            case TabStripModelChange::RemoveReason::kInsertedIntoOtherTabStrip:
+              break;
+          }
           PushDetachState(contents.contents, contents.index,
                           selection.old_contents == contents.contents);
         }
@@ -550,11 +556,11 @@ TEST_F(TabStripModelTest, TestBasicAPI) {
   }
   EXPECT_EQ("1 2 3", GetTabStripStateString(tabstrip));
 
-  // Test DetachWebContentsAt
+  // Test DetachWebContentsAtForInsertion
   {
     // Detach ...
     std::unique_ptr<content::WebContents> detached_with_ownership =
-        tabstrip.DetachWebContentsAt(2);
+        tabstrip.DetachWebContentsAtForInsertion(2);
     WebContents* detached = detached_with_ownership.get();
     // ... and append again because we want this for later.
     tabstrip.AppendWebContents(std::move(detached_with_ownership), true);
@@ -582,6 +588,27 @@ TEST_F(TabStripModelTest, TestBasicAPI) {
     State s8(detached, 2, MockTabStripModelObserver::SELECT);
     s8.src_index = 1;
     observer.ExpectStateEquals(7, s8);
+    observer.ClearStates();
+  }
+  EXPECT_EQ("1 2 3", GetTabStripStateString(tabstrip));
+
+  // Test DetachAndDeleteWebContentsAt
+  {
+    // add a background tab to detach
+    std::unique_ptr<WebContents> contents4 = CreateWebContentsWithID(4);
+    WebContents* raw_contents4 = contents4.get();
+    tabstrip.InsertWebContentsAt(3, std::move(contents4),
+                                 TabStripModel::ADD_NONE);
+    // detach and delete the tab
+    tabstrip.DetachAndDeleteWebContentsAt(3);
+
+    EXPECT_EQ(3, observer.GetStateCount());
+    State s1(raw_contents4, 3, MockTabStripModelObserver::INSERT);
+    observer.ExpectStateEquals(0, s1);
+    State s2(raw_contents4, 3, MockTabStripModelObserver::CLOSE);
+    observer.ExpectStateEquals(1, s2);
+    State s3(raw_contents4, 3, MockTabStripModelObserver::DETACH);
+    observer.ExpectStateEquals(2, s3);
     observer.ClearStates();
   }
   EXPECT_EQ("1 2 3", GetTabStripStateString(tabstrip));
@@ -2568,6 +2595,22 @@ TEST_F(TabStripModelTest, MoveTabNext_Group) {
   strip.CloseAllTabs();
 }
 
+TEST_F(TabStripModelTest, MoveTabNext_PinnedDoesNotGroup) {
+  TestTabStripModelDelegate delegate;
+  TabStripModel strip(&delegate, profile());
+  ASSERT_NO_FATAL_FAILURE(PrepareTabstripForSelectionTest(&strip, 4, 1, "0"));
+  EXPECT_EQ("0p 1 2 3", GetTabStripStateString(strip));
+
+  strip.AddToNewGroup({1, 2});
+  EXPECT_EQ(strip.GetTabGroupForTab(0), absl::nullopt);
+
+  strip.MoveTabNext();
+  EXPECT_EQ("0p 1 2 3", GetTabStripStateString(strip));
+  EXPECT_EQ(strip.GetTabGroupForTab(0), absl::nullopt);
+
+  strip.CloseAllTabs();
+}
+
 TEST_F(TabStripModelTest, MoveTabPrevious) {
   TestTabStripModelDelegate delegate;
   TabStripModel strip(&delegate, profile());
@@ -3021,7 +3064,7 @@ TEST_F(TabStripModelTest, TabBlockedState) {
 
   // Detach the tab.
   std::unique_ptr<WebContents> moved_contents =
-      strip_src.DetachWebContentsAt(1);
+      strip_src.DetachWebContentsAtForInsertion(1);
   EXPECT_EQ(raw_contents2, moved_contents.get());
 
   // Attach the tab to the destination tab strip.

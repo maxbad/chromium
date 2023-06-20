@@ -3,17 +3,17 @@
 // found in the LICENSE file.
 
 const webGpuUtils = function() {
-  const swapChainFormat = 'bgra8unorm';
+  const outputFormat = 'bgra8unorm';
 
   const wgslShaders = {
     vertex: `
-let quadPos : array<vec4<f32>, 4> = array<vec4<f32>, 4>(
+var<private> quadPos : array<vec4<f32>, 4> = array<vec4<f32>, 4>(
     vec4<f32>(-1.0,  1.0, 0.0, 1.0),
     vec4<f32>(-1.0, -1.0, 0.0, 1.0),
     vec4<f32>( 1.0,  1.0, 0.0, 1.0),
     vec4<f32>( 1.0, -1.0, 0.0, 1.0));
 
-let quadUV : array<vec2<f32>, 4> = array<vec2<f32>, 4>(
+var<private> quadUV : array<vec2<f32>, 4> = array<vec2<f32>, 4>(
     vec2<f32>(0.0, 0.0),
     vec2<f32>(0.0, 1.0),
     vec2<f32>(1.0, 0.0),
@@ -42,6 +42,13 @@ fn main([[location(0)]] fragUV : vec2<f32>) -> [[location(0)]] vec4<f32> {
   return textureSample(myTexture, mySampler, fragUV);
 }
 `,
+
+    fragmentClear: `
+[[stage(fragment)]]
+fn main([[location(0)]] fragUV : vec2<f32>) -> [[location(0)]] vec4<f32> {
+  return vec4<f32>(1.0, 1.0, 1.0, 1.0);
+}
+`,
   };
 
   return {
@@ -58,22 +65,23 @@ fn main([[location(0)]] fragUV : vec2<f32>) -> [[location(0)]] vec4<f32> {
         return null;
       }
 
-      const gpuContext = gpuCanvas.getContext('gpupresent');
-      if (!gpuContext) {
-        console.error('getContext(gpupresent) failed');
+      const context = gpuCanvas.getContext('webgpu');
+      if (!context) {
+        console.error('getContext(webgpu) failed');
         return null;
       }
 
-      const swapChain = gpuContext.configureSwapChain({
+      context.configure({
         device: device,
-        format: swapChainFormat,
-        usage: GPUTextureUsage.OUTPUT_ATTACHMENT,
+        format: outputFormat,
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
       });
 
-      return [device, swapChain];
+      return [device, context];
     },
 
-    importCanvasTest: function(device, swapChain, sourceCanvas) {
+    uploadToGPUTextureTest: function(
+      device, context, canvasImageSource, options) {
       const blitPipeline = device.createRenderPipeline({
         vertex: {
           module: device.createShaderModule({
@@ -88,7 +96,7 @@ fn main([[location(0)]] fragUV : vec2<f32>) -> [[location(0)]] vec4<f32> {
           entryPoint: 'main',
           targets: [
             {
-              format: swapChainFormat,
+              format: outputFormat,
             },
           ],
         },
@@ -103,8 +111,47 @@ fn main([[location(0)]] fragUV : vec2<f32>) -> [[location(0)]] vec4<f32> {
         minFilter: 'linear',
       });
 
-      const texture = device.experimentalImportTexture(
-          sourceCanvas, GPUTextureUsage.SAMPLED);
+      let texture;
+
+      if (options.useImport) {
+        texture = device.experimentalImportTexture(
+          canvasImageSource,
+          GPUTextureUsage.TEXTURE_BINDING
+        );
+      } else {
+        texture = device.createTexture({
+          size: [canvasImageSource.width, canvasImageSource.height],
+          format: 'rgba8unorm',
+          usage: GPUTextureUsage.COPY_DST |
+                 GPUTextureUsage.RENDER_ATTACHMENT |
+                 GPUTextureUsage.TEXTURE_BINDING
+        });
+      }
+
+      // Use copyExternalImageToTexture()
+      if (!options.useImport) {
+        let imageCopyExternalImage;
+
+        // TODO(crbug.com/1257856): This test use the temporary origin
+        // config to fix flip issue. It should be removed when we change
+        // the default behaviour.
+        if (options.isWebGLCanvas) {
+          imageCopyExternalImage = { source: canvasImageSource,
+                                     origin: {x: 0, y: 0},
+                                     temporaryOriginBottomLeftIfWebGL: false
+                                   };
+        } else {
+          imageCopyExternalImage = { source: canvasImageSource,
+                                     origin: {x: 0, y: 0}
+                                   };
+        }
+
+        device.queue.copyExternalImageToTexture(
+          imageCopyExternalImage,
+          {texture},
+          [canvasImageSource.width, canvasImageSource.height]
+        );
+      }
 
       const bindGroup = device.createBindGroup({
         layout: blitPipeline.getBindGroupLayout(0),
@@ -123,7 +170,7 @@ fn main([[location(0)]] fragUV : vec2<f32>) -> [[location(0)]] vec4<f32> {
       const renderPassDescriptor = {
         colorAttachments: [
           {
-            view: swapChain.getCurrentTexture().createView(),
+            view: context.getCurrentTexture().createView(),
             loadValue: {r: 0.0, g: 0.0, b: 0.0, a: 1.0},
           },
         ],
@@ -136,6 +183,72 @@ fn main([[location(0)]] fragUV : vec2<f32>) -> [[location(0)]] vec4<f32> {
       passEncoder.draw(4, 1, 0, 0);
       passEncoder.endPass();
 
+      device.queue.submit([commandEncoder.finish()]);
+    },
+
+    fourColorsTest: function(device, context, width, height) {
+      const clearPipeline = device.createRenderPipeline({
+        vertex: {
+          module: device.createShaderModule({
+            code: wgslShaders.vertex,
+          }),
+          entryPoint: 'main',
+        },
+        fragment: {
+          module: device.createShaderModule({
+            code: wgslShaders.fragmentClear,
+          }),
+          entryPoint: 'main',
+          targets: [{
+            format: outputFormat,
+            blend: {
+              color: {
+                srcFactor: 'constant',
+                dstFactor: 'zero'
+              },
+              alpha: {
+                srcFactor: 'constant',
+                dstFactor: 'zero'
+              },
+            }
+          }],
+        },
+        primitive: {
+          topology: 'triangle-strip',
+          stripIndexFormat: 'uint16',
+        },
+      });
+
+      const renderPassDescriptor = {
+        colorAttachments: [
+          {
+            view: context.getCurrentTexture().createView(),
+            loadValue: {r: 0.0, g: 0.0, b: 0.0, a: 1.0},
+          },
+        ],
+      };
+
+      const commandEncoder = device.createCommandEncoder();
+      const passEncoder = commandEncoder.beginRenderPass(renderPassDescriptor);
+      passEncoder.setPipeline(clearPipeline);
+
+      passEncoder.setBlendConstant([0.0, 1.0, 0.0, 1.0]);
+      passEncoder.setScissorRect(0, 0, width / 2, height / 2);
+      passEncoder.draw(4, 1, 0, 0);
+
+      passEncoder.setBlendConstant([1.0, 0.0, 0.0, 1.0]);
+      passEncoder.setScissorRect(0, height / 2, width / 2, height / 2);
+      passEncoder.draw(4, 1, 0, 0);
+
+      passEncoder.setBlendConstant([1.0, 1.0, 0.0, 1.0]);
+      passEncoder.setScissorRect(width / 2, height / 2, width / 2, height / 2);
+      passEncoder.draw(4, 1, 0, 0);
+
+      passEncoder.setBlendConstant([0.0, 0.0, 1.0, 1.0]);
+      passEncoder.setScissorRect(width / 2, 0, width / 2, height / 2);
+      passEncoder.draw(4, 1, 0, 0);
+
+      passEncoder.endPass();
       device.queue.submit([commandEncoder.finish()]);
     },
   };

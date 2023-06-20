@@ -6,7 +6,6 @@ package org.chromium.chrome.browser.notifications;
 
 import android.annotation.TargetApi;
 import android.app.Notification;
-import android.app.NotificationManager;
 import android.os.Build;
 import android.text.format.DateUtils;
 
@@ -58,7 +57,9 @@ public class NotificationUmaTracker {
             SystemNotificationType.TWA_DISCLOSURE_SUBSEQUENT,
             SystemNotificationType.CHROME_REENGAGEMENT_1,
             SystemNotificationType.CHROME_REENGAGEMENT_2,
-            SystemNotificationType.CHROME_REENGAGEMENT_3, SystemNotificationType.PRICE_DROP_ALERTS})
+            SystemNotificationType.CHROME_REENGAGEMENT_3, SystemNotificationType.PRICE_DROP_ALERTS,
+            SystemNotificationType.WEBAPK_INSTALL_IN_PROGRESS,
+            SystemNotificationType.WEBAPK_INSTALL_COMPLETE})
     @Retention(RetentionPolicy.SOURCE)
     public @interface SystemNotificationType {
         int UNKNOWN = -1;
@@ -92,8 +93,10 @@ public class NotificationUmaTracker {
         int CHROME_REENGAGEMENT_3 = 27;
         int PRICE_DROP_ALERTS = 28;
         int SMS_FETCHER = 29;
+        int WEBAPK_INSTALL_IN_PROGRESS = 30;
+        int WEBAPK_INSTALL_COMPLETE = 31;
 
-        int NUM_ENTRIES = 30;
+        int NUM_ENTRIES = 32;
     }
 
     /*
@@ -308,13 +311,6 @@ public class NotificationUmaTracker {
                         "Mobile.SystemNotification.Action.Click.Age.SmsFetcher", createTime);
                 break;
         }
-    }
-
-    /**
-     * Tracks UMA when failed to notify {@link NotificationManager}.
-     */
-    public void onFailedToNotify(@SystemNotificationType int type) {
-        recordHistogram("Mobile.SystemNotification.NotifyFailure", type);
     }
 
     private void logNotificationShown(@SystemNotificationType int type,

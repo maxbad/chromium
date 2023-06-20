@@ -5,6 +5,7 @@
 #include "chrome/browser/ui/test/test_browser_dialog.h"
 
 #include "base/bind.h"
+#include "base/containers/cxx20_erase.h"
 #include "base/logging.h"
 #include "base/run_loop.h"
 #include "base/stl_util.h"
@@ -42,6 +43,9 @@ class WidgetCloser {
                                   weak_ptr_factory_.GetWeakPtr(), async));
   }
 
+  WidgetCloser(const WidgetCloser&) = delete;
+  WidgetCloser& operator=(const WidgetCloser&) = delete;
+
  private:
   void CloseWidget(bool async) {
     if (async)
@@ -53,8 +57,6 @@ class WidgetCloser {
   views::Widget* widget_;
 
   base::WeakPtrFactory<WidgetCloser> weak_ptr_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(WidgetCloser);
 };
 
 #endif  // defined(TOOLKIT_VIEWS)

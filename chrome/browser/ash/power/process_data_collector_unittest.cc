@@ -42,7 +42,7 @@
 //    |TimeStepExpectedResult|s for each time step match; after a time step is
 //    checked, the procfs of the next time step is set up with |SetUpProcfs|.
 
-namespace chromeos {
+namespace ash {
 
 namespace {
 
@@ -228,6 +228,9 @@ class ProcessDataCollectorTest : public testing::Test {
     CHECK(proc_dir_.CreateUniqueTempDir());
   }
 
+  ProcessDataCollectorTest(const ProcessDataCollectorTest&) = delete;
+  ProcessDataCollectorTest& operator=(const ProcessDataCollectorTest&) = delete;
+
   ~ProcessDataCollectorTest() override { ProcessDataCollector::Shutdown(); }
 
  protected:
@@ -388,8 +391,6 @@ class ProcessDataCollectorTest : public testing::Test {
   // |ProcessDataCollector| which needs to compared against |timestep_info|.
   void ValidateProcessList(const TimeStepExpectedResult& timestep_info,
                            const std::vector<ProcessUsageData>& process_list);
-
-  DISALLOW_COPY_AND_ASSIGN(ProcessDataCollectorTest);
 };
 
 ProcessDataCollector::Config ProcessDataCollectorTest::CreateConfig(
@@ -555,4 +556,4 @@ TEST_F(ProcessDataCollectorTest, ExpAveragingMultistep) {
   RunTest(expected_results, Config::AveragingTechnique::EXPONENTIAL);
 }
 
-}  // namespace chromeos
+}  // namespace ash

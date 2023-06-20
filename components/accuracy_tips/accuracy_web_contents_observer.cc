@@ -4,12 +4,16 @@
 
 #include "components/accuracy_tips/accuracy_web_contents_observer.h"
 
+#include "base/feature_list.h"
+#include "base/metrics/histogram_macros.h"
 #include "components/accuracy_tips/accuracy_service.h"
 #include "components/accuracy_tips/accuracy_tip_status.h"
-#include "components/accuracy_tips/features.h"
+#include "components/safe_browsing/core/common/features.h"
+#include "components/ukm/content/source_url_recorder.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/common/page_visibility_state.h"
+#include "services/metrics/public/cpp/ukm_builders.h"
 #include "url/gurl.h"
 
 namespace accuracy_tips {
@@ -17,7 +21,7 @@ namespace accuracy_tips {
 // static
 bool AccuracyWebContentsObserver::IsEnabled(
     content::WebContents* web_contents) {
-  return base::FeatureList::IsEnabled(kAccuracyTipsFeature) &&
+  return base::FeatureList::IsEnabled(safe_browsing::kAccuracyTipsFeature) &&
          !web_contents->GetBrowserContext()->IsOffTheRecord();
 }
 
@@ -58,15 +62,28 @@ void AccuracyWebContentsObserver::DidFinishNavigation(
 void AccuracyWebContentsObserver::OnAccuracyStatusObtained(
     const GURL& url,
     AccuracyTipStatus result) {
-  if (result == AccuracyTipStatus::kNone)
+  // We are not on this site any more, so the result is invalid.
+  if (url != web_contents()->GetLastCommittedURL())
     return;
 
-  // We are not on this site anymore.
-  if (url != web_contents()->GetLastCommittedURL())
+  // Don't show tip on insecure pages. This can't be checked in the
+  // AccuracyService because it requires a WebContents.
+  if (result == AccuracyTipStatus::kShowAccuracyTip &&
+      !accuracy_service_->IsSecureConnection(web_contents())) {
+    result = AccuracyTipStatus::kNotSecure;
+  }
+
+  UMA_HISTOGRAM_ENUMERATION("Privacy.AccuracyTip.PageStatus", result);
+  ukm::builders::AccuracyTipStatus(
+      ukm::GetSourceIdForWebContentsDocument(web_contents()))
+      .SetStatus(static_cast<int>(result))
+      .Record(ukm::UkmRecorder::Get());
+
+  if (result != AccuracyTipStatus::kShowAccuracyTip)
     return;
 
   accuracy_service_->MaybeShowAccuracyTip(web_contents());
 }
 
-WEB_CONTENTS_USER_DATA_KEY_IMPL(AccuracyWebContentsObserver)
+WEB_CONTENTS_USER_DATA_KEY_IMPL(AccuracyWebContentsObserver);
 }  // namespace accuracy_tips

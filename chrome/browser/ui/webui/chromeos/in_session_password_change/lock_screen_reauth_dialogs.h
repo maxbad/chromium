@@ -5,7 +5,6 @@
 #ifndef CHROME_BROWSER_UI_WEBUI_CHROMEOS_IN_SESSION_PASSWORD_CHANGE_LOCK_SCREEN_REAUTH_DIALOGS_H_
 #define CHROME_BROWSER_UI_WEBUI_CHROMEOS_IN_SESSION_PASSWORD_CHANGE_LOCK_SCREEN_REAUTH_DIALOGS_H_
 
-#include "base/macros.h"
 #include "base/scoped_observation.h"
 #include "chrome/browser/ash/login/helper.h"
 #include "chrome/browser/profiles/profile.h"
@@ -28,9 +27,12 @@ class LockScreenStartReauthDialog : public BaseLockDialog,
   void Show();
   void Dismiss();
   bool IsRunning();
+  int GetDialogWidth();
 
   void CloseLockScreenNetworkDialog();
   void ShowLockScreenNetworkDialog();
+  static gfx::Size CalculateLockScreenReauthDialogSize(
+      bool is_new_layout_enabled);
 
  private:
   void OnProfileCreated(Profile* profile, Profile::CreateStatus status);
@@ -43,11 +45,17 @@ class LockScreenStartReauthDialog : public BaseLockDialog,
   std::unique_ptr<login::NetworkStateHelper> network_state_helper_;
 
   std::unique_ptr<LockScreenNetworkDialog> lock_screen_network_dialog_;
-  Profile* profile_;
+  Profile* profile_ = nullptr;
 
   base::WeakPtrFactory<LockScreenStartReauthDialog> weak_factory_{this};
 };
 
 }  // namespace chromeos
+
+// TODO(https://crbug.com/1164001): remove after the //chrome/browser/chromeos
+// source migration is finished.
+namespace ash {
+using ::chromeos::LockScreenStartReauthDialog;
+}
 
 #endif  // CHROME_BROWSER_UI_WEBUI_CHROMEOS_IN_SESSION_PASSWORD_CHANGE_LOCK_SCREEN_REAUTH_DIALOGS_H_

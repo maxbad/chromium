@@ -25,6 +25,8 @@ static_library("driver") {
     "glue/sync_engine_backend.h",
     "glue/sync_engine_impl.cc",
     "glue/sync_engine_impl.h",
+    "glue/sync_transport_data_prefs.cc",
+    "glue/sync_transport_data_prefs.h",
     "model_load_manager.cc",
     "model_load_manager.h",
     "model_type_controller.cc",
@@ -69,6 +71,8 @@ static_library("driver") {
     "syncable_service_based_model_type_controller.cc",
     "syncable_service_based_model_type_controller.h",
     "trusted_vault_client.h",
+    "trusted_vault_histograms.cc",
+    "trusted_vault_histograms.h",
   ]
 
   public_deps = [
@@ -85,6 +89,7 @@ static_library("driver") {
     "//url",
   ]
   deps = [
+    "//base",
     "//base:i18n",
     "//build:chromeos_buildflags",
     "//components/data_use_measurement/core",
@@ -122,10 +127,10 @@ static_library("test_support") {
     "fake_sync_service.h",
     "mock_sync_service.cc",
     "mock_sync_service.h",
-    "profile_sync_service_bundle.cc",
-    "profile_sync_service_bundle.h",
     "sync_client_mock.cc",
     "sync_client_mock.h",
+    "sync_service_impl_bundle.cc",
+    "sync_service_impl_bundle.h",
     "sync_user_settings_mock.cc",
     "sync_user_settings_mock.h",
     "test_sync_service.cc",

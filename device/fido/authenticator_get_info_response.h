@@ -31,6 +31,11 @@ struct COMPONENT_EXPORT(DEVICE_FIDO) AuthenticatorGetInfoResponse {
                                base::span<const uint8_t, kAaguidLength> aaguid);
   AuthenticatorGetInfoResponse(AuthenticatorGetInfoResponse&& that);
   AuthenticatorGetInfoResponse& operator=(AuthenticatorGetInfoResponse&& other);
+
+  AuthenticatorGetInfoResponse(const AuthenticatorGetInfoResponse&) = delete;
+  AuthenticatorGetInfoResponse& operator=(const AuthenticatorGetInfoResponse&) =
+      delete;
+
   ~AuthenticatorGetInfoResponse();
 
   static std::vector<uint8_t> EncodeToCBOR(
@@ -48,9 +53,7 @@ struct COMPONENT_EXPORT(DEVICE_FIDO) AuthenticatorGetInfoResponse {
   absl::optional<uint32_t> max_credential_id_length;
   absl::optional<base::flat_set<PINUVAuthProtocol>> pin_protocols;
   absl::optional<std::vector<std::string>> extensions;
-  std::vector<int32_t> algorithms = {
-      static_cast<int32_t>(CoseAlgorithmIdentifier::kEs256),
-  };
+  absl::optional<std::vector<int32_t>> algorithms;
   absl::optional<uint32_t> max_serialized_large_blob_array;
   absl::optional<uint32_t> remaining_discoverable_credentials;
   absl::optional<bool> force_pin_change;
@@ -62,9 +65,6 @@ struct COMPONENT_EXPORT(DEVICE_FIDO) AuthenticatorGetInfoResponse {
   absl::optional<uint32_t> max_cred_blob_length;
 
   AuthenticatorSupportedOptions options;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(AuthenticatorGetInfoResponse);
 };
 
 }  // namespace device

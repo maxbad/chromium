@@ -40,8 +40,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
 
-namespace chromeos {
-
+namespace ash {
 namespace {
 
 const char kProxyAuthURL[] = "https://example.com/";
@@ -231,7 +230,7 @@ void ProfileAuthDataTest::PopulateBrowserContext(
           kSAMLIdPCookieDomainWithWildcard, std::string(), base::Time(),
           base::Time(), base::Time(), true, false,
           net::CookieSameSite::NO_RESTRICTION, net::COOKIE_PRIORITY_DEFAULT,
-          false),
+          false, absl::nullopt),
       GURL(kSAMLIdPCookieURL), options, base::DoNothing());
 
   cookies->SetCanonicalCookie(
@@ -239,7 +238,7 @@ void ProfileAuthDataTest::PopulateBrowserContext(
           GURL(kSAMLIdPCookieURL), kCookieName, cookie_value, std::string(),
           std::string(), base::Time(), base::Time(), base::Time(), true, false,
           net::CookieSameSite::NO_RESTRICTION, net::COOKIE_PRIORITY_DEFAULT,
-          false),
+          false, absl::nullopt),
       GURL(kSAMLIdPCookieURL), options, base::DoNothing());
 
   cookies->SetCanonicalCookie(
@@ -247,7 +246,7 @@ void ProfileAuthDataTest::PopulateBrowserContext(
           GURL(kGAIACookieURL), kCookieName, cookie_value, std::string(),
           std::string(), base::Time(), base::Time(), base::Time(), true, false,
           net::CookieSameSite::NO_RESTRICTION, net::COOKIE_PRIORITY_DEFAULT,
-          false),
+          false, absl::nullopt),
       GURL(kGAIACookieURL), options, base::DoNothing());
 }
 
@@ -306,4 +305,4 @@ TEST_F(ProfileAuthDataTest, TransferOnSubsequentLogin) {
   VerifyUserCookies(kCookieValue2, kCookieValue1);
 }
 
-}  // namespace chromeos
+}  // namespace ash

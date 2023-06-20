@@ -169,11 +169,11 @@ std::unique_ptr<FileBrowserHandler> LoadFileBrowserHandler(
   if (file_browser_handler->HasKey(keys::kFileAccessList)) {
     if (!file_browser_handler->GetList(keys::kFileAccessList,
                                        &access_list_value) ||
-        access_list_value->empty()) {
+        access_list_value->GetList().empty()) {
       *error = base::ASCIIToUTF16(errors::kInvalidFileAccessList);
       return nullptr;
     }
-    for (size_t i = 0; i < access_list_value->GetSize(); ++i) {
+    for (size_t i = 0; i < access_list_value->GetList().size(); ++i) {
       std::string access;
       if (!access_list_value->GetString(i, &access) ||
           result->AddFileAccessPermission(access)) {
@@ -197,7 +197,7 @@ std::unique_ptr<FileBrowserHandler> LoadFileBrowserHandler(
       *error = base::ASCIIToUTF16(errors::kInvalidFileFiltersList);
       return nullptr;
     }
-    for (size_t i = 0; i < file_filters->GetSize(); ++i) {
+    for (size_t i = 0; i < file_filters->GetList().size(); ++i) {
       std::string filter;
       if (!file_filters->GetString(i, &filter)) {
         *error = extensions::ErrorUtils::FormatErrorMessageUTF16(

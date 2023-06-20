@@ -12,7 +12,6 @@
 #include "base/check_op.h"
 #include "base/containers/flat_set.h"
 #include "base/feature_list.h"
-#include "base/macros.h"
 #include "base/memory/ptr_util.h"
 #include "base/notreached.h"
 #include "base/task/lazy_thread_pool_task_runner.h"
@@ -130,16 +129,14 @@ std::unique_ptr<FrameNodeImpl> PerformanceManagerImpl::CreateFrameNode(
     ProcessNodeImpl* process_node,
     PageNodeImpl* page_node,
     FrameNodeImpl* parent_frame_node,
-    int frame_tree_node_id,
     int render_frame_id,
     const blink::LocalFrameToken& frame_token,
-    int32_t browsing_instance_id,
-    int32_t site_instance_id,
+    content::BrowsingInstanceId browsing_instance_id,
+    content::SiteInstanceId site_instance_id,
     FrameNodeCreationCallback creation_callback) {
   return CreateNodeImpl<FrameNodeImpl>(
       std::move(creation_callback), process_node, page_node, parent_frame_node,
-      frame_tree_node_id, render_frame_id, frame_token, browsing_instance_id,
-      site_instance_id);
+      render_frame_id, frame_token, browsing_instance_id, site_instance_id);
 }
 
 // static
@@ -369,6 +366,7 @@ void PerformanceManagerImpl::OnStartImpl(GraphImplCallback on_start) {
   DCHECK(!g_performance_manager);
 
   g_performance_manager = this;
+  graph_.SetUp();
   graph_.set_ukm_recorder(ukm::UkmRecorder::Get());
   std::move(on_start).Run(&graph_);
 }

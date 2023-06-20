@@ -6,22 +6,27 @@ package org.chromium.chrome.browser.tasks.tab_management;
 
 import androidx.annotation.VisibleForTesting;
 
+import org.chromium.base.FeatureList;
+import org.chromium.chrome.browser.flags.ChromeFeatureList;
 import org.chromium.chrome.browser.preferences.ChromePreferenceKeys;
 import org.chromium.chrome.browser.preferences.SharedPreferencesManager;
 import org.chromium.chrome.browser.price_tracking.PriceDropNotificationManager;
 import org.chromium.chrome.browser.profiles.Profile;
 import org.chromium.chrome.browser.signin.services.IdentityServicesProvider;
 import org.chromium.chrome.browser.signin.services.UnifiedConsentServiceBridge;
-import org.chromium.chrome.browser.sync.ProfileSyncService;
+import org.chromium.chrome.browser.sync.SyncService;
+import org.chromium.chrome.browser.tabmodel.TabModel;
+import org.chromium.components.signin.identitymanager.ConsentLevel;
 import org.chromium.components.sync.ModelType;
 
 /**
- * A class to handle whether price tracking-related features are turned on by users,
- * including tracking prices on tabs and price drop alerts.
- * Whether the feature is available is controlled by {@link
- * TabUiFeatureUtilities#ENABLE_PRICE_TRACKING}.
+ * A class to handle price tracking-related features.
  */
 public class PriceTrackingUtilities {
+    @VisibleForTesting
+    public static final String PRICE_TRACKING_PARAM = "enable_price_tracking";
+    @VisibleForTesting
+    public static final String PRICE_NOTIFICATION_PARAM = "enable_price_notification";
     @VisibleForTesting
     public static final String TRACK_PRICES_ON_TABS =
             ChromePreferenceKeys.PRICE_TRACKING_TRACK_PRICES_ON_TABS;
@@ -45,17 +50,44 @@ public class PriceTrackingUtilities {
     private static Boolean sIsSignedInAndSyncEnabledForTesting;
 
     /**
+     * @return whether or not price tracking is enabled.
+     */
+    public static boolean getPriceTrackingEnabled() {
+        if (FeatureList.isInitialized()) {
+            return ChromeFeatureList.getFieldTrialParamByFeatureAsBoolean(
+                    ChromeFeatureList.COMMERCE_PRICE_TRACKING, PRICE_TRACKING_PARAM, false);
+        }
+        return false;
+    }
+
+    /**
+     * @return whether or not price tracking notifications are enabled.
+     */
+    public static boolean getPriceTrackingNotificationsEnabled() {
+        if (FeatureList.isInitialized()) {
+            return ChromeFeatureList.getFieldTrialParamByFeatureAsBoolean(
+                    ChromeFeatureList.COMMERCE_PRICE_TRACKING, PRICE_NOTIFICATION_PARAM, false);
+        }
+        return false;
+    }
+
+    /**
      * @return Whether the price tracking feature is eligible to work. Now it is used to determine
      *         whether the menu item "track prices" is visible and whether the tab has {@link
      *         TabProperties#SHOPPING_PERSISTED_TAB_DATA_FETCHER}.
      */
     public static boolean isPriceTrackingEligible() {
         if (sIsSignedInAndSyncEnabledForTesting != null) {
-            return TabUiFeatureUtilities.isPriceTrackingEnabled()
-                    && sIsSignedInAndSyncEnabledForTesting;
+            return isPriceTrackingEnabled() && sIsSignedInAndSyncEnabledForTesting;
         }
-        return TabUiFeatureUtilities.isPriceTrackingEnabled() && isSignedIn()
-                && isAnonymizedUrlDataCollectionEnabled() && isOpenTabsSyncEnabled();
+        return isPriceTrackingEnabled() && isSignedIn() && isAnonymizedUrlDataCollectionEnabled();
+    }
+
+    /**
+     * @return Whether the price tracking feature is enabled and available for use.
+     */
+    public static boolean isPriceTrackingEnabled() {
+        return getPriceTrackingEnabled() || getPriceTrackingNotificationsEnabled();
     }
 
     /**
@@ -63,7 +95,7 @@ public class PriceTrackingUtilities {
      */
     public static void flipTrackPricesOnTabs() {
         final boolean enableTrackPricesOnTabs = SHARED_PREFERENCES_MANAGER.readBoolean(
-                TRACK_PRICES_ON_TABS, TabUiFeatureUtilities.isPriceTrackingEnabled());
+                TRACK_PRICES_ON_TABS, isPriceTrackingEnabled());
         SHARED_PREFERENCES_MANAGER.writeBoolean(TRACK_PRICES_ON_TABS, !enableTrackPricesOnTabs);
     }
 
@@ -73,7 +105,7 @@ public class PriceTrackingUtilities {
     public static boolean isTrackPricesOnTabsEnabled() {
         return isPriceTrackingEligible()
                 && SHARED_PREFERENCES_MANAGER.readBoolean(
-                        TRACK_PRICES_ON_TABS, TabUiFeatureUtilities.isPriceTrackingEnabled());
+                        TRACK_PRICES_ON_TABS, isPriceTrackingEnabled());
     }
 
     /**
@@ -89,7 +121,7 @@ public class PriceTrackingUtilities {
     public static boolean isPriceWelcomeMessageCardEnabled() {
         return isPriceTrackingEligible()
                 && SHARED_PREFERENCES_MANAGER.readBoolean(
-                        PRICE_WELCOME_MESSAGE_CARD, TabUiFeatureUtilities.isPriceTrackingEnabled());
+                        PRICE_WELCOME_MESSAGE_CARD, isPriceTrackingEnabled());
     }
 
     /**
@@ -111,8 +143,7 @@ public class PriceTrackingUtilities {
      * @return Whether the price drop notification is eligible to work.
      */
     public static boolean isPriceDropNotificationEligible() {
-        return isPriceTrackingEligible()
-                && TabUiFeatureUtilities.ENABLE_PRICE_NOTIFICATION.getValue();
+        return isPriceTrackingEligible() && getPriceTrackingNotificationsEnabled();
     }
 
     /**
@@ -130,7 +161,7 @@ public class PriceTrackingUtilities {
     public static boolean isPriceAlertsMessageCardEnabled() {
         return isPriceDropNotificationEligible()
                 && SHARED_PREFERENCES_MANAGER.readBoolean(
-                        PRICE_ALERTS_MESSAGE_CARD, TabUiFeatureUtilities.isPriceTrackingEnabled())
+                        PRICE_ALERTS_MESSAGE_CARD, isPriceTrackingEnabled())
                 && (!(new PriceDropNotificationManager()).canPostNotification());
     }
 
@@ -169,11 +200,11 @@ public class PriceTrackingUtilities {
     private static boolean isSignedIn() {
         return IdentityServicesProvider.get()
                 .getIdentityManager(Profile.getLastUsedRegularProfile())
-                .hasPrimaryAccount();
+                .hasPrimaryAccount(ConsentLevel.SYNC);
     }
 
     private static boolean isOpenTabsSyncEnabled() {
-        ProfileSyncService syncService = ProfileSyncService.get();
+        SyncService syncService = SyncService.get();
         return syncService != null && syncService.isSyncRequested()
                 && syncService.getActiveDataTypes().contains(ModelType.SESSIONS);
     }
@@ -186,5 +217,14 @@ public class PriceTrackingUtilities {
     @VisibleForTesting
     public static void setIsSignedInAndSyncEnabledForTesting(Boolean isSignedInAndSyncEnabled) {
         sIsSignedInAndSyncEnabledForTesting = isSignedInAndSyncEnabled;
+    }
+
+    /**
+     * @return if the {@link TabModel} is eligible for price tracking. Not all tab models are - for
+     *         example incognito tabs are not eligible for price tracking.
+     */
+    public static boolean isTabModelPriceTrackingEligible(TabModel tabModel) {
+        // Incognito Tabs are not eligible for price tracking.
+        return !tabModel.getProfile().isOffTheRecord();
     }
 }

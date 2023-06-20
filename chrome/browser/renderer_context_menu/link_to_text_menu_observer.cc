@@ -9,12 +9,16 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "chrome/app/chrome_command_ids.h"
+#include "chrome/browser/feature_engagement/tracker_factory.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/grit/generated_resources.h"
+#include "components/feature_engagement/public/tracker.h"
 #include "components/renderer_context_menu/render_view_context_menu_proxy.h"
 #include "components/shared_highlighting/core/common/disabled_sites.h"
 #include "components/shared_highlighting/core/common/shared_highlighting_features.h"
 #include "components/shared_highlighting/core/common/shared_highlighting_metrics.h"
 #include "components/shared_highlighting/core/common/text_fragments_utils.h"
+#include "content/public/browser/browser_context.h"
 #include "content/public/browser/context_menu_params.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
@@ -27,12 +31,23 @@ namespace {
 constexpr char kTextFragmentUrlClassifier[] = "#:~:text=";
 
 // Indicates how long context menu should wait for link generation result.
-constexpr base::TimeDelta kTimeoutMs = base::TimeDelta::FromMilliseconds(500);
+constexpr base::TimeDelta kTimeoutMs = base::Milliseconds(500);
+
+// Removes the highlight from the frame.
+void RemoveHighlightsInFrame(content::RenderFrameHost* render_frame_host) {
+  mojo::Remote<blink::mojom::TextFragmentReceiver> remote;
+
+  // A TextFragmentReceiver is created lazily for each frame
+  render_frame_host->GetRemoteInterfaces()->GetInterface(
+      remote.BindNewPipeAndPassReceiver());
+  remote->RemoveFragments();
+}
 }  // namespace
 
 // static
 std::unique_ptr<LinkToTextMenuObserver> LinkToTextMenuObserver::Create(
-    RenderViewContextMenuProxy* proxy) {
+    RenderViewContextMenuProxy* proxy,
+    content::RenderFrameHost* render_frame_host) {
   // WebContents can be null in tests.
   content::WebContents* web_contents = proxy->GetWebContents();
   if (web_contents && extensions::ProcessManager::Get(
@@ -42,12 +57,16 @@ std::unique_ptr<LinkToTextMenuObserver> LinkToTextMenuObserver::Create(
     return nullptr;
   }
 
-  return base::WrapUnique(new LinkToTextMenuObserver(proxy));
+  DCHECK(render_frame_host);
+  return base::WrapUnique(new LinkToTextMenuObserver(proxy, render_frame_host));
 }
 
 LinkToTextMenuObserver::LinkToTextMenuObserver(
-    RenderViewContextMenuProxy* proxy)
-    : proxy_(proxy) {}
+    RenderViewContextMenuProxy* proxy,
+    content::RenderFrameHost* render_frame_host) {
+  proxy_ = proxy;
+  render_frame_host_ = render_frame_host;
+}
 LinkToTextMenuObserver::~LinkToTextMenuObserver() = default;
 
 void LinkToTextMenuObserver::InitMenu(
@@ -108,12 +127,13 @@ void LinkToTextMenuObserver::ExecuteCommand(int command_id) {
       }
     }
   } else if (command_id == IDC_CONTENT_CONTEXT_REMOVELINKTOTEXT) {
-    RemoveHighlight();
+    RemoveHighlights();
   }
 }
 
 void LinkToTextMenuObserver::OnRequestLinkGenerationCompleted(
     const std::string& selector) {
+  is_generation_complete_ = true;
   if (ShouldPreemptivelyGenerateLink()) {
     if (selector.empty()) {
       // If there is no valid selector, leave the item disabled.
@@ -173,7 +193,7 @@ void LinkToTextMenuObserver::RequestLinkGeneration() {
 
   base::TimeDelta timeout_length_ms =
       ShouldPreemptivelyGenerateLink()
-          ? base::TimeDelta::FromMilliseconds(
+          ? base::Milliseconds(
                 shared_highlighting::GetPreemptiveLinkGenTimeoutLengthMs())
           : kTimeoutMs;
 
@@ -192,13 +212,11 @@ void LinkToTextMenuObserver::RequestLinkGeneration() {
 }
 
 void LinkToTextMenuObserver::CopyLinkToClipboard() {
-  content::RenderFrameHost* main_frame =
-      proxy_->GetWebContents()->GetMainFrame();
-
   std::unique_ptr<ui::DataTransferEndpoint> data_transfer_endpoint =
-      main_frame ? std::make_unique<ui::DataTransferEndpoint>(
-                       main_frame->GetLastCommittedOrigin())
-                 : nullptr;
+      !render_frame_host_->GetBrowserContext()->IsOffTheRecord()
+          ? std::make_unique<ui::DataTransferEndpoint>(
+                render_frame_host_->GetLastCommittedOrigin())
+          : nullptr;
 
   ui::ScopedClipboardWriter scw(ui::ClipboardBuffer::kCopyPaste,
                                 std::move(data_transfer_endpoint));
@@ -207,12 +225,17 @@ void LinkToTextMenuObserver::CopyLinkToClipboard() {
   LogDesktopLinkGenerationCopiedLinkType(
       shared_highlighting::LinkGenerationCopiedLinkType::
           kCopiedFromNewGeneration);
+
+  // Record usage for Shared Highlighting promo.
+  feature_engagement::TrackerFactory::GetForBrowserContext(
+      proxy_->GetWebContents()->GetBrowserContext())
+      ->NotifyEvent("iph_desktop_shared_highlighting_used");
 }
 
 void LinkToTextMenuObserver::Timeout() {
   DCHECK(remote_.is_bound());
   DCHECK(remote_.is_connected());
-  if (generated_link_.has_value())
+  if (is_generation_complete_)
     return;
   remote_->Cancel();
   remote_.reset();
@@ -235,13 +258,11 @@ void LinkToTextMenuObserver::ReshareLink() {
 
 void LinkToTextMenuObserver::OnGetExistingSelectorsComplete(
     const std::vector<std::string>& selectors) {
-  content::RenderFrameHost* main_frame =
-      proxy_->GetWebContents()->GetMainFrame();
-
   std::unique_ptr<ui::DataTransferEndpoint> data_transfer_endpoint =
-      main_frame ? std::make_unique<ui::DataTransferEndpoint>(
-                       main_frame->GetLastCommittedOrigin())
-                 : nullptr;
+      !render_frame_host_->GetBrowserContext()->IsOffTheRecord()
+          ? std::make_unique<ui::DataTransferEndpoint>(
+                render_frame_host_->GetLastCommittedOrigin())
+          : nullptr;
 
   ui::ScopedClipboardWriter scw(ui::ClipboardBuffer::kCopyPaste,
                                 std::move(data_transfer_endpoint));
@@ -256,16 +277,16 @@ void LinkToTextMenuObserver::OnGetExistingSelectorsComplete(
           kCopiedFromExistingHighlight);
 }
 
-void LinkToTextMenuObserver::RemoveHighlight() {
-  GetRemote()->RemoveFragments();
+void LinkToTextMenuObserver::RemoveHighlights() {
+  // Remove highlights from all frames in the primary page.
+  proxy_->GetWebContents()->GetMainFrame()->ForEachRenderFrameHost(
+      base::BindRepeating(RemoveHighlightsInFrame));
 }
 
 mojo::Remote<blink::mojom::TextFragmentReceiver>&
 LinkToTextMenuObserver::GetRemote() {
   if (!remote_.is_bound()) {
-    content::RenderFrameHost* main_frame =
-        proxy_->GetWebContents()->GetMainFrame();
-    main_frame->GetRemoteInterfaces()->GetInterface(
+    render_frame_host_->GetRemoteInterfaces()->GetInterface(
         remote_.BindNewPipeAndPassReceiver());
   }
   return remote_;

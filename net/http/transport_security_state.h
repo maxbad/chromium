@@ -8,6 +8,7 @@
 #include <stdint.h>
 
 #include <map>
+#include <set>
 #include <string>
 
 #include "base/callback.h"
@@ -366,6 +367,9 @@ class NET_EXPORT TransportSecurityState {
   explicit TransportSecurityState(
       std::vector<std::string> hsts_host_bypass_list);
 
+  TransportSecurityState(const TransportSecurityState&) = delete;
+  TransportSecurityState& operator=(const TransportSecurityState&) = delete;
+
   ~TransportSecurityState();
 
   // These functions search for static and dynamic STS and PKP states, and
@@ -439,6 +443,8 @@ class NET_EXPORT TransportSecurityState {
   void SetCTEmergencyDisabled(bool emergency_disable) {
     ct_emergency_disable_ = emergency_disable;
   }
+
+  void SetCTLogListUpdateTime(base::Time update_time);
 
   // Clears all dynamic data (e.g. HSTS and HPKP data).
   //
@@ -581,7 +587,7 @@ class NET_EXPORT TransportSecurityState {
   bool has_dynamic_pkp_state() const { return !enabled_pkp_hosts_.empty(); }
 
   // The number of cached ExpectCTState entries.
-  size_t num_expect_ct_entries() const;
+  size_t num_expect_ct_entries_for_testing() const;
 
   // The number of cached STSState entries.
   size_t num_sts_entries() const;
@@ -691,6 +697,9 @@ class NET_EXPORT TransportSecurityState {
   static bool ExpectCTPruningSorter(const ExpectCTStateMap::iterator& it1,
                                     const ExpectCTStateMap::iterator& it2);
 
+  // Returns true if the CT log list has been updated in the last 10 weeks.
+  bool IsCTLogListTimely() const;
+
   // The sets of hosts that have enabled TransportSecurity. |domain| will always
   // be empty for a STSState, PKPState, or ExpectCTState in these maps; the
   // domain comes from the map keys instead. In addition, |upgrade_mode| in the
@@ -736,9 +745,9 @@ class NET_EXPORT TransportSecurityState {
 
   bool ct_emergency_disable_ = false;
 
-  THREAD_CHECKER(thread_checker_);
+  base::Time ct_log_list_last_update_time_;
 
-  DISALLOW_COPY_AND_ASSIGN(TransportSecurityState);
+  THREAD_CHECKER(thread_checker_);
 };
 
 }  // namespace net

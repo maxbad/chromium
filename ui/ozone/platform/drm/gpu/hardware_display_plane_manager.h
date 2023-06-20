@@ -11,7 +11,7 @@
 #include <memory>
 #include <vector>
 
-#include "base/macros.h"
+#include "base/trace_event/traced_value.h"
 #include "ui/display/types/gamma_ramp_rgb_entry.h"
 #include "ui/ozone/platform/drm/common/scoped_drm_types.h"
 #include "ui/ozone/platform/drm/gpu/crtc_commit_request.h"
@@ -53,11 +53,16 @@ struct HardwareDisplayPlaneList {
   std::vector<PageFlipInfo> legacy_page_flips;
 
   ScopedDrmAtomicReqPtr atomic_property_set;
+
+  void AsValueInto(base::trace_event::TracedValue* value) const;
 };
 
 class HardwareDisplayPlaneManager {
  public:
   struct CrtcProperties {
+    CrtcProperties();
+    CrtcProperties(const CrtcProperties& other);
+    ~CrtcProperties();
     // Unique identifier for the CRTC. This must be greater than 0 to be valid.
     uint32_t id;
     // Keeps track of the CRTC state. If a surface has been bound, then the
@@ -94,6 +99,11 @@ class HardwareDisplayPlaneManager {
   };
 
   explicit HardwareDisplayPlaneManager(DrmDevice* drm);
+
+  HardwareDisplayPlaneManager(const HardwareDisplayPlaneManager&) = delete;
+  HardwareDisplayPlaneManager& operator=(const HardwareDisplayPlaneManager&) =
+      delete;
+
   virtual ~HardwareDisplayPlaneManager();
 
   // This parses information from the drm driver, adding any new planes
@@ -193,6 +203,7 @@ class HardwareDisplayPlaneManager {
   struct ConnectorProperties {
     uint32_t id;
     DrmDevice::Property crtc_id;
+    DrmDevice::Property link_status;
   };
 
   bool InitializeCrtcState();
@@ -227,10 +238,10 @@ class HardwareDisplayPlaneManager {
       uint32_t crtc_index,
       const DrmOverlayPlane& overlay) const;
 
-  // Convert |crtc/connector_id| into an index, returning -1 if the ID couldn't
-  // be found.
-  int LookupCrtcIndex(uint32_t crtc_id) const;
-  int LookupConnectorIndex(uint32_t connector_idx) const;
+  // Convert |crtc/connector_id| into an index, returning empty if the ID
+  // couldn't be found.
+  absl::optional<int> LookupCrtcIndex(uint32_t crtc_id) const;
+  absl::optional<int> LookupConnectorIndex(uint32_t connector_id) const;
 
   // Get Mutable CRTC State.
   CrtcState& CrtcStateForCrtcId(uint32_t crtc_id);
@@ -266,8 +277,6 @@ class HardwareDisplayPlaneManager {
   std::vector<CrtcState> crtc_state_;
   std::vector<ConnectorProperties> connectors_props_;
   std::vector<uint32_t> supported_formats_;
-
-  DISALLOW_COPY_AND_ASSIGN(HardwareDisplayPlaneManager);
 };
 
 }  // namespace ui

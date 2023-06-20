@@ -17,7 +17,9 @@
 
 class AccountId;
 
-namespace chromeos {
+namespace ash {
+
+enum class SmartLockState;
 
 // TODO(jdufault): Rename UserBoardView to UserSelectionView. See
 // crbug.com/672142.
@@ -48,6 +50,10 @@ class UserBoardView {
       const proximity_auth::ScreenlockBridge::UserPodCustomIconInfo&
           icon_info) = 0;
   virtual void HideUserPodCustomIcon(const AccountId& account_id) = 0;
+  virtual void SetSmartLockState(const AccountId& account_id,
+                                 SmartLockState state) = 0;
+  virtual void NotifySmartLockAuthResult(const AccountId& account_id,
+                                         bool success) = 0;
   virtual void SetAuthType(const AccountId& account_id,
                            proximity_auth::mojom::AuthType auth_type,
                            const std::u16string& initial_value) = 0;
@@ -57,12 +63,12 @@ class UserBoardView {
                                  base::TimeDelta time_left) = 0;
 };
 
-}  // namespace chromeos
+}  // namespace ash
 
 // TODO(https://crbug.com/1164001): remove after the //chrome/browser/chromeos
 // source migration is finished.
-namespace ash {
-using ::chromeos::UserBoardView;
+namespace chromeos {
+using ::ash::UserBoardView;
 }
 
 #endif  // CHROME_BROWSER_ASH_LOGIN_UI_VIEWS_USER_BOARD_VIEW_H_

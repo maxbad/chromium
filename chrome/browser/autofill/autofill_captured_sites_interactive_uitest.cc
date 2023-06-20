@@ -9,7 +9,6 @@
 #include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
 #include "base/guid.h"
-#include "base/macros.h"
 #include "base/path_service.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
@@ -40,6 +39,7 @@
 #include "components/autofill/core/browser/proto/server.pb.h"
 #include "components/autofill/core/common/autofill_features.h"
 #include "components/autofill/core/common/autofill_util.h"
+#include "components/password_manager/core/common/password_manager_pref_names.h"
 #include "components/variations/variations_switches.h"
 #include "content/public/test/browser_test.h"
 #include "content/public/test/test_renderer_host.h"
@@ -53,8 +53,7 @@ using captured_sites_test_utils::GetCapturedSites;
 
 namespace {
 
-const base::TimeDelta autofill_wait_for_action_interval =
-    base::TimeDelta::FromSeconds(5);
+const base::TimeDelta autofill_wait_for_action_interval = base::Seconds(5);
 
 base::FilePath GetReplayFilesRootDirectory() {
   base::FilePath src_dir;
@@ -89,7 +88,7 @@ class AutofillCapturedSitesInteractiveTest
         content::WebContents::FromRenderFrameHost(frame);
     BrowserAutofillManager* autofill_manager =
         ContentAutofillDriverFactory::FromWebContents(web_contents)
-            ->DriverForFrame(frame)
+            ->DriverForFrame(frame->GetMainFrame())
             ->browser_autofill_manager();
     autofill_manager->SetTestDelegate(test_delegate());
 
@@ -161,6 +160,11 @@ class AutofillCapturedSitesInteractiveTest
 
   bool SetupAutofillProfile() override {
     AddTestAutofillData(browser()->profile(), profile(), credit_card());
+    // Disable the Password Manager to prevent password bubbles from occurring.
+    // The password bubbles could overlap with the Autofill popups, in which
+    // case the Autofill popup would not be shown (crbug.com/1223898).
+    browser()->profile()->GetPrefs()->SetBoolean(
+        password_manager::prefs::kCredentialsEnableService, false);
     return true;
   }
 
@@ -191,6 +195,12 @@ class AutofillCapturedSitesInteractiveTest
   // InProcessBrowserTest:
   void SetUpOnMainThread() override {
     AutofillUiTest::SetUpOnMainThread();
+    if (base::FeatureList::IsEnabled(features::kAutofillAcrossIframes)) {
+      test_delegate()->SetIgnoreBackToBackMessages(
+          ObservedUiEvents::kPreviewFormData, true);
+      test_delegate()->SetIgnoreBackToBackMessages(
+          ObservedUiEvents::kFormDataFilled, true);
+    }
     recipe_replayer_ =
         std::make_unique<captured_sites_test_utils::TestRecipeReplayer>(
             browser(), this);
@@ -228,7 +238,10 @@ class AutofillCapturedSitesInteractiveTest
     // prediction. Test will check this attribute on all the relevant input
     // elements in a form to determine if the form is ready for interaction.
     feature_list_.InitWithFeatures(
-        /*enabled_features=*/{features::kAutofillShowTypePredictions},
+        /*enabled_features=*/{features::kAutofillAcrossIframes,
+                              features::kAutofillDisplaceRemovedForms,
+                              features::kAutofillShowTypePredictions,
+                              features::kAutofillUseUnassociatedListedElements},
         /*disabled_features=*/{});
     command_line->AppendSwitchASCII(
         variations::switches::kVariationsOverrideCountry, "us");
@@ -246,9 +259,9 @@ class AutofillCapturedSitesInteractiveTest
     return recipe_replayer_.get();
   }
 
-  const CreditCard credit_card() { return card_; }
+  const CreditCard& credit_card() { return card_; }
 
-  const AutofillProfile profile() { return profile_; }
+  const AutofillProfile& profile() { return profile_; }
 
  private:
   bool ShowAutofillSuggestion(const std::string& target_element_xpath,

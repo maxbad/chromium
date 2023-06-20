@@ -32,6 +32,8 @@
 #include "net/url_request/url_request_test_util.h"
 #include "services/network/mojo_socket_test_util.h"
 #include "services/network/public/mojom/network_service.mojom.h"
+#include "services/network/public/mojom/tcp_socket.mojom.h"
+#include "services/network/public/mojom/tls_socket.mojom.h"
 #include "services/network/public/mojom/udp_socket.mojom.h"
 #include "services/network/socket_factory.h"
 #include "services/network/tcp_connected_socket.h"
@@ -269,6 +271,10 @@ class TCPSocketTest : public testing::Test {
   TCPSocketTest()
       : task_environment_(base::test::TaskEnvironment::MainThreadType::IO),
         url_request_context_(true) {}
+
+  TCPSocketTest(const TCPSocketTest&) = delete;
+  TCPSocketTest& operator=(const TCPSocketTest&) = delete;
+
   ~TCPSocketTest() override {}
 
   void Init(net::ClientSocketFactory* mock_client_socket_factory) {
@@ -358,8 +364,6 @@ class TCPSocketTest : public testing::Test {
   std::unique_ptr<SocketFactory> factory_;
   TestSocketObserver test_observer_;
   mojo::UniqueReceiverSet<mojom::TCPServerSocket> tcp_server_socket_receiver_;
-
-  DISALLOW_COPY_AND_ASSIGN(TCPSocketTest);
 };
 
 TEST_F(TCPSocketTest, ReadAndWrite) {
@@ -471,8 +475,8 @@ TEST_F(TCPSocketTest, ServerReceivesMultipleAccept) {
                   &client_socket_send_handle));
     client_sockets.push_back(std::move(client_socket));
   }
-  for (const auto& callback : accept_callbacks) {
-    EXPECT_EQ(net::OK, callback->WaitForResult());
+  for (const auto& accept_callback : accept_callbacks) {
+    EXPECT_EQ(net::OK, accept_callback->WaitForResult());
   }
 }
 

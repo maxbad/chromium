@@ -10,12 +10,17 @@
 #include <vector>
 
 #include "ash/constants/ash_features.h"
+#include "ash/projector/model/projector_session_impl.h"
 #include "ash/projector/test/mock_projector_client.h"
 #include "ash/projector/test/mock_projector_metadata_controller.h"
 #include "ash/projector/test/mock_projector_ui_controller.h"
+#include "ash/public/cpp/projector/projector_session.h"
 #include "ash/test/ash_test_base.h"
 #include "base/files/file_path.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/json/json_writer.h"
+#include "base/run_loop.h"
+#include "base/test/bind.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/values.h"
 #include "media/mojo/mojom/speech_recognition_service.mojom.h"
@@ -32,10 +37,8 @@ void NotifyControllerForFinalSpeechResult(ProjectorControllerImpl* controller) {
   result.transcription = "transcript text 1";
   result.is_final = true;
   result.timing_information = media::TimingInformation();
-  result.timing_information->audio_start_time =
-      base::TimeDelta::FromMilliseconds(0);
-  result.timing_information->audio_end_time =
-      base::TimeDelta::FromMilliseconds(3000);
+  result.timing_information->audio_start_time = base::Milliseconds(0);
+  result.timing_information->audio_end_time = base::Milliseconds(3000);
 
   std::vector<media::HypothesisParts> hypothesis_parts;
   std::string hypothesis_text[3] = {"transcript", "text", "1"};
@@ -43,7 +46,7 @@ void NotifyControllerForFinalSpeechResult(ProjectorControllerImpl* controller) {
   for (int i = 0; i < 3; i++) {
     hypothesis_parts.emplace_back(
         std::vector<std::string>({hypothesis_text[i]}),
-        base::TimeDelta::FromMilliseconds(hypothesis_time[i]));
+        base::Milliseconds(hypothesis_time[i]));
   }
 
   result.timing_information->hypothesis_parts = std::move(hypothesis_parts);
@@ -60,7 +63,8 @@ void NotifyControllerForPartialSpeechResult(
 
 class ProjectorControllerTest : public AshTestBase {
  public:
-  ProjectorControllerTest() {
+  ProjectorControllerTest()
+      : AshTestBase(base::test::TaskEnvironment::TimeSource::MOCK_TIME) {
     scoped_feature_list_.InitAndEnableFeature(features::kProjector);
   }
 
@@ -98,28 +102,6 @@ class ProjectorControllerTest : public AshTestBase {
  private:
   base::test::ScopedFeatureList scoped_feature_list_;
 };
-
-TEST_F(ProjectorControllerTest, ShowToolbar) {
-  // Verify that |ShowToolbar| in |ProjectorUiController| is called.
-  EXPECT_CALL(*mock_ui_controller_, ShowToolbar()).Times(1);
-  controller_->SetProjectorToolsVisible(true);
-}
-
-TEST_F(ProjectorControllerTest, CloseToolbar) {
-  controller_->SetProjectorToolsVisible(/*is_visible=*/true);
-  mock_client_.SetSelfieCamVisible(/*visible=*/true);
-  // Verify that |CloseToolbar| in |ProjectorUiController| is called.
-  EXPECT_CALL(*mock_ui_controller_, CloseToolbar()).Times(1);
-  EXPECT_CALL(mock_client_, CloseSelfieCam()).Times(1);
-  controller_->SetProjectorToolsVisible(/*is_visible=*/false);
-}
-
-TEST_F(ProjectorControllerTest, SaveScreencast) {
-  base::FilePath saved_path;
-  // Verify that |SaveMetadata| in |ProjectorMetadataController| is called.
-  EXPECT_CALL(*mock_metadata_controller_, SaveMetadata(saved_path)).Times(1);
-  controller_->SaveScreencast(saved_path);
-}
 
 TEST_F(ProjectorControllerTest, OnTranscription) {
   // Verify that |RecordTranscription| in |ProjectorMetadataController| is
@@ -221,20 +203,71 @@ TEST_F(ProjectorControllerTest, OnChangeMarkerColorPressed) {
   controller_->OnChangeMarkerColorPressed(SK_ColorBLACK);
 }
 
+TEST_F(ProjectorControllerTest, OnUndoPressed) {
+  EXPECT_CALL(*mock_ui_controller_, OnUndoPressed());
+  controller_->OnUndoPressed();
+}
+
 TEST_F(ProjectorControllerTest, RecordingStarted) {
   EXPECT_CALL(mock_client_, StartSpeechRecognition());
   EXPECT_CALL(*mock_ui_controller_, OnRecordingStateChanged(/*started=*/true));
   EXPECT_CALL(*mock_metadata_controller_, OnRecordingStarted());
+  mock_client_.SetSelfieCamVisible(/*visible=*/true);
+  // Verify that |CloseToolbar| in |ProjectorUiController| is called.
+  EXPECT_CALL(*mock_ui_controller_, ShowToolbar()).Times(1);
+
   controller_->OnRecordingStarted();
 }
 
 TEST_F(ProjectorControllerTest, RecordingEnded) {
-  controller_->OnRecordingStarted();
-  mock_client_.SetSelfieCamVisible(/*visible=*/true);
-  EXPECT_CALL(mock_client_, StopSpeechRecognition());
-  EXPECT_CALL(*mock_ui_controller_, OnRecordingStateChanged(/*started=*/false));
-  EXPECT_CALL(mock_client_, CloseSelfieCam());
-  controller_->SetProjectorToolsVisible(/*is_visible=*/false);
-}
+  base::FilePath screencast_container_path;
+  ASSERT_TRUE(
+      mock_client_.GetDriveFsMountPointPath(&screencast_container_path));
+  ON_CALL(mock_client_, IsDriveFsMounted())
+      .WillByDefault(testing::Return(true));
 
+  mock_client_.SetSelfieCamVisible(/*visible=*/true);
+  // Verify that |CloseToolbar| in |ProjectorUiController| is called.
+  EXPECT_CALL(*mock_ui_controller_, CloseToolbar()).Times(1);
+  EXPECT_CALL(mock_client_, CloseSelfieCam()).Times(1);
+  EXPECT_CALL(mock_client_, OpenProjectorApp());
+  EXPECT_CALL(mock_client_,
+              OnNewScreencastPreconditionChanged(/*can_start=*/false));
+
+  // Advance clock to 20:02:10 Jan 2nd, 2021.
+  base::Time start_time;
+  EXPECT_TRUE(base::Time::FromString("2 Jan 2021 20:02:10", &start_time));
+  base::TimeDelta forward_by = start_time - base::Time::Now();
+  task_environment()->AdvanceClock(forward_by);
+  controller_->projector_session()->Start("projector_data");
+  controller_->OnRecordingStarted();
+
+  base::RunLoop runLoop;
+  controller_->CreateScreencastContainerFolder(base::BindLambdaForTesting(
+      [&](const base::FilePath& screencast_file_path_no_extension) {
+        EXPECT_CALL(mock_client_,
+                    OnNewScreencastPreconditionChanged(/*can_start=*/true));
+
+        EXPECT_CALL(mock_client_, StopSpeechRecognition());
+        EXPECT_CALL(*mock_ui_controller_,
+                    OnRecordingStateChanged(/*started=*/false));
+
+        // Verify that |SaveMetadata| in |ProjectorMetadataController| is called
+        // with the expected path.
+        const std::string expected_screencast_name =
+            "Screencast 2021-01-02 20.02.10";
+        EXPECT_CALL(*mock_metadata_controller_,
+                    SaveMetadata(screencast_container_path.Append("root")
+                                     .Append("projector_data")
+                                     // Screencast container folder.
+                                     .Append(expected_screencast_name)
+                                     // Screencast file name without extension.
+                                     .Append(expected_screencast_name)));
+
+        controller_->OnRecordingEnded();
+        runLoop.Quit();
+      }));
+
+  runLoop.Run();
+}
 }  // namespace ash

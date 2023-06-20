@@ -28,6 +28,7 @@
 #include "ui/compositor/layer.h"
 #include "ui/gfx/paint_vector_icon.h"
 #include "ui/views/background.h"
+#include "ui/views/border.h"
 #include "ui/views/bubble/bubble_border.h"
 #include "ui/views/controls/button/md_text_button.h"
 #include "ui/views/controls/label.h"
@@ -59,12 +60,11 @@ constexpr int kSpacingBetweenPinPadAndFingerprintIcon = 24;
 constexpr int kSpacingBetweenFingerprintIconAndLabelDp = 15;
 constexpr int kFingerprintViewWidthDp = 204;
 constexpr int kFingerprintFailedAnimationNumFrames = 45;
-constexpr base::TimeDelta kResetToDefaultIconDelay =
-    base::TimeDelta::FromMilliseconds(1300);
+constexpr base::TimeDelta kResetToDefaultIconDelay = base::Milliseconds(1300);
 constexpr base::TimeDelta kResetToDefaultMessageDelay =
-    base::TimeDelta::FromMilliseconds(3000);
+    base::Milliseconds(3000);
 constexpr base::TimeDelta kFingerprintFailedAnimationDuration =
-    base::TimeDelta::FromMilliseconds(700);
+    base::Milliseconds(700);
 
 // 38% opacity.
 constexpr SkColor kDisabledFingerprintIconColor =

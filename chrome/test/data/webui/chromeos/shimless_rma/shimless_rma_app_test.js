@@ -9,8 +9,8 @@ import {setShimlessRmaServiceForTesting} from 'chrome://shimless-rma/mojo_interf
 import {ButtonState, ShimlessRmaElement} from 'chrome://shimless-rma/shimless_rma.js';
 import {RmadErrorCode, RmaState, StateResult} from 'chrome://shimless-rma/shimless_rma_types.js';
 
-import {assertFalse, assertTrue} from '../../chai_assert.js';
-import {flushTasks, isVisible} from '../../test_util.m.js';
+import {assertEquals, assertFalse, assertTrue} from '../../chai_assert.js';
+import {flushTasks, isVisible} from '../../test_util.js';
 
 export function shimlessRMAAppTest() {
   /** @type {?ShimlessRmaElement} */
@@ -44,7 +44,7 @@ export function shimlessRMAAppTest() {
 
     // Initialize the fake data.
     service.setStates(states);
-    service.setGetCurrentChromeVersionResult(chromeVersion);
+    service.setGetCurrentOsVersionResult(chromeVersion);
 
     component = /** @type {!ShimlessRmaElement} */ (
         document.createElement('shimless-rma'));
@@ -59,9 +59,9 @@ export function shimlessRMAAppTest() {
    * TODO(joonbug): expand to cover assertion of ButtonState
    */
   function assertNavButtons() {
-    const nextButton = component.shadowRoot.querySelector('#back');
+    const nextButton = component.shadowRoot.querySelector('#next');
     const prevButton = component.shadowRoot.querySelector('#cancel');
-    const backButton = component.shadowRoot.querySelector('#next');
+    const backButton = component.shadowRoot.querySelector('#back');
     assertTrue(!!nextButton);
     assertTrue(!!prevButton);
     assertTrue(!!backButton);
@@ -85,44 +85,58 @@ export function shimlessRMAAppTest() {
   test('ShimlessRMABasicNavigation', async () => {
     await initializeShimlessRMAApp(fakeStates, fakeChromeVersion[0]);
 
+    const prevButton = component.shadowRoot.querySelector('#back');
+    const cancelButton = component.shadowRoot.querySelector('#cancel');
+    assertTrue(!!prevButton);
+    assertTrue(!!cancelButton);
+
     const initialPage =
         component.shadowRoot.querySelector('onboarding-landing-page');
     assertTrue(!!initialPage);
     assertFalse(initialPage.hidden);
+    assertTrue(prevButton.hidden);
+    assertFalse(cancelButton.hidden);
 
+    // This enables the next button on the landing page.
+    service.triggerHardwareVerificationStatusObserver(true, '', 0);
+    await flushTasks();
     await clickNext();
 
-    // TODO(joonbug): enable when page is ready.
-    // const selectComponentPage =
-    //     component.shadowRoot.querySelector('onboarding-select-components');
-    // assertTrue(!!selectComponentPage);
-    // assertFalse(selectComponentPage.hidden);
+    const selectNetworkPage =
+        component.shadowRoot.querySelector('onboarding-network-page');
+    assertTrue(!!selectNetworkPage);
+    assertFalse(selectNetworkPage.hidden);
     assertTrue(!!initialPage);
     assertTrue(initialPage.hidden);
+    assertFalse(prevButton.hidden);
+    assertFalse(cancelButton.hidden);
 
-    const prevButton = component.shadowRoot.querySelector('#back');
     prevButton.click();
     await flushTasks();
 
     // components page should not be destroyed.
-    // assertTrue(!!selectComponentPage);
-    // assertTrue(selectComponentPage.hidden);
+    assertTrue(!!selectNetworkPage);
+    assertTrue(selectNetworkPage.hidden);
     assertFalse(initialPage.hidden);
+    assertTrue(prevButton.hidden);
+    assertFalse(cancelButton.hidden);
   });
 
   test('ShimlessRMACancellation', async () => {
     await initializeShimlessRMAApp(fakeStates, fakeChromeVersion[0]);
-
+    let abortRmaCount = 0;
+    service.abortRma = () => {
+      abortRmaCount++;
+      return Promise.resolve(RmadErrorCode.kOk);
+    };
     const initialPage =
         component.shadowRoot.querySelector('onboarding-landing-page');
-    await clickNext();
-
     const cancelButton = component.shadowRoot.querySelector('#cancel');
+
     cancelButton.click();
     await flushTasks();
 
-    // back to initial page
-    assertFalse(initialPage.hidden);
+    assertEquals(1, abortRmaCount);
   });
 
   test('NextButtonClickedOnReady', async () => {
@@ -138,7 +152,7 @@ export function shimlessRMAAppTest() {
     await clickNext();
     assertFalse(initialPage.hidden);
 
-    resolver.resolve({state: RmaState.kUpdateChrome, error: RmadErrorCode.kOk});
+    resolver.resolve({state: RmaState.kUpdateOs, error: RmadErrorCode.kOk});
     await flushTasks();
 
     const updatePage =

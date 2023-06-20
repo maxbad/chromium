@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "base/android/scoped_java_ref.h"
+#include "base/containers/flat_set.h"
 #include "components/optimization_guide/proto/hints.pb.h"
 #include "components/optimization_guide/proto/push_notification.pb.h"
 
@@ -23,7 +24,10 @@ class OptimizationGuideBridge {
  public:
   static std::vector<proto::HintNotificationPayload> GetCachedNotifications(
       proto::OptimizationType opt_type);
-  static bool DidOptimizationTypeOverflow(proto::OptimizationType opt_type);
+  static base::flat_set<proto::OptimizationType>
+  GetOptTypesWithPushNotifications();
+  static base::flat_set<proto::OptimizationType>
+  GetOptTypesThatOverflowedPushNotifications();
   static void ClearCacheForOptimizationType(proto::OptimizationType opt_type);
   static void OnNotificationNotHandledByNative(
       proto::HintNotificationPayload notification);
@@ -36,6 +40,11 @@ class OptimizationGuideBridge {
   void RegisterOptimizationTypes(
       JNIEnv* env,
       const base::android::JavaParamRef<jintArray>& joptimization_types);
+  void CanApplyOptimizationAsync(
+      JNIEnv* env,
+      const base::android::JavaParamRef<jobject>& java_gurl,
+      jint optimization_type,
+      const base::android::JavaParamRef<jobject>& java_callback);
   void CanApplyOptimization(
       JNIEnv* env,
       const base::android::JavaParamRef<jobject>& java_gurl,
@@ -44,6 +53,7 @@ class OptimizationGuideBridge {
   void OnNewPushNotification(
       JNIEnv* env,
       const base::android::JavaRef<jbyteArray>& j_encoded_notification);
+  void OnDeferredStartup(JNIEnv* env);
 
  private:
   OptimizationGuideKeyedService* optimization_guide_keyed_service_;

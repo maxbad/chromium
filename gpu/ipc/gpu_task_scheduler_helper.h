@@ -5,10 +5,16 @@
 #ifndef GPU_IPC_GPU_TASK_SCHEDULER_HELPER_H_
 #define GPU_IPC_GPU_TASK_SCHEDULER_HELPER_H_
 
+#include <vector>
+
 #include "base/callback.h"
 #include "gpu/command_buffer/common/sync_token.h"
 #include "gpu/command_buffer/service/sequence_id.h"
 #include "gpu/ipc/gl_in_process_context_export.h"
+
+namespace base {
+class TimeTicks;
+}
 
 namespace viz {
 class VizProcessContextProvider;
@@ -41,6 +47,10 @@ class GL_IN_PROCESS_CONTEXT_EXPORT GpuTaskSchedulerHelper {
   // This constructor is used for command buffer GLOutputSurface.
   explicit GpuTaskSchedulerHelper(
       CommandBufferTaskExecutor* command_buffer_task_executor);
+
+  GpuTaskSchedulerHelper(const GpuTaskSchedulerHelper&) = delete;
+  GpuTaskSchedulerHelper& operator=(const GpuTaskSchedulerHelper&) = delete;
+
   ~GpuTaskSchedulerHelper();
 
   // This function sets up the |command_buffer_helper| which flushes the command
@@ -96,8 +106,6 @@ class GL_IN_PROCESS_CONTEXT_EXPORT GpuTaskSchedulerHelper {
   // chance to post any pending tasks and maintains the ordering between command
   // buffer and other user tasks.
   CommandBufferHelper* command_buffer_helper_ = nullptr;
-
-  DISALLOW_COPY_AND_ASSIGN(GpuTaskSchedulerHelper);
 };
 
 }  // namespace gpu

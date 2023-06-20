@@ -26,11 +26,10 @@
 #include "third_party/blink/renderer/core/layout/layout_list_marker.h"
 
 #include "third_party/blink/renderer/core/css/counter_style.h"
+#include "third_party/blink/renderer/core/html/html_li_element.h"
 #include "third_party/blink/renderer/core/layout/api/line_layout_block_flow.h"
-#include "third_party/blink/renderer/core/layout/layout_analyzer.h"
 #include "third_party/blink/renderer/core/layout/layout_list_item.h"
 #include "third_party/blink/renderer/core/layout/list_marker.h"
-#include "third_party/blink/renderer/core/layout/list_marker_text.h"
 #include "third_party/blink/renderer/core/paint/list_marker_painter.h"
 #include "third_party/blink/renderer/core/style/list_style_type_data.h"
 #include "third_party/blink/renderer/platform/fonts/font.h"
@@ -45,6 +44,11 @@ LayoutListMarker::LayoutListMarker(Element* element) : LayoutBox(element) {
 }
 
 LayoutListMarker::~LayoutListMarker() = default;
+
+void LayoutListMarker::Trace(Visitor* visitor) const {
+  visitor->Trace(image_);
+  LayoutBox::Trace(visitor);
+}
 
 void LayoutListMarker::WillBeDestroyed() {
   NOT_DESTROYED();
@@ -73,10 +77,9 @@ LayoutSize LayoutListMarker::ImageBulletSize() const {
   // marker pseudoclass to allow control over the width and height of the
   // marker box.
   float bullet_width = font_data->GetFontMetrics().Ascent() / 2.0f;
-  return RoundedLayoutSize(
-      image_->ImageSize(GetDocument(), StyleRef().EffectiveZoom(),
-                        FloatSize(bullet_width, bullet_width),
-                        LayoutObject::ShouldRespectImageOrientation(this)));
+  return RoundedLayoutSize(image_->ImageSize(
+      StyleRef().EffectiveZoom(), FloatSize(bullet_width, bullet_width),
+      LayoutObject::ShouldRespectImageOrientation(this)));
 }
 
 void LayoutListMarker::ListStyleTypeChanged() {
@@ -126,7 +129,6 @@ void LayoutListMarker::Paint(const PaintInfo& paint_info) const {
 void LayoutListMarker::UpdateLayout() {
   NOT_DESTROYED();
   DCHECK(NeedsLayout());
-  LayoutAnalyzer::Scope analyzer(*this);
 
   LayoutUnit block_offset = LogicalTop();
   const LayoutListItem* list_item = ListItem();
@@ -208,6 +210,8 @@ String LayoutListMarker::TextAlternative() const {
     return "";
 
   const CounterStyle& counter_style = GetCounterStyle();
+  if (RuntimeEnabledFeatures::CSSAtRuleCounterStyleSpeakAsDescriptorEnabled())
+    return counter_style.GenerateTextAlternative(ListItem()->Value());
   return counter_style.GetPrefix() + text_ + counter_style.GetSuffix();
 }
 
@@ -323,7 +327,7 @@ ListMarker::ListStyleCategory LayoutListMarker::GetListStyleCategory() const {
 
 const CounterStyle& LayoutListMarker::GetCounterStyle() const {
   NOT_DESTROYED();
-  const ListStyleTypeData* list_style_data = StyleRef().GetListStyleType();
+  const ListStyleTypeData* list_style_data = StyleRef().ListStyleType();
   DCHECK(list_style_data);
   DCHECK(list_style_data->IsCounterStyle());
   return list_style_data->GetCounterStyle(GetDocument());

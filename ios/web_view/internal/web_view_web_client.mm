@@ -90,7 +90,7 @@ std::string WebViewWebClient::GetUserAgent(web::UserAgentType type) const {
 
 base::StringPiece WebViewWebClient::GetDataResource(
     int resource_id,
-    ui::ScaleFactor scale_factor) const {
+    ui::ResourceScaleFactor scale_factor) const {
   return ui::ResourceBundle::GetSharedInstance().GetRawDataResourceForScale(
       resource_id, scale_factor);
 }
@@ -166,8 +166,8 @@ void WebViewWebClient::PrepareErrorPage(
   }
 }
 
-bool WebViewWebClient::EnableLongPressAndForceTouchHandling() const {
-  return CWVWebView.chromeLongPressAndForceTouchHandlingEnabled;
+bool WebViewWebClient::EnableLongPressUIContextMenu() const {
+  return CWVWebView.chromeContextMenuEnabled;
 }
 
 }  // namespace ios_web_view

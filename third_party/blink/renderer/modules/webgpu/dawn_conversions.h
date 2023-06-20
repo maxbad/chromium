@@ -25,8 +25,6 @@ class GPUColorDict;
 class GPUProgrammableStage;
 class GPUImageCopyTexture;
 class GPUImageDataLayout;
-class UnsignedLongEnforceRangeSequenceOrGPUExtent3DDict;
-class UnsignedLongEnforceRangeSequenceOrGPUOrigin3DDict;
 
 // These conversions are used multiple times and are declared here. Conversions
 // used only once, for example for object construction, are defined
@@ -34,15 +32,12 @@ class UnsignedLongEnforceRangeSequenceOrGPUOrigin3DDict;
 WGPUColor AsDawnColor(const Vector<double>&);
 WGPUColor AsDawnType(const GPUColorDict*);
 WGPUColor AsDawnType(const V8GPUColor* webgpu_color);
-WGPUExtent3D AsDawnType(const V8GPUExtent3D* webgpu_extent, GPUDevice* device);
-// TODO(crbug.com/1181288): Remove the old IDL union version.
-WGPUExtent3D AsDawnType(
-    const UnsignedLongEnforceRangeSequenceOrGPUExtent3DDict*,
-    GPUDevice* device);
-WGPUOrigin3D AsDawnType(
-    const UnsignedLongEnforceRangeSequenceOrGPUOrigin3DDict*);
-WGPUTextureCopyView AsDawnType(const GPUImageCopyTexture* webgpu_view,
-                               GPUDevice* device);
+WGPUExtent3D AsDawnType(const V8GPUExtent3D* webgpu_extent);
+WGPUOrigin3D AsDawnType(const V8GPUOrigin3D* webgpu_extent);
+WGPUImageCopyTexture AsDawnType(const GPUImageCopyTexture* webgpu_view,
+                                GPUDevice* device);
+WGPUTextureFormat AsDawnType(SkColorType color_type);
+
 const char* ValidateTextureDataLayout(const GPUImageDataLayout* webgpu_layout,
                                       WGPUTextureDataLayout* layout);
 using OwnedProgrammableStageDescriptor =

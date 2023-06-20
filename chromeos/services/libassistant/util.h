@@ -9,6 +9,12 @@
 
 #include "third_party/abseil-cpp/absl/types/optional.h"
 
+namespace assistant {
+namespace api {
+class Interaction;
+}  // namespace api
+}  // namespace assistant
+
 namespace base {
 class FilePath;
 }  // namespace base
@@ -31,13 +37,42 @@ std::string CreateLibAssistantConfig(
 // Returns the path where all downloaded LibAssistant resources are stored.
 base::FilePath GetBaseAssistantDir();
 
-std::string CreateVerifyProviderResponseInteraction(
+::assistant::api::Interaction CreateVerifyProviderResponseInteraction(
     const int interaction_id,
     const std::vector<chromeos::assistant::AndroidAppInfo>& apps_info);
 
-std::string CreateGetDeviceSettingInteraction(
+::assistant::api::Interaction CreateGetDeviceSettingInteraction(
     int interaction_id,
     const std::vector<chromeos::assistant::DeviceSetting>& device_settings);
+
+// `action_index` is the index of the actions and buttons.
+::assistant::api::Interaction CreateNotificationRequestInteraction(
+    const std::string& notification_id,
+    const std::string& consistent_token,
+    const std::string& opaque_token,
+    const int action_index);
+
+// `grouping_keys` are the keys to group multiple notifications together.
+::assistant::api::Interaction CreateNotificationDismissedInteraction(
+    const std::string& notification_id,
+    const std::string& consistent_token,
+    const std::string& opaque_token,
+    const std::vector<std::string>& grouping_keys);
+
+::assistant::api::Interaction CreateEditReminderInteraction(
+    const std::string& reminder_id);
+
+::assistant::api::Interaction CreateOpenProviderResponseInteraction(
+    const int interaction_id,
+    const bool provider_found);
+
+::assistant::api::Interaction CreateSendFeedbackInteraction(
+    bool assistant_debug_info_allowed,
+    const std::string& feedback_description,
+    const std::string& screenshot_png = std::string());
+
+::assistant::api::Interaction CreateTextQueryInteraction(
+    const std::string& query);
 
 }  // namespace libassistant
 }  // namespace chromeos

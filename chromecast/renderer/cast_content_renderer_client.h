@@ -13,6 +13,7 @@
 #include "chromecast/chromecast_buildflags.h"
 #include "chromecast/common/mojom/application_media_capabilities.mojom.h"
 #include "chromecast/renderer/cast_activity_url_filter_manager.h"
+#include "chromecast/renderer/feature_manager_on_associated_interface.h"
 #include "chromecast/renderer/identification_settings_manager_store.h"
 #include "content/public/renderer/content_renderer_client.h"
 #include "media/base/audio_codecs.h"
@@ -21,9 +22,14 @@
 
 namespace extensions {
 class ExtensionsClient;
-class ExtensionsGuestViewContainerDispatcher;
 class CastExtensionsRendererClient;
 }  // namespace extensions
+
+#if BUILDFLAG(ENABLE_CHROMECAST_EXTENSIONS)
+namespace guest_view {
+class GuestViewContainerDispatcher;
+}
+#endif
 
 namespace chromecast {
 class IdentificationSettingsManager;
@@ -47,6 +53,10 @@ class CastContentRendererClient
   // Creates an implementation of CastContentRendererClient. Platform should
   // link in an implementation as needed.
   static std::unique_ptr<CastContentRendererClient> Create();
+
+  CastContentRendererClient(const CastContentRendererClient&) = delete;
+  CastContentRendererClient& operator=(const CastContentRendererClient&) =
+      delete;
 
   ~CastContentRendererClient() override;
 
@@ -94,6 +104,11 @@ class CastContentRendererClient
     return activity_url_filter_manager_.get();
   }
 
+  // TODO(guohuideng): Move |feature_manager_on_associated_interface_| to
+  // private when we can.
+  FeatureManagerOnAssociatedInterface*
+      main_frame_feature_manager_on_associated_interface_{nullptr};
+
  private:
   // mojom::ApplicationMediaCapabilitiesObserver implementation:
   void OnSupportedBitstreamAudioCodecsChanged(
@@ -103,8 +118,8 @@ class CastContentRendererClient
                                          bool check_spatial_rendering);
 
   // IdentificationSettingsManagerStore implementation:
-  IdentificationSettingsManager* GetSettingsManagerFromRenderFrameID(
-      int render_frame_id) override;
+  scoped_refptr<IdentificationSettingsManager>
+  GetSettingsManagerFromRenderFrameID(int render_frame_id) override;
 
   // Called when a render frame is removed.
   void OnRenderFrameRemoved(int render_frame_id);
@@ -121,7 +136,7 @@ class CastContentRendererClient
   std::unique_ptr<extensions::ExtensionsClient> extensions_client_;
   std::unique_ptr<extensions::CastExtensionsRendererClient>
       extensions_renderer_client_;
-  std::unique_ptr<extensions::ExtensionsGuestViewContainerDispatcher>
+  std::unique_ptr<guest_view::GuestViewContainerDispatcher>
       guest_view_container_dispatcher_;
 #endif
 
@@ -131,11 +146,9 @@ class CastContentRendererClient
 
   BitstreamAudioCodecsInfo supported_bitstream_audio_codecs_info_;
 
-  base::flat_map<int, std::unique_ptr<IdentificationSettingsManager>>
+  base::flat_map<int, scoped_refptr<IdentificationSettingsManager>>
       settings_managers_;
   std::unique_ptr<CastActivityUrlFilterManager> activity_url_filter_manager_;
-
-  DISALLOW_COPY_AND_ASSIGN(CastContentRendererClient);
 };
 
 }  // namespace shell

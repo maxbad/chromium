@@ -17,17 +17,15 @@
 #include <vector>
 
 #include "base/files/file_path.h"
-#include "base/macros.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/sequence_checker.h"
-#include "base/sequenced_task_runner.h"
 #include "base/synchronization/lock.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/timer/timer.h"
 #include "chromeos/dbus/power/power_manager_client.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 
-namespace chromeos {
+namespace ash {
 
 // A class which starts collecting metrics about processes as soon as it is
 // initialized with |Initialize|. This class depends on the DBusThreadManager
@@ -164,6 +162,9 @@ class ProcessDataCollector {
   // Should only be called after Initialize() is called and before
   // DBusThreadManager is shut down.
   static void Shutdown();
+
+  ProcessDataCollector(const ProcessDataCollector&) = delete;
+  ProcessDataCollector& operator=(const ProcessDataCollector&) = delete;
 
   // The analog for the |SampleCpuUsage| function but for testing. Do not call
   // this while a |ProcessDataCollector| has been initialized with |Initialize|
@@ -325,10 +326,13 @@ class ProcessDataCollector {
   SEQUENCE_CHECKER(sequence_checker_);
 
   base::WeakPtrFactory<ProcessDataCollector> weak_ptr_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(ProcessDataCollector);
 };
 
+}  // namespace ash
+
+// TODO(https://crbug.com/1164001): remove when ChromeOS code migration is done.
+namespace chromeos {
+using ::ash::ProcessDataCollector;
 }  // namespace chromeos
 
 #endif  // CHROME_BROWSER_ASH_POWER_PROCESS_DATA_COLLECTOR_H_

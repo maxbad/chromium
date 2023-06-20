@@ -20,7 +20,7 @@
 #include "chrome/browser/safe_browsing/incident_reporting/incident.h"
 #include "chrome/browser/safe_browsing/incident_reporting/mock_incident_receiver.h"
 #include "chrome/common/chrome_paths.h"
-#include "components/safe_browsing/core/proto/csd.pb.h"
+#include "components/safe_browsing/core/common/proto/csd.pb.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -42,7 +42,7 @@ bool CorruptFileContent(const base::FilePath& file_path) {
   base::File file(file_path, base::File::FLAG_OPEN | base::File::FLAG_WRITE);
   if (!file.IsValid())
     return false;
-  char vec[] = {0xAA};
+  char vec[] = {'\xAA'};
   return file.Write(text_pos, vec, sizeof(vec)) == sizeof(vec);
 }
 

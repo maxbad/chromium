@@ -23,6 +23,7 @@
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_errors.h"
 #include "net/base/url_util.h"
+#include "services/network/public/mojom/network_context.mojom.h"
 #include "services/network/public/mojom/ssl_config.mojom.h"
 
 namespace extensions {
@@ -209,7 +210,7 @@ void TCPSocket::SetKeepAlive(bool enable,
                              int delay,
                              SetKeepAliveCallback callback) {
   if (!client_socket_) {
-    std::move(callback).Run(net::ERR_FAILED);
+    std::move(callback).Run(false);
     return;
   }
   client_socket_->SetKeepAlive(enable, delay, std::move(callback));
@@ -217,7 +218,7 @@ void TCPSocket::SetKeepAlive(bool enable,
 
 void TCPSocket::SetNoDelay(bool no_delay, SetNoDelayCallback callback) {
   if (!client_socket_) {
-    std::move(callback).Run(net::ERR_FAILED);
+    std::move(callback).Run(false);
     return;
   }
   client_socket_->SetNoDelay(no_delay, std::move(callback));

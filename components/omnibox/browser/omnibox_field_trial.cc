@@ -182,7 +182,7 @@ double HUPScoringParams::ScoreBuckets::HalfLifeTimeDecay(
     return 1.0;
 
   const double half_life_intervals =
-      time_ms / base::TimeDelta::FromDays(half_life_days_).InMillisecondsF();
+      time_ms / base::Days(half_life_days_).InMillisecondsF();
   return pow(2.0, -half_life_intervals);
 }
 
@@ -220,8 +220,8 @@ base::TimeDelta OmniboxFieldTrial::StopTimerFieldTrialDuration() {
   if (base::StringToInt(
           base::FieldTrialList::FindFullName(kStopTimerFieldTrialName),
           &stop_timer_ms))
-    return base::TimeDelta::FromMilliseconds(stop_timer_ms);
-  return base::TimeDelta::FromMilliseconds(1500);
+    return base::Milliseconds(stop_timer_ms);
+  return base::Milliseconds(1500);
 }
 
 base::Time OmniboxFieldTrial::GetLocalHistoryZeroSuggestAgeThreshold() {
@@ -236,7 +236,7 @@ base::Time OmniboxFieldTrial::GetLocalHistoryZeroSuggestAgeThreshold() {
     param_value_as_int = 7;
   }
 
-  return (base::Time::Now() - base::TimeDelta::FromDays(param_value_as_int));
+  return (base::Time::Now() - base::Days(param_value_as_int));
 }
 
 bool OmniboxFieldTrial::ShortcutsScoringMaxRelevance(
@@ -366,7 +366,11 @@ bool OmniboxFieldTrial::IsMaxURLMatchesFeatureEnabled() {
 }
 
 size_t OmniboxFieldTrial::GetMaxURLMatches() {
+#if !defined(OS_ANDROID)
   constexpr size_t kDefaultMaxURLMatches = 7;
+#else   // defined(OS_ANDROID)
+  constexpr size_t kDefaultMaxURLMatches = 5;
+#endif  // defined(OS_ANDROID)
   return base::GetFieldTrialParamByFeatureAsInt(
       omnibox::kOmniboxMaxURLMatches,
       OmniboxFieldTrial::kOmniboxMaxURLMatchesParam, kDefaultMaxURLMatches);
@@ -602,18 +606,21 @@ bool OmniboxFieldTrial::IsTabSwitchSuggestionsEnabled() {
   return base::FeatureList::IsEnabled(omnibox::kOmniboxTabSwitchSuggestions);
 }
 
-bool OmniboxFieldTrial::IsPedalsBatch2Enabled() {
-  return base::FeatureList::IsEnabled(omnibox::kOmniboxPedalsBatch2);
-}
-
 bool OmniboxFieldTrial::IsPedalsBatch2NonEnglishEnabled() {
-  return IsPedalsBatch2Enabled() &&
-         base::FeatureList::IsEnabled(omnibox::kOmniboxPedalsBatch2NonEnglish);
+  return base::FeatureList::IsEnabled(omnibox::kOmniboxPedalsBatch2NonEnglish);
 }
 
-bool OmniboxFieldTrial::IsPedalsDefaultIconColored() {
+bool OmniboxFieldTrial::IsPedalsBatch3Enabled() {
+  return base::FeatureList::IsEnabled(omnibox::kOmniboxPedalsBatch3);
+}
+
+bool OmniboxFieldTrial::IsPedalsBatch3NonEnglishEnabled() {
+  return base::FeatureList::IsEnabled(omnibox::kOmniboxPedalsBatch3NonEnglish);
+}
+
+bool OmniboxFieldTrial::IsPedalsTranslationConsoleEnabled() {
   return base::FeatureList::IsEnabled(
-      omnibox::kOmniboxPedalsDefaultIconColored);
+      omnibox::kOmniboxPedalsTranslationConsole);
 }
 
 bool OmniboxFieldTrial::IsKeywordSearchButtonEnabled() {
@@ -622,10 +629,6 @@ bool OmniboxFieldTrial::IsKeywordSearchButtonEnabled() {
 
 bool OmniboxFieldTrial::IsExperimentalKeywordModeEnabled() {
   return base::FeatureList::IsEnabled(omnibox::kExperimentalKeywordMode);
-}
-
-bool OmniboxFieldTrial::IsRefinedFocusStateEnabled() {
-  return base::FeatureList::IsEnabled(omnibox::kOmniboxRefinedFocusState);
 }
 
 bool OmniboxFieldTrial::IsOnDeviceHeadSuggestEnabledForIncognito() {
@@ -647,18 +650,23 @@ std::string OmniboxFieldTrial::OnDeviceHeadModelLocaleConstraint(
   const base::Feature* feature =
       is_incognito ? &omnibox::kOnDeviceHeadProviderIncognito
                    : &omnibox::kOnDeviceHeadProviderNonIncognito;
-  return base::GetFieldTrialParamValueByFeature(
+  std::string constraint = base::GetFieldTrialParamValueByFeature(
       *feature, kOnDeviceHeadModelLocaleConstraint);
+#if !defined(OS_ANDROID) && !defined(OS_IOS)
+  if (constraint.empty())
+    constraint = "500000";
+#endif  // !defined(OS_ANDROID) && !defined(OS_IOS)
+  return constraint;
 }
 
 int OmniboxFieldTrial::OnDeviceHeadSuggestMaxScoreForNonUrlInput(
     bool is_incognito) {
   const int kDefaultScore =
-#if defined(OS_ANDROID) || defined(OS_IOS)
+#if defined(OS_IOS)
       99;
 #else
       is_incognito ? 99 : 1000;
-#endif  // defined(OS_ANDROID) || defined(OS_IOS)
+#endif  // defined(OS_IOS)
   return is_incognito
              ? kDefaultScore
              : base::GetFieldTrialParamByFeatureAsInt(
@@ -669,11 +677,11 @@ int OmniboxFieldTrial::OnDeviceHeadSuggestMaxScoreForNonUrlInput(
 int OmniboxFieldTrial::OnDeviceHeadSuggestDelaySuggestRequestMs(
     bool is_incognito) {
   const int kDefaultDelayNonIncognito =
-#if defined(OS_ANDROID) || defined(OS_IOS)
+#if defined(OS_IOS)
       100;
 #else
       0;
-#endif  // defined(OS_ANDROID) || defined(OS_IOS)
+#endif  // defined(OS_IOS)
   return is_incognito ? 0
                       : base::GetFieldTrialParamByFeatureAsInt(
                             omnibox::kOnDeviceHeadProviderNonIncognito,
@@ -693,37 +701,19 @@ std::string OmniboxFieldTrial::OnDeviceHeadSuggestDemoteMode() {
   std::string demote_mode = base::GetFieldTrialParamValueByFeature(
       omnibox::kOnDeviceHeadProviderNonIncognito,
       kOnDeviceHeadSuggestDemoteMode);
-#if !defined(OS_ANDROID) && !defined(OS_IOS)
+#if !defined(OS_IOS)
   if (demote_mode.empty())
     demote_mode = "decrease-relevances";
-#endif  // !defined(OS_ANDROID) && !defined(OS_IOS)
+#endif  // !defined(OS_IOS)
   return demote_mode;
-}
-
-bool OmniboxFieldTrial::ShouldRevealPathQueryRefOnHover() {
-  return base::FeatureList::IsEnabled(
-      omnibox::kRevealSteadyStateUrlPathQueryAndRefOnHover);
-}
-
-bool OmniboxFieldTrial::ShouldHidePathQueryRefOnInteraction() {
-  return base::FeatureList::IsEnabled(
-      omnibox::kHideSteadyStateUrlPathQueryAndRefOnInteraction);
-}
-
-bool OmniboxFieldTrial::ShouldMaybeElideToRegistrableDomain() {
-  return base::FeatureList::IsEnabled(omnibox::kMaybeElideToRegistrableDomain);
-}
-
-int OmniboxFieldTrial::UnelideURLOnHoverThresholdMs() {
-  const int kDefaultThresholdMs = 250;
-  int threshold = base::GetFieldTrialParamByFeatureAsInt(
-      omnibox::kRevealSteadyStateUrlPathQueryAndRefOnHover,
-      kOmniboxUIUnelideURLOnHoverThresholdMsParam, kDefaultThresholdMs);
-  return threshold < 0 ? kDefaultThresholdMs : threshold;
 }
 
 bool OmniboxFieldTrial::ShouldDisableCGIParamMatching() {
   return base::FeatureList::IsEnabled(omnibox::kDisableCGIParamMatching);
+}
+
+bool OmniboxFieldTrial::IsActiveSearchEnginesEnabled() {
+  return base::FeatureList::IsEnabled(omnibox::kActiveSearchEngines);
 }
 
 const char OmniboxFieldTrial::kBundledExperimentFieldTrialName[] =
@@ -814,9 +804,6 @@ const char OmniboxFieldTrial::kOnDeviceHeadSuggestDemoteMode[] =
     "DemoteOnDeviceSearchSuggestionsMode";
 
 int OmniboxFieldTrial::kDefaultMinimumTimeBetweenSuggestQueriesMs = 100;
-
-const char OmniboxFieldTrial::kOmniboxUIUnelideURLOnHoverThresholdMsParam[] =
-    "OmniboxUIUnelideURLOnHoverThresholdMsdMs";
 
 namespace OmniboxFieldTrial {
 

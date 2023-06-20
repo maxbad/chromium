@@ -10,7 +10,6 @@
 #include <utility>
 
 #include "base/compiler_specific.h"
-#include "base/macros.h"
 #include "ui/gfx/animation/animation_delegate.h"
 #include "ui/gfx/animation/linear_animation.h"
 #include "ui/views/view.h"
@@ -49,6 +48,10 @@ class VIEWS_EXPORT TabbedPane : public View {
 
   explicit TabbedPane(Orientation orientation = Orientation::kHorizontal,
                       TabStripStyle style = TabStripStyle::kBorder);
+
+  TabbedPane(const TabbedPane&) = delete;
+  TabbedPane& operator=(const TabbedPane&) = delete;
+
   ~TabbedPane() override;
 
   TabbedPaneListener* listener() const { return listener_; }
@@ -133,8 +136,6 @@ class VIEWS_EXPORT TabbedPane : public View {
   // correspond to match each Tab with its respective content View.
   TabStrip* tab_strip_ = nullptr;
   View* contents_ = nullptr;
-
-  DISALLOW_COPY_AND_ASSIGN(TabbedPane);
 };
 
 // The tab view shown in the tab strip.
@@ -143,6 +144,10 @@ class VIEWS_EXPORT Tab : public View {
   METADATA_HEADER(Tab);
 
   Tab(TabbedPane* tabbed_pane, const std::u16string& title, View* contents);
+
+  Tab(const Tab&) = delete;
+  Tab& operator=(const Tab&) = delete;
+
   ~Tab() override;
 
   View* contents() const { return contents_; }
@@ -190,8 +195,6 @@ class VIEWS_EXPORT Tab : public View {
   State state_ = State::kActive;
   // The content view associated with this tab.
   View* contents_;
-
-  DISALLOW_COPY_AND_ASSIGN(Tab);
 };
 
 // The tab strip shown above/left of the tab contents.
@@ -200,10 +203,14 @@ class TabStrip : public View, public gfx::AnimationDelegate {
   METADATA_HEADER(TabStrip);
 
   // The return value of GetSelectedTabIndex() when no tab is selected.
-  static constexpr size_t kNoSelectedTab = size_t{-1};
+  static constexpr size_t kNoSelectedTab = static_cast<size_t>(-1);
 
   TabStrip(TabbedPane::Orientation orientation,
            TabbedPane::TabStripStyle style);
+
+  TabStrip(const TabStrip&) = delete;
+  TabStrip& operator=(const TabStrip&) = delete;
+
   ~TabStrip() override;
 
   // AnimationDelegate:
@@ -249,8 +256,6 @@ class TabStrip : public View, public gfx::AnimationDelegate {
   // The x-coordinate ranges of the old selection and the new selection.
   gfx::Range animating_from_;
   gfx::Range animating_to_;
-
-  DISALLOW_COPY_AND_ASSIGN(TabStrip);
 };
 
 }  // namespace views

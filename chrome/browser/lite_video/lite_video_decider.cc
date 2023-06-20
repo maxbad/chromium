@@ -163,10 +163,19 @@ void LiteVideoDecider::CanApplyLiteVideo(
     return;
   }
 
+  if (navigation_handle->IsInPrerenderedMainFrame()) {
+    std::move(callback).Run(
+        absl::nullopt, blocklist_reason,
+        optimization_guide::OptimizationGuideDecision::kFalse);
+    return;
+  }
+
+  const bool is_in_main_frame = navigation_handle->IsInMainFrame();
+
   if (url.has_host() && IsHostPermanentlyBlockedlisted(url.host())) {
     blocklist_reason = LiteVideoBlocklistReason::kHostPermanentlyBlocklisted;
-    ScopedLiteVideoDecisionRecorder scoped_decision_recorder(
-        blocklist_reason, navigation_handle->IsInMainFrame());
+    ScopedLiteVideoDecisionRecorder scoped_decision_recorder(blocklist_reason,
+                                                             is_in_main_frame);
     std::move(callback).Run(
         absl::nullopt, blocklist_reason,
         optimization_guide::OptimizationGuideDecision::kFalse);
@@ -184,8 +193,8 @@ void LiteVideoDecider::CanApplyLiteVideo(
     blocklist_reason = is_reload
                            ? LiteVideoBlocklistReason::kNavigationReload
                            : LiteVideoBlocklistReason::kNavigationForwardBack;
-    ScopedLiteVideoDecisionRecorder scoped_decision_recorder(
-        blocklist_reason, navigation_handle->IsInMainFrame());
+    ScopedLiteVideoDecisionRecorder scoped_decision_recorder(blocklist_reason,
+                                                             is_in_main_frame);
     std::move(callback).Run(
         absl::nullopt, blocklist_reason,
         optimization_guide::OptimizationGuideDecision::kFalse);
@@ -197,7 +206,7 @@ void LiteVideoDecider::CanApplyLiteVideo(
 
   if (opt_guide_decider_) {
     // This relies on the optimization guide for hints.
-    if (navigation_handle->IsInMainFrame()) {
+    if (is_in_main_frame) {
       opt_guide_decider_->CanApplyOptimizationAsync(
           navigation_handle, optimization_guide::proto::LITE_VIDEO,
           base::BindOnce(&LiteVideoDecider::OnOptimizationGuideHintAvailable,
@@ -229,8 +238,8 @@ void LiteVideoDecider::CanApplyLiteVideo(
 
     UpdateBlocklists(navigation_handle, blocklist_reason);
 
-    ScopedLiteVideoDecisionRecorder scoped_decision_recorder(
-        blocklist_reason, navigation_handle->IsInMainFrame());
+    ScopedLiteVideoDecisionRecorder scoped_decision_recorder(blocklist_reason,
+                                                             is_in_main_frame);
     if (hint)
       scoped_decision_recorder.set_has_hint_for_host(true);
 
@@ -240,8 +249,8 @@ void LiteVideoDecider::CanApplyLiteVideo(
 
   absl::optional<LiteVideoHint> hint =
       hint_cache_->GetHintForNavigationURL(url);
-  ScopedLiteVideoDecisionRecorder scoped_decision_recorder(
-      blocklist_reason, navigation_handle->IsInMainFrame());
+  ScopedLiteVideoDecisionRecorder scoped_decision_recorder(blocklist_reason,
+                                                           is_in_main_frame);
 
   if (hint)
     scoped_decision_recorder.set_has_hint_for_host(true);
@@ -265,6 +274,8 @@ void LiteVideoDecider::UpdateBlocklists(
   DCHECK(navigation_handle);
   if (blocklist_reason != LiteVideoBlocklistReason::kAllowed)
     return;
+
+  DCHECK(!navigation_handle->IsInPrerenderedMainFrame());
 
   // The navigation was not blocklisted and may
   // have the LiteVideo optimization triggered so update the blocklist.

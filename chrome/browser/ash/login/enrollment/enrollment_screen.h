@@ -12,7 +12,6 @@
 #include "base/cancelable_callback.h"
 #include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
-#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/ash/authpolicy/authpolicy_helper.h"
 #include "chrome/browser/ash/login/enrollment/enrollment_screen_view.h"
@@ -21,23 +20,24 @@
 #include "chrome/browser/ash/login/screen_manager.h"
 #include "chrome/browser/ash/login/screens/base_screen.h"
 #include "chrome/browser/ash/login/wizard_context.h"
-#include "chrome/browser/chromeos/policy/active_directory/active_directory_join_delegate.h"
-#include "chrome/browser/chromeos/policy/enrollment_config.h"
+#include "chrome/browser/ash/policy/active_directory/active_directory_join_delegate.h"
+#include "chrome/browser/ash/policy/enrollment/account_status_check_fetcher.h"
+#include "chrome/browser/ash/policy/enrollment/enrollment_config.h"
+#include "chromeos/dbus/tpm_manager/tpm_manager.pb.h"
+#include "chromeos/dbus/tpm_manager/tpm_manager_client.h"
 #include "components/policy/core/common/cloud/cloud_policy_constants.h"
 #include "components/policy/core/common/cloud/enterprise_metrics.h"
 #include "net/base/backoff_entry.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace base {
 class ElapsedTimer;
 }
 
-namespace chromeos {
+namespace ash {
 namespace test {
 class EnrollmentHelperMixin;
 }
-}  // namespace chromeos
-
-namespace ash {
 
 // The screen implementation that links the enterprise enrollment UI into the
 // OOBE wizard.
@@ -45,18 +45,33 @@ class EnrollmentScreen
     : public BaseScreen,
       public EnterpriseEnrollmentHelper::EnrollmentStatusConsumer,
       public EnrollmentScreenView::Controller,
-      public ActiveDirectoryJoinDelegate {
+      public policy::ActiveDirectoryJoinDelegate {
  public:
-  enum class Result { COMPLETED, BACK, SKIPPED_FOR_TESTS };
+  enum class Result {
+    COMPLETED,
+    BACK,
+    SKIPPED_FOR_TESTS,
+    TPM_ERROR,
+    TPM_DBUS_ERROR
+  };
 
   static std::string GetResultString(Result result);
 
   using ScreenExitCallback = base::RepeatingCallback<void(Result result)>;
+  using TpmStatusCallback = chromeos::TpmManagerClient::TakeOwnershipCallback;
   EnrollmentScreen(EnrollmentScreenView* view,
                    const ScreenExitCallback& exit_callback);
+
+  EnrollmentScreen(const EnrollmentScreen&) = delete;
+  EnrollmentScreen& operator=(const EnrollmentScreen&) = delete;
+
   ~EnrollmentScreen() override;
 
   static EnrollmentScreen* Get(ScreenManager* manager);
+
+  // Called when `view` has been destroyed. If this instance is destroyed before
+  // the `view` it should call view->Unbind().
+  void OnViewDestroyed(EnrollmentScreenView* view);
 
   // Setup how this screen will handle enrollment.
   void SetEnrollmentConfig(const policy::EnrollmentConfig& enrollment_config);
@@ -74,6 +89,7 @@ class EnrollmentScreen
                                       const std::string& password) override;
   void OnDeviceAttributeProvided(const std::string& asset_id,
                                  const std::string& location) override;
+  void OnIdentifierEntered(const std::string& email) override;
 
   // EnterpriseEnrollmentHelper::EnrollmentStatusConsumer implementation:
   void OnAuthError(const GoogleServiceAuthError& error) override;
@@ -82,12 +98,11 @@ class EnrollmentScreen
   void OnDeviceEnrolled() override;
   void OnDeviceAttributeUploadCompleted(bool success) override;
   void OnDeviceAttributeUpdatePermission(bool granted) override;
-  void OnRestoreAfterRollbackCompleted() override;
 
-  // ActiveDirectoryJoinDelegate implementation:
+  // policy::ActiveDirectoryJoinDelegate implementation:
   void JoinDomain(const std::string& dm_token,
                   const std::string& domain_join_config,
-                  OnDomainJoinedCallback on_joined_callback) override;
+                  policy::OnDomainJoinedCallback on_joined_callback) override;
 
   // Notification that the browser is being restarted.
   void OnBrowserRestart();
@@ -99,11 +114,22 @@ class EnrollmentScreen
     exit_callback_ = callback;
   }
 
+  void set_tpm_ownership_callback_for_testing(TpmStatusCallback&& callback) {
+    tpm_ownership_callback_for_testing_ = std::move(callback);
+  }
+
+  TpmStatusCallback get_tpm_ownership_callback_for_testing() {
+    return base::BindOnce(&EnrollmentScreen::OnTpmStatusResponse,
+                          weak_ptr_factory_.GetWeakPtr());
+  }
+
  protected:
   // BaseScreen:
   bool MaybeSkip(WizardContext* context) override;
   void ShowImpl() override;
   void HideImpl() override;
+  bool HandleAccelerator(LoginAcceleratorAction action) override;
+  void OnUserAction(const std::string& action_id) override;
 
   // Expose the exit_callback to test screen overrides.
   ScreenExitCallback* exit_callback() { return &exit_callback_; }
@@ -111,7 +137,7 @@ class EnrollmentScreen
  private:
   friend class ZeroTouchEnrollmentScreenUnitTest;
   friend class AutomaticReenrollmentScreenUnitTest;
-  friend class chromeos::test::EnrollmentHelperMixin;
+  friend class test::EnrollmentHelperMixin;
 
   FRIEND_TEST_ALL_PREFIXES(AttestationAuthEnrollmentScreenTest, TestCancel);
   FRIEND_TEST_ALL_PREFIXES(ForcedAttestationAuthEnrollmentScreenTest,
@@ -130,8 +156,18 @@ class EnrollmentScreen
     AUTH_OAUTH,
   };
 
+  // Updates view GAIA flow type which is used to modify visual appearance
+  // of GAIA webview,
+  void UpdateFlowType();
+
   // Sets the current config to use for enrollment.
   void SetConfig();
+
+  // Called after account status is fetched.
+  void OnAccountStatusFetched(
+      const std::string& email,
+      bool result,
+      policy::AccountStatusCheckFetcher::AccountStatus status);
 
   // Creates an enrollment helper if needed.
   void CreateEnrollmentHelper();
@@ -154,10 +190,6 @@ class EnrollmentScreen
 
   // Do attestation based enrollment.
   void AuthenticateUsingAttestation();
-
-  // Starts flow that would handle necessary steps to restore after version
-  // rollback.
-  void RestoreAfterRollback();
 
   // Shows the interactive screen. Resets auth then shows the signin screen.
   void ShowInteractiveScreen();
@@ -189,8 +221,14 @@ class EnrollmentScreen
                                authpolicy::ErrorType error,
                                const std::string& machine_domain);
 
+  // Tries to take TPM ownership.
+  void TakeTpmOwnership();
+  // Processes a reply from tpm_manager.
+  void OnTpmStatusResponse(const ::tpm_manager::TakeOwnershipReply& reply);
+
   EnrollmentScreenView* view_;
   ScreenExitCallback exit_callback_;
+  absl::optional<TpmStatusCallback> tpm_ownership_callback_for_testing_;
   policy::EnrollmentConfig config_;
   policy::EnrollmentConfig enrollment_config_;
 
@@ -200,6 +238,8 @@ class EnrollmentScreen
 
   bool enrollment_failed_once_ = false;
   bool enrollment_succeeded_ = false;
+  // Check tpm before enrollment starts if --tpm-is-dynamic switch is enabled.
+  bool tpm_checked_ = false;
   std::string enrolling_user_domain_;
   std::unique_ptr<base::ElapsedTimer> elapsed_timer_;
   net::BackoffEntry::Policy retry_policy_;
@@ -207,14 +247,14 @@ class EnrollmentScreen
   base::CancelableOnceClosure retry_task_;
   int num_retries_ = 0;
   std::unique_ptr<EnterpriseEnrollmentHelper> enrollment_helper_;
-  OnDomainJoinedCallback on_joined_callback_;
+  policy::OnDomainJoinedCallback on_joined_callback_;
+  std::unique_ptr<policy::AccountStatusCheckFetcher> status_checker_;
 
   // Helper to call AuthPolicyClient and cancel calls if needed. Used to join
   // Active Directory domain.
   std::unique_ptr<AuthPolicyHelper> authpolicy_login_helper_;
 
   base::WeakPtrFactory<EnrollmentScreen> weak_ptr_factory_{this};
-  DISALLOW_COPY_AND_ASSIGN(EnrollmentScreen);
 };
 
 }  // namespace ash

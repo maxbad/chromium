@@ -24,7 +24,9 @@ struct AXPropertyFilter;
 // parameterized property for column/row 0 indexes.
 class AX_EXPORT AXPropertyNode final {
  public:
-  // Parses a property node from a property filter.
+  // Parses a property node from a string or a property filter.
+  static AXPropertyNode From(const std::string& property,
+                             const std::vector<std::string>& line_indexes = {});
   static AXPropertyNode From(const AXPropertyFilter& filter);
 
   AXPropertyNode();
@@ -46,6 +48,9 @@ class AX_EXPORT AXPropertyNode final {
 
   // Next property node in a chain if any.
   std::unique_ptr<AXPropertyNode> next;
+
+  // Rvalue if any.
+  std::unique_ptr<AXPropertyNode> rvalue;
 
   // Used to store the original unparsed property including invocation
   // arguments if any.
@@ -84,16 +89,20 @@ class AX_EXPORT AXPropertyNode final {
   bool IsArray() const;
   bool IsDict() const;
   absl::optional<int> AsInt() const;
+  std::string AsString() const;
   const AXPropertyNode* FindKey(const char* refkey) const;
   absl::optional<std::string> FindStringKey(const char* refkey) const;
   absl::optional<int> FindIntKey(const char* key) const;
 
   // Returns a string representation of the node.
   std::string ToString() const;
-  // Returns a tree-like string representation of the node.
+
+  // Returns a flat, single line string representing the node tree.
+  std::string ToFlatString() const;
+
+  // Returns a tree-like string representing the node tree.
   std::string ToTreeString(const std::string& indent = "") const;
 
- private:
   using iterator = std::string::const_iterator;
 
   explicit AXPropertyNode(iterator key_begin,
@@ -105,11 +114,16 @@ class AX_EXPORT AXPropertyNode final {
                  iterator value_begin,
                  iterator value_end);
 
+ private:
+  // Used by Parse to indicate a state the parser currently has.
+  enum ParseState {
+    kArgument,
+    kChain,
+  };
+
   // Builds a property node struct for a string of NAME(ARG1, ..., ARGN) format,
   // where each ARG is a scalar value or a string of the same format.
   static iterator Parse(AXPropertyNode* node, iterator begin, iterator end);
-
-  friend class std::allocator<AXPropertyNode>;
 };
 
 }  // namespace ui

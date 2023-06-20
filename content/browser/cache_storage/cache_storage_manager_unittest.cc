@@ -16,10 +16,8 @@
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/guid.h"
-#include "base/macros.h"
 #include "base/memory/ptr_util.h"
 #include "base/memory/scoped_refptr.h"
-#include "base/notreached.h"
 #include "base/path_service.h"
 #include "base/run_loop.h"
 #include "base/strings/string_number_conversions.h"
@@ -170,21 +168,8 @@ class MockCacheStorageQuotaManagerProxy
     registered_clients_.emplace_back(std::move(client));
   }
 
-  void RegisterLegacyClient(
-      scoped_refptr<storage::QuotaClient> client,
-      storage::QuotaClientType client_type,
-      const std::vector<blink::mojom::StorageType>& storage_types) override {
-    NOTREACHED();
-  }
-
-  void SimulateQuotaManagerDestroyed() override {
-    registered_clients_.clear();
-  }
-
  private:
-  ~MockCacheStorageQuotaManagerProxy() override {
-    DCHECK(registered_clients_.empty());
-  }
+  ~MockCacheStorageQuotaManagerProxy() override = default;
 
   std::vector<mojo::Remote<storage::mojom::QuotaClient>> registered_clients_;
 };
@@ -217,12 +202,12 @@ class TestCacheStorageObserver : public storage::mojom::CacheStorageObserver {
       : receiver_(this, std::move(observer)),
         loop_(std::make_unique<base::RunLoop>()) {}
 
-  void OnCacheListChanged(const url::Origin& origin) override {
+  void OnCacheListChanged(const blink::StorageKey& storage_key) override {
     ++notify_list_changed_count;
     loop_->Quit();
   }
 
-  void OnCacheContentChanged(const url::Origin& origin,
+  void OnCacheContentChanged(const blink::StorageKey& storage_key,
                              const std::string& cache_name) override {
     ++notify_content_changed_count;
     loop_->Quit();
@@ -250,6 +235,9 @@ class CacheStorageManagerTest : public testing::Test {
             url::Origin::Create(GURL("http://example1.com")))),
         storage_key2_(blink::StorageKey(
             url::Origin::Create(GURL("http://example2.com")))) {}
+
+  CacheStorageManagerTest(const CacheStorageManagerTest&) = delete;
+  CacheStorageManagerTest& operator=(const CacheStorageManagerTest&) = delete;
 
   void SetUp() override {
     base::FilePath temp_dir_path;
@@ -360,10 +348,10 @@ class CacheStorageManagerTest : public testing::Test {
     mock_quota_manager_ = base::MakeRefCounted<storage::MockQuotaManager>(
         MemoryOnly(), temp_dir_path, base::ThreadTaskRunnerHandle::Get().get(),
         quota_policy_.get());
-    mock_quota_manager_->SetQuota(storage_key1_.origin(),
-                                  StorageType::kTemporary, 1024 * 1024 * 100);
-    mock_quota_manager_->SetQuota(storage_key2_.origin(),
-                                  StorageType::kTemporary, 1024 * 1024 * 100);
+    mock_quota_manager_->SetQuota(storage_key1_, StorageType::kTemporary,
+                                  1024 * 1024 * 100);
+    mock_quota_manager_->SetQuota(storage_key2_, StorageType::kTemporary,
+                                  1024 * 1024 * 100);
 
     quota_manager_proxy_ =
         base::MakeRefCounted<MockCacheStorageQuotaManagerProxy>(
@@ -397,9 +385,6 @@ class CacheStorageManagerTest : public testing::Test {
   }
 
   void DestroyStorageManager() {
-    if (quota_manager_proxy_)
-      quota_manager_proxy_->SimulateQuotaManagerDestroyed();
-
     callback_cache_handle_ = CacheStorageCacheHandle();
     callback_bool_ = false;
     callback_cache_handle_response_ = nullptr;
@@ -653,7 +638,8 @@ class CacheStorageManagerTest : public testing::Test {
         net::HttpResponseInfo::CONNECTION_INFO_UNKNOWN,
         /*alpn_negotiated_protocol=*/"unknown",
         /*was_fetched_via_spdy=*/false, /*has_range_requested=*/false,
-        /*auth_challenge_info=*/absl::nullopt);
+        /*auth_challenge_info=*/absl::nullopt,
+        /*request_include_credentials=*/true);
 
     blink::mojom::BatchOperationPtr operation =
         blink::mojom::BatchOperation::New();
@@ -769,7 +755,7 @@ class CacheStorageManagerTest : public testing::Test {
     int64_t usage(CacheStorage::kSizeUnknown);
     base::RunLoop loop;
     quota_manager_proxy_->GetUsageAndQuota(
-        storage_key.origin(), StorageType::kTemporary,
+        storage_key, StorageType::kTemporary,
         base::ThreadTaskRunnerHandle::Get(),
         base::BindOnce(&CacheStorageManagerTest::DidGetQuotaOriginUsage,
                        base::Unretained(this), base::Unretained(&usage),
@@ -811,9 +797,6 @@ class CacheStorageManagerTest : public testing::Test {
   const blink::StorageKey storage_key2_;
 
   int64_t callback_usage_;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(CacheStorageManagerTest);
 };
 
 class CacheStorageManagerMemoryOnlyTest : public CacheStorageManagerTest {
@@ -1149,7 +1132,6 @@ TEST_F(CacheStorageManagerTest, DataPersists) {
   EXPECT_TRUE(Open(storage_key1_, "baz"));
   EXPECT_TRUE(Open(storage_key2_, "raz"));
   EXPECT_TRUE(Delete(storage_key1_, "bar"));
-  quota_manager_proxy_->SimulateQuotaManagerDestroyed();
   RecreateStorageManager();
   EXPECT_EQ(2u, Keys(storage_key1_));
   std::vector<std::string> expected_keys;
@@ -1161,7 +1143,6 @@ TEST_F(CacheStorageManagerTest, DataPersists) {
 TEST_F(CacheStorageManagerMemoryOnlyTest, DataLostWhenMemoryOnly) {
   EXPECT_TRUE(Open(storage_key1_, "foo"));
   EXPECT_TRUE(Open(storage_key2_, "baz"));
-  quota_manager_proxy_->SimulateQuotaManagerDestroyed();
   RecreateStorageManager();
   EXPECT_EQ(0u, Keys(storage_key1_));
 }
@@ -1416,7 +1397,7 @@ TEST_F(CacheStorageManagerTest, TestErrorInitializingCache) {
   // in the following Size() call.
   base::FilePath cache_index_path =
       storage_path.AppendASCII(LegacyCacheStorage::kIndexFileName);
-  base::Time t = base::Time::Now() + base::TimeDelta::FromHours(-1);
+  base::Time t = base::Time::Now() + base::Hours(-1);
   EXPECT_TRUE(base::TouchFile(cache_index_path, t, t));
   EXPECT_FALSE(IsIndexFileCurrent(storage_path));
 
@@ -1483,7 +1464,6 @@ TEST_F(CacheStorageManagerTest, CacheSizePaddedAfterReopen) {
 
   // Create a new CacheStorageManager that hasn't yet loaded the key.
   CreateStorageManager();
-  quota_manager_proxy_->SimulateQuotaManagerDestroyed();
   RecreateStorageManager();
   EXPECT_TRUE(Open(storage_key1_, kCacheName));
 
@@ -1744,7 +1724,6 @@ TEST_F(CacheStorageManagerTest, GetAllStorageKeysUsageWithOldIndex) {
 
   // Create a new CacheStorageManager that hasn't yet loaded the origin.
   CreateStorageManager();
-  quota_manager_proxy_->SimulateQuotaManagerDestroyed();
   RecreateStorageManager();
 
   // Create a second value (V2) in the cache.
@@ -1768,7 +1747,6 @@ TEST_F(CacheStorageManagerTest, GetAllStorageKeysUsageWithOldIndex) {
   DestroyStorageManager();
 
   CreateStorageManager();
-  quota_manager_proxy_->SimulateQuotaManagerDestroyed();
   RecreateStorageManager();
 
   // Read the size from the index file.
@@ -1783,7 +1761,7 @@ TEST_F(CacheStorageManagerTest, GetAllStorageKeysUsageWithOldIndex) {
   // older than the other directories in the store to trigger size
   // recalculation.
   EXPECT_TRUE(base::CopyFile(backup_index_path, index_path));
-  base::Time t = base::Time::Now() - base::TimeDelta::FromHours(1);
+  base::Time t = base::Time::Now() - base::Hours(1);
   EXPECT_TRUE(base::TouchFile(index_path, t, t));
   EXPECT_FALSE(IsIndexFileCurrent(storage_dir));
 
@@ -1823,7 +1801,6 @@ TEST_F(CacheStorageManagerTest, GetKeySizeWithOldIndex) {
 
   // Create a new CacheStorageManager that hasn't yet loaded the origin.
   CreateStorageManager();
-  quota_manager_proxy_->SimulateQuotaManagerDestroyed();
   RecreateStorageManager();
 
   // Reopen the cache and write a second value (V2).
@@ -1843,7 +1820,7 @@ TEST_F(CacheStorageManagerTest, GetKeySizeWithOldIndex) {
 
   // Make the access/mod times of index file older than the other files in the
   // cache to trigger size recalculation.
-  base::Time t = base::Time::Now() - base::TimeDelta::FromHours(1);
+  base::Time t = base::Time::Now() - base::Hours(1);
   EXPECT_TRUE(base::TouchFile(index_path, t, t));
   EXPECT_FALSE(IsIndexFileCurrent(storage_dir));
 
@@ -1931,7 +1908,6 @@ TEST_F(CacheStorageManagerTest, DeleteUnreferencedCacheDirectories) {
 
   // Create a new StorageManager so that the next time the cache is opened
   // the unreferenced directory can be deleted.
-  quota_manager_proxy_->SimulateQuotaManagerDestroyed();
   RecreateStorageManager();
 
   // Verify that the referenced cache still works.
@@ -2350,7 +2326,27 @@ TEST_P(CacheStorageManagerTestP, SlowPutCompletesWithoutExternalRef) {
   EXPECT_EQ(CacheStorageError::kSuccess, callback_error_);
 }
 
+TEST_P(CacheStorageManagerTestP, StoragePutPartialContentForBackgroundFetch) {
+  EXPECT_TRUE(Open(storage_key1_, "foo",
+                   storage::mojom::CacheStorageOwner::kBackgroundFetch));
+  auto request = blink::mojom::FetchAPIRequest::New();
+  request->url = GURL("http://example.com/foo");
+  auto request_clone = BackgroundFetchSettledFetch::CloneRequest(request);
+
+  EXPECT_TRUE(CachePutWithStatusCode(callback_cache_handle_.value(),
+                                     std::move(request), 206));
+  EXPECT_TRUE(StorageMatchAllWithRequest(
+      storage_key1_, std::move(request_clone), /* match_options= */ nullptr,
+      storage::mojom::CacheStorageOwner::kBackgroundFetch));
+  EXPECT_EQ(206, callback_cache_handle_response_->status_code);
+}
+
 class CacheStorageQuotaClientTest : public CacheStorageManagerTest {
+ public:
+  CacheStorageQuotaClientTest(const CacheStorageQuotaClientTest&) = delete;
+  CacheStorageQuotaClientTest& operator=(const CacheStorageQuotaClientTest&) =
+      delete;
+
  protected:
   CacheStorageQuotaClientTest() = default;
 
@@ -2365,9 +2361,9 @@ class CacheStorageQuotaClientTest : public CacheStorageManagerTest {
     run_loop->Quit();
   }
 
-  void OriginsCallback(base::RunLoop* run_loop,
-                       const std::vector<url::Origin>& origins) {
-    callback_origins_ = origins;
+  void StorageKeysCallback(base::RunLoop* run_loop,
+                           const std::vector<blink::StorageKey>& storage_keys) {
+    callback_storage_keys_ = storage_keys;
     run_loop->Quit();
   }
 
@@ -2379,8 +2375,8 @@ class CacheStorageQuotaClientTest : public CacheStorageManagerTest {
 
   int64_t QuotaGetStorageKeyUsage(const blink::StorageKey& storage_key) {
     base::RunLoop loop;
-    quota_client_->GetOriginUsage(
-        storage_key.origin(), StorageType::kTemporary,
+    quota_client_->GetStorageKeyUsage(
+        storage_key, StorageType::kTemporary,
         base::BindOnce(&CacheStorageQuotaClientTest::QuotaUsageCallback,
                        base::Unretained(this), base::Unretained(&loop)));
     loop.Run();
@@ -2389,28 +2385,28 @@ class CacheStorageQuotaClientTest : public CacheStorageManagerTest {
 
   size_t QuotaGetStorageKeysForType() {
     base::RunLoop loop;
-    quota_client_->GetOriginsForType(
+    quota_client_->GetStorageKeysForType(
         StorageType::kTemporary,
-        base::BindOnce(&CacheStorageQuotaClientTest::OriginsCallback,
+        base::BindOnce(&CacheStorageQuotaClientTest::StorageKeysCallback,
                        base::Unretained(this), base::Unretained(&loop)));
     loop.Run();
-    return callback_origins_.size();
+    return callback_storage_keys_.size();
   }
 
   size_t QuotaGetStorageKeysForHost(const std::string& host) {
     base::RunLoop loop;
-    quota_client_->GetOriginsForHost(
+    quota_client_->GetStorageKeysForHost(
         StorageType::kTemporary, host,
-        base::BindOnce(&CacheStorageQuotaClientTest::OriginsCallback,
+        base::BindOnce(&CacheStorageQuotaClientTest::StorageKeysCallback,
                        base::Unretained(this), base::Unretained(&loop)));
     loop.Run();
-    return callback_origins_.size();
+    return callback_storage_keys_.size();
   }
 
   bool QuotaDeleteStorageKeyData(const blink::StorageKey& storage_key) {
     base::RunLoop loop;
-    quota_client_->DeleteOriginData(
-        storage_key.origin(), StorageType::kTemporary,
+    quota_client_->DeleteStorageKeyData(
+        storage_key, StorageType::kTemporary,
         base::BindOnce(&CacheStorageQuotaClientTest::DeleteStorageKeyCallback,
                        base::Unretained(this), base::Unretained(&loop)));
     loop.Run();
@@ -2421,10 +2417,7 @@ class CacheStorageQuotaClientTest : public CacheStorageManagerTest {
 
   blink::mojom::QuotaStatusCode callback_status_;
   int64_t callback_quota_usage_ = 0;
-  std::vector<url::Origin> callback_origins_;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(CacheStorageQuotaClientTest);
+  std::vector<blink::StorageKey> callback_storage_keys_;
 };
 
 class CacheStorageQuotaClientDiskOnlyTest : public CacheStorageQuotaClientTest {
@@ -2481,9 +2474,9 @@ TEST_P(CacheStorageQuotaClientTestP, QuotaGetStorageKeysForHost) {
            "foo"));
   EXPECT_EQ(3u, QuotaGetStorageKeysForHost("example.com"));
   EXPECT_EQ(1u, QuotaGetStorageKeysForHost("example2.com"));
-  EXPECT_THAT(
-      callback_origins_,
-      testing::Contains(url::Origin::Create(GURL("http://example2.com"))));
+  EXPECT_THAT(callback_storage_keys_,
+              testing::Contains(blink::StorageKey::CreateFromStringForTesting(
+                  "http://example2.com")));
   EXPECT_EQ(0u, QuotaGetStorageKeysForHost("unknown.com"));
 }
 
@@ -2527,7 +2520,6 @@ TEST_F(CacheStorageQuotaClientDiskOnlyTest, QuotaDeleteUnloadedKeyData) {
   run_loop.Run();
 
   // Create a new CacheStorageManager that hasn't yet loaded the origin.
-  quota_manager_proxy_->SimulateQuotaManagerDestroyed();
   RecreateStorageManager();
   quota_client_ = std::make_unique<CacheStorageQuotaClient>(
       cache_manager_, storage::mojom::CacheStorageOwner::kCacheAPI);

@@ -98,7 +98,7 @@ void ValidatingAuthenticator::OnValidateComplete(base::OnceClosure callback,
       break;
 
     case Result::ERROR_INVALID_ACCOUNT:
-      rejection_reason_ = Authenticator::INVALID_ACCOUNT;
+      rejection_reason_ = Authenticator::INVALID_ACCOUNT_ID;
       break;
 
     case Result::ERROR_TOO_MANY_CONNECTIONS:
@@ -111,6 +111,11 @@ void ValidatingAuthenticator::OnValidateComplete(base::OnceClosure callback,
   }
 
   state_ = Authenticator::REJECTED;
+
+  // Clear the pending message so the signal strategy will generate a new
+  // SESSION_REJECT message in response to this state change.
+  pending_auth_message_.reset();
+
   std::move(callback).Run();
 }
 

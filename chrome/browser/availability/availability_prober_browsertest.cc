@@ -22,6 +22,7 @@
 #include "net/test/embedded_test_server/http_response.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
 #include "services/network/public/mojom/network_service_test.mojom.h"
+#include "services/network/public/mojom/url_response_head.mojom.h"
 
 namespace {
 
@@ -64,6 +65,11 @@ class TestDelegate : public AvailabilityProber::Delegate {
 class AvailabilityProberBrowserTest : public InProcessBrowserTest {
  public:
   AvailabilityProberBrowserTest() = default;
+
+  AvailabilityProberBrowserTest(const AvailabilityProberBrowserTest&) = delete;
+  AvailabilityProberBrowserTest& operator=(
+      const AvailabilityProberBrowserTest&) = delete;
+
   ~AvailabilityProberBrowserTest() override = default;
 
   void SetUpOnMainThread() override {
@@ -109,8 +115,6 @@ class AvailabilityProberBrowserTest : public InProcessBrowserTest {
   }
 
   std::unique_ptr<net::EmbeddedTestServer> https_server_;
-
-  DISALLOW_COPY_AND_ASSIGN(AvailabilityProberBrowserTest);
 };
 
 IN_PROC_BROWSER_TEST_F(AvailabilityProberBrowserTest, OK) {
@@ -125,8 +129,7 @@ IN_PROC_BROWSER_TEST_F(AvailabilityProberBrowserTest, OK) {
       browser()->profile()->GetPrefs(),
       AvailabilityProber::ClientName::kIsolatedPrerenderOriginCheck, url,
       AvailabilityProber::HttpMethod::kGet, headers, retry_policy,
-      timeout_policy, TRAFFIC_ANNOTATION_FOR_TESTS, 1,
-      base::TimeDelta::FromDays(1));
+      timeout_policy, TRAFFIC_ANNOTATION_FOR_TESTS, 1, base::Days(1));
   prober.SendNowIfInactive(false);
   WaitForCompletedProbe(&prober);
 
@@ -142,15 +145,14 @@ IN_PROC_BROWSER_TEST_F(AvailabilityProberBrowserTest, Timeout) {
   retry_policy.max_retries = 0;
 
   AvailabilityProber::TimeoutPolicy timeout_policy;
-  timeout_policy.base_timeout = base::TimeDelta::FromMilliseconds(1);
+  timeout_policy.base_timeout = base::Milliseconds(1);
 
   AvailabilityProber prober(
       &delegate, browser()->profile()->GetURLLoaderFactory(),
       browser()->profile()->GetPrefs(),
       AvailabilityProber::ClientName::kIsolatedPrerenderOriginCheck, url,
       AvailabilityProber::HttpMethod::kGet, headers, retry_policy,
-      timeout_policy, TRAFFIC_ANNOTATION_FOR_TESTS, 1,
-      base::TimeDelta::FromDays(1));
+      timeout_policy, TRAFFIC_ANNOTATION_FOR_TESTS, 1, base::Days(1));
   prober.SendNowIfInactive(false);
   WaitForCompletedProbe(&prober);
 
@@ -172,8 +174,7 @@ IN_PROC_BROWSER_TEST_F(AvailabilityProberBrowserTest, NetworkChange) {
       browser()->profile()->GetPrefs(),
       AvailabilityProber::ClientName::kIsolatedPrerenderOriginCheck, url,
       AvailabilityProber::HttpMethod::kGet, headers, retry_policy,
-      timeout_policy, TRAFFIC_ANNOTATION_FOR_TESTS, 1,
-      base::TimeDelta::FromDays(1));
+      timeout_policy, TRAFFIC_ANNOTATION_FOR_TESTS, 1, base::Days(1));
 
   content::NetworkConnectionChangeSimulator().SetConnectionType(
       network::mojom::ConnectionType::CONNECTION_4G);
@@ -194,8 +195,7 @@ IN_PROC_BROWSER_TEST_F(AvailabilityProberBrowserTest, BadServer) {
       browser()->profile()->GetPrefs(),
       AvailabilityProber::ClientName::kIsolatedPrerenderOriginCheck, url,
       AvailabilityProber::HttpMethod::kGet, headers, retry_policy,
-      timeout_policy, TRAFFIC_ANNOTATION_FOR_TESTS, 1,
-      base::TimeDelta::FromDays(1));
+      timeout_policy, TRAFFIC_ANNOTATION_FOR_TESTS, 1, base::Days(1));
   prober.SendNowIfInactive(false);
   WaitForCompletedProbe(&prober);
 

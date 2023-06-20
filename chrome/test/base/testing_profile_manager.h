@@ -13,12 +13,12 @@
 #include "base/files/file_path.h"
 #include "base/scoped_multi_source_observation.h"
 #include "base/test/scoped_path_override.h"
+#include "build/chromeos_buildflags.h"
 #include "chrome/browser/profiles/profile_observer.h"
 #include "chrome/test/base/scoped_testing_local_state.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/policy/core/common/policy_service.h"
 
-class ProfileInfoCache;
 class ProfileAttributesStorage;
 class ProfileManager;
 class TestingBrowserProcess;
@@ -26,6 +26,10 @@ class TestingBrowserProcess;
 namespace sync_preferences {
 class PrefServiceSyncable;
 }
+
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+class AccountProfileMapper;
+#endif
 
 // The TestingProfileManager is a TestingProfile factory for a multi-profile
 // environment. It will bring up a full ProfileManager and attach it to the
@@ -58,9 +62,9 @@ class TestingProfileManager : public ProfileObserver {
   // |prefs| is the PrefService used by the profile. If it is NULL, the profile
   // creates a PrefService on demand.
   // |user_name|, |avatar_id| and |supervised_user_id| are passed along to the
-  // ProfileInfoCache and provide the user-visible profile metadata. This will
-  // register the TestingProfile with the profile subsystem as well. The
-  // subsystem owns the Profile and returns a weak pointer.
+  // ProfileAttributesStorage and provide the user-visible profile metadata.
+  // This will register the TestingProfile with the profile subsystem as well.
+  // The subsystem owns the Profile and returns a weak pointer.
   // |factories| contains BCKSs to use with the newly created profile.
   TestingProfile* CreateTestingProfile(
       const std::string& profile_name,
@@ -81,14 +85,14 @@ class TestingProfileManager : public ProfileObserver {
 
   // Creates a new guest TestingProfile whose data lives in the guest profile
   // test environment directory, as specified by the profile manager.
-  // This profile will not be added to the ProfileInfoCache. This will
+  // This profile will not be added to the ProfileAttributesStorage. This will
   // register the TestingProfile with the profile subsystem as well.
   // The subsystem owns the Profile and returns a weak pointer.
   TestingProfile* CreateGuestProfile();
 
   // Creates a new system TestingProfile whose data lives in the system profile
   // test environment directory, as specified by the profile manager.
-  // This profile will not be added to the ProfileInfoCache. This will
+  // This profile will not be added to the ProfileAttributesStorage. This will
   // register the TestingProfile with the profile subsystem as well.
   // The subsystem owns the Profile and returns a weak pointer.
   TestingProfile* CreateSystemProfile();
@@ -106,12 +110,16 @@ class TestingProfileManager : public ProfileObserver {
   // Deletes a system TestingProfile from the profile manager.
   void DeleteSystemProfile();
 
-  // Deletes the cache instance. This is useful for testing that the cache is
-  // properly persisting data.
-  void DeleteProfileInfoCache();
+  // Deletes the storage instance. This is useful for testing that the storage
+  // is properly persisting data.
+  void DeleteProfileAttributesStorage();
 
   // Sets the last used profile; also sets the active time to now.
   void UpdateLastUser(Profile* last_active);
+
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+  void SetAccountProfileMapper(std::unique_ptr<AccountProfileMapper> mapper);
+#endif
 
   // Helper accessors.
   const base::FilePath& profiles_dir();
@@ -124,7 +132,6 @@ class TestingProfileManager : public ProfileObserver {
 
  private:
   friend class ProfileAttributesStorageTest;
-  friend class ProfileInfoCacheTest;
   friend class ProfileNameVerifierObserver;
 
   typedef std::map<std::string, TestingProfile*> TestingProfilesMap;
@@ -133,9 +140,6 @@ class TestingProfileManager : public ProfileObserver {
   // return value, so it sets the |called_set_up_| flag on success and that is
   // returned in the public SetUp.
   void SetUpInternal(const base::FilePath& profiles_path);
-
-  // Deprecated helper accessor. Use profile_attributes_storage() instead.
-  ProfileInfoCache* profile_info_cache();
 
   // Whether SetUp() was called to put the object in a valid state.
   bool called_set_up_;

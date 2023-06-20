@@ -63,10 +63,6 @@ public class TopSnackbarManager implements OnClickListener, ApplicationStatus.Ac
         dismissSnackbar(false);
     }
 
-    @Override
-    public void onBottomControlsHeightChanged(
-            int bottomControlsHeight, int bottomControlsMinHeight) {}
-
     /**
      * Shows a snackbar at the top of the given activity.
      */

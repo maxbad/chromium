@@ -77,10 +77,11 @@ AccessibilityNotificationWaiter::~AccessibilityNotificationWaiter() = default;
 
 void AccessibilityNotificationWaiter::ListenToAllFrames(
     WebContents* web_contents) {
+  if (event_to_wait_for_)
+    VLOG(1) << "Waiting for AccessibilityEvent " << *event_to_wait_for_;
   WebContentsImpl* web_contents_impl =
       static_cast<WebContentsImpl*>(web_contents);
-  FrameTree* frame_tree = web_contents_impl->GetFrameTree();
-  for (FrameTreeNode* node : frame_tree->Nodes())
+  for (FrameTreeNode* node : web_contents_impl->GetPrimaryFrameTree().Nodes())
     ListenToFrame(node->current_frame_host());
 
   BrowserPluginGuestManager* guest_manager =
@@ -106,6 +107,11 @@ void AccessibilityNotificationWaiter::ListenToFrame(
     BindOnAccessibilityEvent(frame_host);
   if (generated_event_to_wait_for_)
     BindOnGeneratedEvent(frame_host);
+
+  if (event_to_wait_for_ == ax::mojom::Event::kNone ||
+      event_to_wait_for_ == ax::mojom::Event::kLocationChanged) {
+    BindOnLocationsChanged(frame_host);
+  }
 }
 
 void AccessibilityNotificationWaiter::WaitForNotification() {
@@ -148,7 +154,7 @@ void AccessibilityNotificationWaiter::OnAccessibilityEvent(
   if (IsAboutBlank())
     return;
 
-  LOG(INFO) << "OnAccessibilityEvent " << event_type;
+  VLOG(1) << "OnAccessibilityEvent " << event_type;
 
   if (event_to_wait_for_ == ax::mojom::Event::kNone ||
       event_to_wait_for_ == event_type) {
@@ -170,6 +176,15 @@ void AccessibilityNotificationWaiter::BindOnGeneratedEvent(
   }
 }
 
+void AccessibilityNotificationWaiter::BindOnLocationsChanged(
+    RenderFrameHostImpl* frame_host) {
+  if (auto* manager = frame_host->browser_accessibility_manager()) {
+    manager->SetLocationChangeCallbackForTesting(base::BindRepeating(
+        &AccessibilityNotificationWaiter::OnLocationsChanged,
+        weak_factory_.GetWeakPtr()));
+  }
+}
+
 void AccessibilityNotificationWaiter::OnGeneratedEvent(
     BrowserAccessibilityDelegate* delegate,
     ui::AXEventGenerator::Event event,
@@ -182,6 +197,13 @@ void AccessibilityNotificationWaiter::OnGeneratedEvent(
     event_render_frame_host_ = static_cast<RenderFrameHostImpl*>(delegate);
     loop_runner_quit_closure_.Run();
   }
+}
+
+void AccessibilityNotificationWaiter::OnLocationsChanged() {
+  if (IsAboutBlank())
+    return;
+
+  loop_runner_quit_closure_.Run();
 }
 
 // TODO(982776): Remove this method once we migrate to using AXEventGenerator

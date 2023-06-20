@@ -5,6 +5,8 @@
 #ifndef COMPONENTS_FEED_CORE_V2_PUBLIC_COMMON_ENUMS_H_
 #define COMPONENTS_FEED_CORE_V2_PUBLIC_COMMON_ENUMS_H_
 
+#include <iosfwd>
+
 // Unlike most code from feed/core, these enums are used by both iOS and
 // Android.
 namespace feed {
@@ -90,8 +92,55 @@ enum class FeedUserActionType {
   kTappedManageReactions = 28,
   // User tapped on share.
   kShare = 29,
-  // Highest enumerator. Recommended by Histogram metrics best practices.
-  kMaxValue = kShare,
+  // Tapped the 'Following' option inside the Feed's 'Manage' interstitial.
+  kTappedManageFollowing = 30,
+  // User tapped to follow a web feed on the management surface.
+  kTappedFollowOnManagementSurface = 31,
+  // User tapped to unfollow a web feed on the management surface.
+  kTappedUnfollowOnManagementSurface = 32,
+  // User tapped to follow using the follow accelerator.
+  kTappedFollowOnFollowAccelerator = 33,
+  // User tapped to follow using the snackbar 'try again' option.
+  kTappedFollowTryAgainOnSnackbar = 34,
+  // User tapped to refollow using the snackbar, after successfully unfollowing.
+  kTappedRefollowAfterUnfollowOnSnackbar = 35,
+  // User tapped to unfollow using the snackbar 'try again' option.
+  kTappedUnfollowTryAgainOnSnackbar = 36,
+  // After following an active web feed, the user tapped to go to feed using the
+  // post-follow help dialog.
+  kTappedGoToFeedPostFollowActiveHelp = 37,
+  // After following an active web feed, the user tapped to dismiss the
+  // post-follow help dialog.
+  kTappedDismissPostFollowActiveHelp = 38,
+  // After long-pressing on the feed and seeing the preview, the user tapped
+  // on the preview.
+  kTappedDiscoverFeedPreview = 39,
+  // User tapped "Settings" link to open feed autoplay settings.
+  kOpenedAutoplaySettings = 40,
+  // User tapped "Add to Reading List" in the context menu.
+  kTappedAddToReadingList = 41,
+
+  kMaxValue = kTappedAddToReadingList,
+};
+
+// For testing and debugging only.
+std::ostream& operator<<(std::ostream& out, FeedUserActionType value);
+
+// Values for the UMA
+// ContentSuggestions.Feed.WebFeed.RefreshContentOrder histogram.
+// These values are persisted to logs. Entries should not be renumbered and
+// numeric values should never be reused. This must be kept in sync with
+// FeedContentOrder in enums.xml.
+// GENERATED_JAVA_ENUM_PACKAGE: org.chromium.chrome.browser.feed.v2
+enum class ContentOrder : int {
+  // Content order is not specified.
+  kUnspecified = 0,
+  // Content is grouped by provider.
+  kGrouped = 1,
+  // Content is ungrouped, and arranged in reverse chronological order.
+  kReverseChron = 2,
+
+  kMaxValue = kReverseChron,
 };
 
 }  // namespace feed

@@ -4,7 +4,6 @@
 
 #include "ui/accessibility/platform/inspect/ax_property_node.h"
 
-#include "base/macros.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "ui/accessibility/platform/inspect/ax_inspect.h"
@@ -17,10 +16,11 @@ namespace ui {
 class AXPropertyNodeTest : public testing::Test {
  public:
   AXPropertyNodeTest() = default;
-  ~AXPropertyNodeTest() override = default;
 
- private:
-  DISALLOW_COPY_AND_ASSIGN(AXPropertyNodeTest);
+  AXPropertyNodeTest(const AXPropertyNodeTest&) = delete;
+  AXPropertyNodeTest& operator=(const AXPropertyNodeTest&) = delete;
+
+  ~AXPropertyNodeTest() override = default;
 };
 
 AXPropertyNode Parse(const char* input) {
@@ -37,12 +37,12 @@ AXPropertyNode GetArgumentNode(const char* input) {
 }
 
 void ParseAndCheck(const char* input, const char* expected) {
-  auto got = Parse(input).ToString();
+  auto got = Parse(input).ToFlatString();
   EXPECT_EQ(got, expected);
 }
 
 void ParseAndCheckTree(const char* input, const char* expected) {
-  auto got = Parse(input).ToTreeString();
+  auto got = AXPropertyNode::From(input).ToTreeString();
   EXPECT_EQ(got, expected);
 }
 
@@ -84,6 +84,9 @@ TEST_F(AXPropertyNodeTest, ParseProperty) {
   EXPECT_EQ(GetArgumentNode("ChildAt(3)").IsDict(), false);
   EXPECT_EQ(GetArgumentNode("ChildAt(3)").IsArray(), false);
   EXPECT_EQ(GetArgumentNode("ChildAt(3)").AsInt(), 3);
+  EXPECT_EQ(GetArgumentNode("AXPerformAction(AXPress)").AsString(), "AXPress");
+  EXPECT_EQ(GetArgumentNode("AXPerformAction('AXPress')").AsString(),
+            "AXPress");
 
   // Dict: FindStringKey
   EXPECT_EQ(
@@ -105,7 +108,7 @@ TEST_F(AXPropertyNodeTest, ParseProperty) {
   // Dict: FindKey
   EXPECT_EQ(GetArgumentNode("Text({anchor: {:1, 0, up}})")
                 .FindKey("anchor")
-                ->ToString(),
+                ->ToFlatString(),
             "anchor: {}(:1, 0, up)");
 
   EXPECT_EQ(GetArgumentNode("Text({anchor: {:1, 0, up}})").FindKey("focus"),
@@ -114,7 +117,7 @@ TEST_F(AXPropertyNodeTest, ParseProperty) {
   EXPECT_EQ(GetArgumentNode("AXStringForTextMarkerRange({anchor: {:2, 1, "
                             "down}, focus: {:2, 2, down}})")
                 .FindKey("anchor")
-                ->ToString(),
+                ->ToFlatString(),
             "anchor: {}(:2, 1, down)");
 }
 
@@ -167,6 +170,124 @@ cellAt(
   columnIndexFor(
     cell
   )
+))~~");
+}
+
+TEST_F(AXPropertyNodeTest, CallChains_Array) {
+  ParseAndCheckTree("children[3]", R"~~(children.
+[](
+  3
+))~~");
+
+  ParseAndCheckTree("textbox.AXChildren[0]", R"~~(textbox.
+AXChildren.
+[](
+  0
+))~~");
+
+  ParseAndCheckTree("textbox.AXChildrenFor(textbox_child)[0]", R"~~(textbox.
+AXChildrenFor(
+  textbox_child
+).
+[](
+  0
+))~~");
+
+  ParseAndCheckTree("get(AXChildren[0])", R"~~(get(
+  AXChildren.
+  [](
+    0
+  )
+))~~");
+
+  ParseAndCheckTree("textbox.AXChildren[0].AXRole", R"~~(textbox.
+AXChildren.
+[](
+  0
+).
+AXRole)~~");
+
+  ParseAndCheckTree(
+      "textarea.AXTextMarkerRangeForUIElement(textarea.AXChildren[0])",
+      R"~~(textarea.
+AXTextMarkerRangeForUIElement(
+  textarea.
+  AXChildren.
+  [](
+    0
+  )
+))~~");
+}
+
+TEST_F(AXPropertyNodeTest, Variables) {
+  // Statement
+  ParseAndCheckTree(
+      "textmarker_range:= textarea.AXTextMarkerRangeForUIElement(textarea)",
+      R"~~(textmarker_range:textarea.
+AXTextMarkerRangeForUIElement(
+  textarea
+))~~");
+
+  // Integer array
+  ParseAndCheckTree("var:= [3, 4]",
+                    R"~~(var:[](
+  3,
+  4
+))~~");
+
+  // Range dictionary
+  ParseAndCheckTree("var:= {loc: 3, len: 2}",
+                    R"~~(var:{}(
+  loc:3,
+  len:2
+))~~");
+
+  // TextMarker dictionary
+  ParseAndCheckTree("var:= {:2, 2, down}",
+                    R"~~(var:{}(
+  :2,
+  2,
+  down
+))~~");
+
+  // TextMarker array
+  ParseAndCheckTree("var:= [{:2, 2, down}, {:1, 1, up}]",
+                    R"~~(var:[](
+  {}(
+    :2,
+    2,
+    down
+  ),
+  {}(
+    :1,
+    1,
+    up
+  )
+))~~");
+
+  // TextMarkerRange dictionary
+  ParseAndCheckTree("var:= {anchor: {:2, 1, down}, focus: {:2, 2, down} }",
+                    R"~~(var:{}(
+  anchor:{}(
+    :2,
+    1,
+    down
+  ),
+  focus:{}(
+    :2,
+    2,
+    down
+  )
+))~~");
+}
+
+TEST_F(AXPropertyNodeTest, RValue) {
+  ParseAndCheckTree("textarea.AXSelectedTextMarkerRange = {loc: 3, len: 2}",
+                    R"~~(textarea.
+AXSelectedTextMarkerRange=
+{}(
+  loc:3,
+  len:2
 ))~~");
 }
 

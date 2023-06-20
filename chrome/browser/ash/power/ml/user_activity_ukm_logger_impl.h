@@ -5,11 +5,10 @@
 #ifndef CHROME_BROWSER_ASH_POWER_ML_USER_ACTIVITY_UKM_LOGGER_IMPL_H_
 #define CHROME_BROWSER_ASH_POWER_ML_USER_ACTIVITY_UKM_LOGGER_IMPL_H_
 
-#include "base/macros.h"
 #include "chrome/browser/ash/power/ml/user_activity_ukm_logger.h"
 #include "services/metrics/public/cpp/ukm_recorder.h"
 
-namespace chromeos {
+namespace ash {
 namespace power {
 namespace ml {
 
@@ -18,9 +17,14 @@ class UserActivityEvent;
 class UserActivityUkmLoggerImpl : public UserActivityUkmLogger {
  public:
   UserActivityUkmLoggerImpl();
+
+  UserActivityUkmLoggerImpl(const UserActivityUkmLoggerImpl&) = delete;
+  UserActivityUkmLoggerImpl& operator=(const UserActivityUkmLoggerImpl&) =
+      delete;
+
   ~UserActivityUkmLoggerImpl() override;
 
-  // chromeos::power::ml::UserActivityUkmLogger overrides:
+  // ash::power::ml::UserActivityUkmLogger overrides:
   void LogActivity(const UserActivityEvent& event) override;
 
  private:
@@ -31,12 +35,10 @@ class UserActivityUkmLoggerImpl : public UserActivityUkmLogger {
   // This ID is incremented each time a UserActivity is logged to UKM.
   // Event index starts from 1, and resets when a new session starts.
   int next_sequence_id_ = 1;
-
-  DISALLOW_COPY_AND_ASSIGN(UserActivityUkmLoggerImpl);
 };
 
 }  // namespace ml
 }  // namespace power
-}  // namespace chromeos
+}  // namespace ash
 
 #endif  // CHROME_BROWSER_ASH_POWER_ML_USER_ACTIVITY_UKM_LOGGER_IMPL_H_

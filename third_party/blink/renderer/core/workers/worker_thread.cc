@@ -73,20 +73,7 @@ using ExitCode = WorkerThread::ExitCode;
 
 namespace {
 
-constexpr base::TimeDelta kForcibleTerminationDelay =
-    base::TimeDelta::FromSeconds(2);
-
-void TerminateThreadsInSet(HashSet<WorkerThread*> threads) {
-  for (WorkerThread* thread : threads)
-    thread->TerminateForTesting();
-
-  for (WorkerThread* thread : threads)
-    thread->WaitForShutdownForTesting();
-
-  // Destruct base::Thread and join the underlying system threads.
-  for (WorkerThread* thread : threads)
-    thread->ClearWorkerBackingThread();
-}
+constexpr base::TimeDelta kForcibleTerminationDelay = base::Seconds(2);
 
 }  // namespace
 
@@ -115,6 +102,9 @@ class WorkerThread::RefCountedWaitableEvent
     return base::AdoptRef<RefCountedWaitableEvent>(new RefCountedWaitableEvent);
   }
 
+  RefCountedWaitableEvent(const RefCountedWaitableEvent&) = delete;
+  RefCountedWaitableEvent& operator=(const RefCountedWaitableEvent&) = delete;
+
   void Wait() { event_.Wait(); }
   void Signal() { event_.Signal(); }
 
@@ -122,8 +112,6 @@ class WorkerThread::RefCountedWaitableEvent
   RefCountedWaitableEvent() = default;
 
   base::WaitableEvent event_;
-
-  DISALLOW_COPY_AND_ASSIGN(RefCountedWaitableEvent);
 };
 
 // A class that is passed into V8 Interrupt and via a PostTask. Once both have
@@ -134,6 +122,8 @@ class WorkerThread::InterruptData {
  public:
   InterruptData(WorkerThread* worker_thread, mojom::FrameLifecycleState state)
       : worker_thread_(worker_thread), state_(state) {}
+  InterruptData(const InterruptData&) = delete;
+  InterruptData& operator=(const InterruptData&) = delete;
 
   bool ShouldRemoveFromList() { return seen_interrupt_ && seen_post_task_; }
   void MarkPostTaskCalled() { seen_post_task_ = true; }
@@ -147,8 +137,6 @@ class WorkerThread::InterruptData {
   mojom::FrameLifecycleState state_;
   bool seen_interrupt_ = false;
   bool seen_post_task_ = false;
-
-  DISALLOW_COPY_AND_ASSIGN(InterruptData);
 };
 
 WorkerThread::~WorkerThread() {
@@ -302,15 +290,6 @@ void WorkerThread::TerminateForTesting() {
   // terminate the V8 script execution to ensure the task runs.
   Terminate();
   EnsureScriptExecutionTerminates(ExitCode::kSyncForciblyTerminated);
-}
-
-void WorkerThread::TerminateAllWorkersForTesting() {
-  DCHECK(IsMainThread());
-
-  // Keep this lock to prevent WorkerThread instances from being destroyed.
-  MutexLocker lock(ThreadSetMutex());
-  TerminateThreadsInSet(InitializingWorkerThreads());
-  TerminateThreadsInSet(WorkerThreads());
 }
 
 void WorkerThread::WillProcessTask(const base::PendingTask& pending_task,
@@ -538,9 +517,13 @@ void WorkerThread::InitializeSchedulerOnWorkerThread(
     base::WaitableEvent* waitable_event) {
   DCHECK(IsCurrentThread());
   DCHECK(!worker_scheduler_);
+
+  // TODO(hajimehoshi, nhiroki): scheduler::WorkerThread and scheduler::
+  // WorkerThreadScheduler are not in scheduler/public, then using them is a
+  // layer violation. Fix this.
   auto& worker_thread = static_cast<scheduler::WorkerThread&>(
       GetWorkerBackingThread().BackingThread());
-  worker_scheduler_ = std::make_unique<scheduler::WorkerScheduler>(
+  worker_scheduler_ = scheduler::WorkerScheduler::CreateWorkerScheduler(
       static_cast<scheduler::WorkerThreadScheduler*>(
           worker_thread.GetNonMainThreadScheduler()),
       worker_thread.worker_scheduler_proxy());
@@ -619,6 +602,7 @@ void WorkerThread::InitializeOnWorkerThread(
     console_message_storage_ = MakeGarbageCollected<ConsoleMessageStorage>();
     global_scope_ =
         CreateWorkerGlobalScope(std::move(global_scope_creation_params));
+    worker_scheduler_->InitializeOnWorkerThread(global_scope_);
     worker_reporting_proxy_.DidCreateWorkerGlobalScope(GlobalScope());
 
     worker_inspector_controller_ = WorkerInspectorController::Create(

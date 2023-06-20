@@ -35,6 +35,12 @@ class MockSSLHostStateDelegate : public SSLHostStateDelegate {
                                  int child_id,
                                  InsecureContentType content_type) override;
 
+  void AllowHttpForHost(const std::string& host,
+                        WebContents* web_contents) override;
+
+  bool IsHttpAllowedForHost(const std::string& host,
+                            WebContents* web_contents) override;
+
   void RevokeUserAllowExceptions(const std::string& host) override;
 
   bool HasAllowException(const std::string& host,
@@ -43,6 +49,7 @@ class MockSSLHostStateDelegate : public SSLHostStateDelegate {
  private:
   std::set<std::string> exceptions_;
   std::set<std::string> hosts_ran_insecure_content_;
+  std::set<std::string> allow_http_hosts_;
 };
 
 }  // namespace content

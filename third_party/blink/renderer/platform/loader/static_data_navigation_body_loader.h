@@ -5,7 +5,6 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_LOADER_STATIC_DATA_NAVIGATION_BODY_LOADER_H_
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_LOADER_STATIC_DATA_NAVIGATION_BODY_LOADER_H_
 
-#include "base/containers/span.h"
 #include "base/memory/weak_ptr.h"
 #include "third_party/blink/public/platform/web_navigation_body_loader.h"
 #include "third_party/blink/renderer/platform/loader/fetch/loader_freeze_mode.h"
@@ -29,7 +28,8 @@ class PLATFORM_EXPORT StaticDataNavigationBodyLoader
 
   void SetDefersLoading(LoaderFreezeMode) override;
   void StartLoadingBody(WebNavigationBodyLoader::Client*,
-                        blink::mojom::CodeCacheHost* host) override;
+                        CodeCacheHost* host) override;
+  void StartLoadingCodeCache(CodeCacheHost* code_cache_host) override;
 
  private:
   void Continue();

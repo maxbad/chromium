@@ -127,7 +127,7 @@ void PresentationServiceImpl::SetController(
     mojo::PendingRemote<blink::mojom::PresentationController>
         presentation_controller_remote) {
   if (presentation_controller_remote_) {
-    mojo::ReportBadMessage(
+    presentation_service_receivers_.ReportBadMessage(
         "There can only be one PresentationController at any given time.");
     return;
   }
@@ -151,14 +151,15 @@ void PresentationServiceImpl::SetReceiver(
   }
 
   if (!receiver_delegate_ || !is_main_frame_) {
-    mojo::ReportBadMessage(
+    presentation_service_receivers_.ReportBadMessage(
         "SetReceiver can only be called from a "
         "presentation receiver main frame.");
     return;
   }
 
   if (presentation_receiver_remote_) {
-    mojo::ReportBadMessage("SetReceiver can only be called once.");
+    presentation_service_receivers_.ReportBadMessage(
+        "SetReceiver can only be called once.");
     return;
   }
 
@@ -460,12 +461,13 @@ void PresentationServiceImpl::DidFinishNavigation(
   // RenderFrameHost, we should reset the connections when a navigation
   // finished but we're still using the same RenderFrameHost.
   // We don't need to do anything when the navigation didn't actually commit,
-  // won't use the same RenderFrameHost, or is restoring a RenderFrameHost from
-  // the back-forward cache.
+  // won't use the same RenderFrameHost, is restoring a RenderFrameHost from
+  // the back-forward cache, or is activating a prerendered page.
   DVLOG(2) << "PresentationServiceImpl::DidNavigateAnyFrame";
   if (!navigation_handle->HasCommitted() ||
       !FrameMatches(navigation_handle->GetRenderFrameHost()) ||
-      navigation_handle->IsServedFromBackForwardCache()) {
+      navigation_handle->IsServedFromBackForwardCache() ||
+      navigation_handle->IsPrerenderedPageActivation()) {
     return;
   }
 

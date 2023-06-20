@@ -9,7 +9,6 @@
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "base/i18n/rtl.h"
-#include "base/macros.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/metrics/user_action_tester.h"
@@ -17,9 +16,9 @@
 #include "build/build_config.h"
 #include "components/autofill/core/browser/autofill_experiments.h"
 #include "components/autofill/core/browser/autofill_external_delegate.h"
-#include "components/autofill/core/browser/autofill_metrics.h"
 #include "components/autofill/core/browser/autofill_test_utils.h"
 #include "components/autofill/core/browser/browser_autofill_manager.h"
+#include "components/autofill/core/browser/metrics/autofill_metrics.h"
 #include "components/autofill/core/browser/test_autofill_client.h"
 #include "components/autofill/core/browser/test_autofill_driver.h"
 #include "components/autofill/core/browser/ui/popup_item_ids.h"
@@ -38,6 +37,7 @@
 #include "ui/gfx/geometry/rect_f.h"
 
 using testing::_;
+using testing::NiceMock;
 
 namespace autofill {
 
@@ -52,6 +52,8 @@ const int kAutofillProfileId = 1;
 class MockAutofillDriver : public TestAutofillDriver {
  public:
   MockAutofillDriver() = default;
+  MockAutofillDriver(const MockAutofillDriver&) = delete;
+  MockAutofillDriver& operator=(const MockAutofillDriver&) = delete;
   // Mock methods to enable testability.
   MOCK_METHOD(void,
               RendererShouldAcceptDataListSuggestion,
@@ -67,14 +69,13 @@ class MockAutofillDriver : public TestAutofillDriver {
               RendererShouldPreviewFieldWithValue,
               (const FieldGlobalId&, const std::u16string&),
               (override));
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(MockAutofillDriver);
 };
 
 class MockAutofillClient : public TestAutofillClient {
  public:
   MockAutofillClient() = default;
+  MockAutofillClient(const MockAutofillClient&) = delete;
+  MockAutofillClient& operator=(const MockAutofillClient&) = delete;
   MOCK_METHOD(void,
               ScanCreditCard,
               (CreditCardScanCallback callbacK),
@@ -94,9 +95,6 @@ class MockAutofillClient : public TestAutofillClient {
 
   // Mock the client query ID check.
   bool IsQueryIDRelevant(int query_id) { return query_id == kRecentQueryId; }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(MockAutofillClient);
 };
 
 class MockBrowserAutofillManager : public BrowserAutofillManager {
@@ -105,8 +103,10 @@ class MockBrowserAutofillManager : public BrowserAutofillManager {
       // Force to use the constructor designated for unit test.
       : BrowserAutofillManager(driver,
                                client,
-                               client->GetPersonalDataManager(),
-                               client->GetAutocompleteHistoryManager()) {}
+                               client->GetPersonalDataManager()) {}
+  MockBrowserAutofillManager(const MockBrowserAutofillManager&) = delete;
+  MockBrowserAutofillManager& operator=(const MockBrowserAutofillManager&) =
+      delete;
 
   PopupType GetPopupType(const FormData& form,
                          const FormFieldData& field) override {
@@ -125,6 +125,13 @@ class MockBrowserAutofillManager : public BrowserAutofillManager {
               OnUserHideSuggestions,
               (const FormData& form, const FormFieldData& field),
               (override));
+  MOCK_METHOD(void,
+              FillVirtualCardInformation,
+              (const std::string& guid,
+               int query_id,
+               const FormData& form,
+               const FormFieldData& field),
+              (override));
 
   bool ShouldShowCardsFromAccountOption(const FormData& form,
                                         const FormFieldData& field) {
@@ -137,7 +144,7 @@ class MockBrowserAutofillManager : public BrowserAutofillManager {
 
   MOCK_METHOD(void,
               FillOrPreviewForm,
-              (AutofillDriver::RendererFormDataAction action,
+              (mojom::RendererFormDataAction action,
                int query_id,
                const FormData& form,
                const FormFieldData& field,
@@ -154,7 +161,6 @@ class MockBrowserAutofillManager : public BrowserAutofillManager {
 
  private:
   bool should_show_cards_from_account_option_ = false;
-  DISALLOW_COPY_AND_ASSIGN(MockBrowserAutofillManager);
 };
 
 }  // namespace
@@ -162,10 +168,10 @@ class MockBrowserAutofillManager : public BrowserAutofillManager {
 class AutofillExternalDelegateUnitTest : public testing::Test {
  protected:
   void SetUp() override {
-    autofill_driver_ =
-        std::make_unique<testing::NiceMock<MockAutofillDriver>>();
-    browser_autofill_manager_ = std::make_unique<MockBrowserAutofillManager>(
-        autofill_driver_.get(), &autofill_client_);
+    autofill_driver_ = std::make_unique<NiceMock<MockAutofillDriver>>();
+    browser_autofill_manager_ =
+        std::make_unique<NiceMock<MockBrowserAutofillManager>>(
+            autofill_driver_.get(), &autofill_client_);
     external_delegate_ = std::make_unique<AutofillExternalDelegate>(
         browser_autofill_manager_.get(), autofill_driver_.get());
   }
@@ -203,8 +209,8 @@ class AutofillExternalDelegateUnitTest : public testing::Test {
 
   base::test::SingleThreadTaskEnvironment task_environment_;
 
-  testing::NiceMock<MockAutofillClient> autofill_client_;
-  std::unique_ptr<testing::NiceMock<MockAutofillDriver>> autofill_driver_;
+  NiceMock<MockAutofillClient> autofill_client_;
+  std::unique_ptr<NiceMock<MockAutofillDriver>> autofill_driver_;
   std::unique_ptr<MockBrowserAutofillManager> browser_autofill_manager_;
   std::unique_ptr<AutofillExternalDelegate> external_delegate_;
 
@@ -246,7 +252,7 @@ TEST_F(AutofillExternalDelegateUnitTest, TestExternalDelegateVirtualCalls) {
 
   EXPECT_CALL(
       *browser_autofill_manager_,
-      FillOrPreviewForm(AutofillDriver::FORM_DATA_ACTION_FILL, _, _, _, _));
+      FillOrPreviewForm(mojom::RendererFormDataAction::kFill, _, _, _, _));
   EXPECT_CALL(autofill_client_,
               HideAutofillPopup(PopupHidingReason::kAcceptSuggestion));
 
@@ -289,7 +295,7 @@ TEST_F(AutofillExternalDelegateUnitTest,
 
   EXPECT_CALL(
       *browser_autofill_manager_,
-      FillOrPreviewForm(AutofillDriver::FORM_DATA_ACTION_FILL, _, _, _, _));
+      FillOrPreviewForm(mojom::RendererFormDataAction::kFill, _, _, _, _));
   EXPECT_CALL(autofill_client_,
               HideAutofillPopup(PopupHidingReason::kAcceptSuggestion));
 
@@ -615,7 +621,7 @@ TEST_F(AutofillExternalDelegateUnitTest, ExternalDelegateClearPreviewedForm) {
   EXPECT_CALL(*autofill_driver_, RendererShouldClearPreviewedForm()).Times(1);
   EXPECT_CALL(
       *browser_autofill_manager_,
-      FillOrPreviewForm(AutofillDriver::FORM_DATA_ACTION_PREVIEW, _, _, _, _));
+      FillOrPreviewForm(mojom::RendererFormDataAction::kPreview, _, _, _, _));
   external_delegate_->DidSelectSuggestion(u"baz foo", 1);
 
   // Ensure selecting an autocomplete entry will cause any previews to
@@ -659,7 +665,7 @@ TEST_F(AutofillExternalDelegateUnitTest,
               HideAutofillPopup(PopupHidingReason::kAcceptSuggestion));
   std::u16string dummy_string(u"John Legend");
   EXPECT_CALL(*browser_autofill_manager_,
-              FillOrPreviewForm(AutofillDriver::FORM_DATA_ACTION_FILL, _, _, _,
+              FillOrPreviewForm(mojom::RendererFormDataAction::kFill, _, _, _,
                                 kAutofillProfileId));
   external_delegate_->DidAcceptSuggestion(dummy_string, kAutofillProfileId,
                                           std::string(),
@@ -814,7 +820,7 @@ TEST_F(AutofillExternalDelegateUnitTest, ExternalDelegateFillFieldWithValue) {
   EXPECT_CALL(*autofill_driver_,
               RendererShouldFillFieldWithValue(field_id_, dummy_string));
   EXPECT_CALL(*autofill_client_.GetMockAutocompleteHistoryManager(),
-              OnAutocompleteEntrySelected(dummy_string))
+              OnSingleFieldSuggestionSelected(dummy_string))
       .Times(1);
   base::HistogramTester histogram_tester;
   external_delegate_->DidAcceptSuggestion(
@@ -833,14 +839,21 @@ TEST_F(AutofillExternalDelegateUnitTest, ShouldShowGooglePayIcon) {
       .WillOnce(testing::SaveArg<0>(&open_args));
 
   std::vector<Suggestion> autofill_item;
-  autofill_item.push_back(Suggestion());
+  autofill_item.emplace_back();
   autofill_item[0].frontend_id = kAutofillProfileId;
 
   // This should call ShowAutofillPopup.
   external_delegate_->OnSuggestionsReturned(
       kRecentQueryId, autofill_item, /*autoselect_first_suggestion=*/false,
       true);
+
+  // On Desktop, the GPay icon should be stored in the store indicator icon.
+#if defined(OS_ANDROID) || defined(OS_IOS)
   EXPECT_THAT(open_args.suggestions, SuggestionVectorIconsAre(element_icons));
+#else
+  EXPECT_THAT(open_args.suggestions,
+              SuggestionVectorStoreIndicatorIconsAre(element_icons));
+#endif
   EXPECT_FALSE(open_args.autoselect_first_suggestion);
   EXPECT_EQ(open_args.popup_type, PopupType::kPersonalInformation);
 }
@@ -857,7 +870,7 @@ TEST_F(AutofillExternalDelegateUnitTest,
       .WillOnce(testing::SaveArg<0>(&open_args));
 
   std::vector<Suggestion> autofill_item;
-  autofill_item.push_back(Suggestion());
+  autofill_item.emplace_back();
   autofill_item[0].frontend_id = kAutofillProfileId;
 
   // This should call ShowAutofillPopup.
@@ -879,7 +892,7 @@ TEST_F(AutofillExternalDelegateUnitTest, ShouldUseNewSettingName) {
       .WillOnce(testing::SaveArg<0>(&open_args));
 
   std::vector<Suggestion> autofill_item;
-  autofill_item.push_back(Suggestion());
+  autofill_item.emplace_back();
   autofill_item[0].frontend_id = kAutofillProfileId;
 
   // This should call ShowAutofillPopup.
@@ -888,6 +901,16 @@ TEST_F(AutofillExternalDelegateUnitTest, ShouldUseNewSettingName) {
   EXPECT_THAT(open_args.suggestions, SuggestionVectorValuesAre(element_values));
   EXPECT_FALSE(open_args.autoselect_first_suggestion);
   EXPECT_EQ(open_args.popup_type, PopupType::kPersonalInformation);
+}
+
+// Test that browser autofill manager will handle the unmasking request for the
+// virtual card after users accept the suggestion to use a virtual card.
+TEST_F(AutofillExternalDelegateUnitTest, VirtualCardOptionItem) {
+  EXPECT_CALL(*browser_autofill_manager_,
+              FillVirtualCardInformation(_, _, _, _));
+  external_delegate_->DidAcceptSuggestion(
+      std::u16string(), POPUP_ITEM_ID_VIRTUAL_CREDIT_CARD_ENTRY, std::string(),
+      0);
 }
 
 // Tests that the prompt to show account cards shows up when the corresponding
@@ -906,7 +929,7 @@ TEST_F(AutofillExternalDelegateCardsFromAccountTest,
       .WillOnce(testing::SaveArg<0>(&open_args));
 
   std::vector<Suggestion> autofill_item;
-  autofill_item.push_back(Suggestion());
+  autofill_item.emplace_back();
   autofill_item[0].frontend_id = kAutofillProfileId;
 
   external_delegate_->OnSuggestionsReturned(

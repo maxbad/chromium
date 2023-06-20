@@ -64,6 +64,7 @@ struct FakeDeviceOptions {
   absl::optional<std::string> name;
   bool paired = false;
   bool connected = false;
+  bool is_blocked_by_policy = false;
 };
 
 // Exposes high-level methods to simulate Bluetooth events e.g. a new adapter
@@ -515,6 +516,7 @@ class DEVICE_BLUETOOTH_EXPORT TestBluetoothDeviceClient
     }
 
     properties->paired.ReplaceValue(options.paired);
+    properties->is_blocked_by_policy.ReplaceValue(options.is_blocked_by_policy);
     properties->connected.ReplaceValue(options.connected);
     properties->adapter.ReplaceValue(options.adapter_object_path);
 
@@ -646,6 +648,10 @@ class BluetoothSystemTest : public DeviceServiceTestBase,
                             public mojom::BluetoothSystemClient {
  public:
   BluetoothSystemTest() = default;
+
+  BluetoothSystemTest(const BluetoothSystemTest&) = delete;
+  BluetoothSystemTest& operator=(const BluetoothSystemTest&) = delete;
+
   ~BluetoothSystemTest() override = default;
 
   void SetUp() override {
@@ -766,9 +772,6 @@ class BluetoothSystemTest : public DeviceServiceTestBase,
   TestBluetoothDeviceClient* test_bluetooth_device_client_;
 
   mojo::Receiver<mojom::BluetoothSystemClient> system_client_receiver_{this};
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(BluetoothSystemTest);
 };
 
 // Tests that the Create method for BluetoothSystemFactory works.
@@ -1958,6 +1961,7 @@ TEST_F(BluetoothSystemTest, GetAvailableDevices) {
     fake_options.name = "Fake Device";
     fake_options.paired = true;
     fake_options.connected = true;
+    fake_options.is_blocked_by_policy = true;
     test_bluetooth_device_client_->SimulateDeviceAdded(fake_options);
   }
   {
@@ -1966,6 +1970,7 @@ TEST_F(BluetoothSystemTest, GetAvailableDevices) {
     fake_options.name = absl::nullopt;
     fake_options.paired = false;
     fake_options.connected = false;
+    fake_options.is_blocked_by_policy = false;
     test_bluetooth_device_client_->SimulateDeviceAdded(fake_options);
   }
 
@@ -1984,11 +1989,13 @@ TEST_F(BluetoothSystemTest, GetAvailableDevices) {
 
   EXPECT_EQ(device_with_name->name.value(), "Fake Device");
   EXPECT_TRUE(device_with_name->is_paired);
+  EXPECT_TRUE(device_with_name->is_blocked_by_policy);
   EXPECT_EQ(device_with_name->connection_state,
             mojom::BluetoothDeviceInfo::ConnectionState::kConnected);
 
   EXPECT_FALSE(!!device_without_name->name);
   EXPECT_FALSE(device_without_name->is_paired);
+  EXPECT_FALSE(device_without_name->is_blocked_by_policy);
   EXPECT_EQ(device_without_name->connection_state,
             mojom::BluetoothDeviceInfo::ConnectionState::kNotConnected);
 }

@@ -64,10 +64,12 @@ class WebViewSyncClientTest : public PlatformTest {
     pref_service_.registry()->RegisterDictionaryPref(
         password_manager::prefs::kAccountStoragePerAccountSettings);
     pref_service_.registry()->RegisterBooleanPref(
-        password_manager::prefs::kWasPhishedCredentialsUploadedToSync, false);
-    profile_password_store_->Init(&pref_service_, base::DoNothing());
+        password_manager::prefs::kWereOldGoogleLoginsRemoved, false);
+    profile_password_store_->Init(&pref_service_,
+                                  /*affiliated_match_helper=*/nullptr);
     if (account_password_store_) {
-      account_password_store_->Init(&pref_service_, base::DoNothing());
+      account_password_store_->Init(&pref_service_,
+                                    /*affiliated_match_helper=*/nullptr);
     }
   }
 

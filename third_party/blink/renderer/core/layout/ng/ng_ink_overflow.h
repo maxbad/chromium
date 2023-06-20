@@ -13,7 +13,9 @@
 
 namespace blink {
 
+class AffineTransform;
 class ComputedStyle;
+class Font;
 struct NGTextFragmentPaintInfo;
 
 // Represents an ink-overflow rectangle. Used for:
@@ -116,10 +118,40 @@ class CORE_EXPORT NGInkOverflow {
                           const PhysicalSize& size,
                           PhysicalRect* ink_overflow_out);
 
+  // Compute and set ink overflow for SVG text.
+  // |rect| represents scaled rectangle, and |*ink_overflow_out| will store
+  // unscaled rectangle.
+  Type SetSvgTextInkOverflow(Type type,
+                             const NGTextFragmentPaintInfo& text_info,
+                             const ComputedStyle& style,
+                             const Font& scaled_font,
+                             const gfx::RectF& rect,
+                             float scaling_factor,
+                             float length_adjust_scale,
+                             const AffineTransform& transform,
+                             PhysicalRect* ink_overflow_out);
+
   static absl::optional<PhysicalRect> ComputeTextInkOverflow(
       const NGTextFragmentPaintInfo& text_info,
       const ComputedStyle& style,
+      const Font& scaled_font,
       const PhysicalSize& size);
+
+  // Returns ink-overflow with emphasis mark overflow in logical direction.
+  // |size| is a size of text item, e.g. |NGFragmentItem::Size()|.
+  // Note: |style| should have emphasis mark and |ink_overflow| should be in
+  // logical direction.
+  static LayoutRect ComputeEmphasisMarkOverflow(const ComputedStyle& style,
+                                                const PhysicalSize& size,
+                                                const LayoutRect& ink_overflow);
+
+  // Returns ink-overflow with text decoration overflow in logical direction.
+  // Note: |style| should have applied text decorations and |ink_overflow|
+  // should be in logical direction.
+  static LayoutRect ComputeTextDecorationOverflow(
+      const ComputedStyle& style,
+      const Font& scaled_font,
+      const LayoutRect& ink_overflow);
 
 #if DCHECK_IS_ON()
   struct ReadUnsetAsNoneScope {
@@ -134,10 +166,6 @@ class CORE_EXPORT NGInkOverflow {
 #endif
 
  private:
-  static LayoutRect ComputeTextDecorationOverflow(
-      const ComputedStyle& style,
-      const LayoutRect& ink_overflow);
-
   PhysicalRect FromOutsets(const PhysicalSize& size) const;
 
   void CheckType(Type type) const;

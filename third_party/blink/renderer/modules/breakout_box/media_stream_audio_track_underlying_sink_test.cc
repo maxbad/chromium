@@ -11,7 +11,7 @@
 #include "third_party/blink/public/platform/modules/mediastream/web_media_stream_audio_sink.h"
 #include "third_party/blink/public/web/web_heap.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_tester.h"
-#include "third_party/blink/renderer/bindings/core/v8/to_v8_for_core.h"
+#include "third_party/blink/renderer/bindings/core/v8/to_v8_traits.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_testing.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_audio_data.h"
 #include "third_party/blink/renderer/core/streams/writable_stream.h"
@@ -51,7 +51,7 @@ class MediaStreamAudioTrackUnderlyingSinkTest : public testing::Test {
   MediaStreamAudioTrackUnderlyingSink* CreateUnderlyingSink(
       ScriptState* script_state) {
     return MakeGarbageCollected<MediaStreamAudioTrackUnderlyingSink>(
-        pushable_audio_source_);
+        pushable_audio_source_->GetBroker());
   }
 
   void CreateTrackAndConnectToSource() {
@@ -110,13 +110,13 @@ TEST_F(MediaStreamAudioTrackUnderlyingSinkTest,
   AudioData* audio_data = nullptr;
   auto audio_data_chunk = CreateAudioData(script_state, &audio_data);
   EXPECT_NE(audio_data, nullptr);
-  EXPECT_NE(audio_data->buffer(), nullptr);
+  EXPECT_NE(audio_data->data(), nullptr);
   ScriptPromiseTester write_tester(
       script_state,
       writer->write(script_state, audio_data_chunk, exception_state));
   // |audio_data| should be invalidated after sending it to the sink.
   write_tester.WaitUntilSettled();
-  EXPECT_EQ(audio_data->buffer(), nullptr);
+  EXPECT_EQ(audio_data->data(), nullptr);
   write_loop.Run();
 
   writer->releaseLock(script_state);

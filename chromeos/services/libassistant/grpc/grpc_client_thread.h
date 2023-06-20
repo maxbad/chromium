@@ -8,7 +8,6 @@
 #include <memory>
 #include <string>
 
-#include "base/macros.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/platform_thread.h"
 #include "base/threading/thread.h"
@@ -39,6 +38,11 @@ class GrpcClientThread {
   void ScanCQInternal();
 
   grpc::CompletionQueue completion_queue_;
+  // Thread to poll the completion queue. Unlike the CQ thread initiated in
+  // |ServicesInitializerBase| and used by assistant gRPC server, this thread
+  // will *not* be responsible for cleaning up tags returned by calling
+  // completion_queue_->Next(). Each tag object will need to delete itself
+  // once finished.
   base::Thread thread_;
 
   base::Lock cq_shutdown_lock_;

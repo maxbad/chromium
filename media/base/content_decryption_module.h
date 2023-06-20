@@ -12,7 +12,6 @@
 #include <vector>
 
 #include "base/callback.h"
-#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "media/base/cdm_key_information.h"
 #include "media/base/eme_constants.h"
@@ -73,10 +72,10 @@ enum class HdcpVersion {
 
 // Reasons for CDM session closed.
 enum class CdmSessionClosedReason {
-  kUnknown,         // Anything not listed below.
-  kClose,           // Reaction to MediaKeySession close().
-  kCdmUnavailable,  // CDM is no longer usable, e.g. the CDM was disconnected or
-                    // had fatal internal-error.
+  kInternalError,  // An unrecoverable error happened in the CDM., e.g. crash.
+  kClose,          // Reaction to MediaKeySession close().
+  kReleaseAcknowledged,   // The CDM received a "record-of-license-destruction"
+                          // acknowledgement.
   kHardwareContextReset,  // As a result of hardware context reset.
   kResourceEvicted,  // The CDM resource was evicted, e.g. by newer sessions.
   kMaxValue = kResourceEvicted
@@ -109,6 +108,9 @@ class MEDIA_EXPORT ContentDecryptionModule
     : public base::RefCountedThreadSafe<ContentDecryptionModule,
                                         ContentDecryptionModuleTraits> {
  public:
+  ContentDecryptionModule(const ContentDecryptionModule&) = delete;
+  ContentDecryptionModule& operator=(const ContentDecryptionModule&) = delete;
+
   // Provides a server certificate to be used to encrypt messages to the
   // license server.
   virtual void SetServerCertificate(
@@ -183,9 +185,6 @@ class MEDIA_EXPORT ContentDecryptionModule
 
   ContentDecryptionModule();
   virtual ~ContentDecryptionModule();
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(ContentDecryptionModule);
 };
 
 struct MEDIA_EXPORT ContentDecryptionModuleTraits {

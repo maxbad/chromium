@@ -6,9 +6,35 @@
 
 #include <utility>
 
+namespace {
+
+int BucketWithOffsetAndUnit(int num, int offset, int unit) {
+  // Bucketing raw number with `offset` centered.
+  const int grid = (num - offset) / unit;
+  const int bucketed =
+      grid == 0 ? 0
+                : grid > 0 ? std::pow(2, static_cast<int>(std::log2(grid)))
+                           : -std::pow(2, static_cast<int>(std::log2(-grid)));
+  return bucketed * unit + offset;
+}
+
+}  // namespace
+
 namespace page_load_metrics {
 
-MemoryUpdate::MemoryUpdate(content::GlobalFrameRoutingId id, int64_t delta)
+int GetBucketedViewportInitialScale(const blink::MobileFriendliness& mf) {
+  return mf.viewport_initial_scale_x10 <= -1
+             ? -1
+             : BucketWithOffsetAndUnit(mf.viewport_initial_scale_x10, 10, 2);
+}
+
+int GetBucketedViewportHardcodedWidth(const blink::MobileFriendliness& mf) {
+  return mf.viewport_hardcoded_width <= -1
+             ? -1
+             : BucketWithOffsetAndUnit(mf.viewport_hardcoded_width, 500, 10);
+}
+
+MemoryUpdate::MemoryUpdate(content::GlobalRenderFrameHostId id, int64_t delta)
     : routing_id(id), delta_bytes(delta) {}
 
 ExtraRequestCompleteInfo::ExtraRequestCompleteInfo(
@@ -59,6 +85,13 @@ PageLoadMetricsObserver::ObservePolicy PageLoadMetricsObserver::OnStart(
     const GURL& currently_committed_url,
     bool started_in_foreground) {
   return CONTINUE_OBSERVING;
+}
+
+PageLoadMetricsObserver::ObservePolicy
+PageLoadMetricsObserver::OnPrerenderStart(
+    content::NavigationHandle* navigation_handle,
+    const GURL& currently_committed_url) {
+  return STOP_OBSERVING;
 }
 
 PageLoadMetricsObserver::ObservePolicy PageLoadMetricsObserver::OnRedirect(

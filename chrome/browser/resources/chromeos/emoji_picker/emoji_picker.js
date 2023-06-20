@@ -11,14 +11,14 @@ import 'chrome://resources/cr_elements/cr_icons_css.m.js';
 import {assert} from 'chrome://resources/js/assert.m.js';
 import {afterNextRender, html, PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 
-import {EMOJI_GROUP_SIZE_PX, EMOJI_ICON_SIZE, EMOJI_PER_ROW, EMOJI_PICKER_HEIGHT_PX, EMOJI_PICKER_SIDE_PADDING_PX, EMOJI_PICKER_TOP_PADDING_PX, EMOJI_PICKER_WIDTH_PX, EMOJI_SIZE_PX, GROUP_ICON_SIZE, GROUP_PER_ROW} from './constants.js';
+import {EMOJI_GROUP_SIZE_PX, EMOJI_ICON_SIZE, EMOJI_PER_ROW, EMOJI_PICKER_HEIGHT_PX, EMOJI_PICKER_SIDE_PADDING_PX, EMOJI_PICKER_TOP_PADDING_PX, EMOJI_PICKER_TOTAL_EMOJI_WIDTH, EMOJI_PICKER_TOTAL_EMOJI_WIDTH_PX, EMOJI_PICKER_WIDTH_PX, EMOJI_SIZE_PX, EMOJI_SPACING_PX, GROUP_ICON_SIZE, GROUP_PER_ROW} from './constants.js';
 import {EmojiButton} from './emoji_button.js';
 import {EmojiPickerApiProxy, EmojiPickerApiProxyImpl} from './emoji_picker_api_proxy.js';
 import {createCustomEvent, EMOJI_BUTTON_CLICK, EMOJI_CLEAR_RECENTS_CLICK, EMOJI_DATA_LOADED, EMOJI_VARIANTS_SHOWN, EmojiVariantsShownEvent, GROUP_BUTTON_CLICK} from './events.js';
 import {RecentEmojiStore} from './store.js';
 import {Emoji, EmojiGroup, EmojiGroupData, EmojiVariants, StoredEmoji} from './types.js';
 
-const EMOJI_ORDERING_JSON = '/emoji_13_1_ordering.json';
+const EMOJI_ORDERING_JSON = '/emoji_14_0_ordering.json';
 
 // the name attributes below are used to label the group buttons.
 // the ordering group names are used for the group headings in the emoji picker.
@@ -146,7 +146,7 @@ export class EmojiPicker extends PolymerElement {
 
     this.emojiGroupTabs = GROUP_TABS;
     this.emojiData = [];
-    this.history = {'group': 'Recently Used', 'emoji': []};
+    this.history = {'group': 'Recently used', 'emoji': []};
 
     this.preferenceMapping = {};
 
@@ -191,15 +191,6 @@ export class EmojiPicker extends PolymerElement {
             /** @type {!EmojiVariantsShownEvent} */ (ev)));
     this.addEventListener('click', () => this.hideDialogs());
     this.getHistory();
-
-    document.addEventListener('visibilitychange', async () => {
-      if (document.visibilityState === 'visible') {
-        if (this.emojiData !== []) {
-          await this.resetState();
-        }
-        this.apiProxy_.showUI();
-      }
-    }, true);
   }
 
   async getHistory() {
@@ -238,22 +229,8 @@ export class EmojiPicker extends PolymerElement {
       '--emoji-per-row': EMOJI_PER_ROW,
       '--emoji-picker-side-padding': EMOJI_PICKER_SIDE_PADDING_PX,
       '--emoji-picker-top-padding': EMOJI_PICKER_TOP_PADDING_PX,
+      '--emoji-spacing': EMOJI_SPACING_PX,
     });
-  }
-
-  /**
-   * Reset state of the emoji picker when it gets re-shown.
-   */
-  async resetState() {
-    // Recheck history to ensure that incognito mode is correct for this text
-    // field.
-    await this.getHistory();
-    this.hideEmojiVariants();
-    this.$.groups.scrollTop = 0;
-    const searchFeld =
-        this.$['search-container'].shadowRoot.querySelector('cr-search-field');
-    searchFeld.setValue('');
-    searchFeld.getSearchInput().focus();
   }
 
   onSearchChanged(newValue) {
@@ -276,25 +253,15 @@ export class EmojiPicker extends PolymerElement {
    * @param {!string} name
    */
   async insertEmoji(emoji, isVariant, baseEmoji, allVariants, name) {
-    document.activeElement.blur();
-    this.apiProxy_.closeUI();
-    this.$['search-container'].clearSearch();
     this.$.message.textContent = emoji + ' inserted.';
     const incognito = (await this.apiProxy_.isIncognitoTextField()).incognito;
     if (!incognito) {
       this.recentEmojiStore.bumpEmoji(
           {base: emoji, alternates: allVariants, name: name});
       this.recentEmojiStore.savePreferredVariant(baseEmoji, emoji);
-
       this.set(
           ['history', 'emoji'],
           makeRecentlyUsed(this.recentEmojiStore.data.history));
-      // Ugly hack around updating the preference mapping, doing things directly
-      // doesn't work.
-      this.set('preferenceMapping', {});
-      requestAnimationFrame(time => {
-        this.preferenceMapping = this.recentEmojiStore.getPreferenceMapping();
-      });
     }
     const searchLength = this.$['search-container']
                              .shadowRoot.querySelector('cr-search-field')
@@ -306,7 +273,6 @@ export class EmojiPicker extends PolymerElement {
   clearRecentEmoji() {
     this.set(['history', 'emoji'], makeRecentlyUsed([]));
     this.set(['emojiGroupTabs', 0, 'disabled'], true);
-    this.set(['preferenceMapping'], {});
     this.recentEmojiStore.clearRecents();
     afterNextRender(
         this, () => this.updateActiveGroup(/*updateTabsScroll=*/ true));
@@ -337,10 +303,10 @@ export class EmojiPicker extends PolymerElement {
   }
 
   onRightChevronClick() {
-    this.$.tabs.scrollLeft = GROUP_ICON_SIZE * 8;
+    this.$.tabs.scrollLeft = ((EMOJI_PICKER_TOTAL_EMOJI_WIDTH) * 8);
     this.scrollToGroup(GROUP_TABS[GROUP_PER_ROW - 1].groupId);
     this.groupTabsMoving = true;
-    this.$.bar.style.left = EMOJI_GROUP_SIZE_PX;
+    this.$.bar.style.left = EMOJI_PICKER_TOTAL_EMOJI_WIDTH_PX;
   }
 
   onLeftChevronClick() {
@@ -350,7 +316,7 @@ export class EmojiPicker extends PolymerElement {
     if (this.history.emoji.length > 0) {
       this.$.bar.style.left = '0';
     } else {
-      this.$.bar.style.left = '36px';
+      this.$.bar.style.left = EMOJI_PICKER_TOTAL_EMOJI_WIDTH_PX;
     }
   }
 
@@ -451,23 +417,24 @@ export class EmojiPicker extends PolymerElement {
       // Update the scroll position of the emoji groups so that active group is
       // visible.
       let tabscrollLeft = this.$.tabs.scrollLeft;
-      if (tabscrollLeft > GROUP_ICON_SIZE * (index - 0.5)) {
+      if (tabscrollLeft > EMOJI_PICKER_TOTAL_EMOJI_WIDTH * (index - 0.5)) {
         tabscrollLeft = 0;
       }
-      if (tabscrollLeft + GROUP_ICON_SIZE * (GROUP_PER_ROW - 2) <
+      if (tabscrollLeft + EMOJI_PICKER_TOTAL_EMOJI_WIDTH * (GROUP_PER_ROW - 2) <
           GROUP_ICON_SIZE * index) {
         // 5 = We want the seventh icon to be first. Then -1 for chevron, -1 for
         // 1 based indexing.
-        tabscrollLeft = GROUP_ICON_SIZE * (7);
+        tabscrollLeft = EMOJI_PICKER_TOTAL_EMOJI_WIDTH * (7);
       }
 
       if (updateTabsScroll) {
         this.$.tabs.scrollLeft = tabscrollLeft;
         this.$.bar.style.left =
-            ((index * GROUP_ICON_SIZE - tabscrollLeft)) + 'px';
+            ((index * EMOJI_PICKER_TOTAL_EMOJI_WIDTH - tabscrollLeft)) + 'px';
       } else {
-        this.$.bar.style.left =
-            ((index * GROUP_ICON_SIZE - this.$.tabs.scrollLeft)) + 'px';
+        this.$.bar.style.left = ((index * EMOJI_PICKER_TOTAL_EMOJI_WIDTH -
+                                  this.$.tabs.scrollLeft)) +
+            'px';
       }
     }
   }

@@ -15,15 +15,15 @@
 #include "base/callback_helpers.h"
 #include "base/command_line.h"
 #include "base/containers/contains.h"
+#include "base/containers/cxx20_erase.h"
 #include "base/containers/unique_ptr_adapters.h"
 #include "base/logging.h"
-#include "base/macros.h"
-#include "base/stl_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "cc/paint/paint_canvas.h"
 #include "content/public/common/isolated_world_ids.h"
 #include "content/public/common/use_zoom_for_dsf_policy.h"
+#include "content/public/renderer/render_frame_observer.h"
 #include "content/public/renderer/render_view_visitor.h"
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/render_view_impl.h"
@@ -47,6 +47,7 @@
 #include "services/network/public/mojom/cors.mojom.h"
 #include "third_party/blink/public/common/page/page_zoom.h"
 #include "third_party/blink/public/common/permissions/permission_utils.h"
+#include "third_party/blink/public/common/tokens/tokens.h"
 #include "third_party/blink/public/common/web_preferences/web_preferences.h"
 #include "third_party/blink/public/mojom/app_banner/app_banner.mojom.h"
 #include "third_party/blink/public/mojom/clipboard/clipboard.mojom.h"
@@ -77,11 +78,12 @@
 #include "third_party/blink/public/web/web_view_observer.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkCanvas.h"
+#include "ui/gfx/codec/png_codec.h"
 #include "ui/gfx/color_space.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/rect_f.h"
 #include "ui/gfx/geometry/size.h"
-#include "ui/gfx/skia_util.h"
+#include "ui/gfx/geometry/skia_conversions.h"
 #include "ui/gfx/test/icc_profiles.h"
 
 #if defined(OS_LINUX) || defined(OS_CHROMEOS) || defined(OS_FUCHSIA)
@@ -202,6 +204,9 @@ class TestRunnerBindings : public gin::Wrappable<TestRunnerBindings> {
  public:
   static gin::WrapperInfo kWrapperInfo;
 
+  TestRunnerBindings(const TestRunnerBindings&) = delete;
+  TestRunnerBindings& operator=(const TestRunnerBindings&) = delete;
+
   static void Install(TestRunner* test_runner,
                       WebFrameTestProxy* frame,
                       SpellCheckClient* spell_check,
@@ -228,6 +233,21 @@ class TestRunnerBindings : public gin::Wrappable<TestRunnerBindings> {
   blink::WebLocalFrame* GetWebFrame() { return frame_->GetWebFrame(); }
 
  private:
+  // Watches for the RenderFrame that the TestRunnerBindings is attached to
+  // being destroyed.
+  class TestRunnerBindingsRenderFrameObserver : public RenderFrameObserver {
+   public:
+    TestRunnerBindingsRenderFrameObserver(TestRunnerBindings* bindings,
+                                          RenderFrame* frame)
+        : RenderFrameObserver(frame), bindings_(bindings) {}
+
+    // RenderFrameObserver implementation.
+    void OnDestruct() override { bindings_->OnFrameDestroyed(); }
+
+   private:
+    TestRunnerBindings* const bindings_;
+  };
+
   explicit TestRunnerBindings(TestRunner* test_runner,
                               WebFrameTestProxy* frame,
                               SpellCheckClient* spell_check);
@@ -313,6 +333,7 @@ class TestRunnerBindings : public gin::Wrappable<TestRunnerBindings> {
   void SetBluetoothFakeAdapter(const std::string& adapter_name,
                                v8::Local<v8::Function> callback);
   void SetBluetoothManualChooser(bool enable);
+  void SetBrowserHandlesFocus(bool enable);
   void SetCaretBrowsingEnabled();
   void SetColorProfile(const std::string& name,
                        v8::Local<v8::Function> callback);
@@ -404,6 +425,9 @@ class TestRunnerBindings : public gin::Wrappable<TestRunnerBindings> {
     invalid_ = true;
   }
 
+  // Observer for the |frame_| the TestRunningBindings is bound to.
+  TestRunnerBindingsRenderFrameObserver frame_observer_;
+
   // Becomes true when the underlying frame is destroyed. Then the class should
   // stop doing anything.
   bool invalid_ = false;
@@ -415,8 +439,6 @@ class TestRunnerBindings : public gin::Wrappable<TestRunnerBindings> {
   std::unique_ptr<AppBannerService> app_banner_service_;
 
   base::WeakPtrFactory<TestRunnerBindings> weak_ptr_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(TestRunnerBindings);
 };
 
 gin::WrapperInfo TestRunnerBindings::kWrapperInfo = {gin::kEmbedderNativeGin};
@@ -501,7 +523,10 @@ void TestRunnerBindings::Install(TestRunner* test_runner,
 TestRunnerBindings::TestRunnerBindings(TestRunner* runner,
                                        WebFrameTestProxy* frame,
                                        SpellCheckClient* spell_check)
-    : runner_(runner), frame_(frame), spell_check_(spell_check) {}
+    : frame_observer_(this, frame),
+      runner_(runner),
+      frame_(frame),
+      spell_check_(spell_check) {}
 
 TestRunnerBindings::~TestRunnerBindings() = default;
 
@@ -703,6 +728,8 @@ gin::ObjectTemplateBuilder TestRunnerBindings::GetObjectTemplateBuilder(
       // Otherwise falls back to the browser's default chooser.
       .SetMethod("setBluetoothManualChooser",
                  &TestRunnerBindings::SetBluetoothManualChooser)
+      .SetMethod("setBrowserHandlesFocus",
+                 &TestRunnerBindings::SetBrowserHandlesFocus)
       .SetMethod("setCallCloseOnWebViews", &TestRunnerBindings::NotImplemented)
       .SetMethod("setCaretBrowsingEnabled",
                  &TestRunnerBindings::SetCaretBrowsingEnabled)
@@ -1757,6 +1784,12 @@ void TestRunnerBindings::GetBluetoothManualChooserEvents(
                      WrapV8Callback(std::move(callback))));
 }
 
+void TestRunnerBindings::SetBrowserHandlesFocus(bool enable) {
+  if (invalid_)
+    return;
+  blink::SetBrowserCanHandleFocusForWebTest(enable);
+}
+
 void TestRunnerBindings::SendBluetoothManualChooserEvent(
     const std::string& event,
     const std::string& argument) {
@@ -1923,18 +1956,22 @@ void TestRunnerBindings::CopyImageThen(int x,
   frame_->GetBrowserInterfaceBroker()->GetInterface(
       remote_clipboard.BindNewPipeAndPassReceiver());
 
-  uint64_t sequence_number_before = 0;
-  remote_clipboard->GetSequenceNumber(ui::ClipboardBuffer::kCopyPaste,
-                                      &sequence_number_before);
+  blink::ClipboardSequenceNumberToken sequence_number_before;
+  CHECK(remote_clipboard->GetSequenceNumber(ui::ClipboardBuffer::kCopyPaste,
+                                            &sequence_number_before));
   GetWebFrame()->CopyImageAtForTesting(gfx::Point(x, y));
-  uint64_t sequence_number_after = 0;
-  while (sequence_number_before == sequence_number_after) {
+  auto sequence_number_after = sequence_number_before;
+  while (sequence_number_before.value() == sequence_number_after.value()) {
+    // TODO(crbug.com/872076): Ideally we would CHECK here that the mojo call
+    // succeeded, but this crashes under some circumstances (crbug.com/1232810).
     remote_clipboard->GetSequenceNumber(ui::ClipboardBuffer::kCopyPaste,
                                         &sequence_number_after);
   }
 
+  mojo_base::BigBuffer png_data;
+  remote_clipboard->ReadPng(ui::ClipboardBuffer::kCopyPaste, &png_data);
   SkBitmap bitmap;
-  remote_clipboard->ReadImage(ui::ClipboardBuffer::kCopyPaste, &bitmap);
+  gfx::PNGCodec::Decode(png_data.data(), png_data.size(), &bitmap);
 
   v8::Isolate* isolate = blink::MainThreadIsolate();
   v8::HandleScope handle_scope(isolate);
@@ -2324,6 +2361,7 @@ void TestRunner::Reset() {
 #endif
   blink::ResetDomainRelaxationForTest();
 
+  blink::SetBrowserCanHandleFocusForWebTest(false);
   setlocale(LC_ALL, "");
   setlocale(LC_NUMERIC, "C");
 
@@ -2936,17 +2974,17 @@ void TestRunner::UseUnfortunateSynchronousResizeMode() {
 
 void TestRunner::SetMockScreenOrientation(blink::WebView* view,
                                           const std::string& orientation_str) {
-  blink::mojom::ScreenOrientation orientation;
+  display::mojom::ScreenOrientation orientation;
 
   if (orientation_str == "portrait-primary") {
-    orientation = blink::mojom::ScreenOrientation::kPortraitPrimary;
+    orientation = display::mojom::ScreenOrientation::kPortraitPrimary;
   } else if (orientation_str == "portrait-secondary") {
-    orientation = blink::mojom::ScreenOrientation::kPortraitSecondary;
+    orientation = display::mojom::ScreenOrientation::kPortraitSecondary;
   } else if (orientation_str == "landscape-primary") {
-    orientation = blink::mojom::ScreenOrientation::kLandscapePrimary;
+    orientation = display::mojom::ScreenOrientation::kLandscapePrimary;
   } else {
     DCHECK_EQ("landscape-secondary", orientation_str);
-    orientation = blink::mojom::ScreenOrientation::kLandscapeSecondary;
+    orientation = display::mojom::ScreenOrientation::kLandscapeSecondary;
   }
 
   bool changed =

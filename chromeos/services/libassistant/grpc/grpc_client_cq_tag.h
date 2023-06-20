@@ -5,14 +5,14 @@
 #ifndef CHROMEOS_SERVICES_LIBASSISTANT_GRPC_GRPC_CLIENT_CQ_TAG_H_
 #define CHROMEOS_SERVICES_LIBASSISTANT_GRPC_GRPC_CLIENT_CQ_TAG_H_
 
-#include "base/macros.h"
 #include "third_party/grpc/src/include/grpcpp/grpcpp.h"
 
 namespace chromeos {
 namespace libassistant {
 
 // Represents a pending asynchronous client call as a tag that can be
-// stored in a |grpc::CompletionQueue|.
+// stored in a |grpc::CompletionQueue|. Note that each |GrpcClientCQTag|
+// will be responsible for deleting itself after an RPC is finished.
 class GrpcClientCQTag {
  public:
   enum class State {

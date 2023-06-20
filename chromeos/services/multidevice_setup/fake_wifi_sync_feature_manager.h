@@ -5,10 +5,8 @@
 #ifndef CHROMEOS_SERVICES_MULTIDEVICE_SETUP_FAKE_WIFI_SYNC_FEATURE_MANAGER_H_
 #define CHROMEOS_SERVICES_MULTIDEVICE_SETUP_FAKE_WIFI_SYNC_FEATURE_MANAGER_H_
 
-#include "base/macros.h"
 #include "chromeos/components/multidevice/remote_device_ref.h"
 #include "chromeos/services/multidevice_setup/wifi_sync_feature_manager.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace chromeos {
 

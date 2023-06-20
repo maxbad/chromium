@@ -54,6 +54,9 @@ namespace android_webview {
 class AwAutofillClient : public autofill::AutofillClient,
                          public content::WebContentsUserData<AwAutofillClient> {
  public:
+  AwAutofillClient(const AwAutofillClient&) = delete;
+  AwAutofillClient& operator=(const AwAutofillClient&) = delete;
+
   ~AwAutofillClient() override;
 
   void SetSaveFormData(bool enabled);
@@ -160,13 +163,7 @@ class AwAutofillClient : public autofill::AutofillClient,
   std::vector<autofill::Suggestion> suggestions_;
   base::WeakPtr<autofill::AutofillPopupDelegate> delegate_;
 
-  // Tracks whether the autocomplete enabled metric has already been logged for
-  // this client.
-  bool autocomplete_uma_recorded_ = false;
-
   WEB_CONTENTS_USER_DATA_KEY_DECL();
-
-  DISALLOW_COPY_AND_ASSIGN(AwAutofillClient);
 };
 
 }  // namespace android_webview

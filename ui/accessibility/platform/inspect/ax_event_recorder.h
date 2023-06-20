@@ -34,6 +34,10 @@ using AXEventCallback = base::RepeatingCallback<void(const std::string&)>;
 class AX_EXPORT AXEventRecorder {
  public:
   AXEventRecorder();
+
+  AXEventRecorder(const AXEventRecorder&) = delete;
+  AXEventRecorder& operator=(const AXEventRecorder&) = delete;
+
   virtual ~AXEventRecorder();
 
   // Scopes/unscopes events to a web area.
@@ -53,12 +57,7 @@ class AX_EXPORT AXEventRecorder {
   virtual void WaitForDoneRecording() {}
 
   // Access the vector of human-readable event logs, one string per event.
-  std::vector<std::string> GetEventLogs() const;
-
-  // Returns true if the @*-RUN-UNTIL-EVENT directive is satisfied by the
-  // currently recorded events for the events in |run_until|.
-  bool IsRunUntilEventSatisfied(
-      const std::vector<std::string>& run_until) const;
+  const std::vector<std::string> GetEventLogs() const;
 
  protected:
   // Called by a derived class which implements platform event handling on
@@ -71,8 +70,6 @@ class AX_EXPORT AXEventRecorder {
   mutable base::Lock on_event_lock_;
   std::vector<std::string> event_logs_;
   AXEventCallback callback_;
-
-  DISALLOW_COPY_AND_ASSIGN(AXEventRecorder);
 };
 
 }  // namespace ui

@@ -6,12 +6,12 @@
 
 #include <string>
 
-#include "ash/public/cpp/ash_features.h"
 #include "ash/public/cpp/holding_space/holding_space_controller.h"
 #include "ash/public/cpp/holding_space/holding_space_image.h"
 #include "ash/public/cpp/holding_space/holding_space_item.h"
 #include "ash/public/cpp/holding_space/holding_space_metrics.h"
 #include "ash/public/cpp/holding_space/holding_space_model.h"
+#include "ash/public/cpp/holding_space/holding_space_util.h"
 #include "base/callback_helpers.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
@@ -19,7 +19,7 @@
 #include "base/run_loop.h"
 #include "base/test/bind.h"
 #include "base/unguessable_token.h"
-#include "chrome/browser/chromeos/file_manager/path_util.h"
+#include "chrome/browser/ash/file_manager/path_util.h"
 #include "chrome/browser/extensions/component_loader.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/ash/holding_space/holding_space_browsertest_base.h"
@@ -45,7 +45,7 @@ std::unique_ptr<HoldingSpaceImage> CreateTestHoldingSpaceImage(
     HoldingSpaceItem::Type type,
     const base::FilePath& file_path) {
   return std::make_unique<HoldingSpaceImage>(
-      HoldingSpaceImage::GetMaxSizeForType(type), file_path,
+      holding_space_util::GetMaxImageSizeForType(type), file_path,
       /*async_bitmap_resolver=*/base::DoNothing());
 }
 
@@ -150,8 +150,7 @@ IN_PROC_BROWSER_TEST_F(HoldingSpaceClientImplTest, CopyImageToClipboard) {
 }
 
 // Verifies that `HoldingSpaceClient::OpenDownloads()` works as intended.
-// TODO(crbug.com/1139299): Flaky.
-IN_PROC_BROWSER_TEST_F(HoldingSpaceClientImplTest, DISABLED_OpenDownloads) {
+IN_PROC_BROWSER_TEST_F(HoldingSpaceClientImplTest, OpenDownloads) {
   ASSERT_TRUE(HoldingSpaceController::Get());
 
   auto* holding_space_client = HoldingSpaceController::Get()->client();
@@ -253,13 +252,7 @@ IN_PROC_BROWSER_TEST_F(HoldingSpaceClientImplTest, OpenItems) {
 // Verifies that `HoldingSpaceClient::ShowItemInFolder()` works as intended when
 // attempting to open holding space items backed by both non-existing and
 // existing files.
-// Flaky on linux-chromeos-dbg (https://crbug.com/1130958)
-#ifdef NDEBUG
-#define MAYBE_ShowItemInFolder ShowItemInFolder
-#else
-#define MAYBE_ShowItemInFolder DISABLED_ShowItemInFolder
-#endif
-IN_PROC_BROWSER_TEST_F(HoldingSpaceClientImplTest, MAYBE_ShowItemInFolder) {
+IN_PROC_BROWSER_TEST_F(HoldingSpaceClientImplTest, ShowItemInFolder) {
   ASSERT_TRUE(HoldingSpaceController::Get());
 
   auto* holding_space_client = HoldingSpaceController::Get()->client();
@@ -320,7 +313,7 @@ IN_PROC_BROWSER_TEST_F(HoldingSpaceClientImplTest, PinItems) {
   // same text and file path as the original download holding space item.
   HoldingSpaceItem* pinned_file_item = holding_space_model->items()[1].get();
   EXPECT_EQ(pinned_file_item->type(), HoldingSpaceItem::Type::kPinnedFile);
-  EXPECT_EQ(download_item->text(), pinned_file_item->text());
+  EXPECT_EQ(download_item->GetText(), pinned_file_item->GetText());
   EXPECT_EQ(download_item->file_path(), pinned_file_item->file_path());
 }
 

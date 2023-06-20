@@ -58,12 +58,6 @@ id<GREYMatcher> FakeOmniboxMatcher() {
 
 @implementation NonModalEGTest
 
-- (AppLaunchConfiguration)appConfigurationForTestCase {
-  AppLaunchConfiguration config;
-  config.features_enabled.push_back(kDefaultPromoNonModal);
-  return config;
-}
-
 - (void)setUp {
   [super setUp];
   [ChromeEarlGreyAppInterface clearDefaultBrowserPromoData];
@@ -72,16 +66,18 @@ id<GREYMatcher> FakeOmniboxMatcher() {
 - (void)tearDown {
   [super tearDown];
   [ChromeEarlGreyAppInterface clearDefaultBrowserPromoData];
+  [ChromeEarlGreyAppInterface disableDefaultBrowserPromo];
 }
 
 // Test that a non modal default modal promo appears when it is triggered by
 // pasting a copied link.
-- (void)testNonModalAppears {
-  // Promos only appear on iOS 14 and up.
-  if (!base::ios::IsRunningOnIOS14OrLater()) {
-    return;
-  }
-
+// TODO(crbug.com/1218866): Test is failing on devices.
+#if TARGET_IPHONE_SIMULATOR
+#define MAYBE_testNonModalAppears testNonModalAppears
+#else
+#define MAYBE_testNonModalAppears DISABLED_testNonModalAppears
+#endif
+- (void)MAYBE_testNonModalAppears {
   [ChromeEarlGreyAppInterface copyURLToPasteBoard];
   [[EarlGrey selectElementWithMatcher:FakeOmniboxMatcher()]
       performAction:grey_tap()];

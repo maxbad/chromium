@@ -43,6 +43,7 @@
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "services/network/public/cpp/network_switches.h"
 #include "services/network/public/mojom/cookie_manager.mojom.h"
+#include "services/network/public/mojom/network_context.mojom.h"
 #include "testing/gmock/include/gmock/gmock-matchers.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest-param-test.h"
@@ -658,7 +659,7 @@ IN_PROC_BROWSER_TEST_P(ExtensionSameSiteCookiesTest,
   constexpr char kActiveTabHost[] = "active-tab.example";
   GURL original_document_url =
       test_server()->GetURL(kActiveTabHost, "/title1.html");
-  ui_test_utils::NavigateToURL(browser(), original_document_url);
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), original_document_url));
   SetCookies(kActiveTabHost);
 
   // Based on activeTab, the extension shouldn't be initially granted access to
@@ -703,7 +704,7 @@ IN_PROC_BROWSER_TEST_P(ExtensionSameSiteCookiesTest,
   EXPECT_NE(another_document_url, original_document_url);
   EXPECT_EQ(url::Origin::Create(another_document_url),
             url::Origin::Create(original_document_url));
-  ui_test_utils::NavigateToURL(browser(), another_document_url);
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), another_document_url));
   {
     SCOPED_TRACE(
         "TEST STEP 4: After navigating the tab cross-document, "
@@ -717,7 +718,7 @@ IN_PROC_BROWSER_TEST_P(ExtensionSameSiteCookiesTest,
   GURL cross_origin_url = test_server()->GetURL("other.com", "/title1.html");
   EXPECT_NE(url::Origin::Create(cross_origin_url),
             url::Origin::Create(original_document_url));
-  ui_test_utils::NavigateToURL(browser(), cross_origin_url);
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), cross_origin_url));
   {
     SCOPED_TRACE("TEST STEP 5: After navigating the tab cross-origin.");
     std::string cookies = FetchCookies(background_page, kActiveTabHost);
@@ -749,8 +750,8 @@ IN_PROC_BROWSER_TEST_P(ExtensionSameSiteCookiesTest,
   // - top-level frame: kActiveTabHost
   // - subframe: extension
   constexpr char kActiveTabHost[] = "active-tab.example";
-  ui_test_utils::NavigateToURL(
-      browser(), test_server()->GetURL(kActiveTabHost, "/title1.html"));
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(
+      browser(), test_server()->GetURL(kActiveTabHost, "/title1.html")));
   SetCookies(kActiveTabHost);
   content::RenderFrameHost* extension_subframe = nullptr;
   {
@@ -765,8 +766,8 @@ IN_PROC_BROWSER_TEST_P(ExtensionSameSiteCookiesTest,
         content::JsReplace(kSubframeInjectionScriptTemplate,
                            extension->GetResourceURL("subframe.html"))));
     subframe_nav_observer.Wait();
-    ASSERT_EQ(2u, web_contents()->GetAllFrames().size());
-    extension_subframe = web_contents()->GetAllFrames()[1];
+    extension_subframe = ChildFrameAt(web_contents(), 0);
+    ASSERT_TRUE(extension_subframe);
     ASSERT_EQ(extension->origin(),
               extension_subframe->GetLastCommittedOrigin());
   }
@@ -844,9 +845,8 @@ IN_PROC_BROWSER_TEST_P(ExtensionSameSiteCookiesTest,
     EXPECT_TRUE(queue.WaitForMessage(&json));
     absl::optional<base::Value> value =
         base::JSONReader::Read(json, base::JSON_ALLOW_TRAILING_COMMAS);
-    std::string result;
-    EXPECT_TRUE(value->GetAsString(&result));
-    return result;
+    EXPECT_TRUE(value->is_string());
+    return value->GetString();
   };
 
   TestExtensionDir extension_dir;
@@ -877,7 +877,7 @@ IN_PROC_BROWSER_TEST_P(ExtensionSameSiteCookiesTest,
   constexpr char kActiveTabHost[] = "active-tab.example";
   GURL original_document_url =
       test_server()->GetURL(kActiveTabHost, "/title1.html");
-  ui_test_utils::NavigateToURL(browser(), original_document_url);
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), original_document_url));
   EXPECT_EQ(kActiveTabHost,
             web_contents()->GetMainFrame()->GetLastCommittedURL().host());
   SetCookies(kActiveTabHost);
@@ -935,7 +935,7 @@ IN_PROC_BROWSER_TEST_P(ExtensionSameSiteCookiesTest,
   EXPECT_NE(another_document_url, original_document_url);
   EXPECT_EQ(url::Origin::Create(another_document_url),
             url::Origin::Create(original_document_url));
-  ui_test_utils::NavigateToURL(browser(), another_document_url);
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), another_document_url));
   {
     SCOPED_TRACE(
         "TEST STEP 4: After navigating the tab cross-document, "
@@ -950,7 +950,7 @@ IN_PROC_BROWSER_TEST_P(ExtensionSameSiteCookiesTest,
   GURL cross_origin_url = test_server()->GetURL("other.com", "/title1.html");
   EXPECT_NE(url::Origin::Create(cross_origin_url),
             url::Origin::Create(original_document_url));
-  ui_test_utils::NavigateToURL(browser(), cross_origin_url);
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), cross_origin_url));
   {
     SCOPED_TRACE("TEST STEP 5: After navigating the tab cross-origin.");
     std::string cookies =

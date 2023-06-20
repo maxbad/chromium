@@ -7,7 +7,6 @@
 
 #include <vector>
 
-#include "base/macros.h"
 #include "components/viz/service/display/overlay_candidate.h"
 #include "components/viz/service/display/overlay_processor_using_strategy.h"
 #include "components/viz/service/viz_service_export.h"
@@ -19,9 +18,14 @@ class VIZ_SERVICE_EXPORT OverlayStrategySingleOnTop
  public:
   explicit OverlayStrategySingleOnTop(
       OverlayProcessorUsingStrategy* capability_checker);
+
+  OverlayStrategySingleOnTop(const OverlayStrategySingleOnTop&) = delete;
+  OverlayStrategySingleOnTop& operator=(const OverlayStrategySingleOnTop&) =
+      delete;
+
   ~OverlayStrategySingleOnTop() override;
 
-  bool Attempt(const SkMatrix44& output_color_matrix,
+  bool Attempt(const skia::Matrix44& output_color_matrix,
                const OverlayProcessorInterface::FilterOperationsMap&
                    render_pass_backdrop_filters,
                DisplayResourceProvider* resource_provider,
@@ -31,7 +35,7 @@ class VIZ_SERVICE_EXPORT OverlayStrategySingleOnTop
                OverlayCandidateList* candidate_list,
                std::vector<gfx::Rect>* content_bounds) override;
 
-  void ProposePrioritized(const SkMatrix44& output_color_matrix,
+  void ProposePrioritized(const skia::Matrix44& output_color_matrix,
                           const OverlayProcessorInterface::FilterOperationsMap&
                               render_pass_backdrop_filters,
                           DisplayResourceProvider* resource_provider,
@@ -42,7 +46,7 @@ class VIZ_SERVICE_EXPORT OverlayStrategySingleOnTop
                           std::vector<gfx::Rect>* content_bounds) override;
 
   bool AttemptPrioritized(
-      const SkMatrix44& output_color_matrix,
+      const skia::Matrix44& output_color_matrix,
       const OverlayProcessorInterface::FilterOperationsMap&
           render_pass_backdrop_filters,
       DisplayResourceProvider* resource_provider,
@@ -68,8 +72,6 @@ class VIZ_SERVICE_EXPORT OverlayStrategySingleOnTop
 
   ResourceId previous_frame_resource_id_ = kInvalidResourceId;
   size_t same_resource_id_frames_count_ = 0;
-
-  DISALLOW_COPY_AND_ASSIGN(OverlayStrategySingleOnTop);
 };
 
 }  // namespace viz

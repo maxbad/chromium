@@ -9,16 +9,17 @@
 #include <memory>
 #include <utility>
 
+#include "base/json/values_util.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/time/time.h"
-#include "base/util/values/values_util.h"
 #include "base/values.h"
 #include "components/account_id/account_id.h"
 #include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/scoped_user_pref_update.h"
 #include "components/user_manager/user_manager.h"
 #include "google_apis/gaia/gaia_auth_util.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace user_manager {
 namespace {
@@ -76,7 +77,8 @@ const char kIsEphemeral[] = "is_ephemeral";
 const char kChallengeResponseKeys[] = "challenge_response_keys";
 
 const char kLastOnlineSignin[] = "last_online_singin";
-const char kOfflineSigninLimit[] = "offline_signin_limit";
+const char kOfflineSigninLimitObsolete[] = "offline_signin_limit";
+const char kOfflineSigninLimit[] = "offline_signin_limit2";
 
 // Key of the boolean flag telling if user is enterprise managed.
 const char kIsEnterpriseManaged[] = "is_enterprise_managed";
@@ -97,6 +99,12 @@ const char kPinAutosubmitBackfillNeeded[] = "pin_autosubmit_backfill_needed";
 
 // Sync token for SAML password multi-device sync
 const char kPasswordSyncToken[] = "password_sync_token";
+
+// Major version in which the user completed the onboarding flow.
+const char kOnboardingCompletedVersion[] = "onboarding_completed_version";
+
+// Last screen shown in the onboarding flow.
+const char kPendingOnboardingScreen[] = "onboarding_screen_pending";
 
 // List containing all the known user preferences keys.
 const char* kReservedKeys[] = {kCanonicalEmail,
@@ -119,12 +127,15 @@ const char* kReservedKeys[] = {kCanonicalEmail,
                                kLastInputMethod,
                                kPinAutosubmitLength,
                                kPinAutosubmitBackfillNeeded,
-                               kPasswordSyncToken};
+                               kPasswordSyncToken,
+                               kOnboardingCompletedVersion,
+                               kPendingOnboardingScreen};
 
 // List containing all known user preference keys that used to be reserved and
 // are now obsolete.
 const char* kObsoleteKeys[] = {
     kMinimalMigrationAttemptedObsolete,
+    kOfflineSigninLimitObsolete,
 };
 
 PrefService* GetLocalStateLegacy() {
@@ -213,11 +224,14 @@ bool KnownUser::FindPrefs(const AccountId& account_id,
     return false;
 
   const base::ListValue* known_users = local_state_->GetList(kKnownUsers);
-  for (size_t i = 0; i < known_users->GetSize(); ++i) {
-    const base::DictionaryValue* element = nullptr;
-    if (known_users->GetDictionary(i, &element)) {
-      if (UserMatches(account_id, *element)) {
-        known_users->GetDictionary(i, out_value);
+  for (const base::Value& element_value : known_users->GetList()) {
+    if (element_value.is_dict()) {
+      const base::DictionaryValue& element =
+          base::Value::AsDictionaryValue(element_value);
+      if (UserMatches(account_id, element)) {
+        if (out_value)
+          *out_value = &element;
+
         return true;
       }
     }
@@ -239,9 +253,10 @@ void KnownUser::UpdatePrefs(const AccountId& account_id,
     return;
 
   ListPrefUpdate update(local_state_, kKnownUsers);
-  for (size_t i = 0; i < update->GetSize(); ++i) {
-    base::DictionaryValue* element = nullptr;
-    if (update->GetDictionary(i, &element)) {
+  for (base::Value& element_value : update->GetList()) {
+    if (element_value.is_dict()) {
+      base::DictionaryValue* element =
+          static_cast<base::DictionaryValue*>(&element_value);
       if (UserMatches(account_id, *element)) {
         if (clear)
           element->Clear();
@@ -282,7 +297,12 @@ bool KnownUser::GetBooleanPref(const AccountId& account_id,
   if (!FindPrefs(account_id, &user_pref_dict))
     return false;
 
-  return user_pref_dict->GetBoolean(path, out_value);
+  absl::optional<bool> ret_value = user_pref_dict->FindBoolPath(path);
+  if (!ret_value.has_value())
+    return false;
+
+  *out_value = ret_value.value();
+  return true;
 }
 
 void KnownUser::SetBooleanPref(const AccountId& account_id,
@@ -415,18 +435,19 @@ std::vector<AccountId> KnownUser::GetKnownAccountIds() {
   std::vector<AccountId> result;
 
   const base::ListValue* known_users = local_state_->GetList(kKnownUsers);
-  for (size_t i = 0; i < known_users->GetSize(); ++i) {
-    const base::DictionaryValue* element = nullptr;
-    if (known_users->GetDictionary(i, &element)) {
+  for (const base::Value& element_value : known_users->GetList()) {
+    if (element_value.is_dict()) {
+      const base::DictionaryValue& element =
+          base::Value::AsDictionaryValue(element_value);
       std::string email;
       std::string gaia_id;
       std::string obj_guid;
-      const bool has_email = element->GetString(kCanonicalEmail, &email);
-      const bool has_gaia_id = element->GetString(kGAIAIdKey, &gaia_id);
-      const bool has_obj_guid = element->GetString(kObjGuidKey, &obj_guid);
+      const bool has_email = element.GetString(kCanonicalEmail, &email);
+      const bool has_gaia_id = element.GetString(kGAIAIdKey, &gaia_id);
+      const bool has_obj_guid = element.GetString(kObjGuidKey, &obj_guid);
       AccountType account_type = AccountType::GOOGLE;
       std::string account_type_string;
-      if (element->GetString(kAccountTypeKey, &account_type_string)) {
+      if (element.GetString(kAccountTypeKey, &account_type_string)) {
         account_type = AccountId::StringToAccountType(account_type_string);
       }
       switch (account_type) {
@@ -485,13 +506,6 @@ void KnownUser::SetIsEphemeralUser(const AccountId& account_id,
   if (account_id.GetAccountType() != AccountType::ACTIVE_DIRECTORY)
     return;
   SetBooleanPref(account_id, kIsEphemeral, is_ephemeral);
-}
-
-void KnownUser::UpdateGaiaID(const AccountId& account_id,
-                             const std::string& gaia_id) {
-  SetStringPref(account_id, kGAIAIdKey, gaia_id);
-  SetStringPref(account_id, kAccountTypeKey,
-                AccountId::AccountTypeToString(AccountType::GOOGLE));
 }
 
 void KnownUser::UpdateId(const AccountId& account_id) {
@@ -617,14 +631,14 @@ base::Value KnownUser::GetChallengeResponseKeys(const AccountId& account_id) {
 
 void KnownUser::SetLastOnlineSignin(const AccountId& account_id,
                                     base::Time time) {
-  SetPref(account_id, kLastOnlineSignin, util::TimeToValue(time));
+  SetPref(account_id, kLastOnlineSignin, base::TimeToValue(time));
 }
 
 base::Time KnownUser::GetLastOnlineSignin(const AccountId& account_id) {
   const base::Value* value = nullptr;
   if (!GetPref(account_id, kLastOnlineSignin, &value))
     return base::Time();
-  absl::optional<base::Time> time = util::ValueToTime(value);
+  absl::optional<base::Time> time = base::ValueToTime(value);
   if (!time)
     return base::Time();
   return *time;
@@ -637,7 +651,7 @@ void KnownUser::SetOfflineSigninLimit(
     ClearPref(account_id, kOfflineSigninLimit);
   } else {
     SetPref(account_id, kOfflineSigninLimit,
-            util::TimeDeltaToValue(time_delta.value()));
+            base::TimeDeltaToValue(time_delta.value()));
   }
 }
 
@@ -646,7 +660,7 @@ absl::optional<base::TimeDelta> KnownUser::GetOfflineSigninLimit(
   const base::Value* value = nullptr;
   if (!GetPref(account_id, kOfflineSigninLimit, &value))
     return absl::nullopt;
-  absl::optional<base::TimeDelta> time_delta = util::ValueToTimeDelta(value);
+  absl::optional<base::TimeDelta> time_delta = base::ValueToTimeDelta(value);
   return time_delta;
 }
 
@@ -672,14 +686,15 @@ bool KnownUser::GetAccountManager(const AccountId& account_id,
   return GetStringPref(account_id, kAccountManager, manager);
 }
 
-void KnownUser::SetUserLastLoginInputMethod(const AccountId& account_id,
-                                            const std::string& input_method) {
-  SetStringPref(account_id, kLastInputMethod, input_method);
+void KnownUser::SetUserLastLoginInputMethodId(
+    const AccountId& account_id,
+    const std::string& input_method_id) {
+  SetStringPref(account_id, kLastInputMethod, input_method_id);
 }
 
-bool KnownUser::GetUserLastInputMethod(const AccountId& account_id,
-                                       std::string* input_method) {
-  return GetStringPref(account_id, kLastInputMethod, input_method);
+bool KnownUser::GetUserLastInputMethodId(const AccountId& account_id,
+                                         std::string* input_method_id) {
+  return GetStringPref(account_id, kLastInputMethod, input_method_id);
 }
 
 void KnownUser::SetUserPinLength(const AccountId& account_id, int pin_length) {
@@ -721,6 +736,51 @@ std::string KnownUser::GetPasswordSyncToken(const AccountId& account_id) {
   if (GetStringPref(account_id, kPasswordSyncToken, &token))
     return token;
   // Return empty string if sync token was not set for the account yet.
+  return std::string();
+}
+
+void KnownUser::SetOnboardingCompletedVersion(
+    const AccountId& account_id,
+    const absl::optional<base::Version> version) {
+  if (!version) {
+    ClearPref(account_id, kOnboardingCompletedVersion);
+  } else {
+    SetStringPref(account_id, kOnboardingCompletedVersion,
+                  version.value().GetString());
+  }
+}
+
+absl::optional<base::Version> KnownUser::GetOnboardingCompletedVersion(
+    const AccountId& account_id) {
+  std::string str_version;
+  if (!GetStringPref(account_id, kOnboardingCompletedVersion, &str_version))
+    return absl::nullopt;
+
+  base::Version version = base::Version(str_version);
+  if (!version.IsValid())
+    return absl::nullopt;
+  return version;
+}
+
+void KnownUser::RemoveOnboardingCompletedVersionForTests(
+    const AccountId& account_id) {
+  ClearPref(account_id, kOnboardingCompletedVersion);
+}
+
+void KnownUser::SetPendingOnboardingScreen(const AccountId& account_id,
+                                           const std::string& screen) {
+  SetStringPref(account_id, kPendingOnboardingScreen, screen);
+}
+
+void KnownUser::RemovePendingOnboardingScreen(const AccountId& account_id) {
+  ClearPref(account_id, kPendingOnboardingScreen);
+}
+
+std::string KnownUser::GetPendingOnboardingScreen(const AccountId& account_id) {
+  std::string screen;
+  if (GetStringPref(account_id, kPendingOnboardingScreen, &screen))
+    return screen;
+  // Return empty string if no screen is pending.
   return std::string();
 }
 
@@ -970,14 +1030,6 @@ void SaveKnownUser(const AccountId& account_id) {
   return KnownUser(local_state).SaveKnownUser(account_id);
 }
 
-void UpdateGaiaID(const AccountId& account_id, const std::string& gaia_id) {
-  PrefService* local_state = GetLocalStateLegacy();
-  // Local State may not be initialized in tests.
-  if (!local_state)
-    return;
-  return KnownUser(local_state).UpdateGaiaID(account_id, gaia_id);
-}
-
 void UpdateId(const AccountId& account_id) {
   PrefService* local_state = GetLocalStateLegacy();
   // Local State may not be initialized in tests.
@@ -1190,24 +1242,24 @@ bool GetAccountManager(const AccountId& account_id, std::string* manager) {
   return KnownUser(local_state).GetAccountManager(account_id, manager);
 }
 
-void SetUserLastLoginInputMethod(const AccountId& account_id,
-                                 const std::string& input_method) {
+void SetUserLastLoginInputMethodId(const AccountId& account_id,
+                                   const std::string& input_method_id) {
   PrefService* local_state = GetLocalStateLegacy();
   // Local State may not be initialized in tests.
   if (!local_state)
     return;
   return KnownUser(local_state)
-      .SetUserLastLoginInputMethod(account_id, input_method);
+      .SetUserLastLoginInputMethodId(account_id, input_method_id);
 }
 
-bool GetUserLastInputMethod(const AccountId& account_id,
-                            std::string* input_method) {
+bool GetUserLastInputMethodId(const AccountId& account_id,
+                              std::string* input_method_id) {
   PrefService* local_state = GetLocalStateLegacy();
   // Local State may not be initialized in tests.
   if (!local_state)
     return false;
   return KnownUser(local_state)
-      .GetUserLastInputMethod(account_id, input_method);
+      .GetUserLastInputMethodId(account_id, input_method_id);
 }
 
 void SetUserPinLength(const AccountId& account_id, int pin_length) {

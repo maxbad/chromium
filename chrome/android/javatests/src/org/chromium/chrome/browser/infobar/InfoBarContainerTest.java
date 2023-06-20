@@ -29,6 +29,7 @@ import org.chromium.base.test.util.CommandLineFlags;
 import org.chromium.base.test.util.Criteria;
 import org.chromium.base.test.util.CriteriaHelper;
 import org.chromium.base.test.util.Feature;
+import org.chromium.base.test.util.RequiresRestart;
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.flags.ChromeSwitches;
 import org.chromium.chrome.browser.privacy.settings.PrivacyPreferencesManagerImpl;
@@ -101,7 +102,7 @@ public class InfoBarContainerTest {
         // Register for animation notifications
         InfoBarContainer container = sActivityTestRule.getInfoBarContainer();
         mListener = new InfoBarTestAnimationListener();
-        container.addAnimationListener(mListener);
+        TestThreadUtils.runOnUiThreadBlocking(() -> container.addAnimationListener(mListener));
     }
 
     @After
@@ -109,8 +110,8 @@ public class InfoBarContainerTest {
         // Unregister animation notifications
         InfoBarContainer container = sActivityTestRule.getInfoBarContainer();
         if (container != null) {
-            container.removeAnimationListener(mListener);
             TestThreadUtils.runOnUiThreadBlocking(() -> {
+                container.removeAnimationListener(mListener);
                 InfoBarContainer.removeInfoBarContainerForTesting(
                         sActivityTestRule.getActivity().getActivityTab());
             });
@@ -308,6 +309,7 @@ public class InfoBarContainerTest {
     @Test
     @MediumTest
     @Feature({"Browser"})
+    @RequiresRestart("crbug.com/1242720")
     public void testAddAndDismissSurfaceFlingerOverlays() throws Exception {
         final ViewGroup decorView =
                 (ViewGroup) sActivityTestRule.getActivity().getWindow().getDecorView();
@@ -372,24 +374,20 @@ public class InfoBarContainerTest {
         dismissInfoBar(infoBar, infobarListener);
 
         // A layout must occur to recalculate the transparent region.
-        CriteriaHelper.pollUiThread(
-                () -> Criteria.checkThat(layoutCount.get(), Matchers.greaterThan(0)));
+        CriteriaHelper.pollUiThread(() -> {
+            Criteria.checkThat(layoutCount.get(), Matchers.greaterThan(0));
+            // The InfoBarContainer should no longer be subtracted from the transparent region.
+            // We really want assertTrue(transparentRegion.contains(containerDisplayFrame)),
+            // but region doesn't have 'contains(Rect)', so we invert the test. So, the old
+            // container rect can't touch the bounding rect of the non-transparent region).
+            Region transparentRegion = new Region();
+            decorView.gatherTransparentRegion(transparentRegion);
+            Region opaqueRegion = new Region(fullDisplayFrame);
+            opaqueRegion.op(transparentRegion, Region.Op.DIFFERENCE);
+            Criteria.checkThat("Opaque region " + opaqueRegion.getBounds()
+                            + " should not intersect " + containerDisplayFrame,
+                    opaqueRegion.getBounds().intersect(containerDisplayFrame), Matchers.is(false));
 
-        InstrumentationRegistry.getInstrumentation().runOnMainSync(new Runnable() {
-            @Override
-            public void run() {
-                // The InfoBarContainer should no longer be subtracted from the transparent region.
-                // We really want assertTrue(transparentRegion.contains(containerDisplayFrame)),
-                // but region doesn't have 'contains(Rect)', so we invert the test. So, the old
-                // container rect can't touch the bounding rect of the non-transparent region).
-                Region transparentRegion = new Region();
-                decorView.gatherTransparentRegion(transparentRegion);
-                Region opaqueRegion = new Region(fullDisplayFrame);
-                opaqueRegion.op(transparentRegion, Region.Op.DIFFERENCE);
-                Assert.assertFalse("Opaque region " + opaqueRegion.getBounds()
-                                + " should not intersect " + containerDisplayFrame,
-                        opaqueRegion.getBounds().intersect(containerDisplayFrame));
-            }
         });
 
         // Additional manual test that this is working:

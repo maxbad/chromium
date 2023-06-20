@@ -99,6 +99,15 @@ MATCHER_P(HasExactlyExclusionReasonsForTesting, reasons, "") {
       result_listener);
 }
 
+// Helper for checking that status.HasExactlyWarningReasonsForTesting(reasons)
+// == true.
+MATCHER_P(HasExactlyWarningReasonsForTesting, reasons, "") {
+  const CookieInclusionStatus status = arg;
+  return testing::ExplainMatchResult(
+      true, status.HasExactlyWarningReasonsForTesting(reasons),
+      result_listener);
+}
+
 MATCHER(ShouldWarn, "") {
   net::CookieInclusionStatus status = arg;
   return testing::ExplainMatchResult(true, status.ShouldWarn(),
@@ -122,6 +131,23 @@ MATCHER_P4(MatchesCookieAccessResult,
          testing::ExplainMatchResult(is_allowed_to_access_secure_cookies,
                                      car.is_allowed_to_access_secure_cookies,
                                      result_listener);
+}
+
+MATCHER_P3(MatchesCookieAndLineWithAccessResult,
+           cookie,
+           line,
+           access_result,
+           "") {
+  const CookieAndLineWithAccessResult& cookie_and_line_with_access_result = arg;
+  return testing::ExplainMatchResult(cookie,
+                                     cookie_and_line_with_access_result.cookie,
+                                     result_listener) &&
+         testing::ExplainMatchResult(
+             line, cookie_and_line_with_access_result.cookie_string,
+             result_listener) &&
+         testing::ExplainMatchResult(
+             access_result, cookie_and_line_with_access_result.access_result,
+             result_listener);
 }
 
 }  // namespace net

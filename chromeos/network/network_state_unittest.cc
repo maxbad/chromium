@@ -10,7 +10,6 @@
 #include <utility>
 
 #include "base/i18n/streaming_utf8_validator.h"
-#include "base/macros.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/test/task_environment.h"
 #include "base/values.h"
@@ -32,6 +31,9 @@ const char kTestCellularDeviceName[] = "cellular_name";
 class NetworkStateTest : public testing::Test {
  public:
   NetworkStateTest() : network_state_("test_path") {}
+
+  NetworkStateTest(const NetworkStateTest&) = delete;
+  NetworkStateTest& operator=(const NetworkStateTest&) = delete;
 
   // testing::Test:
   void SetUp() override { AddCellularDevice(); }
@@ -69,8 +71,6 @@ class NetworkStateTest : public testing::Test {
   NetworkStateTestHelper helper_{/*use_default_devices_and_services=*/false};
 
   base::DictionaryValue properties_;
-
-  DISALLOW_COPY_AND_ASSIGN(NetworkStateTest);
 };
 
 }  // namespace
@@ -148,10 +148,9 @@ TEST_F(NetworkStateTest, SsidHex) {
   // Check HexSSID via network state dictionary.
   base::DictionaryValue dictionary;
   network_state_.GetStateProperties(&dictionary);
-  std::string value;
-  EXPECT_TRUE(
-      dictionary.GetStringWithoutPathExpansion(shill::kWifiHexSsid, &value));
-  EXPECT_EQ(wifi_hex, value);
+  std::string* value = dictionary.FindStringKey(shill::kWifiHexSsid);
+  EXPECT_NE(nullptr, value);
+  EXPECT_EQ(wifi_hex, *value);
 }
 
 // Non-UTF-8 SSID should be preserved in |raw_ssid_| field.
@@ -247,6 +246,13 @@ TEST_F(NetworkStateTest, VPNArcProvider) {
   ASSERT_TRUE(network_state_.vpn_provider());
   EXPECT_EQ(network_state_.vpn_provider()->type, shill::kProviderArcVpn);
   EXPECT_EQ(network_state_.vpn_provider()->id, "package.name.foo");
+}
+
+TEST_F(NetworkStateTest, AllowRoaming) {
+  EXPECT_FALSE(network_state_.allow_roaming());
+  EXPECT_TRUE(SetProperty(shill::kCellularAllowRoamingProperty,
+                          std::make_unique<base::Value>(true)));
+  EXPECT_TRUE(network_state_.allow_roaming());
 }
 
 TEST_F(NetworkStateTest, Visible) {
@@ -361,10 +367,9 @@ TEST_F(NetworkStateTest, TetherProperties) {
   EXPECT_TRUE(tether_has_connected_to_host.has_value());
   EXPECT_TRUE(tether_has_connected_to_host.value());
 
-  std::string carrier;
-  EXPECT_TRUE(
-      dictionary.GetStringWithoutPathExpansion(kTetherCarrier, &carrier));
-  EXPECT_EQ("Project Fi", carrier);
+  std::string* carrier = dictionary.FindStringKey(kTetherCarrier);
+  EXPECT_NE(nullptr, carrier);
+  EXPECT_EQ("Project Fi", *carrier);
 }
 
 TEST_F(NetworkStateTest, CelularPaymentPortalPost) {

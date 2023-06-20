@@ -36,6 +36,7 @@
 #include "ui/views/controls/base_control_test_widget.h"
 #include "ui/views/controls/link.h"
 #include "ui/views/style/typography.h"
+#include "ui/views/test/ax_event_counter.h"
 #include "ui/views/test/focus_manager_test.h"
 #include "ui/views/test/view_metadata_test_utils.h"
 #include "ui/views/test/views_test_base.h"
@@ -62,6 +63,9 @@ class TestLabel : public Label {
  public:
   TestLabel() : Label(u"TestLabel") { SizeToPreferredSize(); }
 
+  TestLabel(const TestLabel&) = delete;
+  TestLabel& operator=(const TestLabel&) = delete;
+
   int schedule_paint_count() const { return schedule_paint_count_; }
 
   void SimulatePaint() {
@@ -81,8 +85,6 @@ class TestLabel : public Label {
 
  private:
   int schedule_paint_count_ = 0;
-
-  DISALLOW_COPY_AND_ASSIGN(TestLabel);
 };
 
 // A test utility function to set the application default text direction.
@@ -144,6 +146,9 @@ class LabelSelectionTest : public LabelTest {
 
   LabelSelectionTest() = default;
 
+  LabelSelectionTest(const LabelSelectionTest&) = delete;
+  LabelSelectionTest& operator=(const LabelSelectionTest&) = delete;
+
   // LabelTest overrides:
   void SetUp() override {
     LabelTest::SetUp();
@@ -187,7 +192,7 @@ class LabelSelectionTest : public LabelTest {
     label()->OnPaint(&canvas);
   }
 
-  gfx::Point GetCursorPoint(int index) {
+  gfx::Point GetCursorPoint(uint32_t index) {
     SimulatePaint();
     gfx::RenderText* render_text =
         label()->GetRenderTextForSelectionController();
@@ -233,8 +238,6 @@ class LabelSelectionTest : public LabelTest {
 
  private:
   std::unique_ptr<ui::test::EventGenerator> event_generator_;
-
-  DISALLOW_COPY_AND_ASSIGN(LabelSelectionTest);
 };
 
 TEST_F(LabelTest, Metadata) {
@@ -640,6 +643,24 @@ TEST_F(LabelTest, Accessibility) {
   label()->GetAccessibleNodeData(&node_data);
   EXPECT_EQ(label()->GetText(),
             node_data.GetString16Attribute(ax::mojom::StringAttribute::kName));
+}
+
+TEST_F(LabelTest, SetTextNotifiesAccessibilityEvent) {
+  test::AXEventCounter counter(views::AXEventManager::Get());
+
+  // Changing the text affects the accessible name, so it should notify.
+  EXPECT_EQ(0, counter.GetCount(ax::mojom::Event::kTextChanged));
+  label()->SetText(u"Example");
+  EXPECT_EQ(u"Example", label()->GetAccessibleName());
+  EXPECT_EQ(1, counter.GetCount(ax::mojom::Event::kTextChanged));
+
+  // Changing the text when it doesn't affect the accessible name should not
+  // notify.
+  label()->SetAccessibleName(u"Name");
+  EXPECT_EQ(2, counter.GetCount(ax::mojom::Event::kTextChanged));
+  label()->SetText(u"Example2");
+  EXPECT_EQ(u"Name", label()->GetAccessibleName());
+  EXPECT_EQ(2, counter.GetCount(ax::mojom::Event::kTextChanged));
 }
 
 TEST_F(LabelTest, TextChangeWithoutLayout) {

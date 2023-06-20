@@ -20,7 +20,7 @@
 #include "components/assist_ranker/proto/example_preprocessor.pb.h"
 #include "components/assist_ranker/proto/ranker_example.pb.h"
 
-namespace chromeos {
+namespace ash {
 namespace power {
 namespace ml {
 
@@ -295,7 +295,8 @@ void SmartDimMlAgent::RequestDimDecision(
   base::flat_map<std::string, TensorPtr> inputs;
   auto tensor = Tensor::New();
   tensor->shape = Int64List::New();
-  tensor->shape->value = std::vector<int64_t>({1, vectorized_features.size()});
+  tensor->shape->value = std::vector<int64_t>(
+      {1, static_cast<int64_t>(vectorized_features.size())});
   tensor->data = ValueList::New();
   tensor->data->set_float_list(FloatList::New());
   tensor->data->get_float_list()->value = std::vector<double>(
@@ -345,4 +346,4 @@ SmartDimWorker* SmartDimMlAgent::GetWorker() {
 
 }  // namespace ml
 }  // namespace power
-}  // namespace chromeos
+}  // namespace ash

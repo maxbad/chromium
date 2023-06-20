@@ -7,7 +7,12 @@
 
 #include <vector>
 
+#include "base/test/bind.h"
+#include "base/time/time.h"
+#include "components/history/core/browser/history_service.h"
 #include "components/history/core/browser/history_types.h"
+#include "components/history/core/test/history_service_test_util.h"
+#include "components/history_clusters/core/clustering_backend.h"
 #include "components/history_clusters/core/history_clusters_service.h"
 
 namespace history_clusters {
@@ -15,19 +20,41 @@ namespace history_clusters {
 class HistoryClustersServiceTestApi {
  public:
   explicit HistoryClustersServiceTestApi(
-      HistoryClustersService* history_clusters_service)
-      : history_clusters_service_(history_clusters_service) {}
+      HistoryClustersService* history_clusters_service,
+      history::HistoryService* history_service)
+      : history_clusters_service_(history_clusters_service),
+        history_service_(history_service) {}
 
-  std::vector<history::AnnotatedVisit> GetVisits() const {
-    return history_clusters_service_->visits_;
+  // Gets the annotated visits from HistoryService synchronously for testing.
+  std::vector<history::AnnotatedVisit> GetVisits() {
+    std::vector<history::AnnotatedVisit> annotated_visits;
+
+    base::CancelableTaskTracker tracker;
+    history::QueryOptions options;
+    options.duplicate_policy = history::QueryOptions::KEEP_ALL_DUPLICATES;
+    history_service_->GetAnnotatedVisits(
+        options,
+        base::BindLambdaForTesting(
+            [&](std::vector<history::AnnotatedVisit> visits) {
+              annotated_visits = std::move(visits);
+            }),
+        &tracker);
+    history::BlockUntilHistoryProcessesPendingRequests(history_service_);
+
+    return annotated_visits;
   }
 
-  base::CancelableTaskTracker& GetCacheQueryTaskTracker() {
-    return history_clusters_service_->cache_query_task_tracker_;
+  void SetClusteringBackendForTest(std::unique_ptr<ClusteringBackend> backend) {
+    DCHECK(backend.get());
+    history_clusters_service_->backend_ = std::move(backend);
   }
 
-  HistoryClustersService* history_clusters_service_;
+  HistoryClustersService* const history_clusters_service_;
+  history::HistoryService* const history_service_;
 };
+
+// Fetches two hardcoded test visits.
+std::vector<history::AnnotatedVisit> GetHardcodedTestVisits();
 
 }  // namespace history_clusters
 

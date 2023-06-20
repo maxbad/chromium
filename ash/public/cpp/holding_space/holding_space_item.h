@@ -9,6 +9,7 @@
 #include <string>
 
 #include "ash/public/cpp/ash_public_export.h"
+#include "ash/public/cpp/holding_space/holding_space_progress.h"
 #include "base/callback_forward.h"
 #include "base/callback_list.h"
 #include "base/files/file_path.h"
@@ -41,7 +42,8 @@ class ASH_PUBLIC_EXPORT HoldingSpaceItem {
     kDiagnosticsLog = 7,
     kLacrosDownload = 8,
     kScan = 9,
-    kMaxValue = kScan,
+    kPhoneHubCameraRoll = 10,
+    kMaxValue = kPhoneHubCameraRoll,
   };
 
   HoldingSpaceItem(const HoldingSpaceItem&) = delete;
@@ -64,12 +66,11 @@ class ASH_PUBLIC_EXPORT HoldingSpaceItem {
 
   // Creates a HoldingSpaceItem that's backed by a file system URL.
   // NOTE: `file_system_url` is expected to be non-empty.
-  // NOTE: If present, `progress` must be >= `0.f` and <= `1.f`.
   static std::unique_ptr<HoldingSpaceItem> CreateFileBackedItem(
       Type type,
       const base::FilePath& file_path,
       const GURL& file_system_url,
-      const absl::optional<float>& progress,
+      const HoldingSpaceProgress& progress,
       ImageResolver image_resolver);
 
   // Returns `true` if `type` is a download type, `false` otherwise.
@@ -109,14 +110,33 @@ class ASH_PUBLIC_EXPORT HoldingSpaceItem {
   bool SetBackingFile(const base::FilePath& file_path,
                       const GURL& file_system_url);
 
-  // Returns whether the item is in progress.
-  bool IsInProgress() const;
+  // Returns `text_`, falling back to the lossy display name of the item's
+  // backing file if absent.
+  std::u16string GetText() const;
+
+  // Sets the text that should be shown for the item, returning `true` if a
+  // change occurred or `false` to indicate no-op. If absent, the lossy display
+  // name of the item's backing file will be used.
+  bool SetText(const absl::optional<std::u16string>& text);
+
+  // Sets the secondary text that should be shown for the item, returning `true`
+  // if a change occurred or `false` to indicate no-op.
+  bool SetSecondaryText(const absl::optional<std::u16string>& secondary_text);
+
+  // Returns `accessible_name_`, falling back to a concatenation of primary
+  // and secondary text if absent.
+  std::u16string GetAccessibleName() const;
+
+  // Sets the accessible name that should be used for the item, returning `true`
+  // if a change occurred or `false` to indicate no-op. Note that if the
+  // accessible name is absent, `GetAccessibleName()` will fallback to a
+  // concatenation of primary and secondary text.
+  bool SetAccessibleName(const absl::optional<std::u16string>& accessible_name);
 
   // Sets the `progress_` of the item, returning `true` if a change occurred or
   // `false` to indicate no-op.
-  // NOTE: If present, `progress` must be >= `0.f` and <= `1.f`.
   // NOTE: Progress can only be updated for in progress items.
-  bool SetProgress(const absl::optional<float>& progress);
+  bool SetProgress(const HoldingSpaceProgress& progress);
 
   // Invalidates the current holding space image, so fresh image representations
   // are loaded when the image is next needed.
@@ -138,7 +158,9 @@ class ASH_PUBLIC_EXPORT HoldingSpaceItem {
 
   Type type() const { return type_; }
 
-  const std::u16string& text() const { return text_; }
+  const absl::optional<std::u16string>& secondary_text() const {
+    return secondary_text_;
+  }
 
   const HoldingSpaceImage& image() const { return *image_; }
 
@@ -146,7 +168,7 @@ class ASH_PUBLIC_EXPORT HoldingSpaceItem {
 
   const GURL& file_system_url() const { return file_system_url_; }
 
-  const absl::optional<float>& progress() const { return progress_; }
+  const HoldingSpaceProgress& progress() const { return progress_; }
 
   HoldingSpaceImage& image_for_testing() { return *image_; }
 
@@ -156,9 +178,8 @@ class ASH_PUBLIC_EXPORT HoldingSpaceItem {
                    const std::string& id,
                    const base::FilePath& file_path,
                    const GURL& file_system_url,
-                   const std::u16string& text,
                    std::unique_ptr<HoldingSpaceImage> image,
-                   const absl::optional<float>& progress);
+                   const HoldingSpaceProgress& progress);
 
   const Type type_;
 
@@ -172,15 +193,19 @@ class ASH_PUBLIC_EXPORT HoldingSpaceItem {
   GURL file_system_url_;
 
   // If set, the text that should be shown for the item.
-  std::u16string text_;
+  absl::optional<std::u16string> text_;
+
+  // If set, the secondary text that should be shown for the item.
+  absl::optional<std::u16string> secondary_text_;
+
+  // If set, the accessible name that should be used for the item.
+  absl::optional<std::u16string> accessible_name_;
 
   // The image representation of the item.
   std::unique_ptr<HoldingSpaceImage> image_;
 
   // The progress of the item.
-  // NOTE: If present, the value is >= `0.f` and <= `1.f`.
-  // NOTE: If absent, `progress_` is indeterminate.
-  absl::optional<float> progress_;
+  HoldingSpaceProgress progress_;
 
   // Whether or not progress of this item is paused.
   // NOTE: Only in-progress items can be paused.

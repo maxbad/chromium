@@ -9,6 +9,7 @@
 #include "base/pickle.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/thread_pool/thread_pool_instance.h"
+#include "base/test/bind.h"
 #include "components/exo/data_source.h"
 #include "components/exo/data_source_delegate.h"
 #include "components/exo/seat_observer.h"
@@ -16,6 +17,7 @@
 #include "components/exo/test/exo_test_base.h"
 #include "components/exo/test/exo_test_data_exchange_delegate.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/clipboard/clipboard_format_type.h"
 #include "ui/base/clipboard/scoped_clipboard_writer.h"
@@ -28,28 +30,25 @@ namespace {
 
 using SeatTest = test::ExoTestBase;
 
-class MockSeatObserver : public SeatObserver {
+class TestSeatObserver : public SeatObserver {
  public:
-  int on_surface_focused_count() { return on_surface_focused_count_; }
+  explicit TestSeatObserver(const base::RepeatingClosure& callback)
+      : callback_(callback) {}
 
   // Overridden from SeatObserver:
-  void OnSurfaceFocusing(Surface* gaining_focus) override {
-    ASSERT_EQ(on_surface_focused_count_, on_surface_pre_focused_count_);
-    on_surface_pre_focused_count_++;
-  }
-  void OnSurfaceFocused(Surface* gained_focus) override {
-    on_surface_focused_count_++;
-    ASSERT_EQ(on_surface_focused_count_, on_surface_pre_focused_count_);
-  }
+  void OnSurfaceFocused(Surface* gained_focus) override { callback_.Run(); }
 
  private:
-  int on_surface_pre_focused_count_ = 0;
-  int on_surface_focused_count_ = 0;
+  base::RepeatingClosure callback_;
 };
 
 class TestDataSourceDelegate : public DataSourceDelegate {
  public:
   TestDataSourceDelegate() {}
+
+  TestDataSourceDelegate(const TestDataSourceDelegate&) = delete;
+  TestDataSourceDelegate& operator=(const TestDataSourceDelegate&) = delete;
+
   bool cancelled() const { return cancelled_; }
 
   // Overridden from DataSourceDelegate:
@@ -78,8 +77,6 @@ class TestDataSourceDelegate : public DataSourceDelegate {
  private:
   bool cancelled_ = false;
   absl::optional<std::vector<uint8_t>> data_;
-
-  DISALLOW_COPY_AND_ASSIGN(TestDataSourceDelegate);
 };
 
 void RunReadingTask() {
@@ -105,15 +102,29 @@ class TestSeat : public Seat {
 
 TEST_F(SeatTest, OnSurfaceFocused) {
   TestSeat seat;
-  MockSeatObserver observer;
+  int callback_counter = 0;
+  absl::optional<int> observer1_counter;
+  TestSeatObserver observer1(base::BindLambdaForTesting(
+      [&]() { observer1_counter = callback_counter++; }));
+  absl::optional<int> observer2_counter;
+  TestSeatObserver observer2(base::BindLambdaForTesting(
+      [&]() { observer2_counter = callback_counter++; }));
 
-  seat.AddObserver(&observer);
+  // Register observers in the reversed order.
+  seat.AddObserver(&observer2, 1);
+  seat.AddObserver(&observer1, 0);
   seat.OnWindowFocused(nullptr, nullptr);
-  ASSERT_EQ(1, observer.on_surface_focused_count());
+  EXPECT_EQ(observer1_counter, 0);
+  EXPECT_EQ(observer2_counter, 1);
 
-  seat.RemoveObserver(&observer);
+  observer1_counter.reset();
+  observer2_counter.reset();
+  seat.RemoveObserver(&observer1);
+  seat.RemoveObserver(&observer2);
+
   seat.OnWindowFocused(nullptr, nullptr);
-  ASSERT_EQ(1, observer.on_surface_focused_count());
+  EXPECT_FALSE(observer1_counter.has_value());
+  EXPECT_FALSE(observer2_counter.has_value());
 }
 
 TEST_F(SeatTest, SetSelection) {
@@ -590,6 +601,26 @@ TEST_F(SeatTest, DragDropAbort) {
   EXPECT_TRUE(seat.get_drag_drop_operation_for_testing());
   seat.AbortPendingDragOperation();
   EXPECT_FALSE(seat.get_drag_drop_operation_for_testing());
+}
+
+TEST_F(SeatTest, CanSetFocusChangedCallbackMoreThanOnce) {
+  TestSeat seat;
+  bool cb_1_called = false;
+  bool cb_2_called = false;
+
+  seat.SetFocusChangedCallback(base::BindLambdaForTesting(
+      [&](Surface* a, Surface* b, bool gained_or_lost) {
+        cb_1_called = true;
+      }));
+  seat.SetFocusChangedCallback(base::BindLambdaForTesting(
+      [&](Surface* a, Surface* b, bool gained_or_lost) {
+        cb_2_called = true;
+      }));
+
+  seat.OnWindowFocused(nullptr, nullptr);
+
+  EXPECT_TRUE(cb_1_called);
+  EXPECT_TRUE(cb_2_called);
 }
 
 }  // namespace

@@ -20,10 +20,10 @@
 #include "base/hash/sha1.h"
 #include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_functions.h"
-#include "base/sequenced_task_runner.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/task/post_task.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/threading/sequenced_task_runner_handle.h"
 #include "base/time/time.h"
 #include "components/services/storage/public/cpp/constants.h"
@@ -45,8 +45,8 @@ bool DeleteDir(const base::FilePath& path) {
   return base::DeletePathRecursively(path);
 }
 
-void DeleteOriginDidDeleteDir(
-    storage::mojom::QuotaClient::DeleteOriginDataCallback callback,
+void DeleteStorageKeyDidDeleteDir(
+    storage::mojom::QuotaClient::DeleteStorageKeyDataCallback callback,
     bool rv) {
   // On scheduler sequence.
   base::SequencedTaskRunnerHandle::Get()->PostTask(
@@ -127,7 +127,7 @@ void RecordIndexValidationResult(IndexResult value) {
 // Open the various cache directories' index files and extract their storage
 // keys, sizes (if current), and last modified times.
 std::vector<storage::mojom::StorageUsageInfoPtr>
-GetOriginsAndLastModifiedOnTaskRunner(
+GetStorageKeysAndLastModifiedOnTaskRunner(
     std::vector<storage::mojom::StorageUsageInfoPtr> usages,
     base::FilePath root_path,
     storage::mojom::CacheStorageOwner owner) {
@@ -191,37 +191,39 @@ GetOriginsAndLastModifiedOnTaskRunner(
   return usages;
 }
 
-std::vector<url::Origin> ListOriginsOnTaskRunner(
+std::vector<blink::StorageKey> ListStorageKeysOnTaskRunner(
     base::FilePath root_path,
     storage::mojom::CacheStorageOwner owner) {
   std::vector<storage::mojom::StorageUsageInfoPtr> usages =
-      GetOriginsAndLastModifiedOnTaskRunner(
+      GetStorageKeysAndLastModifiedOnTaskRunner(
           std::vector<storage::mojom::StorageUsageInfoPtr>(), root_path, owner);
 
-  std::vector<url::Origin> out_origins;
+  std::vector<blink::StorageKey> out_storage_keys;
   for (const storage::mojom::StorageUsageInfoPtr& usage : usages)
-    out_origins.push_back(usage->origin);
+    out_storage_keys.emplace_back(blink::StorageKey(usage->origin));
 
-  return out_origins;
+  return out_storage_keys;
 }
 
-void GetOriginsForHostDidListOrigins(
+void GetStorageKeysForHostDidListStorageKeys(
     const std::string& host,
-    storage::mojom::QuotaClient::GetOriginsForHostCallback callback,
-    const std::vector<url::Origin>& origins) {
+    storage::mojom::QuotaClient::GetStorageKeysForHostCallback callback,
+    const std::vector<blink::StorageKey>& storage_keys) {
   // On scheduler sequence.
-  std::vector<url::Origin> out_origins;
-  for (const url::Origin& origin : origins) {
-    if (host == origin.host())
-      out_origins.push_back(origin);
+  std::vector<blink::StorageKey> out_storage_keys;
+  for (const blink::StorageKey& storage_key : storage_keys) {
+    if (host == storage_key.origin().host())
+      out_storage_keys.push_back(storage_key);
   }
   base::SequencedTaskRunnerHandle::Get()->PostTask(
-      FROM_HERE, base::BindOnce(std::move(callback), std::move(out_origins)));
+      FROM_HERE,
+      base::BindOnce(std::move(callback), std::move(out_storage_keys)));
 }
 
 void AllOriginSizesReported(
     std::vector<storage::mojom::StorageUsageInfoPtr> usages,
-    storage::mojom::CacheStorageControl::GetAllOriginsInfoCallback callback) {
+    storage::mojom::CacheStorageControl::GetAllStorageKeysInfoCallback
+        callback) {
   // On scheduler sequence.
   base::SequencedTaskRunnerHandle::Get()->PostTask(
       FROM_HERE, base::BindOnce(std::move(callback), std::move(usages)));
@@ -311,7 +313,7 @@ void LegacyCacheStorageManager::NotifyCacheListChanged(
     const blink::StorageKey& storage_key) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   for (const auto& observer : observers_)
-    observer->OnCacheListChanged(storage_key.origin());
+    observer->OnCacheListChanged(storage_key);
 }
 
 void LegacyCacheStorageManager::NotifyCacheContentChanged(
@@ -319,7 +321,7 @@ void LegacyCacheStorageManager::NotifyCacheContentChanged(
     const std::string& name) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   for (const auto& observer : observers_)
-    observer->OnCacheContentChanged(storage_key.origin(), name);
+    observer->OnCacheContentChanged(storage_key, name);
 }
 
 void LegacyCacheStorageManager::CacheStorageUnreferenced(
@@ -340,17 +342,18 @@ void LegacyCacheStorageManager::CacheStorageUnreferenced(
 
 void LegacyCacheStorageManager::GetAllStorageKeysUsage(
     storage::mojom::CacheStorageOwner owner,
-    storage::mojom::CacheStorageControl::GetAllOriginsInfoCallback callback) {
+    storage::mojom::CacheStorageControl::GetAllStorageKeysInfoCallback
+        callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   std::vector<storage::mojom::StorageUsageInfoPtr> usages;
 
   if (IsMemoryBacked()) {
-    for (const auto& origin_details : cache_storage_map_) {
-      if (origin_details.first.second != owner)
+    for (const auto& storage_keys_details : cache_storage_map_) {
+      if (storage_keys_details.first.second != owner)
         continue;
       usages.emplace_back(storage::mojom::StorageUsageInfo::New(
-          origin_details.first.first.origin(),
+          storage_keys_details.first.first.origin(),
           /*total_size_bytes=*/0,
           /*last_modified=*/base::Time()));
     }
@@ -360,14 +363,14 @@ void LegacyCacheStorageManager::GetAllStorageKeysUsage(
 
   cache_task_runner_->PostTaskAndReplyWithResult(
       FROM_HERE,
-      base::BindOnce(&GetOriginsAndLastModifiedOnTaskRunner, std::move(usages),
-                     root_path_, owner),
+      base::BindOnce(&GetStorageKeysAndLastModifiedOnTaskRunner,
+                     std::move(usages), root_path_, owner),
       base::BindOnce(&LegacyCacheStorageManager::GetAllStorageKeysUsageGetSizes,
                      base::WrapRefCounted(this), std::move(callback)));
 }
 
 void LegacyCacheStorageManager::GetAllStorageKeysUsageGetSizes(
-    storage::mojom::CacheStorageControl::GetAllOriginsInfoCallback callback,
+    storage::mojom::CacheStorageControl::GetAllStorageKeysInfoCallback callback,
     std::vector<storage::mojom::StorageUsageInfoPtr> usages) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
@@ -404,7 +407,7 @@ void LegacyCacheStorageManager::GetAllStorageKeysUsageGetSizes(
 void LegacyCacheStorageManager::GetStorageKeyUsage(
     const blink::StorageKey& storage_key,
     storage::mojom::CacheStorageOwner owner,
-    storage::mojom::QuotaClient::GetOriginUsageCallback callback) {
+    storage::mojom::QuotaClient::GetStorageKeyUsageCallback callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   CacheStorageHandle cache_storage = OpenCacheStorage(storage_key, owner);
@@ -413,56 +416,58 @@ void LegacyCacheStorageManager::GetStorageKeyUsage(
 
 void LegacyCacheStorageManager::GetStorageKeys(
     storage::mojom::CacheStorageOwner owner,
-    storage::mojom::QuotaClient::GetOriginsForTypeCallback callback) {
+    storage::mojom::QuotaClient::GetStorageKeysForTypeCallback callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   if (IsMemoryBacked()) {
-    std::vector<url::Origin> origins;
+    std::vector<blink::StorageKey> storage_keys;
     for (const auto& key_value : cache_storage_map_)
       if (key_value.first.second == owner)
-        origins.push_back(key_value.first.first.origin());
+        storage_keys.push_back(key_value.first.first);
 
     scheduler_task_runner_->PostTask(
-        FROM_HERE, base::BindOnce(std::move(callback), std::move(origins)));
+        FROM_HERE,
+        base::BindOnce(std::move(callback), std::move(storage_keys)));
     return;
   }
 
   PostTaskAndReplyWithResult(
       cache_task_runner_.get(), FROM_HERE,
-      base::BindOnce(&ListOriginsOnTaskRunner, root_path_, owner),
+      base::BindOnce(&ListStorageKeysOnTaskRunner, root_path_, owner),
       std::move(callback));
 }
 
 void LegacyCacheStorageManager::GetStorageKeysForHost(
     const std::string& host,
     storage::mojom::CacheStorageOwner owner,
-    storage::mojom::QuotaClient::GetOriginsForHostCallback callback) {
+    storage::mojom::QuotaClient::GetStorageKeysForHostCallback callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   if (IsMemoryBacked()) {
-    std::vector<url::Origin> origins;
+    std::vector<blink::StorageKey> storage_keys;
     for (const auto& key_value : cache_storage_map_) {
       if (key_value.first.second != owner)
         continue;
       if (host == key_value.first.first.origin().host())
-        origins.push_back(key_value.first.first.origin());
+        storage_keys.push_back(key_value.first.first);
     }
     scheduler_task_runner_->PostTask(
-        FROM_HERE, base::BindOnce(std::move(callback), std::move(origins)));
+        FROM_HERE,
+        base::BindOnce(std::move(callback), std::move(storage_keys)));
     return;
   }
 
   PostTaskAndReplyWithResult(
       cache_task_runner_.get(), FROM_HERE,
-      base::BindOnce(&ListOriginsOnTaskRunner, root_path_, owner),
-      base::BindOnce(&GetOriginsForHostDidListOrigins, host,
+      base::BindOnce(&ListStorageKeysOnTaskRunner, root_path_, owner),
+      base::BindOnce(&GetStorageKeysForHostDidListStorageKeys, host,
                      std::move(callback)));
 }
 
 void LegacyCacheStorageManager::DeleteStorageKeyData(
     const blink::StorageKey& storage_key,
     storage::mojom::CacheStorageOwner owner,
-    storage::mojom::QuotaClient::DeleteOriginDataCallback callback) {
+    storage::mojom::QuotaClient::DeleteStorageKeyDataCallback callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   // Create the CacheStorage for the origin if it hasn't been loaded yet.
@@ -495,7 +500,7 @@ void LegacyCacheStorageManager::AddObserver(
 void LegacyCacheStorageManager::DeleteStorageKeyDidClose(
     const blink::StorageKey& storage_key,
     storage::mojom::CacheStorageOwner owner,
-    storage::mojom::QuotaClient::DeleteOriginDataCallback callback,
+    storage::mojom::QuotaClient::DeleteStorageKeyDataCallback callback,
     std::unique_ptr<LegacyCacheStorage> cache_storage,
     int64_t origin_size) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
@@ -505,9 +510,8 @@ void LegacyCacheStorageManager::DeleteStorageKeyDidClose(
   cache_storage.reset();
 
   quota_manager_proxy_->NotifyStorageModified(
-      CacheStorageQuotaClient::GetClientTypeFromOwner(owner),
-      storage_key.origin(), blink::mojom::StorageType::kTemporary, -origin_size,
-      base::Time::Now());
+      CacheStorageQuotaClient::GetClientTypeFromOwner(owner), storage_key,
+      blink::mojom::StorageType::kTemporary, -origin_size, base::Time::Now());
 
   if (owner == storage::mojom::CacheStorageOwner::kCacheAPI)
     NotifyCacheListChanged(storage_key);
@@ -523,7 +527,7 @@ void LegacyCacheStorageManager::DeleteStorageKeyDidClose(
       cache_task_runner_.get(), FROM_HERE,
       base::BindOnce(&DeleteDir,
                      ConstructStorageKeyPath(root_path_, storage_key, owner)),
-      base::BindOnce(&DeleteOriginDidDeleteDir, std::move(callback)));
+      base::BindOnce(&DeleteStorageKeyDidDeleteDir, std::move(callback)));
 }
 
 LegacyCacheStorageManager::LegacyCacheStorageManager(

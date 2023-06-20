@@ -27,6 +27,7 @@
 #include "components/safe_browsing/core/common/safe_browsing_prefs.h"
 #include "components/sync/base/pref_names.h"
 #include "components/sync/base/sync_prefs.h"
+#include "components/sync/driver/glue/sync_transport_data_prefs.h"
 #include "components/sync_device_info/device_info_prefs.h"
 #include "components/translate/core/browser/translate_pref_names.h"
 #include "components/translate/core/browser/translate_prefs.h"
@@ -87,34 +88,34 @@ WebViewBrowserState::WebViewBrowserState(
       this, off_the_record ? profile_metrics::BrowserProfileType::kIncognito
                            : profile_metrics::BrowserProfileType::kRegular);
 
-  // IO access is required to setup the browser state. In Chrome, this is
-  // already allowed during thread startup. However, startup time of
-  // ChromeWebView is not predetermined, so IO access is temporarily allowed.
-  bool wasIOAllowed = base::ThreadRestrictions::SetIOAllowed(true);
+  {
+    // IO access is required to setup the browser state. In Chrome, this is
+    // already allowed during thread startup. However, startup time of
+    // ChromeWebView is not predetermined, so IO access is temporarily allowed.
+    base::ScopedAllowBlocking allow_blocking;
 
-  CHECK(base::PathService::Get(base::DIR_APP_DATA, &path_));
+    CHECK(base::PathService::Get(base::DIR_APP_DATA, &path_));
 
-  request_context_getter_ = new WebViewURLRequestContextGetter(
-      GetStatePath(), this, ApplicationContext::GetInstance()->GetNetLog(),
-      base::CreateSingleThreadTaskRunner({web::WebThread::IO}));
+    request_context_getter_ = new WebViewURLRequestContextGetter(
+        GetStatePath(), this, ApplicationContext::GetInstance()->GetNetLog(),
+        base::CreateSingleThreadTaskRunner({web::WebThread::IO}));
 
-  // Initialize prefs.
-  scoped_refptr<user_prefs::PrefRegistrySyncable> pref_registry =
-      new user_prefs::PrefRegistrySyncable;
-  RegisterPrefs(pref_registry.get());
+    // Initialize prefs.
+    scoped_refptr<user_prefs::PrefRegistrySyncable> pref_registry =
+        new user_prefs::PrefRegistrySyncable;
+    RegisterPrefs(pref_registry.get());
 
-  scoped_refptr<PersistentPrefStore> user_pref_store;
-  if (off_the_record) {
-    user_pref_store = new InMemoryPrefStore();
-  } else {
-    user_pref_store = new JsonPrefStore(path_.Append(kPreferencesFilename));
+    scoped_refptr<PersistentPrefStore> user_pref_store;
+    if (off_the_record) {
+      user_pref_store = new InMemoryPrefStore();
+    } else {
+      user_pref_store = new JsonPrefStore(path_.Append(kPreferencesFilename));
+    }
+
+    PrefServiceFactory factory;
+    factory.set_user_prefs(user_pref_store);
+    prefs_ = factory.Create(pref_registry.get());
   }
-
-  PrefServiceFactory factory;
-  factory.set_user_prefs(user_pref_store);
-  prefs_ = factory.Create(pref_registry.get());
-
-  base::ThreadRestrictions::SetIOAllowed(wasIOAllowed);
 
   BrowserStateDependencyManager::GetInstance()->CreateBrowserStateServices(
       this);
@@ -169,7 +170,8 @@ net::URLRequestContextGetter* WebViewBrowserState::GetRequestContext() {
 
 void WebViewBrowserState::RegisterPrefs(
     user_prefs::PrefRegistrySyncable* pref_registry) {
-  pref_registry->RegisterBooleanPref(prefs::kOfferTranslateEnabled, true);
+  pref_registry->RegisterBooleanPref(translate::prefs::kOfferTranslateEnabled,
+                                     true);
   pref_registry->RegisterBooleanPref(prefs::kSavingBrowserHistoryDisabled,
                                      true);
   language::LanguagePrefs::RegisterProfilePrefs(pref_registry);
@@ -178,6 +180,7 @@ void WebViewBrowserState::RegisterPrefs(
   autofill::prefs::RegisterProfilePrefs(pref_registry);
   password_manager::PasswordManager::RegisterProfilePrefs(pref_registry);
   syncer::SyncPrefs::RegisterProfilePrefs(pref_registry);
+  syncer::SyncTransportDataPrefs::RegisterProfilePrefs(pref_registry);
   syncer::DeviceInfoPrefs::RegisterProfilePrefs(pref_registry);
   safe_browsing::RegisterProfilePrefs(pref_registry);
   unified_consent::UnifiedConsentService::RegisterPrefs(pref_registry);

@@ -15,9 +15,9 @@
 #include "base/task/thread_pool/thread_pool_instance.h"
 #import "base/test/ios/wait_util.h"
 #include "base/test/metrics/histogram_tester.h"
-#include "components/autofill/core/browser/autofill_metrics.h"
 #include "components/autofill/core/browser/browser_autofill_manager.h"
 #include "components/autofill/core/browser/form_structure.h"
+#include "components/autofill/core/browser/metrics/autofill_metrics.h"
 #include "components/autofill/core/browser/personal_data_manager.h"
 #include "components/autofill/core/browser/webdata/autofill_entry.h"
 #include "components/autofill/core/common/autofill_clock.h"
@@ -186,6 +186,10 @@ class AutofillControllerTest : public ChromeWebTest {
  public:
   AutofillControllerTest()
       : ChromeWebTest(std::make_unique<ChromeWebClient>()) {}
+
+  AutofillControllerTest(const AutofillControllerTest&) = delete;
+  AutofillControllerTest& operator=(const AutofillControllerTest&) = delete;
+
   ~AutofillControllerTest() override {}
 
  protected:
@@ -239,8 +243,6 @@ class AutofillControllerTest : public ChromeWebTest {
   FormInputAccessoryMediator* accessory_mediator_;
 
   PasswordController* passwordController_;
-
-  DISALLOW_COPY_AND_ASSIGN(AutofillControllerTest);
 };
 
 void AutofillControllerTest::SetUp() {
@@ -279,11 +281,10 @@ void AutofillControllerTest::SetUp() {
 
   accessory_mediator_ =
       [[FormInputAccessoryMediator alloc] initWithConsumer:nil
-                                                  delegate:nil
+                                                   handler:nil
                                               webStateList:NULL
                                        personalDataManager:NULL
                                              passwordStore:nullptr
-                                                  appState:nil
                                       securityAlertHandler:nil
                                     reauthenticationModule:nil];
 
@@ -525,7 +526,7 @@ TEST_F(AutofillControllerTest, KeyValueImport) {
   scoped_refptr<AutofillWebDataService> web_data_service =
       ios::WebDataServiceFactory::GetAutofillWebDataForBrowserState(
           chrome_browser_state_.get(), ServiceAccessType::EXPLICIT_ACCESS);
-  __block TestConsumer consumer;
+  TestConsumer consumer;
   const int limit = 1;
   consumer.result_ = {CreateAutofillEntry(u"Should"),
                       CreateAutofillEntry(u"get"),
@@ -537,10 +538,14 @@ TEST_F(AutofillControllerTest, KeyValueImport) {
   // No value should be returned before anything is loaded via form submission.
   ASSERT_EQ(0U, consumer.result_.size());
   ExecuteJavaScript(@"submit.click()");
+  // We can't make |consumer| a __block variable because TestConsumer lacks copy
+  // construction. We just pass a pointer instead as we know that the callback
+  // is executed within the life-cyle of |consumer|.
+  TestConsumer* consumer_ptr = &consumer;
   WaitForCondition(^bool {
     web_data_service->GetFormValuesForElementName(u"greeting", std::u16string(),
-                                                  limit, &consumer);
-    return consumer.result_.size();
+                                                  limit, consumer_ptr);
+    return consumer_ptr->result_.size();
   });
   base::ThreadPoolInstance::Get()->FlushForTesting();
   WaitForBackgroundTasks();

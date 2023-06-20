@@ -11,6 +11,7 @@ from .blink_v8_bridge import make_v8_to_blink_value
 from .blink_v8_bridge import native_value_tag
 from .blink_v8_bridge import v8_bridge_class_name
 from .code_node import EmptyNode
+from .code_node import FormatNode
 from .code_node import ListNode
 from .code_node import SequenceNode
 from .code_node import SymbolDefinitionNode
@@ -42,6 +43,14 @@ from .task_queue import TaskQueue
 
 
 class _UnionMember(object):
+    """
+    _UnionMember represents the properties that the code generator directly
+    needs while web_idl.Union represents properties of IDL union independent
+    from ECMAScript binding.  _UnionMember is specific to not only ECMAScript
+    binding but also Blink implementation of IDL union and its flattened member
+    types.
+    """
+
     def __init__(self, base_name):
         assert isinstance(base_name, str)
 
@@ -107,7 +116,7 @@ class _UnionMemberImpl(_UnionMember):
     """
 
     def __init__(self, union, idl_type):
-        assert isinstance(union, web_idl.NewUnion)
+        assert isinstance(union, web_idl.Union)
         assert idl_type is None or isinstance(idl_type, web_idl.IdlType)
 
         if idl_type is None:
@@ -141,12 +150,11 @@ class _UnionMemberSubunion(_UnionMember):
     """
 
     def __init__(self, union, subunion):
-        assert isinstance(union, web_idl.NewUnion)
-        assert isinstance(subunion, web_idl.NewUnion)
+        assert isinstance(union, web_idl.Union)
+        assert isinstance(subunion, web_idl.Union)
 
         _UnionMember.__init__(self, base_name=blink_class_name(subunion))
-        self._type_info = blink_type_info(subunion.idl_types[0],
-                                          use_new_union=True)
+        self._type_info = blink_type_info(subunion.idl_types[0])
         self._typedef_aliases = tuple(
             map(lambda typedef: _UnionMemberAlias(impl=self, typedef=typedef),
                 subunion.aliasing_typedefs))
@@ -180,7 +188,7 @@ class _UnionMemberAlias(_UnionMember):
 
 
 def create_union_members(union):
-    assert isinstance(union, web_idl.NewUnion)
+    assert isinstance(union, web_idl.Union)
 
     union_members = list(map(
         lambda member_type: _UnionMemberImpl(union, member_type),
@@ -227,7 +235,7 @@ def make_factory_methods(cg_context):
 
     S = SymbolNode
     T = TextNode
-    F = lambda *args, **kwargs: T(_format(*args, **kwargs))
+    F = FormatNode
 
     func_decl = CxxFuncDeclNode(name="Create",
                                 arg_decls=[
@@ -258,7 +266,7 @@ def make_factory_methods(cg_context):
     # Create an instance from v8::Value based on the conversion algorithm.
     #
     # 3.2.24. Union types
-    # https://heycam.github.io/webidl/#es-union
+    # https://webidl.spec.whatwg.org/#es-union
 
     union_members = cg_context.union_members
     member = None  # Will be a found member in union_members.
@@ -368,8 +376,9 @@ def make_factory_methods(cg_context):
     #   then:
     # 8.1. If types includes a typed array type whose name is the value of V's
     #   [[TypedArrayName]] internal slot, ...
-    typed_array_types = ("Int8Array", "Int16Array", "Int32Array", "Uint8Array",
-                         "Uint16Array", "Uint32Array", "Uint8ClampedArray",
+    typed_array_types = ("Int8Array", "Int16Array", "Int32Array",
+                         "BigInt64Array", "Uint8Array", "Uint16Array",
+                         "Uint32Array", "BigUint64Array", "Uint8ClampedArray",
                          "Float32Array", "Float64Array")
     for typed_array_type in typed_array_types:
         member = find_by_type(lambda t: t.keyword_typename == typed_array_type)
@@ -404,8 +413,9 @@ def make_factory_methods(cg_context):
             T("ScriptIterator script_iterator = ScriptIterator::FromIterable("
               "${isolate}, ${v8_value}.As<v8::Object>(), "
               "${exception_state});"),
-            CxxUnlikelyIfNode(cond="${exception_state}.HadException()",
-                              body=T("return nullptr;")),
+            CxxUnlikelyIfNode(
+                cond="UNLIKELY(${exception_state}.HadException())",
+                body=T("return nullptr;")),
         ])
 
         def blink_value_from_iterator(union_member):
@@ -418,8 +428,9 @@ def make_factory_methods(cg_context):
                        "${exception_state});"),
                       native_value_tag(
                           union_member.idl_type.unwrap().element_type)),
-                    CxxUnlikelyIfNode(cond="${exception_state}.HadException()",
-                                      body=T("return nullptr;")),
+                    CxxUnlikelyIfNode(
+                        cond="UNLIKELY(${exception_state}.HadException())",
+                        body=T("return nullptr;")),
                 ])
                 return node
 
@@ -575,7 +586,7 @@ def make_accessor_functions(cg_context):
     assert isinstance(cg_context, CodeGenContext)
 
     T = TextNode
-    F = lambda *args, **kwargs: T(_format(*args, **kwargs))
+    F = FormatNode
 
     decls = ListNode()
     defs = ListNode()
@@ -909,11 +920,20 @@ def make_member_vars_def(cg_context):
         EmptyNode(),
     ])
 
-    entries = [
-        "{} {};".format(member.type_info.member_t, member.var_name)
-        for member in cg_context.union_members if not member.is_null
-    ]
-    member_vars_def.extend(map(TextNode, entries))
+    for member in cg_context.union_members:
+        if member.is_null:
+            continue
+        if member.idl_type.is_enumeration:
+            # Since the IDL enumeration class is not default constructible,
+            # construct the IDL enumeration with 0th enum value.  Note that
+            # this is necessary only for compilation, and the value must never
+            # be used due to the guard by `content_type_`.
+            pattern = "{} {}{{static_cast<{}::Enum>(0)}};"
+        else:
+            pattern = "{} {};"
+        node = FormatNode(pattern, member.type_info.member_t, member.var_name,
+                          member.type_info.value_t)
+        member_vars_def.append(node)
 
     return member_vars_def
 
@@ -1087,5 +1107,5 @@ def generate_unions(task_queue):
 
     web_idl_database = package_initializer().web_idl_database()
 
-    for union in web_idl_database.new_union_types:
+    for union in web_idl_database.union_types:
         task_queue.post_task(generate_union, union.identifier)

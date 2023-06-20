@@ -21,6 +21,7 @@ class PrefService;
 namespace base {
 class Clock;
 class SequencedTaskRunner;
+class TimeTicks;
 }  // namespace base
 
 namespace image_fetcher {
@@ -41,6 +42,9 @@ class ImageCache : public base::RefCounted<ImageCache> {
              PrefService* pref_service,
              base::Clock* clock,
              scoped_refptr<base::SequencedTaskRunner> task_runner);
+
+  ImageCache(const ImageCache&) = delete;
+  ImageCache& operator=(const ImageCache&) = delete;
 
   // Adds or updates the image data for the |url|. If the class hasn't been
   // initialized yet, the call is queued.
@@ -122,8 +126,6 @@ class ImageCache : public base::RefCounted<ImageCache> {
   scoped_refptr<base::SequencedTaskRunner> task_runner_;
 
   base::WeakPtrFactory<ImageCache> weak_ptr_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(ImageCache);
 };
 
 }  // namespace image_fetcher

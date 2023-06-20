@@ -14,7 +14,6 @@
 
 #include "base/callback.h"
 #include "base/gtest_prod_util.h"
-#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/scoped_observation.h"
@@ -33,15 +32,15 @@ class WebContents;
 // should be allowed or not. It is designed to keep pages from downloading
 // multiple files without user interaction. DownloadRequestLimiter is invoked
 // from ResourceDispatcherHost any time a download begins
-// (CanDownloadOnIOThread). The request is processed on the UI thread, and the
+// (CanDownload). The request is processed on the UI thread, and the
 // request is notified (back on the IO thread) as to whether the download should
 // be allowed or denied.
 //
-// Invoking CanDownloadOnIOThread notifies the callback and may update the
+// Invoking CanDownload notifies the callback and may update the
 // download status. The following details the various states:
 // . Each NavigationController initially starts out allowing a download
 //   (ALLOW_ONE_DOWNLOAD).
-// . The first time CanDownloadOnIOThread is invoked the download is allowed and
+// . The first time CanDownload is invoked the download is allowed and
 //   the state changes to PROMPT_BEFORE_DOWNLOAD.
 // . If the state is PROMPT_BEFORE_DOWNLOAD and the user clicks the mouse,
 //   presses enter, the space bar or navigates to another page the state is
@@ -76,7 +75,7 @@ class DownloadRequestLimiter
   // Max number of downloads before a "Prompt Before Download" Dialog is shown.
   static const size_t kMaxDownloadsAtOnce = 50;
 
-  // The callback from CanDownloadOnIOThread. This is invoked on the io thread.
+  // The callback from CanDownload. This is invoked on the IO thread.
   // The boolean parameter indicates whether or not the download is allowed.
   using Callback = base::OnceCallback<void(bool /*allow*/)>;
 
@@ -95,6 +94,10 @@ class DownloadRequestLimiter
     // download status.
     TabDownloadState(DownloadRequestLimiter* host,
                      content::WebContents* web_contents);
+
+    TabDownloadState(const TabDownloadState&) = delete;
+    TabDownloadState& operator=(const TabDownloadState&) = delete;
+
     ~TabDownloadState() override;
 
     // Sets the current limiter state and the underlying automatic downloads
@@ -131,8 +134,7 @@ class DownloadRequestLimiter
     void WebContentsDestroyed() override;
 
     // Asks the user if they really want to allow the download.
-    // See description above CanDownloadOnIOThread for details on lifetime of
-    // callback.
+    // See description above CanDownload for details on lifetime of callback.
     void PromptUserForDownload(DownloadRequestLimiter::Callback callback,
                                const url::Origin& request_origin);
 
@@ -161,7 +163,7 @@ class DownloadRequestLimiter
     void OnContentSettingChanged(
         const ContentSettingsPattern& primary_pattern,
         const ContentSettingsPattern& secondary_pattern,
-        ContentSettingsType content_type) override;
+        ContentSettingsTypeSet content_type_set) override;
 
     // Remember to either block or allow automatic downloads from
     // |request_origin|.
@@ -187,9 +189,6 @@ class DownloadRequestLimiter
 
     DownloadRequestLimiter* host_;
 
-    // Host of the first page the download started on. This may be empty.
-    std::string initial_page_host_;
-
     // Current tab status and UI status. Renderer initiated navigations will
     // not change these values if the current tab state is restricted.
     DownloadStatus status_;
@@ -206,8 +205,7 @@ class DownloadRequestLimiter
 
     // Callbacks we need to notify. This is only non-empty if we're showing a
     // dialog.
-    // See description above CanDownloadOnIOThread for details on lifetime of
-    // callbacks.
+    // See description above CanDownload for details on lifetime of callbacks.
     std::vector<DownloadRequestLimiter::Callback> callbacks_;
 
     // Origins that have non-default download state.
@@ -223,11 +221,12 @@ class DownloadRequestLimiter
     // becomes moot.
     base::WeakPtrFactory<DownloadRequestLimiter::TabDownloadState> factory_{
         this};
-
-    DISALLOW_COPY_AND_ASSIGN(TabDownloadState);
   };
 
   DownloadRequestLimiter();
+
+  DownloadRequestLimiter(const DownloadRequestLimiter&) = delete;
+  DownloadRequestLimiter& operator=(const DownloadRequestLimiter&) = delete;
 
   // Returns the download status for a page. This does not change the state in
   // anyway.
@@ -262,6 +261,8 @@ class DownloadRequestLimiter
   FRIEND_TEST_ALL_PREFIXES(ContentSettingBubbleControllerTest, Init);
   FRIEND_TEST_ALL_PREFIXES(ContentSettingImageModelBrowserTest,
                            CreateBubbleModel);
+  FRIEND_TEST_ALL_PREFIXES(PrerenderDownloadTest,
+                           DownloadRequestLimiterIsUnaffectedByPrerendering);
   friend class base::RefCountedThreadSafe<DownloadRequestLimiter>;
   friend class BackgroundFetchBrowserTest;
   friend class ContentSettingBubbleDialogTest;
@@ -329,8 +330,6 @@ class DownloadRequestLimiter
   // Weak ptr factory used when |CanDownload| asks the delegate asynchronously
   // about the download.
   base::WeakPtrFactory<DownloadRequestLimiter> factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(DownloadRequestLimiter);
 };
 
 #endif  // CHROME_BROWSER_DOWNLOAD_DOWNLOAD_REQUEST_LIMITER_H_

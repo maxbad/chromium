@@ -111,6 +111,11 @@ class ShelfTestUiUpdateDelegate : public LoginShelfView::TestUiUpdateDelegate {
   }
 
   ShelfTestUiUpdateDelegate() = default;
+
+  ShelfTestUiUpdateDelegate(const ShelfTestUiUpdateDelegate&) = delete;
+  ShelfTestUiUpdateDelegate& operator=(const ShelfTestUiUpdateDelegate&) =
+      delete;
+
   ~ShelfTestUiUpdateDelegate() override {
     for (PendingCallback& entry : heap_)
       std::move(entry.callback).Run();
@@ -160,8 +165,6 @@ class ShelfTestUiUpdateDelegate : public LoginShelfView::TestUiUpdateDelegate {
   std::vector<PendingCallback> heap_;
 
   int64_t ui_update_count_ = 0;
-
-  DISALLOW_COPY_AND_ASSIGN(ShelfTestUiUpdateDelegate);
 };
 
 // static
@@ -231,6 +234,11 @@ bool LoginScreenTestApi::IsParentAccessButtonShown() {
 // static
 bool LoginScreenTestApi::IsEnterpriseEnrollmentButtonShown() {
   return IsLoginShelfViewButtonShown(LoginShelfView::kEnterpriseEnrollment);
+}
+
+// static
+bool LoginScreenTestApi::IsOsInstallButtonShown() {
+  return IsLoginShelfViewButtonShown(LoginShelfView::kOsInstall);
 }
 
 // static
@@ -465,6 +473,11 @@ bool LoginScreenTestApi::ClickGuestButton() {
 // static
 bool LoginScreenTestApi::ClickEnterpriseEnrollmentButton() {
   return SimulateButtonPressedForTesting(LoginShelfView::kEnterpriseEnrollment);
+}
+
+// static
+bool LoginScreenTestApi::ClickOsInstallButton() {
+  return SimulateButtonPressedForTesting(LoginShelfView::kOsInstall);
 }
 
 // static

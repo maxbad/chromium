@@ -11,14 +11,14 @@
 #include <string>
 #include <vector>
 
-#include "base/macros.h"
 #include "base/memory/ref_counted.h"
-#include "base/single_thread_task_runner.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "content/common/content_export.h"
 #include "third_party/blink/public/common/service_worker/service_worker_status_code.h"
 #include "third_party/blink/public/common/storage_key/storage_key.h"
+#include "third_party/blink/public/mojom/service_worker/navigation_preload_state.mojom.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_registration.mojom.h"
 #include "url/gurl.h"
 
@@ -73,8 +73,13 @@ class CONTENT_EXPORT ServiceWorkerRegistration
   // tests.
   ServiceWorkerRegistration(
       const blink::mojom::ServiceWorkerRegistrationOptions& options,
+      const blink::StorageKey& key,
       int64_t registration_id,
       base::WeakPtr<ServiceWorkerContextCore> context);
+
+  ServiceWorkerRegistration(const ServiceWorkerRegistration&) = delete;
+  ServiceWorkerRegistration& operator=(const ServiceWorkerRegistration&) =
+      delete;
 
   int64_t id() const { return registration_id_; }
   const GURL& scope() const { return scope_; }
@@ -289,8 +294,6 @@ class CONTENT_EXPORT ServiceWorkerRegistration
 
   // TODO(crbug.com/1159778): Remove once the bug is fixed.
   bool in_activate_waiting_version_ = false;
-
-  DISALLOW_COPY_AND_ASSIGN(ServiceWorkerRegistration);
 };
 
 }  // namespace content

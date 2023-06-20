@@ -8,7 +8,6 @@
 #include <memory>
 #include <string>
 
-#include "base/macros.h"
 #include "components/security_interstitials/content/security_interstitial_controller_client.h"
 #include "components/security_interstitials/content/security_interstitial_page.h"
 #include "services/network/public/cpp/origin_policy.h"
@@ -30,6 +29,10 @@ class OriginPolicyInterstitialPage : public SecurityInterstitialPage {
       std::unique_ptr<SecurityInterstitialControllerClient> controller,
       network::OriginPolicyState error_reason);
 
+  OriginPolicyInterstitialPage(const OriginPolicyInterstitialPage&) = delete;
+  OriginPolicyInterstitialPage& operator=(const OriginPolicyInterstitialPage&) =
+      delete;
+
   ~OriginPolicyInterstitialPage() override;
 
   void OnInterstitialClosing() override;
@@ -37,15 +40,13 @@ class OriginPolicyInterstitialPage : public SecurityInterstitialPage {
   void CommandReceived(const std::string& command) override;
 
  protected:
-  void PopulateInterstitialStrings(base::DictionaryValue*) override;
+  void PopulateInterstitialStrings(base::Value*) override;
 
  private:
   network::OriginPolicyState error_reason_;
 
   void Proceed();
   void DontProceed();
-
-  DISALLOW_COPY_AND_ASSIGN(OriginPolicyInterstitialPage);
 };
 
 }  // namespace security_interstitials

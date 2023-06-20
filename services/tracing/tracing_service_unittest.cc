@@ -45,6 +45,9 @@ class TracingServiceTest : public TracingUnitTest {
  public:
   TracingServiceTest() : service_(&perfetto_service_) {}
 
+  TracingServiceTest(const TracingServiceTest&) = delete;
+  TracingServiceTest& operator=(const TracingServiceTest&) = delete;
+
   void SetUp() override {
     TracingUnitTest::SetUp();
     perfetto_service()->SetActiveServicePidsInitialized();
@@ -117,8 +120,6 @@ class TracingServiceTest : public TracingUnitTest {
 
   std::unique_ptr<mojo::Receiver<tracing::mojom::TracedProcess>>
       traced_process_receiver_;
-
-  DISALLOW_COPY_AND_ASSIGN(TracingServiceTest);
 };
 
 class TestTracingClient : public mojom::TracingSessionClient {
@@ -397,7 +398,8 @@ TEST_F(TracingServiceTest, TraceToFile) {
                          base::File::FLAG_OPEN | base::File::FLAG_WRITE);
 
   // Start a tracing session using the client API.
-  auto session = perfetto::Tracing::NewTrace();
+  auto session =
+      perfetto::Tracing::NewTrace(perfetto::BackendType::kCustomBackend);
   perfetto::TraceConfig perfetto_config;
   perfetto_config.add_buffers()->set_size_kb(1024);
   auto* ds_cfg = perfetto_config.add_data_sources()->mutable_config();

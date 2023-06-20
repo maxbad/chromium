@@ -10,6 +10,7 @@
 #include "content/browser/devtools/protocol/network_handler.h"
 #include "content/browser/devtools/render_frame_devtools_agent_host.h"
 #include "mojo/public/cpp/bindings/self_owned_receiver.h"
+#include "services/network/public/mojom/http_raw_headers.mojom.h"
 
 namespace content {
 
@@ -51,6 +52,7 @@ void NetworkServiceDevToolsObserver::OnRawRequest(
     const std::string& devtools_request_id,
     const net::CookieAccessResultList& request_cookie_list,
     std::vector<network::mojom::HttpRawHeaderPairPtr> request_headers,
+    base::TimeTicks timestamp,
     network::mojom::ClientSecurityStatePtr security_state) {
   auto* host = GetDevToolsAgentHost();
   if (!host)
@@ -58,7 +60,7 @@ void NetworkServiceDevToolsObserver::OnRawRequest(
   DispatchToAgents(host,
                    &protocol::NetworkHandler::OnRequestWillBeSentExtraInfo,
                    devtools_request_id, request_cookie_list, request_headers,
-                   security_state);
+                   timestamp, security_state);
 }
 
 void NetworkServiceDevToolsObserver::OnRawResponse(
@@ -66,13 +68,15 @@ void NetworkServiceDevToolsObserver::OnRawResponse(
     const net::CookieAndLineAccessResultList& response_cookie_list,
     std::vector<network::mojom::HttpRawHeaderPairPtr> response_headers,
     const absl::optional<std::string>& response_headers_text,
-    network::mojom::IPAddressSpace resource_address_space) {
+    network::mojom::IPAddressSpace resource_address_space,
+    int32_t http_status_code) {
   auto* host = GetDevToolsAgentHost();
   if (!host)
     return;
   DispatchToAgents(host, &protocol::NetworkHandler::OnResponseReceivedExtraInfo,
                    devtools_request_id, response_cookie_list, response_headers,
-                   response_headers_text, resource_address_space);
+                   response_headers_text, resource_address_space,
+                   http_status_code);
 }
 
 void NetworkServiceDevToolsObserver::OnTrustTokenOperationDone(
@@ -137,7 +141,8 @@ void NetworkServiceDevToolsObserver::OnPrivateNetworkRequest(
 
 void NetworkServiceDevToolsObserver::OnCorsPreflightRequest(
     const base::UnguessableToken& devtools_request_id,
-    const network::ResourceRequest& request,
+    const net::HttpRequestHeaders& request_headers,
+    network::mojom::URLRequestDevToolsInfoPtr request_info,
     const GURL& initiator_url,
     const std::string& initiator_devtools_request_id) {
   auto* host = GetDevToolsAgentHost();
@@ -146,7 +151,7 @@ void NetworkServiceDevToolsObserver::OnCorsPreflightRequest(
   auto timestamp = base::TimeTicks::Now();
   auto id = devtools_request_id.ToString();
   DispatchToAgents(host, &protocol::NetworkHandler::RequestSent, id,
-                   /* loader_id=*/"", request,
+                   /* loader_id=*/"", request_headers, *request_info,
                    protocol::Network::Initiator::TypeEnum::Preflight,
                    initiator_url, initiator_devtools_request_id, timestamp);
 }
@@ -154,7 +159,7 @@ void NetworkServiceDevToolsObserver::OnCorsPreflightRequest(
 void NetworkServiceDevToolsObserver::OnCorsPreflightResponse(
     const base::UnguessableToken& devtools_request_id,
     const GURL& url,
-    network::mojom::URLResponseHeadPtr head) {
+    network::mojom::URLResponseHeadDevToolsInfoPtr head) {
   auto* host = GetDevToolsAgentHost();
   if (!host)
     return;
@@ -207,7 +212,7 @@ void NetworkServiceDevToolsObserver::OnCorsError(
   auto issue = protocol::Audits::InspectorIssue::Create()
                    .SetCode(protocol::Audits::InspectorIssueCodeEnum::CorsIssue)
                    .SetDetails(std::move(details))
-                   .SetIssueId(cors_error_status.issueId.ToString())
+                   .SetIssueId(cors_error_status.issue_id.ToString())
                    .Build();
   devtools_instrumentation::ReportBrowserInitiatedIssue(
       ftn->current_frame_host(), issue.get());

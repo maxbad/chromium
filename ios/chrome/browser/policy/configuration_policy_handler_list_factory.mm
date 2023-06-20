@@ -13,6 +13,7 @@
 #include "components/content_settings/core/common/pref_names.h"
 #include "components/enterprise/browser/reporting/cloud_reporting_policy_handler.h"
 #include "components/enterprise/browser/reporting/common_pref_names.h"
+#include "components/history/core/common/pref_names.h"
 #include "components/metrics/metrics_pref_names.h"
 #include "components/password_manager/core/common/password_manager_pref_names.h"
 #include "components/policy/core/browser/configuration_policy_handler.h"
@@ -24,6 +25,7 @@
 #include "components/safe_browsing/core/common/safe_browsing_policy_handler.h"
 #include "components/safe_browsing/core/common/safe_browsing_prefs.h"
 #include "components/search_engines/default_search_policy_handler.h"
+#include "components/signin/public/base/signin_pref_names.h"
 #include "components/sync/driver/sync_policy_handler.h"
 #include "components/translate/core/browser/translate_pref_names.h"
 #include "components/unified_consent/pref_names.h"
@@ -92,7 +94,7 @@ const PolicyToPreferenceMapEntry kSimplePolicyMap[] = {
     prefs::kSearchSuggestEnabled,
     base::Value::Type::BOOLEAN },
   { policy::key::kTranslateEnabled,
-    prefs::kOfferTranslateEnabled,
+    translate::prefs::kOfferTranslateEnabled,
     base::Value::Type::BOOLEAN },
   { policy::key::kURLAllowlist,
     policy::policy_prefs::kUrlAllowlist,
@@ -100,6 +102,9 @@ const PolicyToPreferenceMapEntry kSimplePolicyMap[] = {
   { policy::key::kUrlKeyedAnonymizedDataCollectionEnabled,
     unified_consent::prefs::kUrlKeyedAnonymizedDataCollectionEnabled,
     base::Value::Type::BOOLEAN },
+  { policy::key::kRestrictAccountsToPatterns,
+    prefs::kRestrictAccountsToPatterns,
+    base::Value::Type::LIST },
 };
 // clang-format on
 

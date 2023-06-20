@@ -18,6 +18,7 @@
 #include "components/sessions/core/serialized_navigation_entry_test_helper.h"
 #include "content/public/browser/favicon_status.h"
 #include "content/public/browser/navigation_entry.h"
+#include "content/public/browser/navigation_entry_restore_context.h"
 #include "content/public/common/referrer.h"
 #include "content/public/test/browser_task_environment.h"
 #include "content/public/test/test_browser_context.h"
@@ -43,6 +44,10 @@ struct TestData : public base::SupportsUserData::Data {
 class TestExtendedInfoHandler : public ExtendedInfoHandler {
  public:
   explicit TestExtendedInfoHandler(const char* key) : key_(key) {}
+
+  TestExtendedInfoHandler(const TestExtendedInfoHandler&) = delete;
+  TestExtendedInfoHandler& operator=(const TestExtendedInfoHandler&) = delete;
+
   ~TestExtendedInfoHandler() override {}
 
   // ExtendedInfoHandler:
@@ -58,8 +63,6 @@ class TestExtendedInfoHandler : public ExtendedInfoHandler {
 
  private:
   const char* key_;
-
-  DISALLOW_COPY_AND_ASSIGN(TestExtendedInfoHandler);
 };
 
 std::unique_ptr<content::NavigationEntry> MakeNavigationEntryForTest() {
@@ -109,6 +112,12 @@ void SetExtendedInfoForTest(content::NavigationEntry* entry) {
 class ContentSerializedNavigationBuilderTest : public testing::Test {
  public:
   ContentSerializedNavigationBuilderTest() {}
+
+  ContentSerializedNavigationBuilderTest(
+      const ContentSerializedNavigationBuilderTest&) = delete;
+  ContentSerializedNavigationBuilderTest& operator=(
+      const ContentSerializedNavigationBuilderTest&) = delete;
+
   ~ContentSerializedNavigationBuilderTest() override {}
 
   void SetUp() override {
@@ -127,9 +136,6 @@ class ContentSerializedNavigationBuilderTest : public testing::Test {
         ContentSerializedNavigationDriver::GetInstance();
     driver->extended_info_handler_map_.clear();
   }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(ContentSerializedNavigationBuilderTest);
 };
 
 // Create a SerializedNavigationEntry from a NavigationEntry.  All its fields
@@ -221,9 +227,11 @@ TEST_F(ContentSerializedNavigationBuilderTest, ToNavigationEntry) {
       ContentSerializedNavigationBuilder::FromNavigationEntry(
           test_data::kIndex, old_navigation_entry.get());
 
+  std::unique_ptr<content::NavigationEntryRestoreContext> restore_context =
+      content::NavigationEntryRestoreContext::Create();
   const std::unique_ptr<content::NavigationEntry> new_navigation_entry(
-      ContentSerializedNavigationBuilder::ToNavigationEntry(&navigation,
-                                                            &browser_context));
+      ContentSerializedNavigationBuilder::ToNavigationEntry(
+          &navigation, &browser_context, restore_context.get()));
 
   EXPECT_EQ(old_navigation_entry->GetReferrer().url,
             new_navigation_entry->GetReferrer().url);
@@ -268,6 +276,39 @@ TEST_F(ContentSerializedNavigationBuilderTest, ToNavigationEntry) {
       new_navigation_entry->GetUserData(kExtendedInfoKey2));
   ASSERT_TRUE(test_data);
   EXPECT_EQ(kExtendedInfoValue2, test_data->string);
+}
+
+TEST_F(ContentSerializedNavigationBuilderTest, ToNavigationEntries) {
+  content::BrowserTaskEnvironment test_environment;
+  content::TestBrowserContext browser_context;
+
+  // Make a NavigationEntries, serialize it twice into a vector.
+  const std::unique_ptr<content::NavigationEntry> entry(
+      MakeNavigationEntryForTest());
+  std::vector<SerializedNavigationEntry> navigations;
+  navigations.push_back(
+      ContentSerializedNavigationBuilder::FromNavigationEntry(0, entry.get()));
+  navigations.push_back(
+      ContentSerializedNavigationBuilder::FromNavigationEntry(1, entry.get()));
+
+  // Deserialize them via ToNavigationEntries().
+  std::vector<std::unique_ptr<content::NavigationEntry>> restored_entries =
+      ContentSerializedNavigationBuilder::ToNavigationEntries(navigations,
+                                                              &browser_context);
+  ASSERT_EQ(restored_entries.size(), 2ul);
+  ASSERT_EQ(entry->GetURL(), restored_entries[0]->GetURL());
+  ASSERT_EQ(entry->GetURL(), restored_entries[1]->GetURL());
+
+  // Because the state of the two SerializedNavigationEntries was identical
+  // (specifcally, their item sequence numbers), the root FrameNavigationEntries
+  // for the two restored entries should be de-duplicated and shared. The url
+  // is stored on the root FrameNavigationEntry, so because they are shared,
+  // calling SetURL() on one of the restored entries should update the url on
+  // both.
+  GURL new_url("http://www.url.com#ToNavigationEntries");
+  restored_entries[0]->SetURL(new_url);
+  EXPECT_EQ(new_url, restored_entries[0]->GetURL());
+  EXPECT_EQ(new_url, restored_entries[1]->GetURL());
 }
 
 TEST_F(ContentSerializedNavigationBuilderTest, SetPasswordState) {

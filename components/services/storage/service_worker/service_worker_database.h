@@ -16,13 +16,11 @@
 #include "base/containers/flat_map.h"
 #include "base/files/file_path.h"
 #include "base/gtest_prod_util.h"
-#include "base/macros.h"
 #include "base/sequence_checker.h"
 #include "base/time/time.h"
 #include "components/services/storage/public/mojom/service_worker_database.mojom.h"
 #include "components/services/storage/public/mojom/service_worker_storage_control.mojom.h"
 #include "services/network/public/mojom/cross_origin_embedder_policy.mojom.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/blink/public/common/storage_key/storage_key.h"
 #include "third_party/blink/public/mojom/service_worker/navigation_preload_state.mojom.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_registration_options.mojom.h"
@@ -54,6 +52,10 @@ class ServiceWorkerDatabase {
  public:
   // We do leveldb stuff in |path| or in memory if |path| is empty.
   explicit ServiceWorkerDatabase(const base::FilePath& path);
+
+  ServiceWorkerDatabase(const ServiceWorkerDatabase&) = delete;
+  ServiceWorkerDatabase& operator=(const ServiceWorkerDatabase&) = delete;
+
   ~ServiceWorkerDatabase();
 
   using Status = mojom::ServiceWorkerDatabaseStatus;
@@ -303,6 +305,7 @@ class ServiceWorkerDatabase {
   // Parses |serialized| as a RegistrationData object and pushes it into |out|.
   ServiceWorkerDatabase::Status ParseRegistrationData(
       const std::string& serialized,
+      const blink::StorageKey& key,
       mojom::ServiceWorkerRegistrationDataPtr* out);
 
   // Populates |batch| with operations to write |registration|. It does not
@@ -417,8 +420,6 @@ class ServiceWorkerDatabase {
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerDatabaseTest, InvalidWebFeature);
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerDatabaseTest,
                            NoCrossOriginEmbedderPolicyValue);
-
-  DISALLOW_COPY_AND_ASSIGN(ServiceWorkerDatabase);
 };
 
 }  // namespace storage

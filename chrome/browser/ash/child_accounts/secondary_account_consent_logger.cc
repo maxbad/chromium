@@ -16,8 +16,8 @@
 #include "chrome/browser/supervised_user/supervised_user_constants.h"
 #include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/pref_service.h"
+#include "components/signin/public/base/consent_level.h"
 #include "components/signin/public/identity_manager/access_token_info.h"
-#include "components/signin/public/identity_manager/consent_level.h"
 #include "components/signin/public/identity_manager/identity_manager.h"
 #include "components/signin/public/identity_manager/primary_account_access_token_fetcher.h"
 #include "google_apis/gaia/core_account_id.h"
@@ -29,8 +29,10 @@
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "services/network/public/cpp/simple_url_loader.h"
+#include "services/network/public/mojom/url_response_head.mojom.h"
 #include "url/gurl.h"
 
+namespace ash {
 namespace {
 
 constexpr char kConsentApiPath[] =
@@ -73,10 +75,10 @@ constexpr net::NetworkTrafficAnnotationTag kTrafficAnnotation =
         })");
 
 std::string GetOrCreateEduCoexistenceId(PrefService* pref_service) {
-  std::string id = pref_service->GetString(ash::prefs::kEduCoexistenceId);
+  std::string id = pref_service->GetString(prefs::kEduCoexistenceId);
   if (id.empty()) {
     id = base::GenerateGUID();
-    pref_service->SetString(ash::prefs::kEduCoexistenceId, id);
+    pref_service->SetString(prefs::kEduCoexistenceId, id);
   }
   return id;
 }
@@ -86,10 +88,10 @@ std::string GetOrCreateEduCoexistenceId(PrefService* pref_service) {
 // static
 void SecondaryAccountConsentLogger::RegisterPrefs(
     PrefRegistrySimple* registry) {
-  registry->RegisterStringPref(ash::prefs::kEduCoexistenceId,
+  registry->RegisterStringPref(prefs::kEduCoexistenceId,
                                std::string() /* default_value */);
   registry->RegisterStringPref(
-      ash::prefs::kEduCoexistenceSecondaryAccountsInvalidationVersion,
+      prefs::kEduCoexistenceSecondaryAccountsInvalidationVersion,
       "iv2153049" /* default_value, the first invalidation version */);
 }
 
@@ -108,7 +110,7 @@ SecondaryAccountConsentLogger::SecondaryAccountConsentLogger(
     const std::string& re_auth_proof_token,
     base::OnceCallback<void(Result)> callback)
     : primary_account_id_(
-          identity_manager->GetPrimaryAccountId(signin::ConsentLevel::kSignin)),
+          identity_manager->GetPrimaryAccountId(signin::ConsentLevel::kSync)),
       identity_manager_(identity_manager),
       url_loader_factory_(std::move(url_loader_factory)),
       pref_service_(pref_service),
@@ -131,7 +133,7 @@ void SecondaryAccountConsentLogger::StartLogging() {
               base::Unretained(this)),
           signin::PrimaryAccountAccessTokenFetcher::Mode::
               kWaitUntilAvailable /*mode*/,
-          signin::ConsentLevel::kSignin /*consent*/);
+          signin::ConsentLevel::kSync /*consent*/);
 }
 
 void SecondaryAccountConsentLogger::OnAccessTokenFetchComplete(
@@ -219,3 +221,5 @@ void SecondaryAccountConsentLogger::OnSimpleLoaderCompleteInternal(
 
   std::move(callback_).Run(Result::kSuccess);
 }
+
+}  // namespace ash

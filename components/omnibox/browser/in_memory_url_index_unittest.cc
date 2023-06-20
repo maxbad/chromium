@@ -147,10 +147,6 @@ class InMemoryURLIndexTest : public testing::Test {
   // Pass-through function to simplify our friendship with HistoryService.
   sql::Database& GetDB();
 
-  void RebuildFromHistory() {
-    url_index_->RebuildFromHistory(history_database_);
-  }
-
   // Pass-through functions to simplify our friendship with InMemoryURLIndex.
   URLIndexPrivateData* GetPrivateData() const;
   base::CancelableTaskTracker* GetPrivateDataTracker() const;
@@ -263,7 +259,7 @@ void InMemoryURLIndexTest::SetUp() {
   // Update [urls.last_visit_time] and [visits.visit_time] to represent a time
   // relative to 'now'.
   base::Time time_right_now = base::Time::NowFromSystemTime();
-  base::TimeDelta day_delta = base::TimeDelta::FromDays(1);
+  base::TimeDelta day_delta = base::Days(1);
   {
     sql::Statement s(db.GetUniqueStatement(
         "UPDATE urls SET last_visit_time = ? - ? * last_visit_time"));
@@ -315,7 +311,7 @@ void InMemoryURLIndexTest::InitializeInMemoryURLIndex() {
       nullptr, history_service_.get(), template_url_service_.get(),
       base::FilePath(), client_schemes_to_allowlist);
   url_index_->Init();
-  RebuildFromHistory();
+  url_index_->RebuildFromHistory(history_database_);
 }
 
 void InMemoryURLIndexTest::CheckTerm(
@@ -675,94 +671,6 @@ TEST_F(InMemoryURLIndexTest, URLPrefixMatching) {
   EXPECT_EQ(0U, matches.size());
 }
 
-TEST_F(InMemoryURLIndexTest, HideVisitsFromCct) {
-  base::test::ScopedFeatureList feature_list;
-  feature_list.InitAndEnableFeature(omnibox::kHideVisitsFromCct);
-  ScoredHistoryMatches matches = url_index_->HistoryItemsForTerms(
-      u"QuiteUseless", std::u16string::npos, kProviderMaxMatches);
-  EXPECT_EQ(1U, matches.size());
-
-  sql::Statement s(GetDB().GetUniqueStatement(
-      "UPDATE visits SET transition = ? WHERE id = 23"));
-  s.BindInt64(0, ui::PAGE_TRANSITION_FROM_API_2);
-  ASSERT_TRUE(s.Run());
-  RebuildFromHistory();
-  matches = url_index_->HistoryItemsForTerms(
-      u"QuiteUseless", std::u16string::npos, kProviderMaxMatches);
-  EXPECT_EQ(0U, matches.size());
-}
-
-TEST_F(InMemoryURLIndexTest, HideVisitsFromCctNewlyAddedVisit) {
-  base::test::ScopedFeatureList feature_list;
-  feature_list.InitAndEnableFeature(omnibox::kHideVisitsFromCct);
-  ScoredHistoryMatches matches = url_index_->HistoryItemsForTerms(
-      u"urlnotindb", std::u16string::npos, kProviderMaxMatches);
-  EXPECT_EQ(0U, matches.size());
-
-  // Do this history::kLowQualityMatchVisitLimit times to ensure the visit
-  // is considered significant.
-  for (int i = 0; i < history::kLowQualityMatchVisitLimit; ++i) {
-    history_service_->AddPage(GURL("http://urlnotindb.com"), base::Time::Now(),
-                              nullptr, 101, GURL(), {},
-                              ui::PAGE_TRANSITION_FROM_API_2,
-                              history::SOURCE_BROWSED, false, false);
-    // Flush twice as the first ensures HistoryServiceObservers are run, and
-    // the second for the task scheduled by URLIndexPrivateData.
-    for (int j = 0; j < 2; ++j) {
-      base::RunLoop run_loop;
-      history_service_->FlushForTest(run_loop.QuitClosure());
-      run_loop.Run();
-    }
-  }
-  matches = url_index_->HistoryItemsForTerms(
-      u"urlnotindb", std::u16string::npos, kProviderMaxMatches);
-  EXPECT_EQ(0U, matches.size());
-}
-
-TEST_F(InMemoryURLIndexTest, HideVisitsFromCctWhenTitleChanges) {
-  base::test::ScopedFeatureList feature_list;
-  feature_list.InitAndEnableFeature(omnibox::kHideVisitsFromCct);
-  ScoredHistoryMatches matches = url_index_->HistoryItemsForTerms(
-      u"urlnotindb", std::u16string::npos, kProviderMaxMatches);
-  EXPECT_EQ(0U, matches.size());
-
-  // Add the history::kLowQualityMatchVisitLimit visits to ensure the visit
-  // count is significant.
-  for (int i = 0; i < history::kLowQualityMatchVisitLimit; ++i) {
-    history_service_->AddPage(GURL("http://urlnotindb.com"), base::Time::Now(),
-                              nullptr, 101, GURL(), {},
-                              ui::PAGE_TRANSITION_FROM_API_2,
-                              history::SOURCE_BROWSED, false, false);
-    // Flush twice as the first ensures HistoryServiceObservers are run, and
-    // the second for the task scheduled by URLIndexPrivateData.
-    for (int j = 0; j < 2; ++j) {
-      base::RunLoop run_loop;
-      history_service_->FlushForTest(run_loop.QuitClosure());
-      run_loop.Run();
-    }
-  }
-
-  // There should not be an entry.
-  matches = url_index_->HistoryItemsForTerms(
-      u"urlnotindb", std::u16string::npos, kProviderMaxMatches);
-  EXPECT_EQ(0U, matches.size());
-
-  // Change the title.
-  history_service_->SetPageTitle(GURL("http://urlnotindb.com"), u"urlnotindb");
-  // Flush twice as the first ensures HistoryServiceObservers are run, and
-  // the second for the task scheduled by URLIndexPrivateData.
-  for (int j = 0; j < 2; ++j) {
-    base::RunLoop run_loop;
-    history_service_->FlushForTest(run_loop.QuitClosure());
-    run_loop.Run();
-  }
-
-  // Entry should still not have been added.
-  matches = url_index_->HistoryItemsForTerms(
-      u"urlnotindb", std::u16string::npos, kProviderMaxMatches);
-  EXPECT_EQ(0U, matches.size());
-}
-
 TEST_F(InMemoryURLIndexTest, ProperStringMatching) {
   // Search for the following with the expected results:
   // "atdmt view" - found
@@ -791,8 +699,8 @@ TEST_F(InMemoryURLIndexTest, TrimHistoryIds) {
   constexpr int kLowVisitCount = 20;
   constexpr int kHighVisitCount = 200;
 
-  constexpr base::TimeDelta kOld = base::TimeDelta::FromDays(15);
-  constexpr base::TimeDelta kNew = base::TimeDelta::FromDays(2);
+  constexpr base::TimeDelta kOld = base::Days(15);
+  constexpr base::TimeDelta kNew = base::Days(2);
 
   constexpr int kMinRowId = 5000;
 
@@ -1307,6 +1215,11 @@ TEST_F(InMemoryURLIndexTest, DISABLED_CacheSaveRestore) {
 }
 
 TEST_F(InMemoryURLIndexTest, RebuildFromHistoryIfCacheOld) {
+  // Test specifically covers the flag-disabled behavior.
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitAndDisableFeature(
+      omnibox::kHistoryQuickProviderAblateInMemoryURLIndexCacheFile);
+
   ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
   set_history_dir(temp_dir_.GetPath());
 
@@ -1331,8 +1244,7 @@ TEST_F(InMemoryURLIndexTest, RebuildFromHistoryIfCacheOld) {
   // Overwrite the build time so that we'll think the data is too old
   // and rebuild the cache from history.
   const base::Time fake_rebuild_time =
-      private_data.last_time_rebuilt_from_history_ -
-      base::TimeDelta::FromDays(30);
+      private_data.last_time_rebuilt_from_history_ - base::Days(30);
   private_data.last_time_rebuilt_from_history_ = fake_rebuild_time;
 
   // Capture the current private data for later comparison to restored data.

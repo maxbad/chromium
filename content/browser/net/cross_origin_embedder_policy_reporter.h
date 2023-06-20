@@ -37,17 +37,30 @@ class StoragePartition;
 class CONTENT_EXPORT CrossOriginEmbedderPolicyReporter final
     : public network::mojom::CrossOriginEmbedderPolicyReporter {
  public:
+  // This is defined to investigate a crash. Remove this once the investigation
+  // is done.
+  enum class Creator : uint32_t {
+    kDocument = 0xafafafaf,
+    kDedicatedWorker = 0xbfbfbfbf,
+    kSharedWorker = 0xcfcfcfcf,
+    kServiceWorker = 0xdfdfdfdf,
+  };
+
   CrossOriginEmbedderPolicyReporter(
+      Creator creator,
       StoragePartition* storage_partition,
       const GURL& context_url,
       const absl::optional<std::string>& endpoint,
       const absl::optional<std::string>& report_only_endpoint,
+      const base::UnguessableToken& reporting_source,
       const net::NetworkIsolationKey& network_isolation_key);
   ~CrossOriginEmbedderPolicyReporter() override;
   CrossOriginEmbedderPolicyReporter(const CrossOriginEmbedderPolicyReporter&) =
       delete;
   CrossOriginEmbedderPolicyReporter& operator=(
       const CrossOriginEmbedderPolicyReporter&) = delete;
+
+  void set_reporting_source(const base::UnguessableToken& reporting_source);
 
   // network::mojom::CrossOriginEmbedderPolicyReporter implementation.
   void QueueCorpViolationReport(const GURL& blocked_url,
@@ -79,12 +92,19 @@ class CONTENT_EXPORT CrossOriginEmbedderPolicyReporter final
                           std::pair<base::StringPiece, base::StringPiece>> body,
                       bool report_only);
 
+  const Creator creator_;
+
   // See the class comment.
   StoragePartition* const storage_partition_;
 
   const GURL context_url_;
   const absl::optional<std::string> endpoint_;
   const absl::optional<std::string> report_only_endpoint_;
+  // This reporting source is not owned by COEPReporter in any way. The
+  // COEPReporter is not responsible for cleaning up the reporting source, the
+  // actual owner of this token needs to manage the lifecycle (including
+  // cleaning up the reporting source from reporting cache).
+  base::UnguessableToken reporting_source_;
   const net::NetworkIsolationKey network_isolation_key_;
 
   mojo::ReceiverSet<network::mojom::CrossOriginEmbedderPolicyReporter>

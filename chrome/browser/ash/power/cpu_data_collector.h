@@ -13,12 +13,11 @@
 
 #include "base/containers/circular_deque.h"
 #include "base/files/file_util.h"
-#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 
-namespace chromeos {
+namespace ash {
 
 // A class to sample CPU idle state occupancy and freq state occupancy.
 // Collects raw data from sysfs and does not convert it to percentage
@@ -66,6 +65,10 @@ class CpuDataCollector {
   }
 
   CpuDataCollector();
+
+  CpuDataCollector(const CpuDataCollector&) = delete;
+  CpuDataCollector& operator=(const CpuDataCollector&) = delete;
+
   ~CpuDataCollector();
 
   // Starts a repeating timer which periodically runs a callback to collect
@@ -139,9 +142,13 @@ class CpuDataCollector {
   int cpu_count_;
 
   base::WeakPtrFactory<CpuDataCollector> weak_ptr_factory_{this};
-  DISALLOW_COPY_AND_ASSIGN(CpuDataCollector);
 };
 
+}  // namespace ash
+
+// TODO(https://crbug.com/1164001): remove when ChromeOS code migration is done.
+namespace chromeos {
+using ::ash::CpuDataCollector;
 }  // namespace chromeos
 
 #endif  // CHROME_BROWSER_ASH_POWER_CPU_DATA_COLLECTOR_H_

@@ -39,6 +39,7 @@ const char kMp3MimeType[] = "audio/mpeg";
 const char kAacMimeType[] = "audio/mp4a-latm";
 const char kOpusMimeType[] = "audio/opus";
 const char kVorbisMimeType[] = "audio/vorbis";
+const char kFLACMimeType[] = "audio/flac";
 const char kAc3MimeType[] = "audio/ac3";
 const char kEac3MimeType[] = "audio/eac3";
 const char kBitstreamAudioMimeType[] = "audio/raw";
@@ -57,8 +58,8 @@ static CodecProfileLevel MediaCodecProfileLevelToChromiumProfileLevel(
       Java_CodecProfileLevelAdapter_getCodec(env, j_codec_profile_level));
   VideoCodecProfile profile = static_cast<VideoCodecProfile>(
       Java_CodecProfileLevelAdapter_getProfile(env, j_codec_profile_level));
-  int level =
-      Java_CodecProfileLevelAdapter_getLevel(env, j_codec_profile_level);
+  auto level = static_cast<VideoCodecLevel>(
+      Java_CodecProfileLevelAdapter_getLevel(env, j_codec_profile_level));
   return {codec, profile, level};
 }
 
@@ -126,17 +127,19 @@ std::string MediaCodecUtil::CodecToAndroidMimeType(AudioCodec codec) {
     return kBitstreamAudioMimeType;
 
   switch (codec) {
-    case kCodecMP3:
+    case AudioCodec::kMP3:
       return kMp3MimeType;
-    case kCodecVorbis:
+    case AudioCodec::kVorbis:
       return kVorbisMimeType;
-    case kCodecOpus:
+    case AudioCodec::kFLAC:
+      return kFLACMimeType;
+    case AudioCodec::kOpus:
       return kOpusMimeType;
-    case kCodecAAC:
+    case AudioCodec::kAAC:
       return kAacMimeType;
-    case kCodecAC3:
+    case AudioCodec::kAC3:
       return kAc3MimeType;
-    case kCodecEAC3:
+    case AudioCodec::kEAC3:
       return kEac3MimeType;
     default:
       return std::string();
@@ -146,17 +149,17 @@ std::string MediaCodecUtil::CodecToAndroidMimeType(AudioCodec codec) {
 // static
 std::string MediaCodecUtil::CodecToAndroidMimeType(VideoCodec codec) {
   switch (codec) {
-    case kCodecH264:
+    case VideoCodec::kH264:
       return kAvcMimeType;
-    case kCodecHEVC:
+    case VideoCodec::kHEVC:
       return kHevcMimeType;
-    case kCodecVP8:
+    case VideoCodec::kVP8:
       return kVp8MimeType;
-    case kCodecVP9:
+    case VideoCodec::kVP9:
       return kVp9MimeType;
-    case kCodecDolbyVision:
+    case VideoCodec::kDolbyVision:
       return kDolbyVisionMimeType;
-    case kCodecAV1:
+    case VideoCodec::kAV1:
       return kAv1MimeType;
     default:
       return std::string();
@@ -306,7 +309,7 @@ bool MediaCodecUtil::IsSetOutputSurfaceSupported() {
 
 // static
 bool MediaCodecUtil::IsPassthroughAudioFormat(AudioCodec codec) {
-  return codec == kCodecAC3 || codec == kCodecEAC3;
+  return codec == AudioCodec::kAC3 || codec == AudioCodec::kEAC3;
 }
 
 // static
@@ -373,7 +376,7 @@ bool MediaCodecUtil::IsKnownUnaccelerated(VideoCodec codec,
 
   // MediaTek hardware vp8 is known slower than the software implementation.
   if (base::StartsWith(codec_name, "OMX.MTK.", base::CompareCase::SENSITIVE)) {
-    if (codec == kCodecVP8) {
+    if (codec == VideoCodec::kVP8) {
       // We may still reject VP8 hardware decoding later on certain chipsets,
       // see isDecoderSupportedForDevice(). We don't have the the chipset ID
       // here to check now though.

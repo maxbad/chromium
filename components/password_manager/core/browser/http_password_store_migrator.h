@@ -8,7 +8,6 @@
 #include <memory>
 #include <vector>
 
-#include "base/macros.h"
 #include "base/sequence_checker.h"
 #include "components/password_manager/core/browser/hsts_query.h"
 #include "components/password_manager/core/browser/password_store_consumer.h"
@@ -16,6 +15,7 @@
 
 namespace password_manager {
 
+class PasswordStoreInterface;
 struct PasswordForm;
 
 // These values are persisted to logs. Entries should not be renumbered and
@@ -54,9 +54,14 @@ class HttpPasswordStoreMigrator : public PasswordStoreConsumer {
 
   // |https_origin| should specify a valid HTTPS URL.
   HttpPasswordStoreMigrator(const url::Origin& https_origin,
-                            PasswordStore* store,
+                            PasswordStoreInterface* store,
                             network::mojom::NetworkContext* network_context,
                             Consumer* consumer);
+
+  HttpPasswordStoreMigrator(const HttpPasswordStoreMigrator&) = delete;
+  HttpPasswordStoreMigrator& operator=(const HttpPasswordStoreMigrator&) =
+      delete;
+
   ~HttpPasswordStoreMigrator() override;
 
   // Creates HTTPS version of |http_form|.
@@ -72,7 +77,7 @@ class HttpPasswordStoreMigrator : public PasswordStoreConsumer {
  private:
   void ProcessPasswordStoreResults();
 
-  PasswordStore* const store_;
+  PasswordStoreInterface* const store_;
   Consumer* consumer_;
 
   // |ProcessPasswordStoreResults| requires that both |OnHSTSQueryResult| and
@@ -85,8 +90,6 @@ class HttpPasswordStoreMigrator : public PasswordStoreConsumer {
   std::vector<std::unique_ptr<PasswordForm>> results_;
   url::Origin http_origin_domain_;
   SEQUENCE_CHECKER(sequence_checker_);
-
-  DISALLOW_COPY_AND_ASSIGN(HttpPasswordStoreMigrator);
 };
 
 }  // namespace password_manager

@@ -23,18 +23,15 @@
 #include "chrome/browser/ash/borealis/borealis_util.h"
 #include "chrome/browser/ash/borealis/borealis_window_manager.h"
 #include "chrome/browser/ash/borealis/infra/described.h"
+#include "chrome/browser/ash/borealis/testing/apps.h"
 #include "chrome/browser/ash/borealis/testing/callback_factory.h"
+#include "chrome/browser/ash/borealis/testing/dbus.h"
 #include "chrome/browser/ash/guest_os/guest_os_registry_service.h"
 #include "chrome/browser/ash/guest_os/guest_os_registry_service_factory.h"
 #include "chrome/common/chrome_features.h"
 #include "chrome/test/base/testing_profile.h"
-#include "chromeos/dbus/cicerone/cicerone_client.h"
-#include "chromeos/dbus/cicerone/fake_cicerone_client.h"
-#include "chromeos/dbus/concierge/concierge_client.h"
 #include "chromeos/dbus/concierge/fake_concierge_client.h"
-#include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/dlcservice/fake_dlcservice_client.h"
-#include "chromeos/dbus/seneschal/seneschal_client.h"
 #include "chromeos/dbus/vm_applications/apps.pb.h"
 #include "components/prefs/pref_service.h"
 #include "content/public/browser/network_service_instance.h"
@@ -60,7 +57,8 @@ class MockObserver : public BorealisInstaller::Observer {
   MOCK_METHOD0(OnCancelInitiated, void());
 };
 
-class BorealisInstallerTest : public testing::Test {
+class BorealisInstallerTest : public testing::Test,
+                              protected FakeVmServicesHelper {
  public:
   BorealisInstallerTest() = default;
   ~BorealisInstallerTest() override = default;
@@ -71,52 +69,33 @@ class BorealisInstallerTest : public testing::Test {
 
  protected:
   void SetUp() override {
-    chromeos::DBusThreadManager::Initialize();
-    chromeos::CiceroneClient::InitializeFake();
-    chromeos::ConciergeClient::InitializeFake(
-        static_cast<chromeos::FakeCiceroneClient*>(
-            chromeos::CiceroneClient::Get()));
-    chromeos::DlcserviceClient::InitializeFake();
-    chromeos::SeneschalClient::InitializeFake();
-    histogram_tester_ = std::make_unique<base::HistogramTester>();
-    CreateProfile();
-
-    test_features_ = std::make_unique<BorealisFeatures>(profile_.get());
+    test_features_ = std::make_unique<BorealisFeatures>(&profile_);
     test_context_manager_ =
         std::make_unique<NiceMock<BorealisContextManagerMock>>();
-    test_window_manager_ =
-        std::make_unique<BorealisWindowManager>(profile_.get());
+    test_window_manager_ = std::make_unique<BorealisWindowManager>(&profile_);
     test_disk_dispatcher_ = std::make_unique<BorealisDiskManagerDispatcher>();
-    fake_service_ = BorealisServiceFake::UseFakeForTesting(profile_.get());
+    fake_service_ = BorealisServiceFake::UseFakeForTesting(&profile_);
     fake_service_->SetFeaturesForTesting(test_features_.get());
     fake_service_->SetContextManagerForTesting(test_context_manager_.get());
     fake_service_->SetWindowManagerForTesting(test_window_manager_.get());
     fake_service_->SetDiskManagerDispatcherForTesting(
         test_disk_dispatcher_.get());
 
-    installer_impl_ = std::make_unique<BorealisInstallerImpl>(profile_.get());
+    installer_impl_ = std::make_unique<BorealisInstallerImpl>(&profile_);
     installer_ = installer_impl_.get();
     observer_ = std::make_unique<NiceMock<MockObserver>>();
     installer_->AddObserver(observer_.get());
 
-    fake_dlcservice_client_ = static_cast<chromeos::FakeDlcserviceClient*>(
-        chromeos::DlcserviceClient::Get());
     UpdateCurrentDlcs();
     ASSERT_EQ(current_dlcs_.dlc_infos_size(), 0);
     ASSERT_FALSE(
-        BorealisService::GetForProfile(profile_.get())->Features().IsEnabled());
+        BorealisService::GetForProfile(&profile_)->Features().IsEnabled());
   }
 
   void TearDown() override {
     ctx_.reset();
     observer_.reset();
-    profile_.reset();
-    histogram_tester_.reset();
-
-    chromeos::SeneschalClient::Shutdown();
-    chromeos::DlcserviceClient::Shutdown();
-    chromeos::ConciergeClient::Shutdown();
-    chromeos::DBusThreadManager::Shutdown();
+    installer_impl_.reset();
   }
 
   void StartAndRunToCompletion() {
@@ -124,28 +103,10 @@ class BorealisInstallerTest : public testing::Test {
     task_environment_.RunUntilIdle();
   }
 
-  void CreateFakeMainApp() {
-    std::string desktop_file_id;
-    ASSERT_TRUE(base::Base64Decode("c3RlYW0=", &desktop_file_id));
-    vm_tools::apps::ApplicationList list;
-    list.set_vm_name(ctx_->vm_name());
-    list.set_container_name(ctx_->container_name());
-    list.set_vm_type(vm_tools::apps::ApplicationList_VmType_BOREALIS);
-    vm_tools::apps::App* app = list.add_apps();
-    app->set_desktop_file_id(desktop_file_id);
-    vm_tools::apps::App::LocaleString::Entry* entry =
-        app->mutable_name()->add_values();
-    entry->set_locale(std::string());
-    entry->set_value(desktop_file_id);
-    app->set_no_display(false);
-    guest_os::GuestOsRegistryServiceFactory::GetForProfile(profile_.get())
-        ->UpdateApplicationList(list);
-  }
-
   void PrepareSuccessfulInstallation() {
     feature_list_.InitAndEnableFeature(features::kBorealis);
-    fake_dlcservice_client_->set_install_error(dlcservice::kErrorNone);
-    ctx_ = BorealisContext::CreateBorealisContextForTesting(profile_.get());
+    FakeDlcserviceClient()->set_install_error(dlcservice::kErrorNone);
+    ctx_ = BorealisContext::CreateBorealisContextForTesting(&profile_);
     ctx_->set_vm_name("borealis");
     ctx_->set_container_name("penguin");
     EXPECT_CALL(*test_context_manager_, StartBorealis)
@@ -155,13 +116,13 @@ class BorealisInstallerTest : public testing::Test {
                   BorealisContextManager::ContextOrFailure(ctx_.get()));
               // Make a fake main app. We do this inside the callback as it is a
               // better way to simulate garcon's callback.
-              CreateFakeMainApp();
+              CreateFakeMainApp(&profile_);
             }));
   }
 
   void UpdateCurrentDlcs() {
     base::RunLoop run_loop;
-    fake_dlcservice_client_->GetExistingDlcs(base::BindOnce(
+    FakeDlcserviceClient()->GetExistingDlcs(base::BindOnce(
         [](dlcservice::DlcsWithContent* out, base::OnceClosure quit,
            const std::string& err,
            const dlcservice::DlcsWithContent& dlcs_with_content) {
@@ -173,29 +134,19 @@ class BorealisInstallerTest : public testing::Test {
   }
 
   content::BrowserTaskEnvironment task_environment_;
-  std::unique_ptr<TestingProfile> profile_;
+  base::HistogramTester histogram_tester_;
+  TestingProfile profile_;
   std::unique_ptr<BorealisContext> ctx_;
   std::unique_ptr<BorealisFeatures> test_features_;
   std::unique_ptr<BorealisContextManagerMock> test_context_manager_;
   std::unique_ptr<BorealisWindowManager> test_window_manager_;
   std::unique_ptr<BorealisDiskManagerDispatcher> test_disk_dispatcher_;
   BorealisServiceFake* fake_service_;
-  std::unique_ptr<base::HistogramTester> histogram_tester_;
   std::unique_ptr<BorealisInstallerImpl> installer_impl_;
   BorealisInstaller* installer_;
   std::unique_ptr<MockObserver> observer_;
   dlcservice::DlcsWithContent current_dlcs_;
   base::test::ScopedFeatureList feature_list_;
-
-  // Owned by chromeos::DBusThreadManager
-  chromeos::FakeDlcserviceClient* fake_dlcservice_client_;
-
- private:
-  void CreateProfile() {
-    TestingProfile::Builder profile_builder;
-    profile_builder.SetProfileName("defaultprofile");
-    profile_ = profile_builder.Build();
-  }
 };
 
 class BorealisInstallerTestDlc
@@ -213,7 +164,7 @@ TEST_F(BorealisInstallerTest, BorealisNotAllowed) {
   UpdateCurrentDlcs();
   ASSERT_EQ(current_dlcs_.dlc_infos_size(), 0);
   EXPECT_FALSE(
-      BorealisService::GetForProfile(profile_.get())->Features().IsEnabled());
+      BorealisService::GetForProfile(&profile_)->Features().IsEnabled());
 }
 
 TEST_F(BorealisInstallerTest, DeviceOfflineInstallationFails) {
@@ -230,7 +181,7 @@ TEST_F(BorealisInstallerTest, DeviceOfflineInstallationFails) {
   UpdateCurrentDlcs();
   ASSERT_EQ(current_dlcs_.dlc_infos_size(), 0);
   EXPECT_FALSE(
-      BorealisService::GetForProfile(profile_.get())->Features().IsEnabled());
+      BorealisService::GetForProfile(&profile_)->Features().IsEnabled());
 }
 
 TEST_F(BorealisInstallerTest, SucessfulInstallation) {
@@ -243,7 +194,7 @@ TEST_F(BorealisInstallerTest, SucessfulInstallation) {
   ASSERT_EQ(current_dlcs_.dlc_infos_size(), 1);
   EXPECT_EQ(current_dlcs_.dlc_infos(0).id(), borealis::kBorealisDlcName);
   EXPECT_TRUE(
-      BorealisService::GetForProfile(profile_.get())->Features().IsEnabled());
+      BorealisService::GetForProfile(&profile_)->Features().IsEnabled());
 }
 
 TEST_F(BorealisInstallerTest, HandlesMainAppPreExisting) {
@@ -252,7 +203,7 @@ TEST_F(BorealisInstallerTest, HandlesMainAppPreExisting) {
   // Normally we add the main app after signaling completion, which this a
   // better way of modeling how garcon works. In this test we add the main app
   // well before, to simulate when garcon actually wins the race.
-  CreateFakeMainApp();
+  CreateFakeMainApp(&profile_);
 
   EXPECT_CALL(*observer_, OnInstallationEnded(BorealisInstallResult::kSuccess));
   StartAndRunToCompletion();
@@ -271,7 +222,7 @@ TEST_F(BorealisInstallerTest, InstallationHasAllStages) {
 
 TEST_F(BorealisInstallerTest, CancelledInstallation) {
   feature_list_.InitAndEnableFeature(features::kBorealis);
-  fake_dlcservice_client_->set_install_error(dlcservice::kErrorNone);
+  FakeDlcserviceClient()->set_install_error(dlcservice::kErrorNone);
 
   EXPECT_CALL(*observer_, OnCancelInitiated());
   EXPECT_CALL(*observer_,
@@ -285,7 +236,7 @@ TEST_F(BorealisInstallerTest, CancelledInstallation) {
   ASSERT_EQ(current_dlcs_.dlc_infos_size(), 1);
   EXPECT_EQ(current_dlcs_.dlc_infos(0).id(), borealis::kBorealisDlcName);
   EXPECT_FALSE(
-      BorealisService::GetForProfile(profile_.get())->Features().IsEnabled());
+      BorealisService::GetForProfile(&profile_)->Features().IsEnabled());
 }
 
 TEST_F(BorealisInstallerTest, InstallationInProgess) {
@@ -304,7 +255,7 @@ TEST_F(BorealisInstallerTest, InstallationInProgess) {
   ASSERT_EQ(current_dlcs_.dlc_infos_size(), 1);
   EXPECT_EQ(current_dlcs_.dlc_infos(0).id(), borealis::kBorealisDlcName);
   EXPECT_TRUE(
-      BorealisService::GetForProfile(profile_.get())->Features().IsEnabled());
+      BorealisService::GetForProfile(&profile_)->Features().IsEnabled());
 }
 
 TEST_F(BorealisInstallerTest, CancelledThenSuccessfulInstallation) {
@@ -318,7 +269,7 @@ TEST_F(BorealisInstallerTest, CancelledThenSuccessfulInstallation) {
   UpdateCurrentDlcs();
   ASSERT_EQ(current_dlcs_.dlc_infos_size(), 0);
   EXPECT_FALSE(
-      BorealisService::GetForProfile(profile_.get())->Features().IsEnabled());
+      BorealisService::GetForProfile(&profile_)->Features().IsEnabled());
 
   EXPECT_CALL(*observer_, OnInstallationEnded(BorealisInstallResult::kSuccess));
 
@@ -329,7 +280,7 @@ TEST_F(BorealisInstallerTest, CancelledThenSuccessfulInstallation) {
   ASSERT_EQ(current_dlcs_.dlc_infos_size(), 1);
   EXPECT_EQ(current_dlcs_.dlc_infos(0).id(), borealis::kBorealisDlcName);
   EXPECT_TRUE(
-      BorealisService::GetForProfile(profile_.get())->Features().IsEnabled());
+      BorealisService::GetForProfile(&profile_)->Features().IsEnabled());
 }
 
 TEST_F(BorealisInstallerTest, SucessfulInstallationRecordMetrics) {
@@ -338,31 +289,31 @@ TEST_F(BorealisInstallerTest, SucessfulInstallationRecordMetrics) {
   EXPECT_CALL(*observer_, OnInstallationEnded(BorealisInstallResult::kSuccess));
   StartAndRunToCompletion();
 
-  histogram_tester_->ExpectTotalCount(kBorealisInstallNumAttemptsHistogram, 1);
-  histogram_tester_->ExpectUniqueSample(kBorealisInstallResultHistogram,
-                                        BorealisInstallResult::kSuccess, 1);
-  histogram_tester_->ExpectTotalCount(kBorealisInstallOverallTimeHistogram, 1);
+  histogram_tester_.ExpectTotalCount(kBorealisInstallNumAttemptsHistogram, 1);
+  histogram_tester_.ExpectUniqueSample(kBorealisInstallResultHistogram,
+                                       BorealisInstallResult::kSuccess, 1);
+  histogram_tester_.ExpectTotalCount(kBorealisInstallOverallTimeHistogram, 1);
 }
 
 TEST_F(BorealisInstallerTest, IncompleteInstallationRecordMetrics) {
   feature_list_.InitAndEnableFeature(features::kBorealis);
   // This error is arbitrarily chosen for simplicity.
-  fake_dlcservice_client_->set_install_error(dlcservice::kErrorInternal);
+  FakeDlcserviceClient()->set_install_error(dlcservice::kErrorInternal);
 
   EXPECT_CALL(*observer_,
               OnInstallationEnded(BorealisInstallResult::kDlcInternalError));
   StartAndRunToCompletion();
 
-  histogram_tester_->ExpectTotalCount(kBorealisInstallNumAttemptsHistogram, 1);
-  histogram_tester_->ExpectUniqueSample(
-      kBorealisInstallResultHistogram, BorealisInstallResult::kDlcInternalError,
-      1);
-  histogram_tester_->ExpectTotalCount(kBorealisInstallOverallTimeHistogram, 0);
+  histogram_tester_.ExpectTotalCount(kBorealisInstallNumAttemptsHistogram, 1);
+  histogram_tester_.ExpectUniqueSample(kBorealisInstallResultHistogram,
+                                       BorealisInstallResult::kDlcInternalError,
+                                       1);
+  histogram_tester_.ExpectTotalCount(kBorealisInstallOverallTimeHistogram, 0);
 }
 
 TEST_F(BorealisInstallerTest, ReportsStartupFailureAsError) {
   feature_list_.InitAndEnableFeature(features::kBorealis);
-  fake_dlcservice_client_->set_install_error(dlcservice::kErrorNone);
+  FakeDlcserviceClient()->set_install_error(dlcservice::kErrorNone);
   EXPECT_CALL(*test_context_manager_, StartBorealis)
       .WillOnce(
           testing::Invoke([](BorealisContextManager::ResultCallback callback) {
@@ -382,8 +333,8 @@ TEST_F(BorealisInstallerTest, ReportsStartupFailureAsError) {
 
 TEST_F(BorealisInstallerTest, ReportsMainAppMissingAsError) {
   feature_list_.InitAndEnableFeature(features::kBorealis);
-  fake_dlcservice_client_->set_install_error(dlcservice::kErrorNone);
-  ctx_ = BorealisContext::CreateBorealisContextForTesting(profile_.get());
+  FakeDlcserviceClient()->set_install_error(dlcservice::kErrorNone);
+  ctx_ = BorealisContext::CreateBorealisContextForTesting(&profile_);
   EXPECT_CALL(*test_context_manager_, StartBorealis)
       .WillOnce(testing::Invoke(
           [this](BorealisContextManager::ResultCallback callback) {
@@ -392,7 +343,7 @@ TEST_F(BorealisInstallerTest, ReportsMainAppMissingAsError) {
           }));
 
   // Set a zero timeout otherwise the in-progress timeout gets cleaned up.
-  installer_impl_->SetMainAppTimeoutForTesting(base::TimeDelta::FromSeconds(0));
+  installer_impl_->SetMainAppTimeoutForTesting(base::Seconds(0));
 
   EXPECT_CALL(*observer_,
               OnInstallationEnded(BorealisInstallResult::kMainAppNotPresent));
@@ -405,7 +356,7 @@ TEST_F(BorealisInstallerTest, ReportsMainAppMissingAsError) {
 // code returned by the service is handled by the installer.
 TEST_P(BorealisInstallerTestDlc, DlcError) {
   feature_list_.InitAndEnableFeature(features::kBorealis);
-  fake_dlcservice_client_->set_install_error(GetParam().first);
+  FakeDlcserviceClient()->set_install_error(GetParam().first);
 
   EXPECT_CALL(*observer_, OnStateUpdated(InstallingState::kInstallingDlc));
   EXPECT_CALL(*observer_, OnInstallationEnded(GetParam().second));
@@ -446,7 +397,7 @@ class BorealisUninstallerTest : public BorealisInstallerTest {
     PrepareSuccessfulInstallation();
     StartAndRunToCompletion();
     ASSERT_TRUE(
-        BorealisService::GetForProfile(profile_.get())->Features().IsEnabled());
+        BorealisService::GetForProfile(&profile_)->Features().IsEnabled());
   }
 
   // Sets up the registry with a single app. Returns its app id.
@@ -462,7 +413,7 @@ class BorealisUninstallerTest : public BorealisInstallerTest {
     entry->set_locale(std::string());
     entry->set_value(desktop_file_id);
     app->set_no_display(false);
-    guest_os::GuestOsRegistryServiceFactory::GetForProfile(profile_.get())
+    guest_os::GuestOsRegistryServiceFactory::GetForProfile(&profile_)
         ->UpdateApplicationList(list);
     return guest_os::GuestOsRegistryService::GenerateAppId(
         desktop_file_id, list.vm_name(), list.container_name());
@@ -499,13 +450,11 @@ TEST_F(BorealisUninstallerTest, ErrorIfShutdownFails) {
   task_environment_.RunUntilIdle();
 
   // Shutdown failed, so borealis's disk will still be there.
-  chromeos::FakeConciergeClient* fake_concierge_client =
-      chromeos::FakeConciergeClient::Get();
-  EXPECT_EQ(fake_concierge_client->destroy_disk_image_call_count(), 0);
+  EXPECT_EQ(FakeConciergeClient()->destroy_disk_image_call_count(), 0);
 
   // Borealis is still "installed" according to the prefs.
   EXPECT_TRUE(
-      profile_->GetPrefs()->GetBoolean(prefs::kBorealisInstalledOnDevice));
+      profile_.GetPrefs()->GetBoolean(prefs::kBorealisInstalledOnDevice));
 }
 
 TEST_F(BorealisUninstallerTest, ErrorIfDiskNotRemoved) {
@@ -518,9 +467,7 @@ TEST_F(BorealisUninstallerTest, ErrorIfDiskNotRemoved) {
           [](base::OnceCallback<void(BorealisShutdownResult)> callback) {
             std::move(callback).Run(BorealisShutdownResult::kSuccess);
           }));
-  chromeos::FakeConciergeClient* fake_concierge_client =
-      chromeos::FakeConciergeClient::Get();
-  fake_concierge_client->set_destroy_disk_image_response(absl::nullopt);
+  FakeConciergeClient()->set_destroy_disk_image_response(absl::nullopt);
 
   installer_->Uninstall(callback_factory.BindOnce());
   task_environment_.RunUntilIdle();
@@ -531,7 +478,7 @@ TEST_F(BorealisUninstallerTest, ErrorIfDiskNotRemoved) {
 
   // Borealis is still "installed" according to the prefs.
   EXPECT_TRUE(
-      profile_->GetPrefs()->GetBoolean(prefs::kBorealisInstalledOnDevice));
+      profile_.GetPrefs()->GetBoolean(prefs::kBorealisInstalledOnDevice));
 }
 
 TEST_F(BorealisUninstallerTest, ErrorIfDlcNotRemoved) {
@@ -544,14 +491,14 @@ TEST_F(BorealisUninstallerTest, ErrorIfDlcNotRemoved) {
           [](base::OnceCallback<void(BorealisShutdownResult)> callback) {
             std::move(callback).Run(BorealisShutdownResult::kSuccess);
           }));
-  fake_dlcservice_client_->set_uninstall_error("some failure");
+  FakeDlcserviceClient()->set_uninstall_error("some failure");
 
   installer_->Uninstall(callback_factory.BindOnce());
   task_environment_.RunUntilIdle();
 
   // Borealis is still "installed" according to the prefs.
   EXPECT_TRUE(
-      profile_->GetPrefs()->GetBoolean(prefs::kBorealisInstalledOnDevice));
+      profile_.GetPrefs()->GetBoolean(prefs::kBorealisInstalledOnDevice));
 }
 
 TEST_F(BorealisUninstallerTest, UninstallationRemovesAllNecessaryPieces) {
@@ -562,7 +509,7 @@ TEST_F(BorealisUninstallerTest, UninstallationRemovesAllNecessaryPieces) {
   SetDummyApp("dummy.desktop");
   task_environment_.RunUntilIdle();
   EXPECT_EQ(
-      guest_os::GuestOsRegistryServiceFactory::GetForProfile(profile_.get())
+      guest_os::GuestOsRegistryServiceFactory::GetForProfile(&profile_)
           ->GetRegisteredApps(vm_tools::apps::ApplicationList_VmType_BOREALIS)
           .size(),
       1);
@@ -576,25 +523,22 @@ TEST_F(BorealisUninstallerTest, UninstallationRemovesAllNecessaryPieces) {
   task_environment_.RunUntilIdle();
 
   // Borealis is not running.
-  EXPECT_FALSE(BorealisService::GetForProfile(profile_.get())
-                   ->ContextManager()
-                   .IsRunning());
+  EXPECT_FALSE(
+      BorealisService::GetForProfile(&profile_)->ContextManager().IsRunning());
 
   // Borealis is not enabled.
   EXPECT_FALSE(
-      BorealisService::GetForProfile(profile_.get())->Features().IsEnabled());
+      BorealisService::GetForProfile(&profile_)->Features().IsEnabled());
 
   // Borealis has no installed apps.
   EXPECT_EQ(
-      guest_os::GuestOsRegistryServiceFactory::GetForProfile(profile_.get())
+      guest_os::GuestOsRegistryServiceFactory::GetForProfile(&profile_)
           ->GetRegisteredApps(vm_tools::apps::ApplicationList_VmType_BOREALIS)
           .size(),
       0);
 
   // Borealis has no stateful disk.
-  chromeos::FakeConciergeClient* fake_concierge_client =
-      chromeos::FakeConciergeClient::Get();
-  EXPECT_GE(fake_concierge_client->destroy_disk_image_call_count(), 1);
+  EXPECT_GE(FakeConciergeClient()->destroy_disk_image_call_count(), 1);
 
   // Borealis's DLC is not installed
   UpdateCurrentDlcs();
@@ -632,10 +576,9 @@ TEST_F(BorealisUninstallerTest, SuccessfulUninstallationRecordsMetrics) {
   installer_->Uninstall(base::DoNothing());
   task_environment_.RunUntilIdle();
 
-  histogram_tester_->ExpectTotalCount(kBorealisUninstallNumAttemptsHistogram,
-                                      1);
-  histogram_tester_->ExpectUniqueSample(kBorealisUninstallResultHistogram,
-                                        BorealisUninstallResult::kSuccess, 1);
+  histogram_tester_.ExpectTotalCount(kBorealisUninstallNumAttemptsHistogram, 1);
+  histogram_tester_.ExpectUniqueSample(kBorealisUninstallResultHistogram,
+                                       BorealisUninstallResult::kSuccess, 1);
 }
 
 TEST_F(BorealisUninstallerTest, FailedUninstallationRecordsMetrics) {
@@ -649,11 +592,10 @@ TEST_F(BorealisUninstallerTest, FailedUninstallationRecordsMetrics) {
   installer_->Uninstall(base::DoNothing());
   task_environment_.RunUntilIdle();
 
-  histogram_tester_->ExpectTotalCount(kBorealisUninstallNumAttemptsHistogram,
-                                      1);
-  histogram_tester_->ExpectUniqueSample(
-      kBorealisUninstallResultHistogram,
-      BorealisUninstallResult::kShutdownFailed, 1);
+  histogram_tester_.ExpectTotalCount(kBorealisUninstallNumAttemptsHistogram, 1);
+  histogram_tester_.ExpectUniqueSample(kBorealisUninstallResultHistogram,
+                                       BorealisUninstallResult::kShutdownFailed,
+                                       1);
 }
 
 }  // namespace

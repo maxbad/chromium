@@ -9,7 +9,6 @@
 #include <string>
 
 #include "base/callback.h"
-#include "base/macros.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
 #include "chrome/browser/ash/login/easy_unlock/easy_unlock_service.h"
@@ -18,7 +17,6 @@
 #include "chromeos/services/device_sync/proto/cryptauth_api.pb.h"
 #include "chromeos/services/device_sync/public/cpp/device_sync_client.h"
 #include "chromeos/services/multidevice_setup/public/cpp/multidevice_setup_client.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 // TODO(https://crbug.com/1164001): move to forward declaration
 #include "chromeos/services/secure_channel/public/cpp/client/secure_channel_client.h"
 #include "components/prefs/pref_change_registrar.h"
@@ -58,6 +56,9 @@ class EasyUnlockServiceRegular
       device_sync::DeviceSyncClient* device_sync_client,
       multidevice_setup::MultiDeviceSetupClient* multidevice_setup_client);
 
+  EasyUnlockServiceRegular(const EasyUnlockServiceRegular&) = delete;
+  EasyUnlockServiceRegular& operator=(const EasyUnlockServiceRegular&) = delete;
+
   ~EasyUnlockServiceRegular() override;
 
  private:
@@ -89,6 +90,7 @@ class EasyUnlockServiceRegular
   void InitializeInternal() override;
   void ShutdownInternal() override;
   bool IsAllowedInternal() const override;
+  bool IsEligible() const override;
   bool IsEnabled() const override;
   bool IsChromeOSLoginEnabled() const override;
 
@@ -159,8 +161,6 @@ class EasyUnlockServiceRegular
   PrefChangeRegistrar registrar_;
 
   base::WeakPtrFactory<EasyUnlockServiceRegular> weak_ptr_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(EasyUnlockServiceRegular);
 };
 
 }  // namespace ash

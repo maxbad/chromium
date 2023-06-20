@@ -8,6 +8,7 @@
 
 #include "base/bind.h"
 #include "base/callback_helpers.h"
+#include "base/containers/cxx20_erase.h"
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/memory/singleton.h"
@@ -227,7 +228,7 @@ arc::mojom::NetworkConfigurationPtr TranslateNetworkProperties(
   if (const auto* device =
           GetStateHandler()->GetDeviceState(network_state->device_path())) {
     mojo->network_interface = device->interface();
-    for (const auto& kv : device->ip_configs().DictItems())
+    for (const auto kv : device->ip_configs().DictItems())
       AddIpConfiguration(mojo.get(), &kv.second);
   }
 
@@ -493,6 +494,8 @@ void ArcNetHostImpl::CreateNetwork(mojom::WifiConfigurationPtr cfg,
     return;
   }
 
+  // TODO(b/195653632): Populate the shill EAP properties from the mojo
+  // WifiConfiguration object.
   std::unique_ptr<base::DictionaryValue> properties(new base::DictionaryValue);
   std::unique_ptr<base::DictionaryValue> wifi_dict(new base::DictionaryValue);
 
@@ -813,6 +816,18 @@ void ArcNetHostImpl::AndroidVpnStateChanged(mojom::ConnectionStateType state) {
   GetNetworkConnectionHandler()->DisconnectNetwork(
       service_path, base::BindOnce(&ArcVpnSuccessCallback),
       base::BindOnce(&ArcVpnErrorCallback, "disconnecting ARC VPN"));
+}
+
+void ArcNetHostImpl::AddPasspointCredentials(
+    mojom::PasspointCredentialsPtr credentials) {
+  // TODO(b/195262431) Call shill Manager AddPasspointCredentials method.
+  return;
+}
+
+void ArcNetHostImpl::RemovePasspointCredentials(
+    const std::string& package_name) {
+  // TODO(b/195262431) Call shill Manager RemovePasspointCredentials method.
+  return;
 }
 
 void ArcNetHostImpl::SetAlwaysOnVpn(const std::string& vpn_package,

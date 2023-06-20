@@ -5,28 +5,46 @@
 #include "content/browser/handwriting/handwriting_recognition_service_impl_cros.h"
 
 #include <memory>
+#include <utility>
 
 #include "base/command_line.h"
 #include "base/memory/ptr_util.h"
+#include "build/chromeos_buildflags.h"
 #include "content/browser/handwriting/handwriting_recognizer_impl_cros.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/self_owned_receiver.h"
 #include "third_party/blink/public/mojom/handwriting/handwriting.mojom.h"
 
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+#include "ash/constants/ash_switches.h"
+#endif
+
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+#include "chromeos/lacros/lacros_service.h"
+#endif
+
 namespace content {
 
 namespace {
-// TODO(https://crbug.com/1168978): mlservice should provide an interface to
-// query this.
-constexpr char kOndeviceHandwritingSwitch[] = "ondevice_handwriting";
+
 // Currently, we do not consider that ondevice handwriting recognition may be
 // supported by the CrOS Downloadable Content (DLC) service other than on
 // rootfs.
 bool IsCrOSLibHandwritingRootfsEnabled() {
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+  // TODO(https://crbug.com/1168978): mlservice should provide an interface to
+  // query this.
   base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
-  return command_line->HasSwitch(kOndeviceHandwritingSwitch) &&
-         command_line->GetSwitchValueASCII(kOndeviceHandwritingSwitch) ==
-             "use_rootfs";
+  return command_line->HasSwitch(ash::switches::kOndeviceHandwritingSwitch) &&
+         command_line->GetSwitchValueASCII(
+             ash::switches::kOndeviceHandwritingSwitch) == "use_rootfs";
+#elif BUILDFLAG(IS_CHROMEOS_LACROS)
+  auto* service = chromeos::LacrosService::Get();
+  return service && service->init_params()->ondevice_handwriting_support ==
+                        crosapi::mojom::OndeviceHandwritingSupport::kUseRootfs;
+#else
+  return false;
+#endif
 }
 }  // namespace
 
@@ -86,6 +104,18 @@ void CrOSHandwritingRecognitionServiceImpl::QueryHandwritingRecognizerSupport(
   }
 
   std::move(callback).Run(std::move(query_result));
+}
+
+void CrOSHandwritingRecognitionServiceImpl::QueryHandwritingRecognizer(
+    handwriting::mojom::HandwritingModelConstraintPtr model_constraint,
+    QueryHandwritingRecognizerCallback callback) {
+  if (!IsCrOSLibHandwritingRootfsEnabled()) {
+    std::move(callback).Run(nullptr);
+    return;
+  }
+
+  std::move(callback).Run(CrOSHandwritingRecognizerImpl::GetModelDescriptor(
+      std::move(model_constraint)));
 }
 
 CrOSHandwritingRecognitionServiceImpl::CrOSHandwritingRecognitionServiceImpl() =

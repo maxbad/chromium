@@ -6,8 +6,8 @@ package org.chromium.chrome.browser.tasks.tab_management;
 
 import static org.hamcrest.CoreMatchers.equalTo;
 import static org.hamcrest.CoreMatchers.instanceOf;
-import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertThat;
 
 import static org.chromium.chrome.browser.tasks.tab_management.TabUiTestHelper.areAnimatorsEnabled;
 
@@ -111,10 +111,12 @@ public class TabListContainerViewBinderTest extends DummyUiActivityTestCase {
         mStartedHidingCallback = new CallbackHelper();
         mFinishedHidingCallback = new CallbackHelper();
 
-        mContainerModel = new PropertyModel(TabListContainerProperties.ALL_KEYS);
+        TestThreadUtils.runOnUiThreadBlocking(() -> {
+            mContainerModel = new PropertyModel(TabListContainerProperties.ALL_KEYS);
 
-        mMCP = PropertyModelChangeProcessor.create(
-                mContainerModel, mRecyclerView, TabListContainerViewBinder::bind);
+            mMCP = PropertyModelChangeProcessor.create(
+                    mContainerModel, mRecyclerView, TabListContainerViewBinder::bind);
+        });
     }
 
     @Test
@@ -293,7 +295,7 @@ public class TabListContainerViewBinderTest extends DummyUiActivityTestCase {
 
     @Override
     public void tearDownTest() throws Exception {
-        mMCP.destroy();
+        TestThreadUtils.runOnUiThreadBlocking(mMCP::destroy);
         super.tearDownTest();
     }
 }

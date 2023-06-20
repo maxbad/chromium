@@ -13,7 +13,6 @@
 #include <string>
 
 #include "base/check_op.h"
-#include "base/macros.h"
 #include "chrome/browser/ui/ash/shelf/app_service/app_service_instance_registry_helper.h"
 #include "chrome/browser/ui/ash/shelf/chrome_shelf_controller.h"
 #include "chrome/browser/ui/browser_list_observer.h"
@@ -29,6 +28,10 @@ class BrowserStatusMonitor : public BrowserListObserver,
                              public TabStripModelObserver {
  public:
   explicit BrowserStatusMonitor(ChromeShelfController* shelf_controller);
+
+  BrowserStatusMonitor(const BrowserStatusMonitor&) = delete;
+  BrowserStatusMonitor& operator=(const BrowserStatusMonitor&) = delete;
+
   ~BrowserStatusMonitor() override;
 
   // Do the initialization work. Note: the init phase is separate from
@@ -60,11 +63,6 @@ class BrowserStatusMonitor : public BrowserListObserver,
       const TabStripModelChange& change,
       const TabStripSelectionChange& selection) override;
 
-  // Called from our own |LocalWebContentsObserver| when web contents did go
-  // away without any other notification. This might happen in case of
-  // application uninstalls, page crashes, ...).
-  void WebContentsDestroyed(content::WebContents* web_contents);
-
  private:
   // Add a windowed browser-based app to the shelf.
   void AddAppBrowserToShelf(Browser* browser);
@@ -87,6 +85,9 @@ class BrowserStatusMonitor : public BrowserListObserver,
   void OnTabInserted(TabStripModel* tab_strip_model,
                      content::WebContents* contents);
   void OnTabClosing(content::WebContents* contents);
+  // Tab is moved between browsers
+  void OnTabMoved(TabStripModel* tab_strip_model,
+                  content::WebContents* contents);
 
   // Called by LocalWebContentsObserver.
   void OnTabNavigationFinished(content::WebContents* contents);
@@ -117,9 +118,10 @@ class BrowserStatusMonitor : public BrowserListObserver,
   // Used to validate that OnBrowserAdded() is invoked before
   // OnTabStripModelChanged().
   std::set<Browser*> known_browsers_;
+  // Tabs that are removed from one browser and are getting reinserted into
+  // another.
+  std::set<content::WebContents*> tabs_in_transit_;
 #endif
-
-  DISALLOW_COPY_AND_ASSIGN(BrowserStatusMonitor);
 };
 
 #endif  // CHROME_BROWSER_UI_ASH_SHELF_BROWSER_STATUS_MONITOR_H_

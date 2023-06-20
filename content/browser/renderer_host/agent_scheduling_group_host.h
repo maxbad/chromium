@@ -17,6 +17,7 @@
 #include "content/common/state_transitions.h"
 #include "content/public/browser/render_process_host_observer.h"
 #include "content/public/common/content_features.h"
+#include "content/services/shared_storage_worklet/public/mojom/shared_storage_worklet_service.mojom-forward.h"
 #include "ipc/ipc_listener.h"
 #include "mojo/public/cpp/bindings/associated_receiver.h"
 #include "mojo/public/cpp/bindings/associated_receiver_set.h"
@@ -90,8 +91,7 @@ class CONTENT_EXPORT AgentSchedulingGroupHost
   mojom::RouteProvider* GetRemoteRouteProvider();
   void CreateFrame(mojom::CreateFrameParamsPtr params);
   void CreateView(mojom::CreateViewParamsPtr params);
-  void DestroyView(int32_t routing_id,
-                   mojom::AgentSchedulingGroup::DestroyViewCallback callback);
+  void DestroyView(int32_t routing_id);
   void CreateFrameProxy(
       const blink::RemoteFrameToken& token,
       int32_t routing_id,
@@ -102,6 +102,9 @@ class CONTENT_EXPORT AgentSchedulingGroupHost
       blink::mojom::FrameReplicationStatePtr replicated_state,
       const base::UnguessableToken& devtools_frame_token,
       mojom::RemoteMainFrameInterfacesPtr remote_main_frame_interfaces);
+  void CreateSharedStorageWorkletService(
+      mojo::PendingReceiver<
+          shared_storage_worklet::mojom::SharedStorageWorkletService> receiver);
 
   void ReportNoBinderForInterface(const std::string& error);
 
@@ -189,6 +192,11 @@ class CONTENT_EXPORT AgentSchedulingGroupHost
   // BrowserInterfaceBroker implementation through which this
   // AgentSchedulingGroupHost exposes ASG-scoped Mojo services to the
   // currently active document.
+  //
+  // The interfaces that can be requested from this broker are defined in the
+  // content/browser/browser_interface_binders.cc file, in the functions which
+  // take a `AgentSchedulingGroupHost*` parameter.
+  //
   // TODO(crbug.com/1132752): Enable capability control for Prerender2 by
   // initializing BrowserInterfaceBrokerImpl with a non-null
   // MojoBinderPolicyApplier pointer.

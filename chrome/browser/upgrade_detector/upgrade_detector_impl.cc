@@ -17,7 +17,7 @@
 #include "base/feature_list.h"
 #include "base/no_destructor.h"
 #include "base/notreached.h"
-#include "base/sequenced_task_runner.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/threading/sequenced_task_runner_handle.h"
 #include "base/time/clock.h"
 #include "base/time/default_clock.h"
@@ -52,24 +52,24 @@
 namespace {
 
 // The default thresholds for reaching annoyance levels.
-constexpr auto kDefaultVeryLowThreshold = base::TimeDelta::FromHours(1);
-constexpr auto kDefaultLowThreshold = base::TimeDelta::FromDays(2);
-constexpr auto kDefaultElevatedThreshold = base::TimeDelta::FromDays(4);
-constexpr auto kDefaultHighThreshold = base::TimeDelta::FromDays(7);
+constexpr auto kDefaultVeryLowThreshold = base::Hours(1);
+constexpr auto kDefaultLowThreshold = base::Days(2);
+constexpr auto kDefaultElevatedThreshold = base::Days(4);
+constexpr auto kDefaultHighThreshold = base::Days(7);
+constexpr auto kDefaultGraceThreshold = kDefaultHighThreshold - base::Hours(1);
 
 // How long to wait (each cycle) before checking which severity level we should
 // be at. Once we reach the highest severity, the timer will stop.
-constexpr auto kNotifyCycleTime = base::TimeDelta::FromMinutes(20);
+constexpr auto kNotifyCycleTime = base::Minutes(20);
 
 // Same as kNotifyCycleTimeMs but only used during testing.
-constexpr auto kNotifyCycleTimeForTesting =
-    base::TimeDelta::FromMilliseconds(500);
+constexpr auto kNotifyCycleTimeForTesting = base::Milliseconds(500);
 
 // How often to check to see if the build has become outdated.
-constexpr auto kOutdatedBuildDetectorPeriod = base::TimeDelta::FromDays(1);
+constexpr auto kOutdatedBuildDetectorPeriod = base::Days(1);
 
 // The number of days after which we identify a build/install as outdated.
-constexpr auto kOutdatedBuildAge = base::TimeDelta::FromDays(7) * 12;
+constexpr auto kOutdatedBuildAge = base::Days(7) * 12;
 
 constexpr bool ShouldDetectOutdatedBuilds() {
 #if BUILDFLAG(GOOGLE_CHROME_BRANDING)
@@ -110,11 +110,6 @@ UpgradeDetectorImpl::UpgradeDetectorImpl(const base::Clock* clock,
 
 UpgradeDetectorImpl::~UpgradeDetectorImpl() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-}
-
-// static
-base::Version UpgradeDetectorImpl::GetCurrentlyInstalledVersion() {
-  return GetInstalledVersion().installed_version;
 }
 
 void UpgradeDetectorImpl::StartUpgradeNotificationTimer() {
@@ -161,6 +156,7 @@ void UpgradeDetectorImpl::DoCalculateThresholds() {
     // Use the default values when no override is set and we don't expect to
     // adjust the levels according to the relaunch time interval.
     stages_[kStagesIndexHigh] = kDefaultHighThreshold;
+    stages_[kStagesIndexGrace] = kDefaultGraceThreshold;
     stages_[kStagesIndexElevated] = kDefaultElevatedThreshold;
     stages_[kStagesIndexLow] = kDefaultLowThreshold;
     stages_[kStagesIndexVeryLow] = kDefaultVeryLowThreshold;
@@ -172,15 +168,22 @@ void UpgradeDetectorImpl::DoCalculateThresholds() {
     if (notification_period.is_zero())
       effective_notification_period = kDefaultHighThreshold;
 
+    const RelaunchWindow effective_relaunch_window =
+        relaunch_window.value_or(GetDefaultRelaunchWindow());
+
     DCHECK(!upgrade_detected_time().is_null());
     const base::Time adjusted_deadline =
-        AdjustDeadline(upgrade_detected_time() + effective_notification_period);
+        AdjustDeadline(upgrade_detected_time() + effective_notification_period,
+                       effective_relaunch_window);
     effective_notification_period = adjusted_deadline - upgrade_detected_time();
 
     stages_[kStagesIndexHigh] = effective_notification_period;
     stages_[kStagesIndexLow] = effective_notification_period / 3;
     stages_[kStagesIndexElevated] =
         effective_notification_period - stages_[kStagesIndexLow];
+    base::TimeDelta grace_period = GetGracePeriod(
+        stages_[kStagesIndexHigh] - stages_[kStagesIndexElevated]);
+    stages_[kStagesIndexGrace] = stages_[kStagesIndexHigh] - grace_period;
     // "Very low" is one hour, unless "low" is even less.
     stages_[kStagesIndexVeryLow] =
         std::min(stages_[kStagesIndexLow], kDefaultVeryLowThreshold);
@@ -188,8 +191,7 @@ void UpgradeDetectorImpl::DoCalculateThresholds() {
 
   // When testing, scale everything back so that a day passes in ten seconds.
   if (is_testing_ && !relaunch_window) {
-    constexpr int64_t scale_factor =
-        base::TimeDelta::FromDays(1) / base::TimeDelta::FromSeconds(10);
+    constexpr int64_t scale_factor = base::Days(1) / base::Seconds(10);
     for (auto& stage : stages_)
       stage /= scale_factor;
   }
@@ -373,6 +375,8 @@ UpgradeDetectorImpl::AnnoyanceLevelToStagesIndex(
       return kStagesIndexLow;
     case UPGRADE_ANNOYANCE_ELEVATED:
       return kStagesIndexElevated;
+    case UPGRADE_ANNOYANCE_GRACE:
+      return kStagesIndexGrace;
     case UPGRADE_ANNOYANCE_HIGH:
       break;
     case UPGRADE_ANNOYANCE_CRITICAL:
@@ -387,6 +391,7 @@ UpgradeDetector::UpgradeNotificationAnnoyanceLevel
 UpgradeDetectorImpl::StageIndexToAnnoyanceLevel(size_t index) {
   static constexpr UpgradeNotificationAnnoyanceLevel kIndexToLevel[] = {
       UpgradeDetector::UPGRADE_ANNOYANCE_HIGH,
+      UpgradeDetector::UPGRADE_ANNOYANCE_GRACE,
       UpgradeDetector::UPGRADE_ANNOYANCE_ELEVATED,
       UpgradeDetector::UPGRADE_ANNOYANCE_LOW,
       UpgradeDetector::UPGRADE_ANNOYANCE_VERY_LOW};
@@ -516,17 +521,26 @@ void UpgradeDetectorImpl::Shutdown() {
   UpgradeDetector::Shutdown();
 }
 
-base::TimeDelta UpgradeDetectorImpl::GetHighAnnoyanceLevelDelta() {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  return stages_[kStagesIndexHigh] - stages_[kStagesIndexElevated];
-}
-
-base::Time UpgradeDetectorImpl::GetHighAnnoyanceDeadline() {
+base::Time UpgradeDetectorImpl::GetAnnoyanceLevelDeadline(
+    UpgradeNotificationAnnoyanceLevel level) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   const base::Time detected_time = upgrade_detected_time();
   if (detected_time.is_null())
     return detected_time;
-  return detected_time + stages_[kStagesIndexHigh];
+  switch (level) {
+    case UpgradeDetector::UPGRADE_ANNOYANCE_NONE:
+      return detected_time;
+    case UpgradeDetector::UPGRADE_ANNOYANCE_VERY_LOW:
+    case UpgradeDetector::UPGRADE_ANNOYANCE_LOW:
+    case UpgradeDetector::UPGRADE_ANNOYANCE_ELEVATED:
+    case UpgradeDetector::UPGRADE_ANNOYANCE_GRACE:
+    case UpgradeDetector::UPGRADE_ANNOYANCE_HIGH:
+      return detected_time + GetThresholdForLevel(level);
+    case UpgradeDetector::UPGRADE_ANNOYANCE_CRITICAL:
+      return upgrade_notification_stage() == UPGRADE_ANNOYANCE_CRITICAL
+                 ? detected_time
+                 : base::Time();
+  }
 }
 
 void UpgradeDetectorImpl::OnUpdate(const BuildState* build_state) {
@@ -570,6 +584,5 @@ base::TimeDelta UpgradeDetector::GetDefaultElevatedAnnoyanceThreshold() {
 // static
 UpgradeDetector::RelaunchWindow UpgradeDetector::GetDefaultRelaunchWindow() {
   // Relaunch window is the whole day and any time is within the window.
-  return RelaunchWindow(/*start_hour=*/0, /*start_minute=*/0,
-                        base::TimeDelta::FromHours(24));
+  return RelaunchWindow(/*start_hour=*/0, /*start_minute=*/0, base::Hours(24));
 }

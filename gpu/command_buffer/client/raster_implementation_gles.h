@@ -11,7 +11,6 @@
 #include "gpu/command_buffer/client/raster_interface.h"
 #include "gpu/command_buffer/common/capabilities.h"
 #include "gpu/raster_export.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/skia/include/core/SkColorSpace.h"
 
 namespace gpu {
@@ -26,6 +25,10 @@ class RASTER_EXPORT RasterImplementationGLES : public RasterInterface {
  public:
   explicit RasterImplementationGLES(gles2::GLES2Interface* gl,
                                     ContextSupport* context_support);
+
+  RasterImplementationGLES(const RasterImplementationGLES&) = delete;
+  RasterImplementationGLES& operator=(const RasterImplementationGLES&) = delete;
+
   ~RasterImplementationGLES() override;
 
   // Command buffer Flush / Finish.
@@ -80,10 +83,17 @@ class RASTER_EXPORT RasterImplementationGLES : public RasterInterface {
       SkYUVAInfo::Subsampling subsampling,
       const gpu::Mailbox yuva_plane_mailboxes[]) override;
 
+  void ConvertRGBAToYUVAMailboxes(SkYUVColorSpace planes_yuv_color_space,
+                                  SkYUVAInfo::PlaneConfig plane_config,
+                                  SkYUVAInfo::Subsampling subsampling,
+                                  const gpu::Mailbox yuva_plane_mailboxes[],
+                                  const gpu::Mailbox& source_mailbox) override;
+
   // OOP-Raster
   void BeginRasterCHROMIUM(GLuint sk_color,
                            GLboolean needs_clear,
                            GLuint msaa_sample_count,
+                           MsaaMode msaa_mode,
                            GLboolean can_use_lcd_text,
                            const gfx::ColorSpace& color_space,
                            const GLbyte* mailbox) override;
@@ -95,7 +105,8 @@ class RASTER_EXPORT RasterImplementationGLES : public RasterInterface {
                       const gfx::Vector2dF& post_translate,
                       const gfx::Vector2dF& post_scale,
                       bool requires_clear,
-                      size_t* max_op_size_hint) override;
+                      size_t* max_op_size_hint,
+                      bool preserve_recording = true) override;
   void EndRasterCHROMIUM() override;
 
   // Image decode acceleration.
@@ -181,8 +192,6 @@ class RASTER_EXPORT RasterImplementationGLES : public RasterInterface {
   ContextSupport* context_support_;
   std::unique_ptr<GLHelper> gl_helper_;
   base::WeakPtrFactory<RasterImplementationGLES> weak_ptr_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(RasterImplementationGLES);
 };
 
 }  // namespace raster

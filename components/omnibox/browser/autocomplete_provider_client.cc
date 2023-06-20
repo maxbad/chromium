@@ -9,6 +9,11 @@ AutocompleteProviderClient::GetHistoryClustersService() {
   return nullptr;
 }
 
+ntp_tiles::MostVisitedSites*
+AutocompleteProviderClient::GetNtpMostVisitedSites() {
+  return nullptr;
+}
+
 bool AutocompleteProviderClient::AllowDeletingBrowserHistory() const {
   return true;
 }
@@ -19,4 +24,8 @@ std::string AutocompleteProviderClient::ProfileUserName() const {
 
 bool AutocompleteProviderClient::IsIncognitoModeAvailable() const {
   return true;
+}
+
+bool AutocompleteProviderClient::IsSharingHubAvailable() const {
+  return false;
 }

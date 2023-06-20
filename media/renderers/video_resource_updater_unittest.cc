@@ -383,7 +383,7 @@ TEST_F(VideoResourceUpdaterTest, WonkySoftwareFrameSoftwareCompositor) {
 TEST_F(VideoResourceUpdaterTest, ReuseResource) {
   std::unique_ptr<VideoResourceUpdater> updater = CreateUpdaterForHardware();
   scoped_refptr<VideoFrame> video_frame = CreateTestYUVVideoFrame();
-  video_frame->set_timestamp(base::TimeDelta::FromSeconds(1234));
+  video_frame->set_timestamp(base::Seconds(1234));
 
   // Allocate the resources for a YUV video frame.
   gl_->ResetUploadCount();
@@ -413,7 +413,7 @@ TEST_F(VideoResourceUpdaterTest, ReuseResource) {
 TEST_F(VideoResourceUpdaterTest, ReuseResourceNoDelete) {
   std::unique_ptr<VideoResourceUpdater> updater = CreateUpdaterForHardware();
   scoped_refptr<VideoFrame> video_frame = CreateTestYUVVideoFrame();
-  video_frame->set_timestamp(base::TimeDelta::FromSeconds(1234));
+  video_frame->set_timestamp(base::Seconds(1234));
 
   // Allocate the resources for a YUV video frame.
   gl_->ResetUploadCount();
@@ -458,7 +458,7 @@ TEST_F(VideoResourceUpdaterTest, SoftwareFrameRGBSoftwareCompositor) {
 TEST_F(VideoResourceUpdaterTest, ReuseResourceSoftwareCompositor) {
   std::unique_ptr<VideoResourceUpdater> updater = CreateUpdaterForSoftware();
   scoped_refptr<VideoFrame> video_frame = CreateTestYUVVideoFrame();
-  video_frame->set_timestamp(base::TimeDelta::FromSeconds(1234));
+  video_frame->set_timestamp(base::Seconds(1234));
 
   // Allocate the resources for a software video frame.
   VideoFrameExternalResources resources =
@@ -487,7 +487,7 @@ TEST_F(VideoResourceUpdaterTest, ReuseResourceSoftwareCompositor) {
 TEST_F(VideoResourceUpdaterTest, ReuseResourceNoDeleteSoftwareCompositor) {
   std::unique_ptr<VideoResourceUpdater> updater = CreateUpdaterForSoftware();
   scoped_refptr<VideoFrame> video_frame = CreateTestYUVVideoFrame();
-  video_frame->set_timestamp(base::TimeDelta::FromSeconds(1234));
+  video_frame->set_timestamp(base::Seconds(1234));
 
   // Allocate the resources for a software video frame.
   VideoFrameExternalResources resources =
@@ -796,7 +796,7 @@ TEST_F(VideoResourceUpdaterTest, CreateForHardwarePlanes_DualNV12) {
 TEST_F(VideoResourceUpdaterTest, CreateForHardwarePlanes_SingleP016HDR) {
   constexpr auto kHDR10ColorSpace = gfx::ColorSpace::CreateHDR10();
   gfx::HDRMetadata hdr_metadata{};
-  hdr_metadata.mastering_metadata.luminance_max = 1000;
+  hdr_metadata.color_volume_metadata.luminance_max = 1000;
   std::unique_ptr<VideoResourceUpdater> updater = CreateUpdaterForHardware();
   EXPECT_EQ(0u, GetSharedImageCount());
   scoped_refptr<VideoFrame> video_frame = CreateTestHardwareVideoFrame(

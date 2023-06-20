@@ -30,6 +30,9 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/metadata/metadata_header_macros.h"
 #include "ui/base/metadata/metadata_impl_macros.h"
+#include "ui/color/color_id.h"
+#include "ui/color/color_provider.h"
+#include "ui/gfx/canvas.h"
 #include "ui/gfx/color_palette.h"
 #include "ui/gfx/color_utils.h"
 #include "ui/gfx/geometry/rect.h"
@@ -38,6 +41,7 @@
 #include "ui/native_theme/native_theme.h"
 #include "ui/strings/grit/ui_strings.h"
 #include "ui/views/background.h"
+#include "ui/views/border.h"
 #include "ui/views/controls/button/image_button.h"
 #include "ui/views/controls/button/image_button_factory.h"
 #include "ui/views/controls/highlight_path_generator.h"
@@ -79,17 +83,17 @@ bool IsUrlInAppScope(web_app::AppBrowserController* app_controller, GURL url) {
 // TODO(tluk): The color id selection logic for security levels should be shared
 // with that in GetOmniboxSecurityChipColor() once transition to Color Pipeline
 // is complete.
-ui::NativeTheme::ColorId GetSecurityChipColorId(
+ui::ColorId GetSecurityChipColorId(
     security_state::SecurityLevel security_level) {
   switch (security_level) {
     case security_state::SECURE_WITH_POLICY_INSTALLED_CERT:
-      return ui::NativeTheme::kColorId_CustomTabBarSecurityChipWithCertColor;
+      return ui::kColorPwaSecurityChipForegroundPolicyCert;
     case security_state::SECURE:
-      return ui::NativeTheme::kColorId_CustomTabBarSecurityChipSecureColor;
+      return ui::kColorPwaSecurityChipForegroundSecure;
     case security_state::DANGEROUS:
-      return ui::NativeTheme::kColorId_CustomTabBarSecurityChipDangerousColor;
+      return ui::kColorPwaSecurityChipForegroundDangerous;
     default:
-      return ui::NativeTheme::kColorId_CustomTabBarSecurityChipDefaultColor;
+      return ui::kColorPwaSecurityChipForeground;
   }
 }
 
@@ -325,14 +329,14 @@ void CustomTabBarView::OnThemeChanged() {
 
   title_bar_color_ = optional_theme_color.value_or(GetDefaultFrameColor());
 
-  const SkColor foreground_color = GetNativeTheme()->GetSystemColor(
-      ui::NativeTheme::kColorId_CustomTabBarForegroundColor);
+  const auto* color_provider = GetColorProvider();
+  const SkColor foreground_color =
+      color_provider->GetColor(ui::kColorPwaToolbarForeground);
   SetImageFromVectorIconWithColor(
       close_button_, vector_icons::kCloseRoundedIcon,
       GetLayoutConstant(LOCATION_BAR_ICON_SIZE), foreground_color);
 
-  background_color_ = GetNativeTheme()->GetSystemColor(
-      ui::NativeTheme::kColorId_CustomTabBarBackgroundColor);
+  background_color_ = color_provider->GetColor(ui::kColorPwaToolbarBackground);
   SetBackground(views::CreateSolidBackground(background_color_));
 
   title_origin_view_->SetColors(background_color_);
@@ -398,8 +402,7 @@ SkColor CustomTabBarView::GetIconLabelBubbleSurroundingForegroundColor() const {
 }
 
 SkColor CustomTabBarView::GetIconLabelBubbleBackgroundColor() const {
-  return GetNativeTheme()->GetSystemColor(
-      ui::NativeTheme::kColorId_CustomTabBarBackgroundColor);
+  return GetColorProvider()->GetColor(ui::kColorPwaToolbarBackground);
 }
 
 content::WebContents* CustomTabBarView::GetWebContents() {
@@ -416,8 +419,7 @@ void CustomTabBarView::OnLocationIconDragged(const ui::MouseEvent& event) {}
 
 SkColor CustomTabBarView::GetSecurityChipColor(
     security_state::SecurityLevel security_level) const {
-  return GetNativeTheme()->GetSystemColor(
-      GetSecurityChipColorId(security_level));
+  return GetColorProvider()->GetColor(GetSecurityChipColorId(security_level));
 }
 
 bool CustomTabBarView::ShowPageInfoDialog() {

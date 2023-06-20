@@ -10,7 +10,6 @@
 
 #include "base/callback.h"
 #include "base/cancelable_callback.h"
-#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "base/process/kill.h"
 #include "chromeos/dbus/power/power_manager_client.h"
@@ -20,9 +19,9 @@
 
 namespace content {
 class RenderProcessHost;
-}
+}  // namespace content
 
-namespace chromeos {
+namespace ash {
 
 // Freezes the chrome renderers when the system is about to suspend and thaws
 // them after the system fully resumes.  This class registers itself as a
@@ -59,6 +58,10 @@ class RendererFreezer : public PowerManagerClient::RenderProcessManagerDelegate,
   };
 
   explicit RendererFreezer(std::unique_ptr<Delegate> delegate);
+
+  RendererFreezer(const RendererFreezer&) = delete;
+  RendererFreezer& operator=(const RendererFreezer&) = delete;
+
   ~RendererFreezer() override;
 
   // PowerManagerClient::RenderProcessManagerDelegate implementation.
@@ -97,10 +100,8 @@ class RendererFreezer : public PowerManagerClient::RenderProcessManagerDelegate,
   content::NotificationRegistrar registrar_;
 
   base::WeakPtrFactory<RendererFreezer> weak_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(RendererFreezer);
 };
 
-}  // namespace chromeos
+}  // namespace ash
 
 #endif  // CHROME_BROWSER_ASH_POWER_RENDERER_FREEZER_H_

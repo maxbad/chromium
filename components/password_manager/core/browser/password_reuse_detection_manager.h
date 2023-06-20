@@ -8,7 +8,6 @@
 #include <string>
 
 #include "base/containers/flat_set.h"
-#include "base/macros.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
 #include "components/password_manager/core/browser/password_manager_metrics_util.h"
@@ -30,6 +29,11 @@ class PasswordManagerClient;
 class PasswordReuseDetectionManager : public PasswordReuseDetectorConsumer {
  public:
   explicit PasswordReuseDetectionManager(PasswordManagerClient* client);
+
+  PasswordReuseDetectionManager(const PasswordReuseDetectionManager&) = delete;
+  PasswordReuseDetectionManager& operator=(
+      const PasswordReuseDetectionManager&) = delete;
+
   ~PasswordReuseDetectionManager() override;
   void DidNavigateMainFrame(const GURL& main_frame_url);
   void OnKeyPressedCommitted(const std::u16string& text);
@@ -64,13 +68,6 @@ class PasswordReuseDetectionManager : public PasswordReuseDetectorConsumer {
   // Used to retrieve the current time, in base::Time units.
   base::Clock* clock_;
   bool reuse_on_this_page_was_found_ = false;
-
-  // Caches the results returned from each store until all stores
-  // respond. All credentials are then forwarded to the `client_`.
-  base::flat_set<MatchingReusedCredential> all_matching_reused_credentials_;
-  int wait_counter_ = 0;
-
-  DISALLOW_COPY_AND_ASSIGN(PasswordReuseDetectionManager);
 };
 
 }  // namespace password_manager

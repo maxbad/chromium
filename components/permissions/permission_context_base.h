@@ -17,7 +17,6 @@
 #include "components/content_settings/core/common/content_settings_types.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "components/permissions/permission_request.h"
-#include "components/permissions/permission_request_impl.h"
 #include "components/permissions/permission_result.h"
 #include "third_party/blink/public/mojom/permissions_policy/permissions_policy_feature.mojom-forward.h"
 
@@ -40,7 +39,7 @@ class Observer : public base::CheckedObserver {
   virtual void OnPermissionChanged(
       const ContentSettingsPattern& primary_pattern,
       const ContentSettingsPattern& secondary_pattern,
-      ContentSettingsType content_type) = 0;
+      ContentSettingsTypeSet content_type_set) = 0;
 };
 
 using BrowserPermissionCallback = base::OnceCallback<void(ContentSetting)>;
@@ -58,7 +57,7 @@ using BrowserPermissionCallback = base::OnceCallback<void(ContentSetting)>;
 //   - Define your new permission in the ContentSettingsType enum.
 //   - Create a class that inherits from PermissionContextBase and passes the
 //     new permission.
-//   - Edit the PermissionRequestImpl methods to add the new text.
+//   - Edit the PermissionRequest methods to add the new text.
 //   - Hit several asserts for the missing plumbing and fix them :)
 // After this you can override several other methods to customize behavior,
 // in particular it is advised to override UpdateTabContext in order to manage
@@ -180,9 +179,10 @@ class PermissionContextBase : public KeyedService,
                                           ContentSetting content_setting);
 
   // content_settings::Observer:
-  void OnContentSettingChanged(const ContentSettingsPattern& primary_pattern,
-                               const ContentSettingsPattern& secondary_pattern,
-                               ContentSettingsType content_type) override;
+  void OnContentSettingChanged(
+      const ContentSettingsPattern& primary_pattern,
+      const ContentSettingsPattern& secondary_pattern,
+      ContentSettingsTypeSet content_type_set) override;
 
   // Implementors can override this method to use a different PermissionRequest
   // implementation.
@@ -191,8 +191,7 @@ class PermissionContextBase : public KeyedService,
       ContentSettingsType content_settings_type,
       bool has_gesture,
       content::WebContents* web_contents,
-      PermissionRequestImpl::PermissionDecidedCallback
-          permission_decided_callback,
+      PermissionRequest::PermissionDecidedCallback permission_decided_callback,
       base::OnceClosure delete_callback) const;
 
   ContentSettingsType content_settings_type() const {
@@ -214,7 +213,7 @@ class PermissionContextBase : public KeyedService,
   // Called when a request is no longer used so it can be cleaned up.
   void CleanUpRequest(const PermissionRequestID& id);
 
-  // This is the callback for PermissionRequestImpl and is called once the user
+  // This is the callback for PermissionRequest and is called once the user
   // allows/blocks/dismisses a permission prompt.
   void PermissionDecided(const PermissionRequestID& id,
                          const GURL& requesting_origin,

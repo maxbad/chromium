@@ -10,7 +10,7 @@
 #include <vector>
 
 #include "base/component_export.h"
-#include "base/macros.h"
+#include "base/observer_list.h"
 #include "chromeos/dbus/audio/cras_audio_client.h"
 
 namespace chromeos {
@@ -22,9 +22,16 @@ class COMPONENT_EXPORT(DBUS_AUDIO) FakeCrasAudioClient
   using ClientTypeToInputStreamCount = base::flat_map<std::string, uint32_t>;
 
   FakeCrasAudioClient();
+
+  FakeCrasAudioClient(const FakeCrasAudioClient&) = delete;
+  FakeCrasAudioClient& operator=(const FakeCrasAudioClient&) = delete;
+
   ~FakeCrasAudioClient() override;
 
   static FakeCrasAudioClient* Get();
+
+  void SetNoiseCancellationSupported(bool noise_cancellation_supported);
+  uint32_t GetNoiseCancellationEnabledCount();
 
   // CrasAudioClient overrides:
   void AddObserver(Observer* observer) override;
@@ -55,11 +62,14 @@ class COMPONENT_EXPORT(DBUS_AUDIO) FakeCrasAudioClient
                        const std::string& hotword_model,
                        VoidDBusMethodCallback callback) override;
   void SetFixA2dpPacketSize(bool enabled) override;
+  void SetFlossEnabled(bool enabled) override;
   void AddActiveInputNode(uint64_t node_id) override;
   void RemoveActiveInputNode(uint64_t node_id) override;
   void AddActiveOutputNode(uint64_t node_id) override;
   void RemoveActiveOutputNode(uint64_t node_id) override;
   void SwapLeftRight(uint64_t node_id, bool swap) override;
+  void SetDisplayRotation(uint64_t node_id,
+                          cras::DisplayRotation rotation) override;
   void SetGlobalOutputChannelRemix(int32_t channels,
                                    const std::vector<double>& mixer) override;
   void SetPlayerPlaybackStatus(const std::string& playback_status) override;
@@ -121,14 +131,14 @@ class COMPONENT_EXPORT(DBUS_AUDIO) FakeCrasAudioClient
   // By default, immediately sends OutputNodeVolumeChange signal following the
   // SetOutputNodeVolume fake dbus call.
   bool notify_volume_change_with_delay_ = false;
+  bool noise_cancellation_supported_ = false;
   uint32_t battery_level_ = 0;
+  uint32_t noise_cancellation_enabled_counter_ = 0;
   // Maps audio client type to the number of active input streams for clients
   // with the type specified
   ClientTypeToInputStreamCount active_input_streams_;
 
   base::ObserverList<Observer>::Unchecked observers_;
-
-  DISALLOW_COPY_AND_ASSIGN(FakeCrasAudioClient);
 };
 
 }  // namespace chromeos

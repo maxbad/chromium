@@ -176,8 +176,8 @@ void TestHelper::SetupTextureInitializationExpectations(
           GL_TEXTURE_CUBE_MAP_POSITIVE_Z,
           GL_TEXTURE_CUBE_MAP_NEGATIVE_Z,
         };
-        for (size_t ii = 0; ii < base::size(faces); ++ii) {
-          EXPECT_CALL(*gl, TexImage2D(faces[ii], 0, GL_RGBA, 1, 1, 0, GL_RGBA,
+        for (size_t face = 0; face < base::size(faces); ++face) {
+          EXPECT_CALL(*gl, TexImage2D(faces[face], 0, GL_RGBA, 1, 1, 0, GL_RGBA,
                                       GL_UNSIGNED_BYTE, _))
               .Times(1)
               .RetiresOnSaturation();
@@ -677,7 +677,7 @@ void TestHelper::SetupFeatureInfoInitExpectationsWithGLVersion(
         .RetiresOnSaturation();
   }
 
-#if defined(OS_LINUX) || defined(OS_CHROMEOS)
+#if !defined(OS_MAC)
   if (gl_info.is_es3 || gl_info.is_desktop_core_profile ||
       gfx::HasExtension(extension_set, "GL_EXT_texture_rg") ||
       (gfx::HasExtension(extension_set, "GL_ARB_texture_rg"))) {
@@ -736,7 +736,7 @@ void TestHelper::SetupFeatureInfoInitExpectationsWithGLVersion(
         .RetiresOnSaturation();
 #endif
   }
-#endif  // defined(OS_LINUX) || defined(OS_CHROMEOS)
+#endif  // !defined(OS_MAC)
 }
 
 void TestHelper::SetupExpectationsForClearingUniforms(::gl::MockGLInterface* gl,

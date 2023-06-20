@@ -11,12 +11,11 @@
 #include <vector>
 
 #include "base/location.h"
-#include "base/macros.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/sequence_checker.h"
-#include "base/sequenced_task_runner.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/threading/thread.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
@@ -37,7 +36,6 @@
 #include "components/sync/engine/configure_reason.h"
 #include "components/sync/engine/events/protocol_event_observer.h"
 #include "components/sync/engine/net/http_post_provider_factory.h"
-#include "components/sync/engine/net/network_time_update_callback.h"
 #include "components/sync/engine/shutdown_reason.h"
 #include "components/sync/engine/sync_engine.h"
 #include "components/sync/engine/sync_engine_host.h"
@@ -78,7 +76,12 @@ class SyncServiceImpl : public SyncService,
   // explicitly defined.
   struct InitParams {
     InitParams();
+
+    InitParams(const InitParams&) = delete;
+    InitParams& operator=(const InitParams&) = delete;
+
     InitParams(InitParams&& other);
+
     ~InitParams();
 
     std::unique_ptr<SyncClient> sync_client;
@@ -86,18 +89,17 @@ class SyncServiceImpl : public SyncService,
     // SyncClient::GetIdentityManager (but mind LocalSync).
     signin::IdentityManager* identity_manager = nullptr;
     StartBehavior start_behavior = MANUAL_START;
-    NetworkTimeUpdateCallback network_time_update_callback;
     scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory;
     network::NetworkConnectionTracker* network_connection_tracker = nullptr;
     version_info::Channel channel = version_info::Channel::UNKNOWN;
     std::string debug_identifier;
     policy::PolicyService* policy_service = nullptr;
-
-   private:
-    DISALLOW_COPY_AND_ASSIGN(InitParams);
   };
 
   explicit SyncServiceImpl(InitParams init_params);
+
+  SyncServiceImpl(const SyncServiceImpl&) = delete;
+  SyncServiceImpl& operator=(const SyncServiceImpl&) = delete;
 
   ~SyncServiceImpl() override;
 
@@ -112,8 +114,8 @@ class SyncServiceImpl : public SyncService,
   DisableReasonSet GetDisableReasons() const override;
   TransportState GetTransportState() const override;
   bool IsLocalSyncEnabled() const override;
-  CoreAccountInfo GetAuthenticatedAccountInfo() const override;
-  bool IsAuthenticatedAccountPrimary() const override;
+  CoreAccountInfo GetAccountInfo() const override;
+  bool HasSyncConsent() const override;
   GoogleServiceAuthError GetAuthError() const override;
   base::Time GetAuthErrorTime() const override;
   bool RequiresClientUpgrade() const override;
@@ -184,7 +186,6 @@ class SyncServiceImpl : public SyncService,
   void OnAccountsInCookieUpdated(
       const signin::AccountsInCookieJarInfo& accounts_in_cookie_jar_info,
       const GoogleServiceAuthError& error) override;
-  void OnAccountsCookieDeletedByUserAction() override;
 
   // Similar to above but with a callback that will be invoked on completion.
   void OnAccountsInCookieUpdatedWithCallback(
@@ -255,14 +256,6 @@ class SyncServiceImpl : public SyncService,
   SyncClient* GetSyncClientForTest();
 
  private:
-  // Passed as an argument to StopImpl to control whether or not the sync
-  // engine should clear its data when it shuts down. See StopImpl for more
-  // information.
-  enum SyncStopDataFate {
-    KEEP_DATA,
-    CLEAR_DATA,
-  };
-
   enum UnrecoverableErrorReason {
     ERROR_REASON_ENGINE_INIT_FAILURE,
     ERROR_REASON_ACTIONABLE_ERROR,
@@ -271,9 +264,6 @@ class SyncServiceImpl : public SyncService,
   // Callbacks for SyncAuthManager.
   void AccountStateChanged();
   void CredentialsChanged();
-
-  // Callbacks for SyncUserSettingsImpl.
-  void SyncAllowedByPlatformChanged(bool allowed);
 
   // A wrapper around SyncUserSettings::SetSyncRequested(), such that the
   // notification which is synchronously triggered will be ignored in the
@@ -309,20 +299,16 @@ class SyncServiceImpl : public SyncService,
 
   void UpdateDataTypesForInvalidations();
 
-  // Shuts down the engine sync components.
-  // |reason| dictates if syncing is being disabled or not.
-  void ShutdownImpl(ShutdownReason reason);
+  // Shuts down and destroys the engine. |reason| dictates if sync metadata
+  // should be kept or not.
+  // If the engine is still allowed to run (per IsEngineAllowedToRun()), it will
+  // soon start up again (possibly in transport-only mode).
+  void ResetEngine(ShutdownReason reason);
 
   // Helper for OnUnrecoverableError.
   void OnUnrecoverableErrorImpl(const base::Location& from_here,
                                 const std::string& message,
                                 UnrecoverableErrorReason reason);
-
-  // Stops the sync engine. |data_fate| controls whether the local sync data is
-  // deleted or kept when the engine shuts down.
-  // Does NOT set IsSyncRequested to false, use StopAndClear() or
-  // SyncUserSettings::SetSyncRequested() for that.
-  void StopImpl(SyncStopDataFate data_fate);
 
   // Puts the engine's sync scheduler into NORMAL mode.
   // Called when configuration is complete.
@@ -338,9 +324,6 @@ class SyncServiceImpl : public SyncService,
 
   // Kicks off asynchronous initialization of the SyncEngine.
   void StartUpSlowEngineComponents();
-
-  // Update UMA for syncing engine.
-  void UpdateEngineInitUMA(bool success) const;
 
   // Whether sync has been authenticated with an account ID.
   bool IsSignedIn() const;
@@ -398,9 +381,6 @@ class SyncServiceImpl : public SyncService,
 
   // Cache of the last SyncCycleSnapshot received from the sync engine.
   SyncCycleSnapshot last_snapshot_;
-
-  // Callback to update the network time; used for initializing the engine.
-  NetworkTimeUpdateCallback network_time_update_callback_;
 
   // The URL loader factory for the sync.
   scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory_;
@@ -487,8 +467,6 @@ class SyncServiceImpl : public SyncService,
   base::WeakPtrFactory<SyncServiceImpl> sync_enabled_weak_factory_{this};
 
   base::WeakPtrFactory<SyncServiceImpl> weak_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(SyncServiceImpl);
 };
 
 }  // namespace syncer

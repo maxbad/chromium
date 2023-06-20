@@ -16,9 +16,9 @@ import 'chrome://resources/polymer/v3_0/iron-icon/iron-icon.js';
 import 'chrome://resources/polymer/v3_0/paper-progress/paper-progress.js';
 import 'chrome://resources/polymer/v3_0/paper-styles/color.js';
 
-import {getToastManager} from 'chrome://resources/cr_elements/cr_toast/cr_toast_manager.m.js';
+import {getToastManager} from 'chrome://resources/cr_elements/cr_toast/cr_toast_manager.js';
 import {assert} from 'chrome://resources/js/assert.m.js';
-import {FocusRowBehavior, FocusRowBehaviorInterface} from 'chrome://resources/js/cr/ui/focus_row_behavior.m.js';
+import {FocusRowBehavior} from 'chrome://resources/js/cr/ui/focus_row_behavior.m.js';
 import {focusWithoutInk} from 'chrome://resources/js/cr/ui/focus_without_ink.m.js';
 import {loadTimeData} from 'chrome://resources/js/load_time_data.m.js';
 import {HTMLEscape} from 'chrome://resources/js/util.m.js';
@@ -28,14 +28,15 @@ import {BrowserProxy} from './browser_proxy.js';
 import {DangerType, States} from './constants.js';
 import {MojomData} from './data.js';
 import {PageHandlerInterface} from './downloads.mojom-webui.js';
-import {IconLoader} from './icon_loader.js';
+import {IconLoaderImpl} from './icon_loader.js';
 
 export interface DownloadsItemElement {
   $: {
     'controlled-by': HTMLElement,
     'file-icon': HTMLImageElement,
-    'url': HTMLAnchorElement,
+    'file-link': HTMLAnchorElement,
     'remove': HTMLElement,
+    'url': HTMLAnchorElement,
   };
 }
 
@@ -59,6 +60,13 @@ export class DownloadsItemElement extends DownloadsItemElementBase {
         value: true,
       },
 
+      hasShowInFolderLink_: {
+        computed: 'computeHasShowInFolderLink_(' +
+            'data.state, data.fileExternallyRemoved)',
+        type: Boolean,
+        value: true,
+      },
+
       controlledBy_: {
         computed: 'computeControlledBy_(data.byExtId, data.byExtName)',
         type: String,
@@ -77,8 +85,20 @@ export class DownloadsItemElement extends DownloadsItemElementBase {
         value: true,
       },
 
+      isDownloadItemSafe_: {
+        computed: 'computeIsDownloadItemSafe_(data.state)',
+        type: Boolean,
+        value: false
+      },
+
       isDangerous_: {
         computed: 'computeIsDangerous_(data.state)',
+        type: Boolean,
+        value: false,
+      },
+
+      shouldShowIncognitoWarning_: {
+        computed: 'computeShouldShowIncognitoWarning_(data.state)',
         type: Boolean,
         value: false,
       },
@@ -138,6 +158,8 @@ export class DownloadsItemElement extends DownloadsItemElementBase {
   private controlledBy_: string;
   private isActive_: boolean;
   private isDangerous_: boolean;
+  private isDownloadItemSafe_: boolean;
+  private shouldShowIncognitoWarning_: boolean;
   private isInProgress_: boolean;
   private pauseOrResumeText_: string;
   private showCancel_: boolean;
@@ -210,6 +232,11 @@ export class DownloadsItemElement extends DownloadsItemElementBase {
         !this.data.fileExternallyRemoved;
   }
 
+  private computeHasShowInFolderLink_(): boolean {
+    return loadTimeData.getBoolean('hasShowInFolder') &&
+        this.computeCompletelyOnDisk_();
+  }
+
   private computeControlledBy_(): string {
     if (!this.data.byExtId || !this.data.byExtName) {
       return '';
@@ -249,6 +276,9 @@ export class DownloadsItemElement extends DownloadsItemElementBase {
             return loadTimeData.getString('deepScannedOpenedDangerousDesc');
         }
         break;
+
+      case States.INCOGNITO_WARNING:
+        return loadTimeData.getString('incognitoDownloadsWarningDesc');
 
       case States.MIXED_CONTENT:
         return loadTimeData.getString('mixedContentDownloadDesc');
@@ -304,7 +334,8 @@ export class DownloadsItemElement extends DownloadsItemElementBase {
       const dangerType = this.data.dangerType as DangerType;
       if ((loadTimeData.getBoolean('requestsApVerdicts') &&
            dangerType === DangerType.UNCOMMON_CONTENT) ||
-          dangerType === DangerType.SENSITIVE_CONTENT_WARNING) {
+          dangerType === DangerType.SENSITIVE_CONTENT_WARNING ||
+          this.data.state === States.INCOGNITO_WARNING) {
         return 'cr:warning';
       }
 
@@ -335,7 +366,8 @@ export class DownloadsItemElement extends DownloadsItemElementBase {
       const dangerType = this.data.dangerType as DangerType;
       if ((loadTimeData.getBoolean('requestsApVerdicts') &&
            dangerType === DangerType.UNCOMMON_CONTENT) ||
-          dangerType === DangerType.SENSITIVE_CONTENT_WARNING) {
+          dangerType === DangerType.SENSITIVE_CONTENT_WARNING ||
+          this.data.state === States.INCOGNITO_WARNING) {
         return 'yellow';
       }
 
@@ -486,10 +518,12 @@ export class DownloadsItemElement extends DownloadsItemElementBase {
       this.useFileIcon_ = false;
     } else if (this.data.state === States.ASYNC_SCANNING) {
       this.useFileIcon_ = false;
+    } else if (this.data.state === States.INCOGNITO_WARNING) {
+      this.useFileIcon_ = false;
     } else {
       this.$.url.href = assert(this.data.url);
       const path = this.data.filePath;
-      IconLoader.getInstance()
+      IconLoaderImpl.getInstance()
           .loadIcon(this.$['file-icon'], path)
           .then(success => {
             if (path === this.data.filePath &&
@@ -498,6 +532,16 @@ export class DownloadsItemElement extends DownloadsItemElementBase {
             }
           });
     }
+  }
+
+  private computeShouldShowIncognitoWarning_(): boolean {
+    return this.data.state === States.INCOGNITO_WARNING &&
+        this.data.shouldShowIncognitoWarning;
+  }
+
+  private computeIsDownloadItemSafe_(): boolean {
+    return !this.computeIsDangerous_() &&
+        !this.computeShouldShowIncognitoWarning_();
   }
 
   private onCancelTap_() {
@@ -563,6 +607,10 @@ export class DownloadsItemElement extends DownloadsItemElementBase {
     this.mojoHandler_!.saveDangerousRequiringGesture(this.data.id);
   }
 
+  private onIncognitoWarningAccepted_() {
+    this.mojoHandler_!.acceptIncognitoWarning(this.data.id);
+  }
+
   private onShowTap_() {
     this.mojoHandler_!.show(this.data.id);
   }
@@ -582,6 +630,12 @@ export class DownloadsItemElement extends DownloadsItemElementBase {
 
   static get template() {
     return html`{__html_template__}`;
+  }
+}
+
+declare global {
+  interface HTMLElementTagNameMap {
+    'downloads-item': DownloadsItemElement;
   }
 }
 

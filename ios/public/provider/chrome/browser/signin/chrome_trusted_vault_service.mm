@@ -22,31 +22,6 @@ void ChromeTrustedVaultService::RemoveObserver(Observer* observer) {
   observer_list_.RemoveObserver(observer);
 }
 
-void ChromeTrustedVaultService::GetIsRecoverabilityDegraded(
-    ChromeIdentity* chrome_identity,
-    base::OnceCallback<void(bool)> callback) {
-  std::move(callback).Run(false);
-}
-
-void ChromeTrustedVaultService::Reauthentication(
-    ChromeIdentity* chrome_identity,
-    UIViewController* presentingViewController,
-    void (^callback)(BOOL success, NSError* error)) {}
-
-void ChromeTrustedVaultService::ReauthenticationForFetchKeys(
-    ChromeIdentity* chrome_identity,
-    UIViewController* presentingViewController,
-    void (^callback)(BOOL success, NSError* error)) {
-  Reauthentication(chrome_identity, presentingViewController, callback);
-}
-
-void ChromeTrustedVaultService::ReauthenticationForDegradedRecoverability(
-    ChromeIdentity* chrome_identity,
-    UIViewController* presentingViewController,
-    void (^callback)(BOOL success, NSError* error)) {
-  Reauthentication(chrome_identity, presentingViewController, callback);
-}
-
 void ChromeTrustedVaultService::ReauthenticationForOptIn(
     ChromeIdentity* chrome_identity,
     UIViewController* presentingViewController,

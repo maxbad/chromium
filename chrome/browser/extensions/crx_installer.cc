@@ -13,11 +13,10 @@
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/lazy_instance.h"
-#include "base/macros.h"
 #include "base/metrics/histogram_macros.h"
-#include "base/sequenced_task_runner.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/time/time.h"
 #include "base/version.h"
@@ -25,7 +24,6 @@
 #include "build/chromeos_buildflags.h"
 #include "chrome/browser/extensions/blocklist_check.h"
 #include "chrome/browser/extensions/convert_user_script.h"
-#include "chrome/browser/extensions/convert_web_app.h"
 #include "chrome/browser/extensions/extension_assets_manager.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/forced_extensions/install_stage_tracker.h"
@@ -35,7 +33,6 @@
 #include "chrome/browser/extensions/permissions_updater.h"
 #include "chrome/browser/extensions/webstore_installer.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/web_applications/components/web_application_info.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension_constants.h"
@@ -255,16 +252,6 @@ void CrxInstaller::ConvertUserScriptOnSharedFileThread() {
                                     {} /* ruleset_install_prefs */);
 }
 
-void CrxInstaller::InstallWebApp(const WebApplicationInfo& web_app) {
-  NotifyCrxInstallBegin();
-
-  if (!shared_file_task_runner_->PostTask(
-          FROM_HERE,
-          base::BindOnce(&CrxInstaller::ConvertWebAppOnSharedFileThread, this,
-                         web_app)))
-    NOTREACHED();
-}
-
 void CrxInstaller::UpdateExtensionFromUnpackedCrx(
     const std::string& extension_id,
     const std::string& public_key,
@@ -306,24 +293,6 @@ void CrxInstaller::UpdateExtensionFromUnpackedCrx(
   set_do_not_sync(extension_prefs->DoNotSync(extension_id));
 
   InstallUnpackedCrx(extension_id, public_key, unpacked_dir);
-}
-
-void CrxInstaller::ConvertWebAppOnSharedFileThread(
-    const WebApplicationInfo& web_app) {
-  scoped_refptr<Extension> extension(
-      ConvertWebAppToExtension(web_app, base::Time::Now(), install_directory_,
-                               creation_flags_, install_source_));
-  if (!extension.get()) {
-    // Validation should have stopped any potential errors before getting here.
-    NOTREACHED() << "Could not convert web app to extension.";
-    return;
-  }
-
-  // TODO(aa): conversion data gets lost here :(
-
-  OnUnpackSuccessOnSharedFileThread(extension->path(), extension->path(),
-                                    nullptr, extension, SkBitmap(),
-                                    {} /* ruleset_install_prefs */);
 }
 
 absl::optional<CrxInstallError> CrxInstaller::CheckExpectations(
@@ -504,6 +473,28 @@ void CrxInstaller::ShouldComputeHashesOnUI(
                 content_verifier->ShouldComputeHashesOnInstall(*extension);
   GetUnpackerTaskRunner()->PostTask(
       FROM_HERE, base::BindOnce(std::move(callback), result));
+}
+
+void CrxInstaller::GetContentVerifierKeyOnUI(
+    base::OnceCallback<void(ContentVerifierKey)> callback) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  ContentVerifierKey key = ExtensionSystem::Get(profile_)
+                               ->content_verifier()
+                               ->GetContentVerifierKey();
+  // Normally content verifier key is an std::span, so only a reference to the
+  // real key. Hence we have to make a copy before passing it to another thread.
+  std::vector<uint8_t> key_copy(key.begin(), key.end());
+  GetUnpackerTaskRunner()->PostTask(
+      FROM_HERE, base::BindOnce(std::move(callback), std::move(key_copy)));
+}
+
+void CrxInstaller::GetContentVerifierKey(
+    base::OnceCallback<void(ContentVerifierKey)> callback) {
+  if (!content::GetUIThreadTaskRunner({})->PostTask(
+          FROM_HERE, base::BindOnce(&CrxInstaller::GetContentVerifierKeyOnUI,
+                                    this, std::move(callback)))) {
+    NOTREACHED();
+  }
 }
 
 void CrxInstaller::ShouldComputeHashesForOffWebstoreExtension(
@@ -707,13 +698,13 @@ void CrxInstaller::OnInstallChecksComplete(const PreloadCheck::Errors& errors) {
   }
 
   // Check the blocklist state.
-  if (errors.count(PreloadCheck::BLOCKLISTED_ID) ||
-      errors.count(PreloadCheck::BLOCKLISTED_UNKNOWN)) {
+  if (errors.count(PreloadCheck::Error::kBlocklistedId) ||
+      errors.count(PreloadCheck::Error::kBlocklistedUnknown)) {
     if (allow_silent_install_) {
       // NOTE: extension may still be blocklisted, but we're forced to silently
       // install it. In this case, ExtensionService::OnExtensionInstalled needs
       // to deal with it.
-      if (errors.count(PreloadCheck::BLOCKLISTED_ID))
+      if (errors.count(PreloadCheck::Error::kBlocklistedId))
         install_flags_ |= kInstallFlagIsBlocklistedForMalware;
     } else {
       // User tried to install a blocklisted extension. Show an error and
@@ -730,7 +721,7 @@ void CrxInstaller::OnInstallChecksComplete(const PreloadCheck::Errors& errors) {
   }
 
   // Check for policy errors.
-  if (errors.count(PreloadCheck::DISALLOWED_BY_POLICY)) {
+  if (errors.count(PreloadCheck::Error::kDisallowedByPolicy)) {
     // We don't want to show the error infobar for installs from the WebStore,
     // because the WebStore already shows an error dialog itself.
     // Note: |client_| can be NULL in unit_tests!
@@ -804,7 +795,8 @@ void CrxInstaller::ConfirmInstall() {
   }
 }
 
-void CrxInstaller::OnInstallPromptDone(ExtensionInstallPrompt::Result result) {
+void CrxInstaller::OnInstallPromptDone(
+    ExtensionInstallPrompt::DoneCallbackPayload payload) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   // If update_from_settings_page_ boolean is true, this functions is
@@ -813,7 +805,7 @@ void CrxInstaller::OnInstallPromptDone(ExtensionInstallPrompt::Result result) {
   // ExtensionInstallPrompt::ShowDialog().
 
   ExtensionService* service = service_weak_.get();
-  switch (result) {
+  switch (payload.result) {
     case ExtensionInstallPrompt::Result::ACCEPTED:
       if (!service || service->browser_terminating())
         return;

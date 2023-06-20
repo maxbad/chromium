@@ -10,7 +10,6 @@
 
 #include "base/callback.h"
 #include "base/gtest_prod_util.h"
-#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
@@ -61,6 +60,9 @@ class PrintJob : public base::RefCountedThreadSafe<PrintJob>,
   // If PrintJob is created on Chrome OS, call SetSource() to set which
   // component initiated this print job.
   PrintJob();
+
+  PrintJob(const PrintJob&) = delete;
+  PrintJob& operator=(const PrintJob&) = delete;
 
   // Grabs the ownership of the PrintJobWorker from a PrinterQuery along with
   // the print settings. Sets the expected page count of the print job based on
@@ -233,8 +235,6 @@ class PrintJob : public base::RefCountedThreadSafe<PrintJob>,
 
   // Holds the quit closure while running a nested RunLoop to flush tasks.
   base::OnceClosure quit_closure_;
-
-  DISALLOW_COPY_AND_ASSIGN(PrintJob);
 };
 
 // Details for a NOTIFY_PRINT_JOB_EVENT notification. The members may be NULL.
@@ -242,15 +242,6 @@ class JobEventDetails : public base::RefCountedThreadSafe<JobEventDetails> {
  public:
   // Event type.
   enum Type {
-    // Print... dialog box has been closed with OK button.
-    USER_INIT_DONE,
-
-    // Print... dialog box has been closed with CANCEL button.
-    USER_INIT_CANCELED,
-
-    // An automated initialization has been done, e.g. Init(false, NULL).
-    DEFAULT_INIT_DONE,
-
     // A new document started printing.
     NEW_DOC,
 
@@ -261,9 +252,6 @@ class JobEventDetails : public base::RefCountedThreadSafe<JobEventDetails> {
     // The worker thread is finished. A good moment to release the handle to
     // PrintJob.
     JOB_DONE,
-
-    // All missing pages have been requested.
-    ALL_PAGES_REQUESTED,
 
     // An error occured. Printing is canceled.
     FAILED,
@@ -281,6 +269,9 @@ class JobEventDetails : public base::RefCountedThreadSafe<JobEventDetails> {
                   PrintedPage* page);
 #endif
   JobEventDetails(Type type, int job_id, PrintedDocument* document);
+
+  JobEventDetails(const JobEventDetails&) = delete;
+  JobEventDetails& operator=(const JobEventDetails&) = delete;
 
   // Getters.
   PrintedDocument* document() const;
@@ -303,8 +294,6 @@ class JobEventDetails : public base::RefCountedThreadSafe<JobEventDetails> {
 #endif
   const Type type_;
   int job_id_;
-
-  DISALLOW_COPY_AND_ASSIGN(JobEventDetails);
 };
 
 }  // namespace printing

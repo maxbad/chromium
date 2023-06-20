@@ -22,6 +22,7 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/manifest_icon_downloader.h"
 #include "content/public/browser/navigation_handle.h"
+#include "content/public/browser/page.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/common/content_features.h"
@@ -31,6 +32,8 @@
 #include "services/network/public/cpp/is_potentially_trustworthy.h"
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/common/manifest/manifest_icon_selector.h"
+#include "third_party/blink/public/common/manifest/manifest_util.h"
+#include "third_party/blink/public/common/storage_key/storage_key.h"
 #include "third_party/blink/public/mojom/manifest/display_mode.mojom.h"
 #include "url/origin.h"
 
@@ -124,10 +127,9 @@ struct ImageTypeDetails {
 
 constexpr ImageTypeDetails kSupportedImageTypes[] = {
     {".png", "image/png"},
-// TODO(https://crbug.com/578122): Add SVG support for Android.
+    {".svg", "image/svg+xml"},
 // TODO(https://crbug.com/466958): Add WebP support for Android.
 #if !defined(OS_ANDROID)
-    {".svg", "image/svg+xml"},
     {".webp", "image/webp"},
 #endif
 };
@@ -155,7 +157,7 @@ bool IsIconTypeSupported(const blink::Manifest::ImageResource& icon) {
 
 // Returns whether |manifest| specifies an SVG or PNG icon that has
 // IconPurpose::ANY, with size >= kMinimumPrimaryIconSizeInPx (or size "any").
-bool DoesManifestContainRequiredIcon(const blink::Manifest& manifest) {
+bool DoesManifestContainRequiredIcon(const blink::mojom::Manifest& manifest) {
   for (const auto& icon : manifest.icons) {
     if (!IsIconTypeSupported(icon))
       continue;
@@ -181,8 +183,9 @@ bool ShouldRejectDisplayMode(blink::mojom::DisplayMode display_mode) {
       display_mode == blink::mojom::DisplayMode::kStandalone ||
       display_mode == blink::mojom::DisplayMode::kFullscreen ||
       display_mode == blink::mojom::DisplayMode::kMinimalUi ||
-      (display_mode == blink::mojom::DisplayMode::kWindowControlsOverlay &&
-       base::FeatureList::IsEnabled(features::kWebAppWindowControlsOverlay)));
+      (display_mode == blink::mojom::DisplayMode::kWindowControlsOverlay) ||
+      (display_mode == blink::mojom::DisplayMode::kTabbed &&
+       base::FeatureList::IsEnabled(features::kDesktopPWAsTabStrip)));
 }
 
 void OnDidCompleteGetAllErrors(
@@ -331,6 +334,9 @@ void InstallableManager::GetPrimaryIcon(
   GetData(params,
           base::BindOnce(OnDidCompleteGetPrimaryIcon, std::move(callback)));
 }
+
+InstallableManager::ManifestProperty::ManifestProperty() = default;
+InstallableManager::ManifestProperty::~ManifestProperty() = default;
 
 bool InstallableManager::IsIconFetchComplete(const IconUsage usage) const {
   const auto it = icons_.find(usage);
@@ -504,6 +510,14 @@ void InstallableManager::CleanupAndStartNextTask() {
   if (worker_error() == NO_MATCHING_SERVICE_WORKER)
     worker_ = std::make_unique<ServiceWorkerProperty>();
 
+  // |valid_manifest_| shouldn't be re-used across tasks because its state is
+  // dependent on current task's |params|.
+  valid_manifest_ = std::make_unique<ValidManifestProperty>();
+  if (manifest_->error == NO_MANIFEST || manifest_->error == MANIFEST_EMPTY) {
+    valid_manifest_->fetched = true;
+    valid_manifest_->is_valid = false;
+  }
+
   task_queue_.Next();
   WorkOnTask();
 }
@@ -571,6 +585,8 @@ void InstallableManager::WorkOnTask() {
     CheckEligiblity();
   } else if (!manifest_->fetched) {
     FetchManifest();
+  } else if (params.valid_manifest && !valid_manifest_->fetched) {
+    CheckManifestValid(params.check_webapp_manifest_display);
   } else if (params.valid_primary_icon && params.prefer_maskable_icon &&
              !IsMaskableIconFetched(IconUsage::kPrimary)) {
     CheckAndFetchBestIcon(GetIdealPrimaryAdaptiveLauncherIconSizeInPx(),
@@ -581,8 +597,6 @@ void InstallableManager::WorkOnTask() {
     CheckAndFetchBestIcon(GetIdealPrimaryIconSizeInPx(),
                           GetMinimumPrimaryIconSizeInPx(), IconPurpose::ANY,
                           IconUsage::kPrimary);
-  } else if (params.valid_manifest && !valid_manifest_->fetched) {
-    CheckManifestValid(params.check_webapp_manifest_display);
   } else if (params.fetch_screenshots && !is_screenshots_fetch_complete_) {
     CheckAndFetchScreenshots();
   } else if (params.has_worker && !worker_->fetched) {
@@ -603,7 +617,7 @@ void InstallableManager::WorkOnTask() {
 }
 
 void InstallableManager::CheckEligiblity() {
-  // Fail if this is an incognito window, non-main frame, or insecure context.
+  // Fail if this is an incognito window or insecure context.
   content::WebContents* web_contents = GetWebContents();
   if (web_contents->GetBrowserContext()->IsOffTheRecord()) {
     eligibility_->errors.push_back(IN_INCOGNITO);
@@ -622,25 +636,27 @@ void InstallableManager::FetchManifest() {
   content::WebContents* web_contents = GetWebContents();
   DCHECK(web_contents);
 
-  web_contents->GetManifest(base::BindOnce(
+  // This uses DidFinishNavigation to abort when the primary page changes.
+  // Therefore this should always be the correct page.
+  web_contents->GetPrimaryPage().GetManifest(base::BindOnce(
       &InstallableManager::OnDidGetManifest, weak_factory_.GetWeakPtr()));
 }
 
 void InstallableManager::OnDidGetManifest(const GURL& manifest_url,
-                                          const blink::Manifest& manifest) {
+                                          blink::mojom::ManifestPtr manifest) {
   if (!GetWebContents())
     return;
 
   if (manifest_url.is_empty()) {
     manifest_->error = NO_MANIFEST;
     SetManifestDependentTasksComplete();
-  } else if (manifest.IsEmpty()) {
+  } else if (blink::IsEmptyManifest(manifest)) {
     manifest_->error = MANIFEST_EMPTY;
     SetManifestDependentTasksComplete();
   }
 
   manifest_->url = manifest_url;
-  manifest_->manifest = manifest;
+  manifest_->manifest = std::move(manifest);
   manifest_->fetched = true;
   WorkOnTask();
 }
@@ -648,7 +664,7 @@ void InstallableManager::OnDidGetManifest(const GURL& manifest_url,
 void InstallableManager::CheckManifestValid(
     bool check_webapp_manifest_display) {
   DCHECK(!valid_manifest_->fetched);
-  DCHECK(!manifest().IsEmpty());
+  DCHECK(!blink::IsEmptyManifest(manifest()));
 
   valid_manifest_->is_valid =
       IsManifestValidForWebApp(manifest(), check_webapp_manifest_display);
@@ -657,10 +673,10 @@ void InstallableManager::CheckManifestValid(
 }
 
 bool InstallableManager::IsManifestValidForWebApp(
-    const blink::Manifest& manifest,
+    const blink::mojom::Manifest& manifest,
     bool check_webapp_manifest_display) {
   bool is_valid = true;
-  if (manifest.IsEmpty()) {
+  if (blink::IsEmptyManifest(manifest)) {
     valid_manifest_->errors.push_back(MANIFEST_EMPTY);
     return false;
   }
@@ -705,7 +721,7 @@ bool InstallableManager::IsManifestValidForWebApp(
 
 void InstallableManager::CheckServiceWorker() {
   DCHECK(!worker_->fetched);
-  DCHECK(!manifest().IsEmpty());
+  DCHECK(!blink::IsEmptyManifest(manifest()));
 
   if (!service_worker_context_)
     return;
@@ -713,6 +729,7 @@ void InstallableManager::CheckServiceWorker() {
   // Check to see if there is a service worker for the manifest's scope.
   service_worker_context_->CheckHasServiceWorker(
       manifest().scope,
+      blink::StorageKey(url::Origin::Create(manifest().scope)),
       base::BindOnce(&InstallableManager::OnDidCheckHasServiceWorker,
                      weak_factory_.GetWeakPtr(), base::TimeTicks::Now()));
 }
@@ -743,6 +760,7 @@ void InstallableManager::OnDidCheckHasServiceWorker(
         // environment and see if the site supports an offline page.
         service_worker_context_->CheckOfflineCapability(
             manifest().start_url,
+            blink::StorageKey(url::Origin::Create(manifest().start_url)),
             base::BindOnce(&InstallableManager::OnDidCheckOfflineCapability,
                            weak_factory_.GetWeakPtr(),
                            check_service_worker_start_time,
@@ -821,7 +839,7 @@ void InstallableManager::CheckAndFetchBestIcon(int ideal_icon_size_in_px,
                                                int minimum_icon_size_in_px,
                                                const IconPurpose purpose,
                                                const IconUsage usage) {
-  DCHECK(!manifest().IsEmpty());
+  DCHECK(!blink::IsEmptyManifest(manifest()));
 
   IconProperty& icon = icons_[usage];
   icon.fetched = true;
@@ -866,7 +884,7 @@ void InstallableManager::OnIconFetched(const GURL icon_url,
 }
 
 void InstallableManager::CheckAndFetchScreenshots() {
-  DCHECK(!manifest().IsEmpty());
+  DCHECK(!blink::IsEmptyManifest(manifest()));
   DCHECK(!is_screenshots_fetch_complete_);
 
   screenshots_downloading_ = 0;
@@ -971,15 +989,14 @@ void InstallableManager::OnDestruct(content::ServiceWorkerContext* context) {
 
 void InstallableManager::DidFinishNavigation(
     content::NavigationHandle* handle) {
-  if (handle->IsInMainFrame() && handle->HasCommitted() &&
+  if (handle->IsInPrimaryMainFrame() && handle->HasCommitted() &&
       !handle->IsSameDocument()) {
     Reset(USER_NAVIGATED);
   }
 }
 
-void InstallableManager::DidUpdateWebManifestURL(
-    content::RenderFrameHost* rfh,
-    const absl::optional<GURL>& manifest_url) {
+void InstallableManager::DidUpdateWebManifestURL(content::RenderFrameHost* rfh,
+                                                 const GURL& manifest_url) {
   // A change in the manifest URL invalidates our entire internal state.
   Reset(MANIFEST_URL_CHANGED);
 }
@@ -993,8 +1010,9 @@ const GURL& InstallableManager::manifest_url() const {
   return manifest_->url;
 }
 
-const blink::Manifest& InstallableManager::manifest() const {
-  return manifest_->manifest;
+const blink::mojom::Manifest& InstallableManager::manifest() const {
+  DCHECK(manifest_->manifest);
+  return *manifest_->manifest;
 }
 
 bool InstallableManager::valid_manifest() {
@@ -1005,6 +1023,6 @@ bool InstallableManager::has_worker() {
   return worker_->has_worker;
 }
 
-WEB_CONTENTS_USER_DATA_KEY_IMPL(InstallableManager)
+WEB_CONTENTS_USER_DATA_KEY_IMPL(InstallableManager);
 
 }  // namespace webapps

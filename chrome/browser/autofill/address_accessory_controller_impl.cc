@@ -18,6 +18,7 @@
 #include "components/autofill/content/browser/content_autofill_driver.h"
 #include "components/autofill/core/browser/personal_data_manager.h"
 #include "components/autofill/core/common/autofill_features.h"
+#include "components/autofill/core/common/unique_ids.h"
 #include "components/strings/grit/components_strings.h"
 #include "content/public/browser/web_contents.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
@@ -48,8 +49,8 @@ void AddProfileInfoAsSelectableField(UserInfo* info,
   if (type == ServerFieldType::NAME_MIDDLE && field.empty()) {
     field = profile->GetRawInfo(ServerFieldType::NAME_MIDDLE_INITIAL);
   }
-  info->add_field(UserInfo::Field(field, field, /*is_password=*/false,
-                                  /*selectable=*/true));
+  info->add_field(AccessorySheetField(field, field, /*is_password=*/false,
+                                      /*selectable=*/true));
 }
 
 UserInfo TranslateProfile(const AutofillProfile* profile) {
@@ -125,7 +126,7 @@ AddressAccessoryControllerImpl::GetSheetData() const {
 
 void AddressAccessoryControllerImpl::OnFillingTriggered(
     FieldGlobalId focused_field_id,
-    const UserInfo::Field& selection) {
+    const AccessorySheetField& selection) {
   // Since the data we fill is scoped to the profile and not to a frame, we can
   // fill the focused frame - we basically behave like a keyboard here.
   content::RenderFrameHost* rfh = web_contents_->GetFocusedFrame();
@@ -211,6 +212,6 @@ AddressAccessoryControllerImpl::GetManualFillingController() {
   return mf_controller_;
 }
 
-WEB_CONTENTS_USER_DATA_KEY_IMPL(AddressAccessoryControllerImpl)
+WEB_CONTENTS_USER_DATA_KEY_IMPL(AddressAccessoryControllerImpl);
 
 }  // namespace autofill

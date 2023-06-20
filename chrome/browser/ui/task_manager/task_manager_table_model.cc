@@ -304,7 +304,7 @@ TableSortDescriptor::TableSortDescriptor(int col_id, bool ascending)
 ////////////////////////////////////////////////////////////////////////////////
 
 TaskManagerTableModel::TaskManagerTableModel(TableViewDelegate* delegate)
-    : TaskManagerObserver(base::TimeDelta::FromMilliseconds(kRefreshTimeMS),
+    : TaskManagerObserver(base::Milliseconds(kRefreshTimeMS),
                           REFRESH_TYPE_NONE),
       table_view_delegate_(delegate),
       columns_settings_(new base::DictionaryValue),
@@ -868,8 +868,7 @@ void TaskManagerTableModel::StoreColumnsSettings() {
 
   base::DictionaryValue::Iterator it(*columns_settings_);
   while (!it.IsAtEnd()) {
-    dict_update->Set(it.key(),
-                     base::Value::ToUniquePtrValue(it.value().Clone()));
+    dict_update->SetPath(it.key(), it.value().Clone());
     it.Advance();
   }
 

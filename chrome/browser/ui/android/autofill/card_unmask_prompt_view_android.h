@@ -11,7 +11,6 @@
 
 #include "base/android/jni_string.h"
 #include "base/android/scoped_java_ref.h"
-#include "base/macros.h"
 #include "components/autofill/core/browser/ui/payments/card_unmask_prompt_view.h"
 
 namespace content {
@@ -27,6 +26,10 @@ class CardUnmaskPromptViewAndroid : public CardUnmaskPromptView {
   explicit CardUnmaskPromptViewAndroid(CardUnmaskPromptController* controller,
                                        content::WebContents* web_contents);
 
+  CardUnmaskPromptViewAndroid(const CardUnmaskPromptViewAndroid&) = delete;
+  CardUnmaskPromptViewAndroid& operator=(const CardUnmaskPromptViewAndroid&) =
+      delete;
+
   bool CheckUserInputValidity(
       JNIEnv* env,
       const base::android::JavaParamRef<jobject>& obj,
@@ -36,7 +39,6 @@ class CardUnmaskPromptViewAndroid : public CardUnmaskPromptView {
                    const base::android::JavaParamRef<jstring>& cvc,
                    const base::android::JavaParamRef<jstring>& month,
                    const base::android::JavaParamRef<jstring>& year,
-                   jboolean should_store_locally,
                    jboolean enable_fido_auth);
   void OnNewCardLinkClicked(JNIEnv* env,
                             const base::android::JavaParamRef<jobject>& obj);
@@ -47,6 +49,7 @@ class CardUnmaskPromptViewAndroid : public CardUnmaskPromptView {
 
   // CardUnmaskPromptView implementation.
   void Show() override;
+  void Dismiss() override;
   void ControllerGone() override;
   void DisableAndWaitForVerification() override;
   void GotVerificationResult(const std::u16string& error_message,
@@ -66,8 +69,6 @@ class CardUnmaskPromptViewAndroid : public CardUnmaskPromptView {
 
   CardUnmaskPromptController* controller_;
   content::WebContents* web_contents_;
-
-  DISALLOW_COPY_AND_ASSIGN(CardUnmaskPromptViewAndroid);
 };
 
 }  // namespace autofill

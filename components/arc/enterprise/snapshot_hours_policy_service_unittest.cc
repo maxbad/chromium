@@ -27,6 +27,7 @@ namespace data_snapshotd {
 namespace {
 
 constexpr char kPublicAccountEmail[] = "public-session-account@localhost";
+constexpr char kUserAccountEmail[] = "regular-user-account@localhost";
 
 // DeviceArcDataSnapshotHours policy with one correct interval.
 constexpr char kJsonPolicy[] =
@@ -46,7 +47,7 @@ constexpr char kJsonPolicy[] =
     "\"timezone\": \"GMT\""
     "}";
 
-// DeviceArcDataSnapshotHours incorrect policy with missing timezone.
+// DeviceArcDataSnapshotHours correct policy with missing timezone.
 constexpr char kJsonPolicyNoTimezone[] =
     "{"
     "\"intervals\": ["
@@ -95,8 +96,8 @@ constexpr char kJsonPolicyEmptyIntervals[] =
     "\"timezone\": \"GMT\""
     "}";
 
-// DeviceArcDataSnapshotHours incorrect policy with empty timezone.
-constexpr char kJsonPolicyWrongOffset[] =
+// DeviceArcDataSnapshotHours correct policy with UNSET timezone.
+constexpr char kJsonPolicyUnsetTimezone[] =
     "{"
     "\"intervals\": ["
     "{"
@@ -110,7 +111,7 @@ constexpr char kJsonPolicyWrongOffset[] =
     "}"
     "}"
     "],"
-    "\"timezone\": \"\""
+    "\"timezone\": \"UNSET\""
     "}";
 
 class FakeObserver : public SnapshotHoursPolicyService::Observer {
@@ -146,14 +147,16 @@ class SnapshotHoursPolicyServiceTest
 
   void SetUp() override {
     arc::prefs::RegisterLocalStatePrefs(local_state_.registry());
-    policy_service_ =
-        std::make_unique<SnapshotHoursPolicyService>(local_state());
-    observer_ = std::make_unique<FakeObserver>();
-    policy_service()->AddObserver(observer_.get());
 
     fake_user_manager_ = new user_manager::FakeUserManager();
     scoped_user_manager_ = std::make_unique<user_manager::ScopedUserManager>(
         base::WrapUnique(fake_user_manager_));
+    fake_user_manager_->set_local_state(local_state());
+
+    policy_service_ =
+        std::make_unique<SnapshotHoursPolicyService>(local_state());
+    observer_ = std::make_unique<FakeObserver>();
+    policy_service()->AddObserver(observer_.get());
   }
 
   void TearDown() override {
@@ -182,10 +185,16 @@ class SnapshotHoursPolicyServiceTest
   }
 
   // Enable feature and check.
-  void EnableSnapshot(int enabled_calls_num = 1) {
-    absl::optional<base::Value> policy = base::JSONReader::Read(kJsonPolicy);
+  void EnableSnapshot(int enabled_calls_num = 1,
+                      const std::string& policyJson = kJsonPolicy) {
+    auto account_id = AccountId::FromUserEmail(kPublicAccountEmail);
+    EXPECT_TRUE(fake_user_manager_->AddPublicAccountUser(account_id));
+    policy_service()->LocalStateChanged(user_manager());
+
+    absl::optional<base::Value> policy = base::JSONReader::Read(policyJson);
     EXPECT_TRUE(policy.has_value());
     local_state()->Set(arc::prefs::kArcSnapshotHours, policy.value());
+
     EnsureSnapshotEnabled(enabled_calls_num);
   }
 
@@ -202,9 +211,28 @@ class SnapshotHoursPolicyServiceTest
 
   void LoginAsPublicSession() {
     auto account_id = AccountId::FromUserEmail(kPublicAccountEmail);
-    user_manager()->AddPublicAccountUser(account_id);
-    user_manager()->UserLoggedIn(account_id, account_id.GetUserEmail(), false,
+    const auto* user = fake_user_manager_->AddPublicAccountUser(account_id);
+    user_manager()->UserLoggedIn(account_id, user->username_hash(), false,
                                  false);
+    user_manager()->SwitchActiveUser(account_id);
+    EXPECT_EQ(user_manager()->GetActiveUser()->GetAccountId(), account_id);
+    policy_service()->LocalStateChanged(user_manager());
+  }
+
+  void RemovePublicSession() {
+    auto account_id = AccountId::FromUserEmail(kPublicAccountEmail);
+    user_manager()->RemoveUserFromList(account_id);
+    policy_service()->LocalStateChanged(user_manager());
+  }
+
+  void LoginAsRegularUser() {
+    auto account_id = AccountId::FromUserEmail(kUserAccountEmail);
+    const auto* user = user_manager()->AddUser(account_id);
+    user_manager()->UserLoggedIn(account_id, user->username_hash(), false,
+                                 false);
+    user_manager()->SwitchActiveUser(account_id);
+    EXPECT_EQ(user_manager()->GetActiveUser()->GetAccountId(), account_id);
+    policy_service()->LocalStateChanged(user_manager());
   }
 
   SnapshotHoursPolicyService* policy_service() { return policy_service_.get(); }
@@ -223,13 +251,21 @@ class SnapshotHoursPolicyServiceTest
   std::unique_ptr<user_manager::ScopedUserManager> scoped_user_manager_;
 };
 
+class SnapshotHoursPolicyServiceDisabledTest
+    : public SnapshotHoursPolicyServiceTest {};
+
 // Test that the feature is disabled by default.
 TEST_F(SnapshotHoursPolicyServiceTest, Disabled) {
   EnsureSnapshotDisabled();
 }
 
-TEST_F(SnapshotHoursPolicyServiceTest, OneIntervalEnabled) {
+// Test that the feature is disabled if MGS is not configured.
+TEST_F(SnapshotHoursPolicyServiceTest, MgsIsNotConfigured) {
   EnableSnapshot();
+
+  RemovePublicSession();
+
+  EnsureSnapshotDisabled(1 /* disabled_calls_num */);
 }
 
 TEST_F(SnapshotHoursPolicyServiceTest, DoubleDisable) {
@@ -304,6 +340,7 @@ TEST_F(SnapshotHoursPolicyServiceTest, InsideInterval) {
 TEST_F(SnapshotHoursPolicyServiceTest, DisableByUserPolicyForUser) {
   EnableSnapshot();
 
+  LoginAsRegularUser();
   TestingPrefServiceSimple profile_prefs;
   arc::prefs::RegisterProfilePrefs(profile_prefs.registry());
   profile_prefs.SetBoolean(arc::prefs::kArcEnabled, false);
@@ -327,7 +364,11 @@ TEST_F(SnapshotHoursPolicyServiceTest, DisableByUserPolicyForMGS) {
   EnsureSnapshotEnabled(2 /* enabled_calls_num */);
 }
 
-TEST_P(SnapshotHoursPolicyServiceTest, DisabledByPolicy) {
+TEST_P(SnapshotHoursPolicyServiceTest, OneIntervalEnabled) {
+  EnableSnapshot(1 /* enabled_calls_num */, policy());
+}
+
+TEST_P(SnapshotHoursPolicyServiceDisabledTest, DisabledByPolicy) {
   EnableSnapshot();
 
   absl::optional<base::Value> policy_value = base::JSONReader::Read(policy());
@@ -339,12 +380,16 @@ TEST_P(SnapshotHoursPolicyServiceTest, DisabledByPolicy) {
 
 INSTANTIATE_TEST_SUITE_P(
     /* no prefix */,
+    SnapshotHoursPolicyServiceDisabledTest,
+    testing::Values(kJsonPolicyIncorrectIntervals,
+                    kJsonPolicyNoIntervals,
+                    kJsonPolicyEmptyIntervals));
+INSTANTIATE_TEST_SUITE_P(
+    /* no prefix */,
     SnapshotHoursPolicyServiceTest,
     testing::Values(kJsonPolicyNoTimezone,
-                    kJsonPolicyIncorrectIntervals,
-                    kJsonPolicyNoIntervals,
-                    kJsonPolicyEmptyIntervals,
-                    kJsonPolicyWrongOffset));
+                    kJsonPolicy,
+                    kJsonPolicyUnsetTimezone));
 
 }  // namespace data_snapshotd
 }  // namespace arc

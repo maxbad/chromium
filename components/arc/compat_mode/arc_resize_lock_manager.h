@@ -8,7 +8,7 @@
 #include "base/scoped_multi_source_observation.h"
 #include "base/scoped_observation.h"
 #include "components/arc/compat_mode/arc_resize_lock_pref_delegate.h"
-#include "components/arc/compat_mode/resize_toggle_menu.h"
+#include "components/arc/compat_mode/compat_mode_button_controller.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "ui/aura/env.h"
 #include "ui/aura/env_observer.h"
@@ -19,13 +19,10 @@ namespace content {
 class BrowserContext;
 }  // namespace content
 
-namespace views {
-class Widget;
-}  // namespace views
-
 namespace arc {
 
 class ArcBridgeService;
+class TouchModeMouseRewriter;
 
 // Manager for ARC resize lock feature.
 class ArcResizeLockManager : public KeyedService,
@@ -50,6 +47,10 @@ class ArcResizeLockManager : public KeyedService,
   void OnWindowPropertyChanged(aura::Window* window,
                                const void* key,
                                intptr_t old) override;
+  void OnWindowBoundsChanged(aura::Window* window,
+                             const gfx::Rect& old_bounds,
+                             const gfx::Rect& new_bounds,
+                             ui::PropertyChangeReason reason) override;
   void OnWindowDestroying(aura::Window* window) override;
 
   void SetPrefDelegate(ArcResizeLockPrefDelegate* delegate) {
@@ -59,20 +60,25 @@ class ArcResizeLockManager : public KeyedService,
  private:
   friend class ArcResizeLockManagerTest;
 
-  bool OnResizeButtonPressed(views::Widget* widget);
-
-  // Virtual for testing.
-  virtual void EnableResizeLock(aura::Window* window);
-  virtual void DisableResizeLock(aura::Window* window);
+  void EnableResizeLock(aura::Window* window);
+  void DisableResizeLock(aura::Window* window);
+  void UpdateResizeLockState(aura::Window* window);
 
   ArcResizeLockPrefDelegate* pref_delegate_{nullptr};
 
-  std::unique_ptr<ResizeToggleMenu> resize_toggle_menu_;
+  // Using unique_ptr to allow unittest to override.
+  std::unique_ptr<CompatModeButtonController> compat_mode_button_controller_;
+
+  std::unique_ptr<TouchModeMouseRewriter> touch_mode_mouse_rewriter_;
+
+  base::flat_set<aura::Window*> resize_lock_enabled_windows_;
 
   base::ScopedObservation<aura::Env, aura::EnvObserver> env_observation{this};
 
   base::ScopedMultiSourceObservation<aura::Window, aura::WindowObserver>
       window_observations_{this};
+
+  base::WeakPtrFactory<ArcResizeLockManager> weak_ptr_factory_{this};
 };
 
 }  // namespace arc

@@ -26,7 +26,7 @@
 // To rebaseline this test on all platforms:
 // 1. Run a CQ+1 dry run.
 // 2. Click the failing bots for android, windows, mac, and linux.
-// 3. Find the failing interactive_ui_browsertests step.
+// 3. Find the failing interactive_ui_tests step.
 // 4. Click the "Deterministic failure" link for the failing test case.
 // 5. Copy the "Actual pixels" data url and paste into browser.
 // 6. Save the image into your chromium checkout in
@@ -60,8 +60,6 @@ class FocusRingBrowserTest : public InProcessBrowserTest {
   }
 
   void SetUpCommandLine(base::CommandLine* command_line) override {
-    InProcessBrowserTest::SetUpCommandLine(command_line);
-
     // The --disable-lcd-text flag helps text render more similarly on
     // different bots and platform.
     command_line->AppendSwitch(switches::kDisableLCDText);
@@ -85,6 +83,8 @@ class FocusRingBrowserTest : public InProcessBrowserTest {
     platform_suffix = "_mac";
 #elif defined(OS_WIN)
     platform_suffix = "_win";
+#elif defined(OS_LINUX)
+    platform_suffix = "_linux";
 #elif BUILDFLAG(IS_CHROMEOS_ASH)
     platform_suffix = "_chromeos";
 #endif
@@ -111,7 +111,13 @@ class FocusRingBrowserTest : public InProcessBrowserTest {
   }
 };
 
-IN_PROC_BROWSER_TEST_F(FocusRingBrowserTest, Checkbox) {
+// TODO(crbug.com/1222757): Flaky on Mac.
+#if defined(OS_MAC)
+#define MAYBE_Checkbox DISABLED_Checkbox
+#else
+#define MAYBE_Checkbox Checkbox
+#endif
+IN_PROC_BROWSER_TEST_F(FocusRingBrowserTest, MAYBE_Checkbox) {
 #if defined(OS_MAC)
   cc::FuzzyPixelComparator comparator = mac_strict_comparator;
 #else
@@ -124,7 +130,13 @@ IN_PROC_BROWSER_TEST_F(FocusRingBrowserTest, Checkbox) {
           /* screenshot_height */ 40, comparator);
 }
 
-IN_PROC_BROWSER_TEST_F(FocusRingBrowserTest, Radio) {
+// TODO(crbug.com/1222757): Flaky on Mac.
+#if defined(OS_MAC)
+#define MAYBE_Radio DISABLED_Radio
+#else
+#define MAYBE_Radio Radio
+#endif
+IN_PROC_BROWSER_TEST_F(FocusRingBrowserTest, MAYBE_Radio) {
 #if defined(OS_MAC)
   cc::FuzzyPixelComparator comparator = mac_loose_comparator;
 #else
@@ -137,7 +149,13 @@ IN_PROC_BROWSER_TEST_F(FocusRingBrowserTest, Radio) {
           /* screenshot_height */ 40, comparator);
 }
 
-IN_PROC_BROWSER_TEST_F(FocusRingBrowserTest, Button) {
+// TODO(crbug.com/1222757): Flaky on Mac.
+#if defined(OS_MAC)
+#define MAYBE_Button DISABLED_Button
+#else
+#define MAYBE_Button Button
+#endif
+IN_PROC_BROWSER_TEST_F(FocusRingBrowserTest, MAYBE_Button) {
 #if defined(OS_MAC)
   cc::FuzzyPixelComparator comparator = mac_strict_comparator;
 #else
@@ -152,7 +170,13 @@ IN_PROC_BROWSER_TEST_F(FocusRingBrowserTest, Button) {
           /* screenshot_height */ 80, comparator);
 }
 
-IN_PROC_BROWSER_TEST_F(FocusRingBrowserTest, Anchor) {
+// TODO(crbug.com/1222757): Flaky on Mac.
+#if defined(OS_MAC)
+#define MAYBE_Anchor DISABLED_Anchor
+#else
+#define MAYBE_Anchor Anchor
+#endif
+IN_PROC_BROWSER_TEST_F(FocusRingBrowserTest, MAYBE_Anchor) {
 #if defined(OS_MAC)
   cc::FuzzyPixelComparator comparator = mac_strict_comparator;
 #else
@@ -170,7 +194,13 @@ IN_PROC_BROWSER_TEST_F(FocusRingBrowserTest, Anchor) {
           /* screenshot_height */ 130, comparator);
 }
 
-IN_PROC_BROWSER_TEST_F(FocusRingBrowserTest, DarkModeButton) {
+// TODO(crbug.com/1222757): Flaky on Mac.
+#if defined(OS_MAC)
+#define MAYBE_DarkModeButton DISABLED_DarkModeButton
+#else
+#define MAYBE_DarkModeButton DarkModeButton
+#endif
+IN_PROC_BROWSER_TEST_F(FocusRingBrowserTest, MAYBE_DarkModeButton) {
 #if defined(OS_MAC)
   if (!MacOSVersionSupportsDarkMode())
     return;

@@ -12,7 +12,6 @@
 #include "base/atomic_sequence_num.h"
 #include "base/bind.h"
 #include "base/bits.h"
-#include "base/callback_helpers.h"
 #include "base/cxx17_backports.h"
 #include "base/logging.h"
 #include "base/process/memory.h"
@@ -39,6 +38,20 @@ namespace {
 gfx::Rect Intersection(gfx::Rect a, const gfx::Rect& b) {
   a.Intersect(b);
   return a;
+}
+
+void ReleaseMailboxAndDropGpuMemoryBuffer(
+    VideoFrame::ReleaseMailboxCB cb,
+    const gpu::SyncToken& sync_token,
+    std::unique_ptr<gfx::GpuMemoryBuffer> gpu_memory_buffer) {
+  std::move(cb).Run(sync_token);
+}
+
+VideoFrame::ReleaseMailboxAndGpuMemoryBufferCB WrapReleaseMailboxCB(
+    VideoFrame::ReleaseMailboxCB cb) {
+  if (cb.is_null())
+    return VideoFrame::ReleaseMailboxAndGpuMemoryBufferCB();
+  return base::BindOnce(&ReleaseMailboxAndDropGpuMemoryBuffer, std::move(cb));
 }
 
 }  // namespace
@@ -311,6 +324,10 @@ scoped_refptr<VideoFrame> VideoFrame::CreateVideoHoleFrame(
     const gfx::Size& natural_size,
     base::TimeDelta timestamp) {
   auto layout = VideoFrameLayout::Create(PIXEL_FORMAT_UNKNOWN, natural_size);
+  if (!layout) {
+    DLOG(ERROR) << "Invalid layout.";
+    return nullptr;
+  }
   scoped_refptr<VideoFrame> frame = new VideoFrame(
       *layout, StorageType::STORAGE_OPAQUE, gfx::Rect(natural_size),
       natural_size, timestamp, FrameControlType::kVideoHole);
@@ -340,9 +357,9 @@ scoped_refptr<VideoFrame> VideoFrame::WrapNativeTextures(
     base::TimeDelta timestamp) {
   if (format != PIXEL_FORMAT_ARGB && format != PIXEL_FORMAT_XRGB &&
       format != PIXEL_FORMAT_NV12 && format != PIXEL_FORMAT_I420 &&
-      format != PIXEL_FORMAT_ABGR && format != PIXEL_FORMAT_XR30 &&
-      format != PIXEL_FORMAT_XB30 && format != PIXEL_FORMAT_P016LE &&
-      format != PIXEL_FORMAT_RGBAF16) {
+      format != PIXEL_FORMAT_ABGR && format != PIXEL_FORMAT_XBGR &&
+      format != PIXEL_FORMAT_XR30 && format != PIXEL_FORMAT_XB30 &&
+      format != PIXEL_FORMAT_P016LE && format != PIXEL_FORMAT_RGBAF16) {
     DLOG(ERROR) << "Unsupported pixel format: "
                 << VideoPixelFormatToString(format);
     return nullptr;
@@ -365,10 +382,12 @@ scoped_refptr<VideoFrame> VideoFrame::WrapNativeTextures(
       new VideoFrame(*layout, storage, visible_rect, natural_size, timestamp);
   memcpy(&frame->mailbox_holders_, mailbox_holders,
          sizeof(frame->mailbox_holders_));
-  frame->mailbox_holders_release_cb_ = std::move(mailbox_holder_release_cb);
+  frame->mailbox_holders_and_gmb_release_cb_ =
+      WrapReleaseMailboxCB(std::move(mailbox_holder_release_cb));
 
   // Wrapping native textures should... have textures. https://crbug.com/864145.
   DCHECK(frame->HasTextures());
+  DCHECK_GT(frame->NumTextures(), 0u);
 
   return frame;
 }
@@ -576,7 +595,7 @@ scoped_refptr<VideoFrame> VideoFrame::WrapExternalGpuMemoryBuffer(
     const gfx::Size& natural_size,
     std::unique_ptr<gfx::GpuMemoryBuffer> gpu_memory_buffer,
     const gpu::MailboxHolder (&mailbox_holders)[kMaxPlanes],
-    ReleaseMailboxCB mailbox_holder_release_cb,
+    ReleaseMailboxAndGpuMemoryBufferCB mailbox_holder_and_gmb_release_cb,
     base::TimeDelta timestamp) {
   const absl::optional<VideoPixelFormat> format =
       GfxBufferFormatToVideoPixelFormat(gpu_memory_buffer->GetFormat());
@@ -639,7 +658,8 @@ scoped_refptr<VideoFrame> VideoFrame::WrapExternalGpuMemoryBuffer(
   frame->gpu_memory_buffer_ = std::move(gpu_memory_buffer);
   memcpy(&frame->mailbox_holders_, mailbox_holders,
          sizeof(frame->mailbox_holders_));
-  frame->mailbox_holders_release_cb_ = std::move(mailbox_holder_release_cb);
+  frame->mailbox_holders_and_gmb_release_cb_ =
+      std::move(mailbox_holder_and_gmb_release_cb);
   return frame;
 }
 
@@ -676,7 +696,8 @@ scoped_refptr<VideoFrame> VideoFrame::WrapExternalDmabufs(
   }
   memcpy(&frame->mailbox_holders_, mailbox_holders,
          sizeof(frame->mailbox_holders_));
-  frame->mailbox_holders_release_cb_ = ReleaseMailboxCB();
+  frame->mailbox_holders_and_gmb_release_cb_ =
+      ReleaseMailboxAndGpuMemoryBufferCB();
   frame->dmabuf_fds_ =
       base::MakeRefCounted<DmabufHolder>(std::move(dmabuf_fds));
   DCHECK(frame->HasDmaBufs());
@@ -875,6 +896,18 @@ scoped_refptr<VideoFrame> VideoFrame::WrapVideoFrame(
   if (frame->storage_type() == STORAGE_SHMEM) {
     DCHECK(frame->shm_region_ && frame->shm_region_->IsValid());
     wrapping_frame->BackWithSharedMemory(frame->shm_region_);
+  }
+
+  // Don't let a Matryoshka doll of frames occur. Do this here instead of above
+  // since |frame| may have different metadata than |frame->wrapped_frame_|.
+  //
+  // We must still keep |frame| alive though since it may have destruction
+  // observers which signal that the underlying resource is okay to reuse. E.g.,
+  // VideoFramePool.
+  if (frame->wrapped_frame_) {
+    wrapping_frame->AddDestructionObserver(
+        base::BindOnce([](scoped_refptr<VideoFrame>) {}, frame));
+    frame = frame->wrapped_frame_;
   }
 
   wrapping_frame->wrapped_frame_ = std::move(frame);
@@ -1131,24 +1164,22 @@ bool VideoFrame::IsMappable() const {
 }
 
 bool VideoFrame::HasTextures() const {
-  // A SharedImage can be turned into a texture, and so it counts as a texture
-  // in the context of this call.
   return wrapped_frame_ ? wrapped_frame_->HasTextures()
-                        : (mailbox_holders_[0].mailbox.IsSharedImage() ||
-                           !mailbox_holders_[0].mailbox.IsZero());
+                        : !mailbox_holders_[0].mailbox.IsZero();
 }
 
 size_t VideoFrame::NumTextures() const {
+  if (wrapped_frame_)
+    return wrapped_frame_->NumTextures();
+
   if (!HasTextures())
     return 0;
 
-  const auto& mailbox_holders =
-      wrapped_frame_ ? wrapped_frame_->mailbox_holders_ : mailbox_holders_;
   size_t i = 0;
   for (; i < NumPlanes(format()); ++i) {
-    if (mailbox_holders[i].mailbox.IsZero()) {
+    const auto& mailbox = mailbox_holders_[i].mailbox;
+    if (mailbox.IsZero())
       return i;
-    }
   }
   return i;
 }
@@ -1186,6 +1217,10 @@ int VideoFrame::rows(size_t plane) const {
   return Rows(plane, format(), coded_size().height());
 }
 
+int VideoFrame::columns(size_t plane) const {
+  return Columns(plane, format(), coded_size().width());
+}
+
 const uint8_t* VideoFrame::visible_data(size_t plane) const {
   DCHECK(IsValidPlane(format(), plane));
   DCHECK(IsMappable());
@@ -1214,7 +1249,7 @@ const gpu::MailboxHolder& VideoFrame::mailbox_holder(
     size_t texture_index) const {
   DCHECK(HasTextures());
   DCHECK(IsValidPlane(format(), texture_index));
-  return wrapped_frame_ ? wrapped_frame_->mailbox_holders_[texture_index]
+  return wrapped_frame_ ? wrapped_frame_->mailbox_holder(texture_index)
                         : mailbox_holders_[texture_index];
 }
 
@@ -1244,17 +1279,27 @@ CVPixelBufferRef VideoFrame::CvPixelBuffer() const {
 
 void VideoFrame::SetReleaseMailboxCB(ReleaseMailboxCB release_mailbox_cb) {
   DCHECK(release_mailbox_cb);
-  DCHECK(!mailbox_holders_release_cb_);
+  DCHECK(!mailbox_holders_and_gmb_release_cb_);
   // We don't relay SetReleaseMailboxCB to |wrapped_frame_| because the method
   // is not thread safe.  This method should only be called by the owner of
   // |wrapped_frame_| directly.
   DCHECK(!wrapped_frame_);
-  mailbox_holders_release_cb_ = std::move(release_mailbox_cb);
+  mailbox_holders_and_gmb_release_cb_ =
+      WrapReleaseMailboxCB(std::move(release_mailbox_cb));
+}
+
+void VideoFrame::SetReleaseMailboxAndGpuMemoryBufferCB(
+    ReleaseMailboxAndGpuMemoryBufferCB release_mailbox_cb) {
+  // See remarks in SetReleaseMailboxCB.
+  DCHECK(release_mailbox_cb);
+  DCHECK(!mailbox_holders_and_gmb_release_cb_);
+  DCHECK(!wrapped_frame_);
+  mailbox_holders_and_gmb_release_cb_ = std::move(release_mailbox_cb);
 }
 
 bool VideoFrame::HasReleaseMailboxCB() const {
   return wrapped_frame_ ? wrapped_frame_->HasReleaseMailboxCB()
-                        : !!mailbox_holders_release_cb_;
+                        : !!mailbox_holders_and_gmb_release_cb_;
 }
 
 void VideoFrame::AddDestructionObserver(base::OnceClosure callback) {
@@ -1269,12 +1314,28 @@ gpu::SyncToken VideoFrame::UpdateReleaseSyncToken(SyncTokenClient* client) {
   }
   base::AutoLock locker(release_sync_token_lock_);
   // Must wait on the previous sync point before inserting a new sync point so
-  // that |mailbox_holders_release_cb_| guarantees the previous sync point
-  // occurred when it waits on |release_sync_token_|.
+  // that |mailbox_holders_and_gmb_release_cb_| guarantees the previous sync
+  // point occurred when it waits on |release_sync_token_|.
   if (release_sync_token_.HasData())
     client->WaitSyncToken(release_sync_token_);
   client->GenerateSyncToken(&release_sync_token_);
   return release_sync_token_;
+}
+
+gpu::SyncToken VideoFrame::UpdateMailboxHolderSyncToken(
+    size_t plane,
+    SyncTokenClient* client) {
+  DCHECK(HasOneRef());
+  DCHECK(HasTextures());
+  DCHECK(!wrapped_frame_);
+  DCHECK_LT(plane, kMaxPlanes);
+
+  // No lock is required due to the HasOneRef() check.
+  auto& token = mailbox_holders_[plane].sync_token;
+  if (token.HasData())
+    client->WaitSyncToken(token);
+  client->GenerateSyncToken(&token);
+  return token;
 }
 
 std::string VideoFrame::AsHumanReadableString() const {
@@ -1319,7 +1380,7 @@ VideoFrame::VideoFrame(const VideoFrameLayout& layout,
 }
 
 VideoFrame::~VideoFrame() {
-  if (mailbox_holders_release_cb_) {
+  if (mailbox_holders_and_gmb_release_cb_) {
     gpu::SyncToken release_sync_token;
     {
       // To ensure that changes to |release_sync_token_| are visible on this
@@ -1327,7 +1388,8 @@ VideoFrame::~VideoFrame() {
       base::AutoLock locker(release_sync_token_lock_);
       release_sync_token = release_sync_token_;
     }
-    std::move(mailbox_holders_release_cb_).Run(release_sync_token);
+    std::move(mailbox_holders_and_gmb_release_cb_)
+        .Run(release_sync_token, std::move(gpu_memory_buffer_));
   }
 
   for (auto& callback : done_callbacks_)
@@ -1359,6 +1421,23 @@ gfx::Size VideoFrame::DetermineAlignedSize(VideoPixelFormat format,
   return adjusted;
 }
 
+bool VideoFrame::IsValidSize(const gfx::Size& coded_size,
+                             const gfx::Rect& visible_rect,
+                             const gfx::Size& natural_size) {
+  int coded_size_area = coded_size.GetCheckedArea().ValueOrDefault(INT_MAX);
+  int natural_size_area = natural_size.GetCheckedArea().ValueOrDefault(INT_MAX);
+  static_assert(limits::kMaxCanvas < INT_MAX, "");
+  return !(coded_size_area > limits::kMaxCanvas ||
+           coded_size.width() > limits::kMaxDimension ||
+           coded_size.height() > limits::kMaxDimension ||
+           visible_rect.x() < 0 || visible_rect.y() < 0 ||
+           visible_rect.right() > coded_size.width() ||
+           visible_rect.bottom() > coded_size.height() ||
+           natural_size_area > limits::kMaxCanvas ||
+           natural_size.width() > limits::kMaxDimension ||
+           natural_size.height() > limits::kMaxDimension);
+}
+
 // static
 bool VideoFrame::IsValidConfigInternal(VideoPixelFormat format,
                                        FrameControlType frame_control_type,
@@ -1366,17 +1445,7 @@ bool VideoFrame::IsValidConfigInternal(VideoPixelFormat format,
                                        const gfx::Rect& visible_rect,
                                        const gfx::Size& natural_size) {
   // Check maximum limits for all formats.
-  int coded_size_area = coded_size.GetCheckedArea().ValueOrDefault(INT_MAX);
-  int natural_size_area = natural_size.GetCheckedArea().ValueOrDefault(INT_MAX);
-  static_assert(limits::kMaxCanvas < INT_MAX, "");
-  if (coded_size_area > limits::kMaxCanvas ||
-      coded_size.width() > limits::kMaxDimension ||
-      coded_size.height() > limits::kMaxDimension || visible_rect.x() < 0 ||
-      visible_rect.y() < 0 || visible_rect.right() > coded_size.width() ||
-      visible_rect.bottom() > coded_size.height() ||
-      natural_size_area > limits::kMaxCanvas ||
-      natural_size.width() > limits::kMaxDimension ||
-      natural_size.height() > limits::kMaxDimension) {
+  if (!IsValidSize(coded_size, visible_rect, natural_size)) {
     return false;
   }
 

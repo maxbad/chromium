@@ -1,6 +1,6 @@
 <style include="settings-shared">
-  :host(:not([is-peripheral-protection-toggle-enforced_]))
-      #peripheralDataAccessProtection {
+  :host([is-user-configurable_])
+      .peripheral-data-access-protection {
     --cr-disabled-opacity: 1;
     cursor: pointer;
     opacity: 1;
@@ -14,18 +14,25 @@
     focus-config="[[focusConfig_]]">
 
   <div route-path="default">
-    <template is="dom-if" if="[[isAccountManagementFlowsV2Enabled_]]">
-      <template is="dom-if" if="[[!isGuestMode_]]" restamp>
-        <cr-link-row id="lockScreenSubpageTrigger"
-            on-click="onConfigureLockTap_"
-            label="[[selectLockScreenTitleString_(hasPinLogin)]]"
-            sub-label="[[getPasswordState_(hasPin,
-                prefs.settings.enable_screen_lock.value)]]"
-            role-description="$i18n{subpageArrowRoleDescription}">
-        </cr-link-row>
-        <cr-link-row id="manageOtherPeopleSubpageTrigger" class="hr"
-            label="$i18n{manageOtherPeople}"
-            on-click="onManageOtherPeople_"
+    <template is="dom-if" if="[[!isGuestMode_]]" restamp>
+      <cr-link-row id="lockScreenSubpageTrigger"
+          on-click="onConfigureLockTap_"
+          label="[[selectLockScreenTitleString_(hasPinLogin)]]"
+          sub-label="[[getPasswordState_(hasPin,
+              prefs.settings.enable_screen_lock.value)]]"
+          role-description="$i18n{subpageArrowRoleDescription}">
+      </cr-link-row>
+      <cr-link-row id="manageOtherPeopleSubpageTrigger" class="hr"
+          label="$i18n{manageOtherPeople}"
+          on-click="onManageOtherPeople_"
+          role-description="$i18n{subpageArrowRoleDescription}">
+      </cr-link-row>
+      <div class="hr"></div>
+      <template is="dom-if" if="[[isSnoopingProtectionEnabled_]]" restamp>
+        <cr-link-row id="smartPrivacySubpageTrigger"
+            on-click="onSmartPrivacy_"
+            label="$i18n{smartPrivacyTitle}"
+            sub-label="$i18n{smartPrivacySubtext}"
             role-description="$i18n{subpageArrowRoleDescription}">
         </cr-link-row>
         <div class="hr"></div>
@@ -68,7 +75,8 @@
             on-focus="onDataAccessToggleFocus_"
             on-keypress="onDataAccessToggleKeyPress_">
           <settings-toggle-button
-              id="peripheralDataAccessProtection"
+              id="crosSettingDataAccessToggle"
+              class="peripheral-data-access-protection"
               pref="{{prefs.cros.device.peripheral_data_access_enabled}}"
               label="$i18n{peripheralDataAccessProtectionToggleTitle}"
               sub-label=
@@ -77,6 +85,24 @@
                   "[[Setting.kPeripheralDataAccessProtection]]"
               on-click="onPeripheralProtectionClick_"
               learn-more-url="$i18n{peripheralDataAccessLearnMoreURL}"
+              hidden$="[[isLocalStateDataAccessPref_(
+                  dataAccessProtectionPrefName_)]]"
+              disabled
+              inverted>
+          </settings-toggle-button>
+          <settings-toggle-button
+              id="localStateDataAccessToggle"
+              class="peripheral-data-access-protection"
+              pref="{{prefs.settings.local_state_device_pci_data_access_enabled}}"
+              label="$i18n{peripheralDataAccessProtectionToggleTitle}"
+              sub-label=
+                  "$i18n{peripheralDataAccessProtectionToggleDescription}"
+              deep-link-focus-id$=
+                  "[[Setting.kPeripheralDataAccessProtection]]"
+              on-click="onPeripheralProtectionClick_"
+              learn-more-url="$i18n{peripheralDataAccessLearnMoreURL}"
+              hidden$="[[isCrosSettingDataAccessPref_(
+                  dataAccessProtectionPrefName_)]]"
               disabled
               inverted>
           </settings-toggle-button>
@@ -89,11 +115,9 @@
     </template>
   </div>
 
-  <template is="dom-if" if="[[shouldShowSubsections_]]" restamp>
+  <template is="dom-if" if="[[!isGuestMode_]]" restamp>
     <template is="dom-if" route-path="/osPrivacy/lockScreen">
-      <settings-subpage
-          page-title="[[selectLockScreenTitleString_(hasPinLogin)]]"
-          associated-control="[[$$('#lockScreenSubpageTrigger')]]">
+      <settings-subpage page-title="[[selectLockScreenTitleString_(hasPinLogin)]]">
         <settings-lock-screen id="lockScreen" set-modes="[[setModes_]]"
             prefs="{{prefs}}" auth-token="[[authToken_]]"
             on-invalidate-auth-token-requested="onInvalidateTokenRequested_"
@@ -101,42 +125,42 @@
         </settings-lock-screen>
       </settings-subpage>
     </template>
-    <template is="dom-if" if="[[fingerprintUnlockEnabled_]]">
-      <template is="dom-if" route-path="/osPrivacy/lockScreen/fingerprint"
-          no-search>
-        <settings-subpage page-title="$i18n{lockScreenFingerprintTitle}">
-          <settings-fingerprint-list id="fingerprint-list"
-              auth-token="[[authToken_.token]]"
-              set-modes="[[setModes_]]"
-              on-password-requested="onPasswordRequested_">
-          </settings-fingerprint-list>
-        </settings-subpage>
-      </template>
+    <template is="dom-if" route-path="/osPrivacy/lockScreen/fingerprint">
+      <settings-subpage page-title="$i18n{lockScreenFingerprintTitle}">
+        <settings-fingerprint-list id="fingerprint-list"
+            auth-token="[[authToken_.token]]"
+            set-modes="[[setModes_]]"
+            on-password-requested="onPasswordRequested_">
+        </settings-fingerprint-list>
+      </settings-subpage>
     </template>
     <template is="dom-if" route-path="/osPrivacy/accounts">
-      <settings-subpage
-          associated-control="[[$$('#manageOtherPeopleSubpageTrigger')]]"
-          page-title="$i18n{manageOtherPeople}">
+      <settings-subpage page-title="$i18n{manageOtherPeople}">
         <settings-users-page prefs="{{prefs}}">
         </settings-users-page>
+      </settings-subpage>
+    </template>
+    <template is="dom-if" route-path="/osPrivacy/smartPrivacy">
+      <settings-subpage page-title="$i18n{smartPrivacyTitle}">
+        <settings-smart-privacy-page prefs="{{prefs}}">
+        </settings-smart-privacy-page>
       </settings-subpage>
     </template>
   </template>
 
 </settings-animated-pages>
 
-<template is="dom-if" if="[[isAccountManagementFlowsV2Enabled_]]">
-  <template is="dom-if" if="[[showPasswordPromptDialog_]]" restamp>
-    <settings-lock-screen-password-prompt-dialog
-        id="passwordDialog"
-        on-close="onPasswordPromptDialogClose_"
-        on-auth-token-obtained="onAuthTokenObtained_">
-    </settings-lock-screen-password-prompt-dialog>
-  </template>
+<template is="dom-if" if="[[showPasswordPromptDialog_]]" restamp>
+  <settings-lock-screen-password-prompt-dialog
+      id="passwordDialog"
+      on-close="onPasswordPromptDialogClose_"
+      on-auth-token-obtained="onAuthTokenObtained_">
+  </settings-lock-screen-password-prompt-dialog>
 </template>
 
 <template is="dom-if" if="[[showDisableProtectionDialog_]]" restamp>
   <settings-peripheral-data-access-protection-dialog id="protectionDialog"
-      on-close="onDisableProtectionDialogClosed_" prefs="{{prefs}}">
+      on-close="onDisableProtectionDialogClosed_" prefs="{{prefs}}"
+      pref-name="[[dataAccessProtectionPrefName_]]">
   </settings-peripheral-data-access-protection-dialog>
 </template>

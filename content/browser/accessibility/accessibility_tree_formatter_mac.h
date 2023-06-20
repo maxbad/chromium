@@ -19,11 +19,16 @@ class CONTENT_EXPORT AccessibilityTreeFormatterMac
   ~AccessibilityTreeFormatterMac() override;
 
   base::Value BuildTree(ui::AXPlatformNodeDelegate* root) const override;
-  base::Value BuildTreeForWindow(gfx::AcceleratedWidget widget) const override;
   base::Value BuildTreeForSelector(
       const AXTreeSelector& selector) const override;
 
   base::Value BuildNode(ui::AXPlatformNodeDelegate* node) const override;
+
+  std::string EvaluateScript(
+      ui::AXPlatformNodeDelegate* root,
+      const std::vector<ui::AXScriptInstruction>& instructions,
+      size_t start_index,
+      size_t end_index) const override;
 
  protected:
   void AddDefaultFilters(
@@ -34,10 +39,6 @@ class CONTENT_EXPORT AccessibilityTreeFormatterMac
   base::Value BuildTreeForAXUIElement(AXUIElementRef node) const;
 
   base::Value BuildNode(const id node) const;
-
-  // Runs all scripts defined by given property filters.
-  void EvaluateScripts(const a11y::LineIndexer* line_indexer,
-                       base::Value* dict) const;
 
   void RecursiveBuildTree(const id node,
                           const NSRect& root_rect,

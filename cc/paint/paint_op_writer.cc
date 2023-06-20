@@ -14,18 +14,15 @@
 #include "cc/paint/paint_flags.h"
 #include "cc/paint/paint_op_buffer_serializer.h"
 #include "cc/paint/paint_shader.h"
+#include "cc/paint/skottie_transfer_cache_entry.h"
+#include "cc/paint/skottie_wrapper.h"
 #include "cc/paint/transfer_cache_serialize_helper.h"
 #include "gpu/command_buffer/common/mailbox.h"
 #include "third_party/skia/include/core/SkSerialProcs.h"
 #include "third_party/skia/include/core/SkTextBlob.h"
 #include "third_party/skia/src/core/SkRemoteGlyphCache.h"
 #include "ui/gfx/geometry/rect_conversions.h"
-#include "ui/gfx/skia_util.h"
-
-#if !defined(OS_ANDROID)
-#include "cc/paint/skottie_transfer_cache_entry.h"
-#include "cc/paint/skottie_wrapper.h"
-#endif
+#include "ui/gfx/geometry/skia_conversions.h"
 
 namespace cc {
 namespace {
@@ -173,12 +170,15 @@ void PaintOpWriter::Write(const SkRRect& rect) {
   WriteSimple(rect);
 }
 
-void PaintOpWriter::Write(const SkPath& path) {
+void PaintOpWriter::Write(const SkPath& path, UsePaintCache use_paint_cache) {
   auto id = path.getGenerationID();
   if (!options_.for_identifiability_study)
     Write(id);
 
-  if (options_.paint_cache->Get(PaintCacheDataType::kPath, id)) {
+  DCHECK(use_paint_cache == UsePaintCache::kEnabled ||
+         !options_.paint_cache->Get(PaintCacheDataType::kPath, id));
+  if (use_paint_cache == UsePaintCache::kEnabled &&
+      options_.paint_cache->Get(PaintCacheDataType::kPath, id)) {
     Write(static_cast<uint32_t>(PaintCacheEntryState::kCached));
     return;
   }
@@ -190,7 +190,11 @@ void PaintOpWriter::Write(const SkPath& path) {
     return;
   }
 
-  Write(static_cast<uint32_t>(PaintCacheEntryState::kInlined));
+  if (use_paint_cache == UsePaintCache::kEnabled) {
+    Write(static_cast<uint32_t>(PaintCacheEntryState::kInlined));
+  } else {
+    Write(static_cast<uint32_t>(PaintCacheEntryState::kInlinedDoNotCache));
+  }
   uint64_t* bytes_to_skip = WriteSize(0u);
   if (!valid_)
     return;
@@ -201,7 +205,9 @@ void PaintOpWriter::Write(const SkPath& path) {
   }
   size_t bytes_written = path.writeToMemory(memory_);
   DCHECK_EQ(bytes_written, bytes_required);
-  options_.paint_cache->Put(PaintCacheDataType::kPath, id, bytes_written);
+  if (use_paint_cache == UsePaintCache::kEnabled) {
+    options_.paint_cache->Put(PaintCacheDataType::kPath, id, bytes_written);
+  }
   *bytes_to_skip = bytes_written;
   memory_ += bytes_written;
   remaining_bytes_ -= bytes_written;
@@ -273,9 +279,6 @@ void PaintOpWriter::Write(const DrawImage& draw_image,
   WriteImage(decoded_draw_image);
 }
 
-// Android does not use skottie. Remove below section to keep binary size to a
-// minimum.
-#if !defined(OS_ANDROID)
 void PaintOpWriter::Write(scoped_refptr<SkottieWrapper> skottie) {
   uint32_t id = skottie->id();
   Write(id);
@@ -300,7 +303,6 @@ void PaintOpWriter::Write(scoped_refptr<SkottieWrapper> skottie) {
   memory_ += bytes_written;
   remaining_bytes_ -= bytes_written;
 }
-#endif  // !defined(OS_ANDROID)
 
 void PaintOpWriter::WriteImage(const DecodedDrawImage& decoded_draw_image) {
   if (!decoded_draw_image.mailbox().IsZero()) {
@@ -422,7 +424,7 @@ void PaintOpWriter::Write(const sk_sp<SkTextBlob>& blob) {
 
 sk_sp<PaintShader> PaintOpWriter::TransformShaderIfNecessary(
     const PaintShader* original,
-    SkFilterQuality quality,
+    PaintFlags::FilterQuality quality,
     const SkM44& current_ctm,
     uint32_t* paint_image_transfer_cache_entry_id,
     gfx::SizeF* paint_record_post_scale,
@@ -467,7 +469,7 @@ void PaintOpWriter::Write(const SkM44& matrix) {
 }
 
 void PaintOpWriter::Write(const PaintShader* shader,
-                          SkFilterQuality quality,
+                          PaintFlags::FilterQuality quality,
                           const SkM44& current_ctm) {
   sk_sp<PaintShader> transformed_shader;
   uint32_t paint_image_transfer_cache_id = kInvalidImageTransferCacheEntryId;
@@ -584,7 +586,7 @@ void PaintOpWriter::AlignMemory(size_t alignment) {
   //   padding = (alignment - memory % alignment) % alignment;
   // because alignment is a power of two. This doesn't use modulo operator
   // however, since it can be slow.
-  size_t padding = ((memory + alignment - 1) & ~(alignment - 1)) - memory;
+  size_t padding = base::bits::AlignUp(memory, alignment) - memory;
   EnsureBytes(padding);
   if (!valid_)
     return;
@@ -682,6 +684,9 @@ void PaintOpWriter::Write(const PaintFilter* filter, const SkM44& current_ctm) {
       break;
     case PaintFilter::Type::kLightingSpot:
       Write(static_cast<const LightingSpotPaintFilter&>(*filter), current_ctm);
+      break;
+    case PaintFilter::Type::kStretch:
+      Write(static_cast<const StretchPaintFilter&>(*filter), current_ctm);
       break;
   }
 }
@@ -798,6 +803,12 @@ void PaintOpWriter::Write(const RecordPaintFilter& filter,
   // from the cache).
   auto scaled_filter = filter.CreateScaledPaintRecord(
       current_ctm.asM33(), options_.max_texture_size);
+  if (!scaled_filter) {
+    WriteSimple(false);
+    return;
+  }
+
+  WriteSimple(true);
   WriteSimple(scaled_filter->record_bounds());
   WriteSimple(scaled_filter->raster_scale());
   WriteSimple(scaled_filter->scaling_behavior());
@@ -893,6 +904,15 @@ void PaintOpWriter::Write(const LightingSpotPaintFilter& filter,
   WriteSimple(filter.surface_scale());
   WriteSimple(filter.kconstant());
   WriteSimple(filter.shininess());
+  Write(filter.input().get(), current_ctm);
+}
+
+void PaintOpWriter::Write(const StretchPaintFilter& filter,
+                          const SkM44& current_ctm) {
+  WriteSimple(filter.stretch_x());
+  WriteSimple(filter.stretch_y());
+  WriteSimple(filter.width());
+  WriteSimple(filter.height());
   Write(filter.input().get(), current_ctm);
 }
 

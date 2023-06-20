@@ -20,7 +20,7 @@
 #include "chrome/browser/ash/power/power_data_collector.h"
 #include "content/public/browser/browser_thread.h"
 
-namespace chromeos {
+namespace ash {
 
 namespace {
 // The sampling of CPU idle or CPU freq data should not take more than this
@@ -177,7 +177,7 @@ void SampleCpuIdleData(
           if (index >= idle_sample.time_in_state.size())
             idle_sample.time_in_state.resize(index + 1);
           idle_sample.time_in_state[index] =
-              base::TimeDelta::FromMicroseconds(occupancy_time_usec);
+              base::Microseconds(occupancy_time_usec);
         } else {
           LOG(ERROR) << "Bad format in " << time_file_path << ". "
                      << "Dropping sample.";
@@ -366,7 +366,7 @@ bool CpuDataCollector::ReadCpuFreqTimeInState(
     if (index >= freq_sample->time_in_state.size())
       freq_sample->time_in_state.resize(index + 1);
     freq_sample->time_in_state[index] =
-        base::TimeDelta::FromMilliseconds(occupancy_time_centisecond * 10);
+        base::Milliseconds(occupancy_time_centisecond * 10);
   }
   return true;
 }
@@ -426,7 +426,7 @@ bool CpuDataCollector::ReadCpuFreqAllTimeInState(
         return false;
       }
       (*freq_samples)[cpu].time_in_state[index] =
-          base::TimeDelta::FromMilliseconds(occupancy_time_centisecond * 10);
+          base::Milliseconds(occupancy_time_centisecond * 10);
     }
   }
   return true;
@@ -440,9 +440,7 @@ CpuDataCollector::~CpuDataCollector() {
 }
 
 void CpuDataCollector::Start() {
-  timer_.Start(FROM_HERE,
-               base::TimeDelta::FromSeconds(kCpuDataSamplePeriodSec),
-               this,
+  timer_.Start(FROM_HERE, base::Seconds(kCpuDataSamplePeriodSec), this,
                &CpuDataCollector::PostSampleCpuState);
 }
 
@@ -525,4 +523,4 @@ CpuDataCollector::StateOccupancySample::StateOccupancySample(
 CpuDataCollector::StateOccupancySample::~StateOccupancySample() {
 }
 
-}  // namespace chromeos
+}  // namespace ash

@@ -12,7 +12,6 @@
 
 #include "base/compiler_specific.h"
 #include "base/files/file_path.h"
-#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/version.h"
@@ -32,7 +31,6 @@
 
 class ExtensionServiceTest;
 class SkBitmap;
-struct WebApplicationInfo;
 
 namespace base {
 class SequencedTaskRunner;
@@ -93,6 +91,9 @@ class CrxInstaller : public SandboxedUnpackerClient {
   // installation.
   enum WithholdingBehavior { kWithholdPermissions, kDontWithholdPermissions };
 
+  CrxInstaller(const CrxInstaller&) = delete;
+  CrxInstaller& operator=(const CrxInstaller&) = delete;
+
   // Extensions will be installed into service->install_directory(), then
   // registered with |service|. This does a silent install - see below for
   // other options.
@@ -128,10 +129,6 @@ class CrxInstaller : public SandboxedUnpackerClient {
   void InstallUserScript(const base::FilePath& source_file,
                          const GURL& download_url);
 
-  // Convert the specified web app into an extension and install it.
-  // Virtual for testing.
-  virtual void InstallWebApp(const WebApplicationInfo& web_app);
-
   // Update the extension |extension_id| with the unpacked crx in
   // |unpacked_dir|.
   // If |delete_source_| is true, |unpacked_dir| will be removed at the end of
@@ -140,7 +137,7 @@ class CrxInstaller : public SandboxedUnpackerClient {
                                       const std::string& public_key,
                                       const base::FilePath& unpacked_dir);
 
-  void OnInstallPromptDone(ExtensionInstallPrompt::Result result);
+  void OnInstallPromptDone(ExtensionInstallPrompt::DoneCallbackPayload payload);
 
   void InitializeCreationFlagsForUpdate(const Extension* extension,
                                         const int initial_flags);
@@ -271,9 +268,6 @@ class CrxInstaller : public SandboxedUnpackerClient {
   // Converts the source user script to an extension.
   void ConvertUserScriptOnSharedFileThread();
 
-  // Converts the source web app to an extension.
-  void ConvertWebAppOnSharedFileThread(const WebApplicationInfo& web_app);
-
   // Called after OnUnpackSuccess check to see whether the install expectations
   // are met and the install process should continue.
   absl::optional<CrxInstallError> CheckExpectations(const Extension* extension);
@@ -287,7 +281,13 @@ class CrxInstaller : public SandboxedUnpackerClient {
   void ShouldComputeHashesOnUI(scoped_refptr<const Extension> extension,
                                base::OnceCallback<void(bool)> callback);
 
+  // To provide content verifier key to the unpacker.
+  void GetContentVerifierKeyOnUI(
+      base::OnceCallback<void(ContentVerifierKey)> callback);
+
   // SandboxedUnpackerClient
+  void GetContentVerifierKey(
+      base::OnceCallback<void(ContentVerifierKey)> callback) override;
   void ShouldComputeHashesForOffWebstoreExtension(
       scoped_refptr<const Extension> extension,
       base::OnceCallback<void(bool)> callback) override;
@@ -540,8 +540,6 @@ class CrxInstaller : public SandboxedUnpackerClient {
   // Invoked when the expectations from CRXFileInfo match with the crx file
   // after unpack success.
   ExpectationsVerifiedCallback expectations_verified_callback_;
-
-  DISALLOW_COPY_AND_ASSIGN(CrxInstaller);
 };
 
 }  // namespace extensions

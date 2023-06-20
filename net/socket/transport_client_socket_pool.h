@@ -41,15 +41,10 @@
 #include "net/socket/stream_socket.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 
-namespace base {
-namespace trace_event {
-class ProcessMemoryDump;
-}
-}  // namespace base
-
 namespace net {
 
 struct CommonConnectJobParams;
+class ConnectJobFactory;
 struct NetLogSource;
 struct NetworkTrafficAnnotationTag;
 
@@ -106,6 +101,9 @@ class NET_EXPORT_PRIVATE TransportClientSocketPool
         const absl::optional<NetworkTrafficAnnotationTag>& proxy_annotation_tag,
         const NetLogWithSource& net_log);
 
+    Request(const Request&) = delete;
+    Request& operator=(const Request&) = delete;
+
     ~Request();
 
     ClientSocketHandle* handle() const { return handle_; }
@@ -146,25 +144,6 @@ class NET_EXPORT_PRIVATE TransportClientSocketPool
     const NetLogWithSource net_log_;
     const SocketTag socket_tag_;
     ConnectJob* job_;
-
-    DISALLOW_COPY_AND_ASSIGN(Request);
-  };
-
-  class ConnectJobFactory {
-   public:
-    ConnectJobFactory() {}
-    virtual ~ConnectJobFactory() {}
-
-    virtual std::unique_ptr<ConnectJob> NewConnectJob(
-        ClientSocketPool::GroupId group_id,
-        scoped_refptr<ClientSocketPool::SocketParams> socket_params,
-        const absl::optional<NetworkTrafficAnnotationTag>& proxy_annotation_tag,
-        RequestPriority request_priority,
-        SocketTag socket_tag,
-        ConnectJob::Delegate* delegate) const = 0;
-
-   private:
-    DISALLOW_COPY_AND_ASSIGN(ConnectJobFactory);
   };
 
   TransportClientSocketPool(
@@ -174,6 +153,10 @@ class NET_EXPORT_PRIVATE TransportClientSocketPool
       const ProxyServer& proxy_server,
       bool is_for_websockets,
       const CommonConnectJobParams* common_connect_job_params);
+
+  TransportClientSocketPool(const TransportClientSocketPool&) = delete;
+  TransportClientSocketPool& operator=(const TransportClientSocketPool&) =
+      delete;
 
   // Creates a socket pool with an alternative ConnectJobFactory, for use in
   // testing.
@@ -186,6 +169,8 @@ class NET_EXPORT_PRIVATE TransportClientSocketPool
       base::TimeDelta unused_idle_socket_timeout,
       base::TimeDelta used_idle_socket_timeout,
       const ProxyServer& proxy_server,
+      bool is_for_websockets,
+      const CommonConnectJobParams* common_connect_job_params,
       std::unique_ptr<ConnectJobFactory> connect_job_factory,
       SSLClientContext* ssl_client_context,
       bool connect_backup_jobs_enabled);
@@ -237,9 +222,6 @@ class NET_EXPORT_PRIVATE TransportClientSocketPool
                          const ClientSocketHandle* handle) const override;
   base::Value GetInfoAsValue(const std::string& name,
                              const std::string& type) const override;
-  void DumpMemoryStats(
-      base::trace_event::ProcessMemoryDump* pmd,
-      const std::string& parent_dump_absolute_name) const override;
 
   bool RequestInGroupWithHandleHasJobForTesting(
       const GroupId& group_id,
@@ -281,8 +263,6 @@ class NET_EXPORT_PRIVATE TransportClientSocketPool
   void OnSSLConfigForServerChanged(const HostPortPair& server) override;
 
  private:
-  class ConnectJobFactoryImpl;
-
   // Entry for a persistent socket which became idle at time |start_time|.
   struct IdleSocket {
     IdleSocket() : socket(nullptr) {}
@@ -614,6 +594,8 @@ class NET_EXPORT_PRIVATE TransportClientSocketPool
       base::TimeDelta unused_idle_socket_timeout,
       base::TimeDelta used_idle_socket_timeout,
       const ProxyServer& proxy_server,
+      bool is_for_websockets,
+      const CommonConnectJobParams* common_connect_job_params,
       std::unique_ptr<ConnectJobFactory> connect_job_factory,
       SSLClientContext* ssl_client_context,
       bool connect_backup_jobs_enabled);
@@ -621,7 +603,7 @@ class NET_EXPORT_PRIVATE TransportClientSocketPool
   base::TimeDelta ConnectRetryInterval() const {
     // TODO(mbelshe): Make this tuned dynamically based on measured RTT.
     //                For now, just use the max retry interval.
-    return base::TimeDelta::FromMilliseconds(kMaxConnectRetryIntervalMs);
+    return base::Milliseconds(kMaxConnectRetryIntervalMs);
   }
 
   // TODO(mmenke): de-inline these.
@@ -805,8 +787,6 @@ class NET_EXPORT_PRIVATE TransportClientSocketPool
 
   const ProxyServer proxy_server_;
 
-  const std::unique_ptr<ConnectJobFactory> connect_job_factory_;
-
   // TODO(vandebo) Remove when backup jobs move to TransportClientSocketPool
   bool connect_backup_jobs_enabled_;
 
@@ -817,8 +797,6 @@ class NET_EXPORT_PRIVATE TransportClientSocketPool
   SSLClientContext* const ssl_client_context_;
 
   base::WeakPtrFactory<TransportClientSocketPool> weak_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(TransportClientSocketPool);
 };
 
 }  // namespace net

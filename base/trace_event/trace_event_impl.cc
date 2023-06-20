@@ -34,12 +34,20 @@ perfetto::ThreadTrack ConvertThreadId(const ::base::PlatformThreadId& thread) {
   return perfetto::ThreadTrack::ForThread(static_cast<int32_t>(thread));
 }
 
+#if defined(OS_WIN)
+template <>
+perfetto::ThreadTrack ConvertThreadId(const int& thread) {
+  return perfetto::ThreadTrack::ForThread(static_cast<int32_t>(thread));
+}
+#endif  // defined(OS_WIN)
+
 }  // namespace legacy
 
 TraceTimestamp
 TraceTimestampTraits<::base::TimeTicks>::ConvertTimestampToTraceTimeNs(
     const ::base::TimeTicks& ticks) {
-  return {TrackEvent::GetTraceClockId(), ticks.since_origin().InNanoseconds()};
+  return {TrackEvent::GetTraceClockId(),
+          static_cast<uint64_t>(ticks.since_origin().InNanoseconds())};
 }
 
 namespace internal {

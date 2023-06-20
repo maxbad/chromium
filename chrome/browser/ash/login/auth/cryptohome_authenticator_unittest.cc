@@ -31,7 +31,7 @@
 #include "chromeos/cryptohome/cryptohome_parameters.h"
 #include "chromeos/cryptohome/cryptohome_util.h"
 #include "chromeos/cryptohome/system_salt_getter.h"
-#include "chromeos/dbus/cros_disks_client.h"
+#include "chromeos/dbus/cros_disks/cros_disks_client.h"
 #include "chromeos/dbus/cryptohome/account_identifier_operators.h"
 #include "chromeos/dbus/cryptohome/rpc.pb.h"
 #include "chromeos/dbus/userdataauth/fake_cryptohome_misc_client.h"
@@ -128,6 +128,10 @@ bool CreateOwnerKeyInSlot(PK11SlotInfo* slot) {
 class TestUserDataAuthClient : public ::chromeos::FakeUserDataAuthClient {
  public:
   TestUserDataAuthClient() = default;
+
+  TestUserDataAuthClient(const TestUserDataAuthClient&) = delete;
+  TestUserDataAuthClient& operator=(const TestUserDataAuthClient&) = delete;
+
   ~TestUserDataAuthClient() override = default;
 
   void set_expected_id(const cryptohome::AccountIdentifier& id) {
@@ -248,8 +252,6 @@ class TestUserDataAuthClient : public ::chromeos::FakeUserDataAuthClient {
   bool mount_guest_should_succeed_ = false;
   bool remove_should_succeed_ = false;
   bool unmount_should_succeed_ = false;
-
-  DISALLOW_COPY_AND_ASSIGN(TestUserDataAuthClient);
 };
 
 }  // namespace

@@ -50,6 +50,9 @@ class StatsReportingController
   static void Shutdown();
   static StatsReportingController* Get();
 
+  StatsReportingController(const StatsReportingController&) = delete;
+  StatsReportingController& operator=(const StatsReportingController&) = delete;
+
   static void RegisterLocalStatePrefs(PrefRegistrySimple* registry);
 
   // Store the new value of |enabled|. This will happen straight away if
@@ -110,7 +113,7 @@ class StatsReportingController
   void NotifyObservers();
 
   // Gets the current ownership status - owned, unowned, or unknown.
-  DeviceSettingsService::OwnershipStatus GetOwnershipStatus();
+  DeviceSettingsService::OwnershipStatus GetOwnershipStatus() const;
 
   // Get the owner-settings service for a particular profile. A variety of
   // different results can be returned, depending on the profile.
@@ -127,6 +130,10 @@ class StatsReportingController
   // Sets |*value| to the value signed and stored in CrosSettings, if one
   // exists. Returns false if there is no such value.
   bool GetSignedStoredValue(bool* value);
+
+  // Returns whether pending value should be used when determining the value
+  // of `IsEnabled`.
+  bool ShouldReadFromPendingValue() const;
 
   base::WeakPtr<StatsReportingController> as_weak_ptr() {
     return weak_factory_.GetWeakPtr();
@@ -153,8 +160,6 @@ class StatsReportingController
   base::OnceClosure on_device_settings_stored_callback_;
 
   base::WeakPtrFactory<StatsReportingController> weak_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(StatsReportingController);
 };
 
 }  // namespace ash

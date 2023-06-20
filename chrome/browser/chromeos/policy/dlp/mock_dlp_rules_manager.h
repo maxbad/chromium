@@ -18,6 +18,9 @@ class MockDlpRulesManager : public DlpRulesManager {
   MOCK_CONST_METHOD2(IsRestricted,
                      Level(const GURL& source, Restriction restriction));
 
+  MOCK_CONST_METHOD2(IsRestrictedByAnyRule,
+                     Level(const GURL& source, Restriction restriction));
+
   MOCK_CONST_METHOD5(IsRestrictedDestination,
                      Level(const GURL& source,
                            const GURL& destination,
@@ -39,6 +42,8 @@ class MockDlpRulesManager : public DlpRulesManager {
                      std::string(const GURL& source_url,
                                  Restriction restriction,
                                  Level level));
+
+  MOCK_CONST_METHOD0(GetClipboardCheckSizeLimitInBytes, int());
 };
 
 }  // namespace policy

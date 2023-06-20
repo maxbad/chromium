@@ -157,9 +157,9 @@ public class LayoutManagerImpl implements ManagedLayoutManager, LayoutUpdateHost
     private final ObservableSupplierImpl<TabModelSelector> mTabModelSelectorSupplier =
             new ObservableSupplierImpl<>();
     private final ObservableSupplier<TabContentManager> mTabContentManagerSupplier;
-    private final ObservableSupplierImpl<BrowserControlsStateProvider>
-            mBrowserControlsStateProviderSupplier = new ObservableSupplierImpl<>();
     private final CompositorModelChangeProcessor.FrameRequestSupplier mFrameRequestSupplier;
+
+    private BrowserControlsStateProvider mBrowserControlsStateProvider;
 
     /** The overlays that can be drawn on top of the active layout. */
     protected final List<SceneOverlay> mSceneOverlays = new ArrayList<>();
@@ -193,7 +193,8 @@ public class LayoutManagerImpl implements ManagedLayoutManager, LayoutUpdateHost
             if (type == TabLaunchType.FROM_RESTORE || type == TabLaunchType.FROM_REPARENTING
                     || type == TabLaunchType.FROM_EXTERNAL_APP
                     || type == TabLaunchType.FROM_LAUNCHER_SHORTCUT
-                    || type == TabLaunchType.FROM_STARTUP) {
+                    || type == TabLaunchType.FROM_STARTUP
+                    || type == TabLaunchType.FROM_APP_WIDGET) {
                 return;
             }
 
@@ -271,8 +272,11 @@ public class LayoutManagerImpl implements ManagedLayoutManager, LayoutUpdateHost
                 HistoryNavigationCoordinator.getSceneOverlayClass(),
                 ContinuousSearchContainerCoordinator.getSceneOverlayClass(),
                 TopToolbarOverlayCoordinator.class,
-                ScrollingBottomViewSceneLayer.class,
+                // StripLayoutHelperManager should be updated before ScrollingBottomViewSceneLayer
+                // Since ScrollingBottomViewSceneLayer change the container size,
+                // it causes relocation tab strip scene layer.
                 StripLayoutHelperManager.class,
+                ScrollingBottomViewSceneLayer.class,
                 StatusIndicatorCoordinator.getSceneOverlayClass(),
                 ContextualSearchPanel.class};
         // clang-format on
@@ -465,21 +469,14 @@ public class LayoutManagerImpl implements ManagedLayoutManager, LayoutUpdateHost
             TopUiThemeColorProvider topUiColorProvider) {
         LayoutRenderHost renderHost = mHost.getLayoutRenderHost();
 
+        mBrowserControlsStateProvider = mHost.getBrowserControlsManager();
+
         // Build Layouts
         mStaticLayout = new StaticLayout(mContext, this, renderHost, mHost, mFrameRequestSupplier,
-                selector, mTabContentManagerSupplier.get(), mBrowserControlsStateProviderSupplier,
+                selector, mTabContentManagerSupplier.get(), mBrowserControlsStateProvider,
                 mTopUiThemeColorProvider);
 
-        // Set up layout parameters
-        mStaticLayout.setLayoutHandlesTabLifecycles(true);
-
         setNextLayout(null);
-
-        // Initialize Layouts
-        mStaticLayout.onFinishNativeInitialization();
-
-        // Initialize Layouts
-        mBrowserControlsStateProviderSupplier.set(mHost.getBrowserControlsManager());
 
         // Set the dynamic resource loader for all overlay panels.
         mOverlayPanelManager.setDynamicResourceLoader(dynamicResourceLoader);
@@ -594,9 +591,9 @@ public class LayoutManagerImpl implements ManagedLayoutManager, LayoutUpdateHost
                 mCachedVisibleViewport, mLayerTitleCacheSupplier.get(), tabContentManager,
                 resourceManager, browserControlsManager);
 
-        float offsetPx = mBrowserControlsStateProviderSupplier.get() == null
+        float offsetPx = mBrowserControlsStateProvider == null
                 ? 0
-                : mBrowserControlsStateProviderSupplier.get().getTopControlOffset();
+                : mBrowserControlsStateProvider.getTopControlOffset();
 
         for (int i = 0; i < mSceneOverlays.size(); i++) {
             // If the SceneOverlay is not showing, don't bother adding it to the tree.
@@ -786,8 +783,8 @@ public class LayoutManagerImpl implements ManagedLayoutManager, LayoutUpdateHost
         TopUiThemeColorProvider topUiTheme = mTopUiThemeColorProvider.get();
         layoutTab.initFromHost(topUiTheme.getBackgroundColor(tab), shouldStall(tab),
                 canUseLiveTexture, topUiTheme.getSceneLayerBackground(tab),
-                ThemeUtils.getTextBoxColorForToolbarBackground(mContext.getResources(), tab,
-                        topUiTheme.calculateColor(tab, tab.getThemeColor())),
+                ThemeUtils.getTextBoxColorForToolbarBackground(
+                        mContext, tab, topUiTheme.calculateColor(tab, tab.getThemeColor())),
                 topUiTheme.getTextBoxBackgroundAlpha(tab));
 
         mHost.requestRender();

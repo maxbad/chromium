@@ -15,7 +15,6 @@
 #include <vector>
 
 #include "base/gtest_prod_util.h"
-#include "base/macros.h"
 #include "base/observer_list.h"
 #include "base/scoped_observation.h"
 #include "build/build_config.h"
@@ -53,7 +52,9 @@ class PrefService;
 class RemoveAutofillTester;
 
 namespace autofill {
+class AutofillImageFetcher;
 class AutofillInteractiveTest;
+struct CreditCardArtImage;
 class PersonalDataManagerObserver;
 class PersonalDataManagerFactory;
 class PersonalDatabaseHelper;
@@ -84,6 +85,8 @@ class PersonalDataManager : public KeyedService,
   explicit PersonalDataManager(const std::string& app_locale);
   PersonalDataManager(const std::string& app_locale,
                       const std::string& country_code);
+  PersonalDataManager(const PersonalDataManager&) = delete;
+  PersonalDataManager& operator=(const PersonalDataManager&) = delete;
   ~PersonalDataManager() override;
 
   // Kicks off asynchronous loading of profiles and credit cards.
@@ -92,7 +95,8 @@ class PersonalDataManager : public KeyedService,
   // account, and is wiped on signout and browser exit. This can be a nullptr
   // if personal_data_manager should use |profile_database| for all data.
   // If passed in, the |account_database| is used by default for server cards.
-  // |pref_service| must outlive this instance. |is_off_the_record| informs this
+  // |pref_service| must outlive this instance. |image_fetcher| is to fetch the
+  // customized images for autofill data. |is_off_the_record| informs this
   // instance whether the user is currently operating in an off-the-record
   // context.
   void Init(scoped_refptr<AutofillWebDataService> profile_database,
@@ -103,6 +107,7 @@ class PersonalDataManager : public KeyedService,
             AutofillProfileValidator* client_profile_validator,
             history::HistoryService* history_service,
             StrikeDatabaseBase* strike_database,
+            AutofillImageFetcher* image_fetcher,
             bool is_off_the_record);
 
   // KeyedService:
@@ -283,6 +288,15 @@ class PersonalDataManager : public KeyedService,
   // Returns autofill offer data, including card-linked and promo code offers.
   virtual std::vector<AutofillOfferData*> GetAutofillOffers() const;
 
+  // Returns autofill offer data, but only promo code offers that are not
+  // expired and that are for the given |origin|.
+  std::vector<const AutofillOfferData*>
+  GetActiveAutofillPromoCodeOffersForOrigin(GURL origin) const;
+
+  // Returns the customized credit card art image for the |card_art_url|.
+  virtual gfx::Image* GetCreditCardArtImageForUrl(
+      const GURL& card_art_url) const;
+
   // Updates the validity states of |profiles| according to server validity map.
   void UpdateProfilesServerValidityMapsIfNeeded(
       const std::vector<AutofillProfile*>& profiles);
@@ -358,6 +372,11 @@ class PersonalDataManager : public KeyedService,
   // inputting a new address. The value is calculated once and cached, so it
   // will only update when Chrome is restarted.
   virtual const std::string& GetDefaultCountryCodeForNewAddress() const;
+
+  // Returns our best guess for the country a user is in, for experiment group
+  // purposes. The value is calculated once and cached, so it will only update
+  // when Chrome is restarted.
+  virtual const std::string& GetCountryCodeForExperimentGroup() const;
 
   // De-dupe credit card to suggest. Full server cards are preferred over their
   // local duplicates, and local cards are preferred over their masked server
@@ -460,6 +479,15 @@ class PersonalDataManager : public KeyedService,
   // updates. Does nothing if the strike database is not available.
   void RemoveStrikesToBlockProfileUpdate(const std::string& guid);
 
+  // Used to automatically import addresses without a prompt. Should only be
+  // set to true in tests.
+  void set_auto_accept_address_imports_for_testing(bool auto_accept) {
+    auto_accept_address_imports_for_testing_ = auto_accept;
+  }
+  bool auto_accept_address_imports_for_testing() {
+    return auto_accept_address_imports_for_testing_;
+  }
+
  protected:
   // Only PersonalDataManagerFactory and certain tests can create instances of
   // PersonalDataManager.
@@ -468,6 +496,8 @@ class PersonalDataManager : public KeyedService,
   FRIEND_TEST_ALL_PREFIXES(PersonalDataManagerTest,
                            AddCreditCard_CrazyCharacters);
   FRIEND_TEST_ALL_PREFIXES(PersonalDataManagerTest, AddCreditCard_Invalid);
+  FRIEND_TEST_ALL_PREFIXES(PersonalDataManagerTest,
+                           AddAndGetCreditCardArtImage);
   FRIEND_TEST_ALL_PREFIXES(PersonalDataManagerTest,
                            DedupeProfiles_ProfilesToDelete);
   FRIEND_TEST_ALL_PREFIXES(PersonalDataManagerTest,
@@ -533,6 +563,7 @@ class PersonalDataManager : public KeyedService,
                            RequestProfileServerValidity);
   FRIEND_TEST_ALL_PREFIXES(PersonalDataManagerTest,
                            GetProfileSuggestions_Validity);
+  FRIEND_TEST_ALL_PREFIXES(PersonalDataManagerTest, LogStoredCreditCardMetrics);
 
   friend class autofill::AutofillInteractiveTest;
   friend class autofill::PersonalDataManagerCleaner;
@@ -626,6 +657,9 @@ class PersonalDataManager : public KeyedService,
   // Get the profiles fields validity map by |guid|.
   const ProfileValidityMap& GetProfileValidityByGUID(const std::string& guid);
 
+  // Asks AutofillImageFetcher to fetch images.
+  virtual void FetchImagesForUrls(const std::vector<GURL>& updated_urls) const;
+
   // Decides which database type to use for server and local cards.
   std::unique_ptr<PersonalDatabaseHelper> database_helper_;
 
@@ -653,8 +687,12 @@ class PersonalDataManager : public KeyedService,
   std::vector<std::unique_ptr<CreditCardCloudTokenData>>
       server_credit_card_cloud_token_data_;
 
-  // Offer data for user's credit cards.
+  // Autofill offer data, including card-linked offers for the user's credit
+  // cards as well as promo code offers.
   std::vector<std::unique_ptr<AutofillOfferData>> autofill_offer_data_;
+
+  // The customized card art images for the URL.
+  std::map<GURL, std::unique_ptr<gfx::Image>> credit_card_art_images_;
 
   // When the manager makes a request from WebDataServiceBase, the database
   // is queried on another sequence, we record the query handle until we
@@ -744,6 +782,11 @@ class PersonalDataManager : public KeyedService,
   // Triggered when a profile is added/updated/removed on db.
   void OnAutofillProfileChanged(const AutofillProfileDeepChange& change);
 
+  // Triggered when all the card art image fetches have been completed,
+  // regardless of whether all of them succeeded.
+  void OnCardArtImagesFetched(
+      std::vector<std::unique_ptr<CreditCardArtImage>> art_images);
+
   // Look at the next profile change for profile with guid = |guid|, and handle
   // it.
   void HandleNextProfileChange(const std::string& guid);
@@ -771,6 +814,17 @@ class PersonalDataManager : public KeyedService,
   // Returns the database that is used for storing local data.
   scoped_refptr<AutofillWebDataService> GetLocalDatabase();
 
+  // Invoked when server credit card cache is refreshed.
+  void OnServerCreditCardsRefreshed();
+
+  // Checks whether any virtual card metadata for server cards is new and makes
+  // corresponding changes.
+  void ProcessVirtualCardMetadataChanges();
+
+  // Returns the number of server credit cards that have a valid credit card art
+  // image.
+  size_t GetServerCardWithArtImageCount() const;
+
   // Stores the |app_locale| supplied on construction.
   const std::string app_locale_;
 
@@ -778,8 +832,17 @@ class PersonalDataManager : public KeyedService,
   // during construction.
   std::string variations_country_code_;
 
+  // If true, new addresses imports are automatically accepted without a prompt.
+  // Only to be used for testing.
+  bool auto_accept_address_imports_for_testing_ = false;
+
   // The default country code for new addresses.
   mutable std::string default_country_code_;
+
+  // The determined country code for experiment group purposes. Uses
+  // |variations_country_code_| if it exists but falls back to other methods if
+  // necessary to ensure it always has a value.
+  mutable std::string experiment_country_code_;
 
   // The PrefService that this instance uses. Must outlive this instance.
   PrefService* pref_service_ = nullptr;
@@ -814,6 +877,9 @@ class PersonalDataManager : public KeyedService,
 
   // The sync service this instances uses. Must outlive this instance.
   syncer::SyncService* sync_service_ = nullptr;
+
+  // The image fetcher to fetch customized images for Autofill data.
+  AutofillImageFetcher* image_fetcher_ = nullptr;
 
   // Whether the user is currently operating in an off-the-record context.
   // Default value is false.
@@ -854,8 +920,6 @@ class PersonalDataManager : public KeyedService,
       history_service_observation_{this};
 
   base::WeakPtrFactory<PersonalDataManager> weak_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(PersonalDataManager);
 };
 
 }  // namespace autofill

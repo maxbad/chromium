@@ -7,12 +7,11 @@
 
 #include "ash/ash_export.h"
 #include "ash/public/cpp/app_list/app_list_types.h"
+#include "base/time/time.h"
 #include "ui/events/event.h"
 
 namespace ash {
 
-class AppListModel;
-class SearchModel;
 class SearchResult;
 
 // The UMA histogram that logs how the app list transitions from peeking to
@@ -190,7 +189,7 @@ struct AppLaunchedMetricParams {
   AppListLaunchType search_launch_type = AppListLaunchType::kSearchResult;
   AppListViewState app_list_view_state = AppListViewState::kClosed;
   bool is_tablet_mode = false;
-  bool home_launcher_shown = false;
+  bool app_list_shown = false;
 };
 
 void AppListRecordPageSwitcherSourceByEventType(ui::EventType type,
@@ -205,9 +204,14 @@ void RecordZeroStateSearchResultUserActionHistogram(
 void RecordZeroStateSearchResultRemovalHistogram(
     ZeroStateSearchResutRemovalConfirmation removal_decision);
 
+void RecordAppListUserJourneyTime(AppListShowSource source,
+                                  base::TimeDelta time);
+
+void RecordPeriodicAppListMetrics();
+
 ASH_EXPORT void RecordSearchResultOpenSource(const SearchResult* result,
-                                             const AppListModel* model,
-                                             const SearchModel* search_model);
+                                             AppListViewState state,
+                                             bool is_tablet_mode);
 
 ASH_EXPORT void RecordSearchLaunchIndexAndQueryLength(
     SearchResultLaunchLocation launch_location,
@@ -217,7 +221,7 @@ ASH_EXPORT void RecordSearchLaunchIndexAndQueryLength(
 ASH_EXPORT void RecordAppListAppLaunched(AppListLaunchedFrom launched_from,
                                          AppListViewState app_list_state,
                                          bool is_tablet_mode,
-                                         bool home_launcher_shown);
+                                         bool app_list_shown);
 
 ASH_EXPORT bool IsCommandIdAnAppLaunch(int command_id);
 

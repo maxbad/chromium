@@ -8,7 +8,6 @@
 #include <memory>
 #include <string>
 #include <utility>
-#include <vector>
 
 #include "base/callback.h"
 #include "base/containers/queue.h"
@@ -19,7 +18,6 @@
 #include "components/ntp_snippets/remote/request_params.h"
 #include "components/signin/public/identity_manager/access_token_info.h"
 #include "google_apis/gaia/google_service_auth_error.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 
 class PrefService;
 
@@ -55,6 +53,9 @@ class RemoteSuggestionsFetcherImpl : public RemoteSuggestionsFetcher {
       const GURL& api_endpoint,
       const std::string& api_key,
       const UserClassifier* user_classifier);
+  RemoteSuggestionsFetcherImpl(const RemoteSuggestionsFetcherImpl&) = delete;
+  RemoteSuggestionsFetcherImpl& operator=(const RemoteSuggestionsFetcherImpl&) =
+      delete;
   ~RemoteSuggestionsFetcherImpl() override;
 
   void FetchSnippets(const RequestParams& params,
@@ -143,8 +144,6 @@ class RemoteSuggestionsFetcherImpl : public RemoteSuggestionsFetcher {
   bool last_fetch_authenticated_;
 
   static bool skip_api_key_check_for_testing_;
-
-  DISALLOW_COPY_AND_ASSIGN(RemoteSuggestionsFetcherImpl);
 };
 
 }  // namespace ntp_snippets

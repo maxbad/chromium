@@ -21,6 +21,7 @@
 #include "chrome/browser/usb/usb_tab_helper.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "chrome/test/base/testing_profile.h"
+#include "content/public/test/back_forward_cache_util.h"
 #include "extensions/buildflags/buildflags.h"
 #include "mojo/public/cpp/bindings/associated_receiver.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
@@ -33,6 +34,8 @@
 #include "url/gurl.h"
 
 #if BUILDFLAG(ENABLE_EXTENSIONS) && BUILDFLAG(IS_CHROMEOS_ASH)
+#include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/test_extension_system.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_builder.h"
@@ -40,6 +43,7 @@
 #endif  // BUILDFLAG(ENABLE_EXTENSIONS) && BUILDFLAG(IS_CHROMEOS_ASH)
 
 using ::testing::_;
+using ::testing::NiceMock;
 
 using blink::mojom::WebUsbService;
 using device::FakeUsbDeviceInfo;
@@ -63,7 +67,9 @@ ACTION_P2(ExpectGuidAndThen, expected_guid, callback) {
 
 class WebUsbServiceImplTest : public ChromeRenderViewHostTestHarness {
  public:
-  WebUsbServiceImplTest() {}
+  WebUsbServiceImplTest() = default;
+  WebUsbServiceImplTest(const WebUsbServiceImplTest&) = delete;
+  WebUsbServiceImplTest& operator=(const WebUsbServiceImplTest&) = delete;
 
   void SetUp() override {
     ChromeRenderViewHostTestHarness::SetUp();
@@ -101,7 +107,6 @@ class WebUsbServiceImplTest : public ChromeRenderViewHostTestHarness {
 
  private:
   std::unique_ptr<device::FakeUsbDeviceManager> device_manager_;
-  DISALLOW_COPY_AND_ASSIGN(WebUsbServiceImplTest);
 };
 
 class MockDeviceManagerClient : public UsbDeviceManagerClient {
@@ -182,7 +187,7 @@ TEST_F(WebUsbServiceImplTest, NoPermissionDevice) {
 
   mojo::Remote<WebUsbService> web_usb_service;
   ConnectToService(web_usb_service.BindNewPipeAndPassReceiver());
-  MockDeviceManagerClient mock_client;
+  NiceMock<MockDeviceManagerClient> mock_client;
   web_usb_service->SetClient(mock_client.CreateInterfacePtrAndBind());
 
   // Call GetDevices once to make sure the WebUsbService is up and running
@@ -376,6 +381,15 @@ TEST_F(WebUsbServiceImplTest, OpenAndDisconnectDevice) {
 }
 
 TEST_F(WebUsbServiceImplTest, OpenAndNavigateCrossOrigin) {
+  // The test assumes the previous page gets deleted after navigation,
+  // disconnecting the device. Disable back/forward cache to ensure that it
+  // doesn't get preserved in the cache.
+  // TODO(https://crbug.com/1220314): WebUSB actually already disables
+  // back/forward cache in RenderFrameHostImpl::CreateWebUsbService(), but that
+  // path is not triggered in unit tests, so this test fails. Fix this.
+  content::DisableBackForwardCacheForTesting(
+      web_contents(), content::BackForwardCache::TEST_ASSUMES_NO_CACHING);
+
   const auto origin = url::Origin::Create(GURL(kDefaultTestUrl));
 
   auto* context = GetChooserContext();
@@ -512,7 +526,14 @@ TEST_F(WebUsbServiceImplTest, AllowlistedImprivataExtension) {
           .SetID("dhodapiemamlmhlhblgcibabhdkohlen")
           .Build();
   ASSERT_TRUE(extension);
-  extensions::ExtensionRegistry::Get(browser_context())->AddEnabled(extension);
+
+  extensions::TestExtensionSystem* extension_system =
+      static_cast<extensions::TestExtensionSystem*>(
+          extensions::ExtensionSystem::Get(profile()));
+  extensions::ExtensionService* extension_service =
+      extension_system->CreateExtensionService(
+          base::CommandLine::ForCurrentProcess(), base::FilePath(), false);
+  extension_service->AddExtension(extension.get());
 
   const GURL imprivata_url = extension->GetResourceURL("index.html");
   const auto imprivata_origin = url::Origin::Create(imprivata_url);

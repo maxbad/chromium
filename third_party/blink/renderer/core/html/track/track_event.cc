@@ -40,18 +40,21 @@ TrackEvent::TrackEvent() = default;
 TrackEvent::TrackEvent(const AtomicString& type,
                        const TrackEventInit* initializer)
     : Event(type, initializer) {
-  if (!initializer->hasTrack())
+  if (!(initializer->hasTrack() && initializer->track()))
     return;
 
-  const VideoTrackOrAudioTrackOrTextTrack& track = initializer->track();
-  if (track.IsVideoTrack())
-    track_ = track.GetAsVideoTrack();
-  else if (track.IsAudioTrack())
-    track_ = track.GetAsAudioTrack();
-  else if (track.IsTextTrack())
-    track_ = track.GetAsTextTrack();
-  else
-    NOTREACHED();
+  const V8UnionAudioTrackOrTextTrackOrVideoTrack* track = initializer->track();
+  switch (track->GetContentType()) {
+    case V8UnionAudioTrackOrTextTrackOrVideoTrack::ContentType::kAudioTrack:
+      track_ = track->GetAsAudioTrack();
+      break;
+    case V8UnionAudioTrackOrTextTrackOrVideoTrack::ContentType::kTextTrack:
+      track_ = track->GetAsTextTrack();
+      break;
+    case V8UnionAudioTrackOrTextTrackOrVideoTrack::ContentType::kVideoTrack:
+      track_ = track->GetAsVideoTrack();
+      break;
+  }
 }
 
 TrackEvent::~TrackEvent() = default;

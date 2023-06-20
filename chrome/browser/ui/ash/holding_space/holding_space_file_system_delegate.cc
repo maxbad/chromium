@@ -20,11 +20,11 @@
 #include "base/threading/sequenced_task_runner_handle.h"
 #include "chrome/browser/ash/arc/arc_util.h"
 #include "chrome/browser/ash/drive/drive_integration_service.h"
-#include "chrome/browser/chromeos/file_manager/path_util.h"
+#include "chrome/browser/ash/file_manager/path_util.h"
 #include "chrome/browser/chromeos/fileapi/file_change_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
-#include "components/arc/arc_service_manager.h"
 #include "components/arc/session/arc_bridge_service.h"
+#include "components/arc/session/arc_service_manager.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
 
@@ -268,7 +268,7 @@ void HoldingSpaceFileSystemDelegate::Init() {
   // delayed volume mount is to support volumes that are mounted asynchronously
   // during the startup.
   clear_non_initialized_items_timer_.Start(
-      FROM_HERE, base::TimeDelta::FromMinutes(1),
+      FROM_HERE, base::Minutes(1),
       base::BindOnce(&HoldingSpaceFileSystemDelegate::ClearNonInitializedItems,
                      base::Unretained(this)));
 }
@@ -280,12 +280,18 @@ void HoldingSpaceFileSystemDelegate::OnHoldingSpaceItemsAdded(
   const bool arc_file_system_disconnected =
       IsArcFileSystemDisconnected(profile());
   for (const HoldingSpaceItem* item : items) {
-    if (item->IsInitialized()) {
+    if (item->IsInitialized() && item->progress().IsComplete()) {
       // Watch the directory containing `item`'s backing file. If the directory
-      // is already being watched, this will no-op.
+      // is already being watched, this will no-op. Note that it is not
+      // necessary to register a watch if the `item` is in-progress since
+      // in-progress items are not subject to validity checks.
       AddWatchForParent(item->file_path());
       continue;
     }
+
+    // In-progress items are not subject to validity checks.
+    if (!item->progress().IsComplete())
+      continue;
 
     // If the item has not yet been initialized, check whether it's path can be
     // resolved to a file system URL - failure to do so may indicate that the
@@ -326,9 +332,13 @@ void HoldingSpaceFileSystemDelegate::OnHoldingSpaceItemsRemoved(
 }
 
 void HoldingSpaceFileSystemDelegate::OnHoldingSpaceItemUpdated(
-    const HoldingSpaceItem* item) {
+    const HoldingSpaceItem* item,
+    uint32_t updated_fields) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-  AddWatchForParent(item->file_path());
+
+  // In-progress items are not subject to validity checks.
+  if (item->progress().IsComplete())
+    AddWatchForParent(item->file_path());
 }
 
 void HoldingSpaceFileSystemDelegate::OnHoldingSpaceItemInitialized(
@@ -531,6 +541,10 @@ void HoldingSpaceFileSystemDelegate::OnFilePathValidityChecksComplete(
       [](bool arc_file_system_disconnected,
          const std::vector<base::FilePath>* invalid_paths,
          const HoldingSpaceItem* item) {
+        // In-progress items are not subject to validity checks.
+        if (!item->progress().IsComplete())
+          return false;
+
         // Avoid removing Android files if connection to ARC file system has
         // been lost (e.g. Android container might have crashed). Validity
         // checks will be re-run once the file system gets connected.

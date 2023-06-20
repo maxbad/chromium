@@ -7,12 +7,13 @@ package org.chromium.weblayer_private;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ResolveInfo;
+import android.os.RemoteException;
 
 import androidx.annotation.Nullable;
 
+import org.chromium.base.Callback;
 import org.chromium.base.Function;
 import org.chromium.base.PackageManagerUtils;
-import org.chromium.components.embedder_support.util.UrlUtilities;
 import org.chromium.components.external_intents.ExternalNavigationDelegate;
 import org.chromium.components.external_intents.ExternalNavigationDelegate.StartActivityIfNeededResult;
 import org.chromium.components.external_intents.ExternalNavigationParams;
@@ -21,6 +22,8 @@ import org.chromium.content_public.browser.WebContents;
 import org.chromium.ui.base.WindowAndroid;
 import org.chromium.url.GURL;
 import org.chromium.url.Origin;
+import org.chromium.weblayer_private.interfaces.APICallException;
+import org.chromium.weblayer_private.interfaces.ExternalIntentInIncognitoUserDecision;
 
 /**
  * WebLayer's implementation of the {@link ExternalNavigationDelegate}.
@@ -74,17 +77,7 @@ public class ExternalNavigationDelegateImpl implements ExternalNavigationDelegat
         assert !proxy
             : "|proxy| should be true only for instant apps, which WebLayer doesn't handle";
 
-        boolean isExternalProtocol = !UrlUtilities.isAcceptedScheme(intent.toUri(0));
-        boolean hasDefaultHandler = hasDefaultHandler(intent);
-
-        // Match CCT's custom behavior of keeping http(s) URLs with no default handler in the app.
-        // TODO(blundell): If/when CCT eliminates its special handling of this case, eliminate it
-        // from WebLayer as well.
-        if (!isExternalProtocol && !hasDefaultHandler) {
-            return StartActivityIfNeededResult.HANDLED_WITHOUT_ACTIVITY_START;
-        }
-
-        // Otherwise defer to ExternalNavigationHandler's default logic.
+        // Defer to ExternalNavigationHandler's default logic.
         return StartActivityIfNeededResult.DID_NOT_HANDLE;
     }
 
@@ -115,6 +108,34 @@ public class ExternalNavigationDelegateImpl implements ExternalNavigationDelegat
     @Override
     public boolean isIncognito() {
         return mTab.getProfile().isIncognito();
+    }
+
+    @Override
+    public boolean hasCustomLeavingIncognitoDialog() {
+        return mTab.getExternalIntentInIncognitoCallbackProxy() != null;
+    }
+
+    @Override
+    public void presentLeavingIncognitoModalDialog(Callback<Boolean> onUserDecision) {
+        try {
+            mTab.getExternalIntentInIncognitoCallbackProxy().onExternalIntentInIncognito(
+                    (Integer result) -> {
+                        @ExternalIntentInIncognitoUserDecision
+                        int userDecision = result.intValue();
+                        switch (userDecision) {
+                            case ExternalIntentInIncognitoUserDecision.ALLOW:
+                                onUserDecision.onResult(Boolean.valueOf(true));
+                                break;
+                            case ExternalIntentInIncognitoUserDecision.DENY:
+                                onUserDecision.onResult(Boolean.valueOf(false));
+                                break;
+                            default:
+                                assert false;
+                        }
+                    });
+        } catch (RemoteException e) {
+            throw new APICallException(e);
+        }
     }
 
     @Override
@@ -188,6 +209,11 @@ public class ExternalNavigationDelegateImpl implements ExternalNavigationDelegat
     @Override
     public boolean handleWithAutofillAssistant(ExternalNavigationParams params, Intent targetIntent,
             GURL browserFallbackUrl, boolean isGoogleReferrer) {
+        return false;
+    }
+
+    @Override
+    public boolean shouldLaunchWebApksOnInitialIntent() {
         return false;
     }
 

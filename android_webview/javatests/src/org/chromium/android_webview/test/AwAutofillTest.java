@@ -49,7 +49,6 @@ import org.chromium.base.Log;
 import org.chromium.base.metrics.RecordHistogram;
 import org.chromium.base.task.PostTask;
 import org.chromium.base.test.util.CallbackHelper;
-import org.chromium.base.test.util.CommandLineFlags;
 import org.chromium.base.test.util.DisableIf;
 import org.chromium.base.test.util.DisabledTest;
 import org.chromium.base.test.util.Feature;
@@ -917,7 +916,6 @@ public class AwAutofillTest {
     }
 
     @Test
-    @FlakyTest(message = "https://crbug.com/1074525")
     @SmallTest
     @Feature({"AndroidWebView"})
     public void testTouchingFormWithAdjustResize() throws Throwable {
@@ -1978,7 +1976,6 @@ public class AwAutofillTest {
     @FlakyTest(message = "https://crbug.com/1161326")
     @SmallTest
     @Feature({"AndroidWebView"})
-    @CommandLineFlags.Add({"enable-features=AndroidAutofillQueryServerFieldTypes"})
     public void testUMANoServerPrediction() throws Throwable {
         mUMATestHelper.triggerAutofill();
         mUMATestHelper.startNewSession();
@@ -1990,7 +1987,6 @@ public class AwAutofillTest {
     @FlakyTest(message = "https://crbug.com/1161326")
     @SmallTest
     @Feature({"AndroidWebView"})
-    @CommandLineFlags.Add({"enable-features=AndroidAutofillQueryServerFieldTypes"})
     public void testUMAServerPredictionArriveBeforeSessionStart() throws Throwable {
         mUMATestHelper.simulateServerPredictionBeforeTriggeringAutofill(/*USERNAME*/ 86);
         assertEquals(AutofillProviderUMA.SERVER_PREDICTION_AVAILABLE_ON_SESSION_STARTS,
@@ -2001,7 +1997,6 @@ public class AwAutofillTest {
     @Test
     @SmallTest
     @Feature({"AndroidWebView"})
-    @CommandLineFlags.Add({"enable-features=AndroidAutofillQueryServerFieldTypes"})
     public void testUMAServerPredictionArriveAfterSessionStart() throws Throwable {
         mUMATestHelper.triggerAutofill();
         mUMATestHelper.simulateServerPrediction(/*NO_SERVER_DATA*/ 0);
@@ -2058,7 +2053,6 @@ public class AwAutofillTest {
     @Test
     @SmallTest
     @Feature({"AndroidWebView"})
-    @FlakyTest(message = "crbug.com/1033179")
     public void testPageScrollTriggerViewExitAndEnter() throws Throwable {
         final String data = "<html><head></head><body><form action='a.html' name='formname'>"
                 + "<input type='text' id='text1' name='username'"
@@ -2077,6 +2071,7 @@ public class AwAutofillTest {
         // Moved view, the position change trigger additional AUTOFILL_VIEW_EXITED and
         // AUTOFILL_VIEW_ENTERED.
         scrollToBottom();
+        pollJavascriptResultNotEqualTo("document.body.scrollTop;", "0");
         dispatchDownAndUpKeyEvents(KeyEvent.KEYCODE_B);
         List<Integer> expectedValues = new ArrayList<>();
 
@@ -2261,7 +2256,6 @@ public class AwAutofillTest {
     @Test
     @SmallTest
     @Feature({"AndroidWebView"})
-    @CommandLineFlags.Add({"enable-features=AndroidAutofillQueryServerFieldTypes"})
     public void testServerPredictionArrivesBeforeAutofillStart() throws Throwable {
         final String data = "<html><head></head><body><form action='a.html' name='formname'>"
                 + "<input type='text' id='text1' name='username'>"
@@ -2314,7 +2308,6 @@ public class AwAutofillTest {
     @Test
     @SmallTest
     @Feature({"AndroidWebView"})
-    @CommandLineFlags.Add({"enable-features=AndroidAutofillQueryServerFieldTypes"})
     public void testServerPredictionPrimaryTypeArrivesBeforeAutofillStart() throws Throwable {
         final String data = "<html><head></head><body><form action='a.html' name='formname'>"
                 + "<input type='text' id='text1' name='username'>"
@@ -2366,7 +2359,6 @@ public class AwAutofillTest {
     @Test
     @SmallTest
     @Feature({"AndroidWebView"})
-    @CommandLineFlags.Add({"enable-features=AndroidAutofillQueryServerFieldTypes"})
     public void testServerPredictionArrivesAfterAutofillStart() throws Throwable {
         final String data = "<html><head></head><body><form action='a.html' name='formname'>"
                 + "<input type='text' id='text1' name='username'>"
@@ -2436,7 +2428,6 @@ public class AwAutofillTest {
     @Test
     @SmallTest
     @Feature({"AndroidWebView"})
-    @CommandLineFlags.Add({"enable-features=AndroidAutofillQueryServerFieldTypes"})
     public void testServerPredictionPrimaryTypeArrivesAfterAutofillStart() throws Throwable {
         final String data = "<html><head></head><body><form action='a.html' name='formname'>"
                 + "<input type='text' id='text1' name='username'>"
@@ -2504,7 +2495,6 @@ public class AwAutofillTest {
     @Test
     @SmallTest
     @Feature({"AndroidWebView"})
-    @CommandLineFlags.Add({"enable-features=AndroidAutofillQueryServerFieldTypes"})
     public void testServerPredictionArrivesBeforeCallbackRegistered() throws Throwable {
         final String data = "<html><head></head><body><form action='a.html' name='formname'>"
                 + "<input type='text' id='text1' name='username'>"
@@ -2574,45 +2564,6 @@ public class AwAutofillTest {
     @Test
     @SmallTest
     @Feature({"AndroidWebView"})
-    @CommandLineFlags.Add({"disable-features=AndroidAutofillQueryServerFieldTypes"})
-    public void testServerPredictionQueryDisabled() throws Throwable {
-        final String data = "<html><head></head><body><form action='a.html' name='formname'>"
-                + "<input type='text' id='text1' name='username'>"
-                + "<input type='text' name='email' id='text2'/>"
-                + "</form></body></html>";
-        final String url = mWebServer.setResponse(FILE, data, null);
-        loadUrlSync(url);
-
-        int cnt = 0;
-        executeJavaScriptAndWaitForResult("document.getElementById('text1').select();");
-        dispatchDownAndUpKeyEvents(KeyEvent.KEYCODE_A);
-
-        cnt += waitForCallbackAndVerifyTypes(cnt,
-                new Integer[] {AUTOFILL_CANCEL, AUTOFILL_VIEW_ENTERED, AUTOFILL_SESSION_STARTED,
-                        AUTOFILL_VALUE_CHANGED});
-
-        invokeOnProvideAutoFillVirtualStructure();
-        TestViewStructure viewStructure = mTestValues.testViewStructure;
-        assertNotNull(viewStructure);
-        assertEquals(2, viewStructure.getChildCount());
-        assertNull(viewStructure.getChild(0).getHtmlInfo().getAttribute(
-                "crowdsourcing-autofill-hints"));
-        assertNull(viewStructure.getChild(0).getHtmlInfo().getAttribute("computed-autofill-hints"));
-        assertNull(viewStructure.getChild(0).getHtmlInfo().getAttribute(
-                "crowdsourcing-predictions-autofill-hints"));
-        assertNull(viewStructure.getChild(1).getHtmlInfo().getAttribute(
-                "crowdsourcing-autofill-hints"));
-        assertNull(viewStructure.getChild(1).getHtmlInfo().getAttribute("computed-autofill-hints"));
-        assertNull(viewStructure.getChild(1).getHtmlInfo().getAttribute(
-                "crowdsourcing-predictions-autofill-hints"));
-        IBinder binder = viewStructure.getExtras().getBinder("AUTOFILL_HINTS_SERVICE");
-        assertNull(binder);
-    }
-
-    @Test
-    @SmallTest
-    @Feature({"AndroidWebView"})
-    @CommandLineFlags.Add({"enable-features=AndroidAutofillQueryServerFieldTypes"})
     public void testServerQueryFailedAfterAutofillStart() throws Throwable {
         final String data = "<html><head></head><body><form action='a.html' name='formname'>"
                 + "<input type='text' id='text1' name='username'>"
@@ -2907,6 +2858,16 @@ public class AwAutofillTest {
         AwActivityTestRule.pollInstrumentationThread(() -> {
             try {
                 return expectedResult.equals(executeJavaScriptAndWaitForResult(script));
+            } catch (Throwable e) {
+                return false;
+            }
+        });
+    }
+
+    private void pollJavascriptResultNotEqualTo(String script, String result) throws Throwable {
+        AwActivityTestRule.pollInstrumentationThread(() -> {
+            try {
+                return !result.equals(executeJavaScriptAndWaitForResult(script));
             } catch (Throwable e) {
                 return false;
             }

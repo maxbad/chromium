@@ -12,7 +12,6 @@ namespace blink {
 
 class ExceptionState;
 class HTMLCanvasElement;
-class HTMLVideoElement;
 class GPUTextureDescriptor;
 class GPUTextureView;
 class GPUTextureViewDescriptor;
@@ -26,10 +25,7 @@ class GPUTexture : public DawnObject<WGPUTexture> {
   static GPUTexture* Create(GPUDevice* device,
                             const GPUTextureDescriptor* webgpu_desc,
                             ExceptionState& exception_state);
-  static GPUTexture* FromVideo(GPUDevice* device,
-                               HTMLVideoElement* video,
-                               WGPUTextureUsage usage,
-                               ExceptionState& exception_state);
+  static GPUTexture* CreateError(GPUDevice* device);
   static GPUTexture* FromCanvas(GPUDevice* device,
                                 HTMLCanvasElement* canvas,
                                 WGPUTextureUsage usage,
@@ -37,6 +33,7 @@ class GPUTexture : public DawnObject<WGPUTexture> {
 
   GPUTexture(GPUDevice* device,
              WGPUTexture texture,
+             WGPUTextureDimension dimension,
              WGPUTextureFormat format,
              WGPUTextureUsage usage);
   GPUTexture(GPUDevice* device,
@@ -44,18 +41,22 @@ class GPUTexture : public DawnObject<WGPUTexture> {
              WGPUTextureUsage usage,
              scoped_refptr<WebGPUMailboxTexture> mailbox_texture);
 
+  GPUTexture(const GPUTexture&) = delete;
+  GPUTexture& operator=(const GPUTexture&) = delete;
+
   // gpu_texture.idl
   GPUTextureView* createView(const GPUTextureViewDescriptor* webgpu_desc);
   void destroy();
 
+  WGPUTextureDimension Dimension() { return dimension_; }
   WGPUTextureFormat Format() { return format_; }
   WGPUTextureUsage Usage() { return usage_; }
 
  private:
+  WGPUTextureDimension dimension_;
   WGPUTextureFormat format_;
   WGPUTextureUsage usage_;
   scoped_refptr<WebGPUMailboxTexture> mailbox_texture_;
-  DISALLOW_COPY_AND_ASSIGN(GPUTexture);
 };
 
 }  // namespace blink

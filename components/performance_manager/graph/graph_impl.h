@@ -13,7 +13,6 @@
 #include <utility>
 #include <vector>
 
-#include "base/macros.h"
 #include "base/process/process_handle.h"
 #include "base/sequence_checker.h"
 #include "components/performance_manager/owned_objects.h"
@@ -54,6 +53,9 @@ class GraphImpl : public Graph {
   GraphImpl(const GraphImpl&) = delete;
   GraphImpl& operator=(const GraphImpl&) = delete;
 
+  // Set up the graph.
+  void SetUp();
+
   // Tear down the graph to prepare for deletion.
   void TearDown();
 
@@ -74,12 +76,12 @@ class GraphImpl : public Graph {
   std::unique_ptr<GraphOwned> TakeFromGraph(GraphOwned* graph_owned) override;
   void RegisterObject(GraphRegistered* object) override;
   void UnregisterObject(GraphRegistered* object) override;
-  const SystemNode* FindOrCreateSystemNode() override;
+  const SystemNode* GetSystemNode() const override;
   std::vector<const ProcessNode*> GetAllProcessNodes() const override;
   std::vector<const FrameNode*> GetAllFrameNodes() const override;
   std::vector<const PageNode*> GetAllPageNodes() const override;
   std::vector<const WorkerNode*> GetAllWorkerNodes() const override;
-  bool IsEmpty() const override;
+  bool HasOnlySystemNode() const override;
   ukm::UkmRecorder* GetUkmRecorder() const override;
   NodeDataDescriberRegistry* GetNodeDataDescriberRegistry() const override;
   uintptr_t GetImplType() const override;
@@ -102,7 +104,10 @@ class GraphImpl : public Graph {
     return ukm_recorder_;
   }
 
-  SystemNodeImpl* FindOrCreateSystemNodeImpl();
+  SystemNodeImpl* GetSystemNodeImpl() const {
+    DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+    return system_node_.get();
+  }
   std::vector<ProcessNodeImpl*> GetAllProcessNodeImpls() const;
   std::vector<FrameNodeImpl*> GetAllFrameNodeImpls() const;
   std::vector<PageNodeImpl*> GetAllPageNodeImpls() const;
@@ -202,6 +207,7 @@ class GraphImpl : public Graph {
   template <typename NodeType, typename ReturnNodeType>
   std::vector<ReturnNodeType> GetAllNodesOfType() const;
 
+  void CreateSystemNode() VALID_CONTEXT_REQUIRED(sequence_checker_);
   void ReleaseSystemNode() VALID_CONTEXT_REQUIRED(sequence_checker_);
 
   std::unique_ptr<SystemNodeImpl> system_node_

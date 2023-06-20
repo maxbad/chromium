@@ -75,9 +75,6 @@ void FakeSyncEngine::SetEncryptionPassphrase(const std::string& passphrase) {}
 
 void FakeSyncEngine::SetDecryptionPassphrase(const std::string& passphrase) {}
 
-void FakeSyncEngine::SetKeystoreEncryptionBootstrapToken(
-    const std::string& token) {}
-
 void FakeSyncEngine::AddTrustedVaultDecryptionKeys(
     const std::vector<std::vector<uint8_t>>& keys,
     base::OnceClosure done_cb) {
@@ -87,7 +84,7 @@ void FakeSyncEngine::AddTrustedVaultDecryptionKeys(
 void FakeSyncEngine::StopSyncingForShutdown() {}
 
 void FakeSyncEngine::Shutdown(ShutdownReason reason) {
-  if (reason == DISABLE_SYNC) {
+  if (reason == ShutdownReason::DISABLE_SYNC_AND_CLEAR_DATA) {
     sync_transport_data_cleared_cb_.Run();
   }
 }
@@ -98,15 +95,13 @@ void FakeSyncEngine::ConfigureDataTypes(ConfigureParams params) {
            /*failed_configuration_types=*/ModelTypeSet());
 }
 
-void FakeSyncEngine::ActivateDataType(
+void FakeSyncEngine::ConnectDataType(
     ModelType type,
     std::unique_ptr<DataTypeActivationResponse> activation_response) {}
 
-void FakeSyncEngine::DeactivateDataType(ModelType type) {}
+void FakeSyncEngine::DisconnectDataType(ModelType type) {}
 
-void FakeSyncEngine::ActivateProxyDataType(ModelType type) {}
-
-void FakeSyncEngine::DeactivateProxyDataType(ModelType type) {}
+void FakeSyncEngine::SetProxyTabsDatatypeEnabled(bool enabled) {}
 
 const SyncStatus& FakeSyncEngine::GetDetailedStatus() const {
   return default_sync_status_;

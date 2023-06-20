@@ -151,6 +151,9 @@ class SearchTermLocation {
     }
   }
 
+  SearchTermLocation(const SearchTermLocation&) = delete;
+  SearchTermLocation& operator=(const SearchTermLocation&) = delete;
+
   bool found() const { return found_; }
   const std::string& key() const { return key_; }
   const std::string& value_prefix() const { return value_prefix_; }
@@ -173,8 +176,6 @@ class SearchTermLocation {
   std::string key_;
   std::string value_prefix_;
   std::string value_suffix_;
-
-  DISALLOW_COPY_AND_ASSIGN(SearchTermLocation);
 };
 
 bool IsTemplateParameterString(const std::string& param) {
@@ -1150,7 +1151,7 @@ std::string TemplateURLRef::HandleReplacements(
           // prefetch to allow the search server to treat the requests based on
           // source. "cs" represents Chrome Suggestions as the source. Adding a
           // new source should be supported by the Search engine.
-          HandleReplacement(std::string(), "pf=cs&", *i, &url);
+          HandleReplacement("pf", "cs", *i, &url);
         }
         break;
       }
@@ -1195,11 +1196,8 @@ std::string TemplateURLRef::HandleReplacements(
       }
 
       case GOOGLE_SUGGEST_CLIENT:
-        HandleReplacement(
-            std::string(),
-            search_terms_data.GetSuggestClient(
-                search_terms_args.request_source == NON_SEARCHBOX_NTP),
-            *i, &url);
+        HandleReplacement(std::string(), search_terms_data.GetSuggestClient(),
+                          *i, &url);
         break;
 
       case GOOGLE_SUGGEST_REQUEST_ID:

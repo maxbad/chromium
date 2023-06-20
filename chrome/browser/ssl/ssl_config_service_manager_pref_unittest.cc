@@ -20,6 +20,7 @@
 #include "net/cert/cert_verifier.h"
 #include "net/ssl/ssl_config.h"
 #include "services/cert_verifier/public/mojom/cert_verifier_service_factory.mojom.h"
+#include "services/network/public/mojom/network_context.mojom.h"
 #include "services/network/public/mojom/network_service.mojom.h"
 #include "services/network/public/mojom/ssl_config.mojom.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -113,8 +114,8 @@ TEST_F(SSLConfigServiceManagerPrefTest, GoodDisabledCipherSuites) {
   EXPECT_TRUE(initial_config_->disabled_cipher_suites.empty());
 
   auto list_value = std::make_unique<base::ListValue>();
-  list_value->AppendString("0x0004");
-  list_value->AppendString("0x0005");
+  list_value->Append("0x0004");
+  list_value->Append("0x0005");
   local_state.SetUserPref(prefs::kCipherSuiteBlacklist, std::move(list_value));
 
   // Wait for the SSLConfigServiceManagerPref to be notified of the preferences
@@ -140,10 +141,10 @@ TEST_F(SSLConfigServiceManagerPrefTest, BadDisabledCipherSuites) {
   EXPECT_TRUE(initial_config_->disabled_cipher_suites.empty());
 
   auto list_value = std::make_unique<base::ListValue>();
-  list_value->AppendString("0x0004");
-  list_value->AppendString("TLS_NOT_WITH_A_CIPHER_SUITE");
-  list_value->AppendString("0x0005");
-  list_value->AppendString("0xBEEFY");
+  list_value->Append("0x0004");
+  list_value->Append("TLS_NOT_WITH_A_CIPHER_SUITE");
+  list_value->Append("0x0005");
+  list_value->Append("0xBEEFY");
   local_state.SetUserPref(prefs::kCipherSuiteBlacklist, std::move(list_value));
 
   // Wait for the SSLConfigServiceManagerPref to be notified of the preferences

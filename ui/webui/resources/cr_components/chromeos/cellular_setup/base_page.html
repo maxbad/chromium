@@ -8,22 +8,26 @@
 <dom-module id="base-page">
   <template>
     <style include="iron-positioning">
+      :host {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+      }
+
       #title {
-        color: var(--google-grey-900);
+        color: var(--cros-text-color-primary);
         font-weight: normal;
         line-height: 24px;
       }
 
       #message {
-        display: flex;
         height: var(--base-page-message-height, auto);
         margin-bottom: 20px;
       }
 
       :host ::slotted([slot='page-body']) {
         display: block;
-        height: 256px;
-        width: 100%;
+        flex: 1 1 auto;
       }
 
       #message iron-icon {

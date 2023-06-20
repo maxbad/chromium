@@ -9,8 +9,8 @@
 
 #include "base/check.h"
 #include "base/command_line.h"
+#include "base/cxx17_backports.h"
 #include "base/notreached.h"
-#include "base/numerics/ranges.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
 #include "cc/paint/paint_flags.h"
@@ -27,8 +27,8 @@
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/rect_f.h"
 #include "ui/gfx/geometry/size.h"
+#include "ui/gfx/geometry/skia_conversions.h"
 #include "ui/gfx/image/image_skia.h"
-#include "ui/gfx/skia_util.h"
 #include "ui/native_theme/common_theme.h"
 
 namespace {
@@ -63,6 +63,22 @@ const SkScalar kTrackHeightRatio = 8.0f / 16;
 const SkScalar kMenuListArrowStrokeWidth = 2.f;
 const int kSliderThumbSize = 16;
 
+// This value was created with the following steps:
+// 1. Take the SkColors returned by GetControlColor for kAccent and
+//    kHoveredAccent.
+// 2. use color_utils::SkColorToHSL to convert those colors to HSL.
+// 3. Take the difference of the luminance component of the HSL between those
+//    two colors.
+// 4. Round to the nearest two decimal points.
+//
+// This is used to emulate the changes in color used for hover and pressed
+// states when a custom accent-color is used to draw form controls. It just so
+// happens that the luminance difference is the same for hover and press, and it
+// also happens that GetDarkModeControlColor has very close values when you run
+// these steps, which makes it work well for forced color-scheme for contrast
+// with certain accent-colors.
+const double kAccentLuminanceAdjust = 0.11;
+
 // Get a color constant based on color-scheme
 SkColor GetColor(const SkColor colors[2],
                  ui::NativeTheme::ColorScheme color_scheme) {
@@ -71,17 +87,69 @@ SkColor GetColor(const SkColor colors[2],
 
 // This returns a color scheme which provides enough contrast with the custom
 // accent-color to make it easy to see.
-// TODO(crbug.com/1092093): Use separate hard coded colors instead of deferring
-// to the dark color scheme for contrast.
+// |light_contrasting_color| is the color which is used to paint adjacent to
+// |accent_color| in ColorScheme::kLight, and |dark_contrasting_color| is the
+// one used for ColorScheme::kDark.
 ui::NativeTheme::ColorScheme ColorSchemeForAccentColor(
     const absl::optional<SkColor>& accent_color,
-    const ui::NativeTheme::ColorScheme& color_scheme) {
+    const ui::NativeTheme::ColorScheme& color_scheme,
+    const SkColor& light_contrasting_color,
+    const SkColor& dark_contrasting_color) {
+  // If there is enough contrast between accent_color and color_scheme, then
+  // let's keep it the same. Otherwise, flip the color_scheme to guarantee
+  // contrast.
+
   if (!accent_color)
     return color_scheme;
 
-  return color_utils::GetRelativeLuminance(*accent_color) < 0.5
-             ? ui::NativeTheme::ColorScheme::kLight
-             : ui::NativeTheme::ColorScheme::kDark;
+  float contrast_with_light =
+      color_utils::GetContrastRatio(*accent_color, light_contrasting_color);
+  float contrast_with_dark =
+      color_utils::GetContrastRatio(*accent_color, dark_contrasting_color);
+  const float kMinimumContrast = 3;
+
+  if (color_scheme == ui::NativeTheme::ColorScheme::kDark) {
+    if (contrast_with_dark < kMinimumContrast &&
+        contrast_with_dark < contrast_with_light) {
+      // TODO(crbug.com/1216137): what if |contrast_with_light| is less than
+      // |kMinimumContrast|? Should we modify |accent_color|...?
+      return ui::NativeTheme::ColorScheme::kLight;
+    }
+  } else {
+    if (contrast_with_light < kMinimumContrast &&
+        contrast_with_light < contrast_with_dark) {
+      return ui::NativeTheme::ColorScheme::kDark;
+    }
+  }
+
+  return color_scheme;
+}
+
+SkColor AdjustLuminance(const SkColor& color, double luminance) {
+  color_utils::HSL hsl;
+  color_utils::SkColorToHSL(color, &hsl);
+  hsl.l = base::clamp(hsl.l + luminance, 0., 1.);
+  return color_utils::HSLToSkColor(hsl, SkColorGetA(color));
+}
+
+SkColor CustomAccentColorForState(
+    const SkColor& accent_color,
+    ui::NativeTheme::State state,
+    const ui::NativeTheme::ColorScheme& color_scheme) {
+  bool make_lighter = false;
+  bool is_dark_mode = color_scheme == ui::NativeTheme::ColorScheme::kDark;
+  switch (state) {
+    case ui::NativeTheme::kHovered:
+      make_lighter = is_dark_mode;
+      break;
+    case ui::NativeTheme::kPressed:
+      make_lighter = !is_dark_mode;
+      break;
+    default:
+      return accent_color;
+  }
+  return AdjustLuminance(accent_color,
+                         (make_lighter ? 1 : -1) * kAccentLuminanceAdjust);
 }
 
 }  // namespace
@@ -303,8 +371,9 @@ gfx::Rect NativeThemeBase::GetNinePatchAperture(Part part) const {
 
 NativeThemeBase::NativeThemeBase() : NativeThemeBase(false) {}
 
-NativeThemeBase::NativeThemeBase(bool should_only_use_dark_colors)
-    : NativeTheme(should_only_use_dark_colors) {}
+NativeThemeBase::NativeThemeBase(bool should_only_use_dark_colors,
+                                 bool is_custom_system_theme)
+    : NativeTheme(should_only_use_dark_colors, is_custom_system_theme) {}
 
 NativeThemeBase::~NativeThemeBase() = default;
 
@@ -549,7 +618,16 @@ void NativeThemeBase::PaintCheckbox(
     const ButtonExtraParams& button,
     ColorScheme color_scheme,
     const absl::optional<SkColor>& accent_color) const {
-  color_scheme = ColorSchemeForAccentColor(accent_color, color_scheme);
+  // ControlsBackgroundColorForState is used below for |checkmark_color|, which
+  // gets drawn adjacent to |accent_color|. In order to guarantee contrast
+  // between |checkmark_color| and |accent_color|, we choose the |color_scheme|
+  // here based on the two possible values for |checkmark_color|.
+  if (button.checked && state != kDisabled) {
+    color_scheme = ColorSchemeForAccentColor(
+        accent_color, color_scheme,
+        ControlsBackgroundColorForState(state, ColorScheme::kLight),
+        ControlsBackgroundColorForState(state, ColorScheme::kDark));
+  }
 
   const float border_radius =
       GetBorderRadiusForPart(kCheckbox, rect.width(), rect.height());
@@ -574,7 +652,8 @@ void NativeThemeBase::PaintCheckbox(
       // Draw the accent background.
       flags.setStyle(cc::PaintFlags::kFill_Style);
       if (accent_color && state != kDisabled) {
-        flags.setColor(*accent_color);
+        flags.setColor(
+            CustomAccentColorForState(*accent_color, state, color_scheme));
       } else {
         flags.setColor(ControlsAccentColorForState(state, color_scheme));
       }
@@ -608,8 +687,6 @@ SkRect NativeThemeBase::PaintCheckboxRadioCommon(
     const SkScalar border_radius,
     ColorScheme color_scheme,
     const absl::optional<SkColor>& accent_color) const {
-  color_scheme = ColorSchemeForAccentColor(accent_color, color_scheme);
-
   SkRect skrect = gfx::RectToSkRect(rect);
 
   // Use the largest square that fits inside the provided rectangle.
@@ -626,7 +703,8 @@ SkRect NativeThemeBase::PaintCheckboxRadioCommon(
   if (skrect.width() <= 2) {
     cc::PaintFlags flags;
     if (accent_color && state != kDisabled) {
-      flags.setColor(*accent_color);
+      flags.setColor(
+          CustomAccentColorForState(*accent_color, state, color_scheme));
     } else {
       flags.setColor(GetControlColor(kBorder, color_scheme));
     }
@@ -662,7 +740,8 @@ SkRect NativeThemeBase::PaintCheckboxRadioCommon(
     SkColor border_color;
     if (button.checked && !button.indeterminate) {
       if (accent_color && state != kDisabled) {
-        border_color = *accent_color;
+        border_color =
+            CustomAccentColorForState(*accent_color, state, color_scheme);
       } else {
         border_color = ControlsAccentColorForState(state, color_scheme);
       }
@@ -685,7 +764,16 @@ void NativeThemeBase::PaintRadio(
     const ButtonExtraParams& button,
     ColorScheme color_scheme,
     const absl::optional<SkColor>& accent_color) const {
-  color_scheme = ColorSchemeForAccentColor(accent_color, color_scheme);
+  // ControlsBackgroundColorForState is used below in PaintCheckboxRadioCommon,
+  // which gets draw adjacent to |accent_color|. In order to guarantee contrast
+  // between the background and |accent_color|, we choose the |color_scheme|
+  // here based on the two possible values for ControlsBackgroundColorForState.
+  if (button.checked && state != kDisabled) {
+    color_scheme = ColorSchemeForAccentColor(
+        accent_color, color_scheme,
+        ControlsBackgroundColorForState(state, ColorScheme::kLight),
+        ControlsBackgroundColorForState(state, ColorScheme::kDark));
+  }
 
   // Most of a radio button is the same as a checkbox, except the the rounded
   // square is a circle (i.e. border radius >= 100%).
@@ -700,7 +788,8 @@ void NativeThemeBase::PaintRadio(
     flags.setAntiAlias(true);
     flags.setStyle(cc::PaintFlags::kFill_Style);
     if (accent_color && state != kDisabled) {
-      flags.setColor(*accent_color);
+      flags.setColor(
+          CustomAccentColorForState(*accent_color, state, color_scheme));
     } else {
       flags.setColor(ControlsAccentColorForState(state, color_scheme));
     }
@@ -733,6 +822,8 @@ void NativeThemeBase::PaintButton(cc::PaintCanvas* canvas,
 
   float border_radius =
       GetBorderRadiusForPart(kPushButton, rect.width(), rect.height());
+  border_radius =
+      AdjustBorderRadiusByZoom(kPushButton, border_radius, button.zoom);
   // Paint the background (is not visible behind the rounded corners).
   skrect.inset(border_width / 2, border_width / 2);
   PaintLightenLayer(canvas, skrect, state, border_radius, color_scheme);
@@ -754,8 +845,10 @@ void NativeThemeBase::PaintTextField(cc::PaintCanvas* canvas,
                                      const TextFieldExtraParams& text,
                                      ColorScheme color_scheme) const {
   SkRect bounds = gfx::RectToSkRect(rect);
-  const SkScalar border_radius =
+  float border_radius =
       GetBorderRadiusForPart(kTextField, rect.width(), rect.height());
+  border_radius =
+      AdjustBorderRadiusByZoom(kTextField, border_radius, text.zoom);
   float border_width = AdjustBorderWidthByZoom(kBorderWidth, text.zoom);
 
   // Paint the background (is not visible behind the rounded corners).
@@ -875,7 +968,19 @@ void NativeThemeBase::PaintSliderTrack(
     const SliderExtraParams& slider,
     ColorScheme color_scheme,
     const absl::optional<SkColor>& accent_color) const {
-  color_scheme = ColorSchemeForAccentColor(accent_color, color_scheme);
+  // ControlsFillColorForState is used below for the slider track, which
+  // gets drawn adjacent to |accent_color|. In order to guarantee contrast
+  // between the slider track and |accent_color|, we choose the |color_scheme|
+  // here based on the two possible values for the slider track.
+  // We use kNormal here because the user hovering or clicking on the slider
+  // will change the state to something else, and we don't want the color-scheme
+  // to flicker back and forth when the user interacts with it.
+  if (state != kDisabled) {
+    color_scheme = ColorSchemeForAccentColor(
+        accent_color, color_scheme,
+        ControlsFillColorForState(kNormal, ColorScheme::kLight),
+        ControlsFillColorForState(kNormal, ColorScheme::kDark));
+  }
 
   // Paint the entire slider track.
   cc::PaintFlags flags;
@@ -901,9 +1006,8 @@ void NativeThemeBase::PaintSliderTrack(
 
   // Paint the value slider track.
   if (accent_color && state != kDisabled) {
-    // TODO(crbug.com/1092093): Decide what to do when state is kHovered or
-    // kPressed.
-    flags.setColor(*accent_color);
+    flags.setColor(
+        CustomAccentColorForState(*accent_color, state, color_scheme));
   } else {
     flags.setColor(ControlsSliderColorForState(state, color_scheme));
   }
@@ -929,7 +1033,19 @@ void NativeThemeBase::PaintSliderThumb(
     const SliderExtraParams& slider,
     ColorScheme color_scheme,
     const absl::optional<SkColor>& accent_color) const {
-  color_scheme = ColorSchemeForAccentColor(accent_color, color_scheme);
+  // This is the same logic used in PaintSliderTrack to guarantee contrast with
+  // |accent_color|. This and PaintSliderTrack are used together to paint
+  // <input type=range>, so the logic must be the same in order to make sure one
+  // color scheme is used to paint the entire control.
+  // We use kNormal here because the user hovering or clicking on the slider
+  // will change the state to something else, and we don't want the color-scheme
+  // to flicker back and forth when the user interacts with it.
+  if (state != kDisabled) {
+    color_scheme = ColorSchemeForAccentColor(
+        accent_color, color_scheme,
+        ControlsFillColorForState(kNormal, ColorScheme::kLight),
+        ControlsFillColorForState(kNormal, ColorScheme::kDark));
+  }
 
   const float radius =
       GetBorderRadiusForPart(kSliderThumb, rect.width(), rect.height());
@@ -945,9 +1061,8 @@ void NativeThemeBase::PaintSliderThumb(
   // Paint the background (is not visible behind the rounded corners).
   thumb_rect.inset(border_width / 2, border_width / 2);
   if (accent_color && state != kDisabled) {
-    // TODO(crbug.com/1092093): Decide what to do when state is kHovered or
-    // kPressed.
-    flags.setColor(*accent_color);
+    flags.setColor(
+        CustomAccentColorForState(*accent_color, state, color_scheme));
   } else {
     flags.setColor(ControlsSliderColorForState(state, color_scheme));
   }
@@ -992,7 +1107,13 @@ void NativeThemeBase::PaintProgressBar(
     const absl::optional<SkColor>& accent_color) const {
   DCHECK(!rect.IsEmpty());
 
-  color_scheme = ColorSchemeForAccentColor(accent_color, color_scheme);
+  // GetControlColor(kFill) is used below for the track, which
+  // gets drawn adjacent to |accent_color|. In order to guarantee contrast
+  // between the track and |accent_color|, we choose the |color_scheme|
+  // here based on the two possible values for the track.
+  color_scheme = ColorSchemeForAccentColor(
+      accent_color, color_scheme, GetControlColor(kFill, ColorScheme::kLight),
+      GetControlColor(kFill, ColorScheme::kDark));
 
   // Paint the track.
   cc::PaintFlags flags;
@@ -1063,20 +1184,13 @@ void NativeThemeBase::AdjustCheckboxRadioRectForPadding(SkRect* rect) const {
                 static_cast<int>(rect->bottom()) - 1);
 }
 
-float NativeThemeBase::AdjustBorderWidthByZoom(float border_width,
-                                               float) const {
-  return border_width;
-}
-
 SkColor NativeThemeBase::SaturateAndBrighten(SkScalar* hsv,
                                              SkScalar saturate_amount,
                                              SkScalar brighten_amount) const {
   SkScalar color[3];
   color[0] = hsv[0];
-  color[1] =
-      base::ClampToRange(hsv[1] + saturate_amount, SkScalar{0}, SK_Scalar1);
-  color[2] =
-      base::ClampToRange(hsv[2] + brighten_amount, SkScalar{0}, SK_Scalar1);
+  color[1] = base::clamp(hsv[1] + saturate_amount, SkScalar{0}, SK_Scalar1);
+  color[2] = base::clamp(hsv[2] + brighten_amount, SkScalar{0}, SK_Scalar1);
   return SkHSVToColor(color);
 }
 
@@ -1153,10 +1267,8 @@ SkColor NativeThemeBase::OutlineColor(SkScalar* hsv1, SkScalar* hsv2) const {
   //
   // The following code has been tested to look OK with all of the
   // default GTK themes.
-  SkScalar min_diff =
-      base::ClampToRange((hsv1[1] + hsv2[1]) * 1.2f, 0.28f, 0.5f);
-  SkScalar diff =
-      base::ClampToRange(fabs(hsv1[2] - hsv2[2]) / 2, min_diff, 0.5f);
+  SkScalar min_diff = base::clamp((hsv1[1] + hsv2[1]) * 1.2f, 0.28f, 0.5f);
+  SkScalar diff = base::clamp(fabs(hsv1[2] - hsv2[2]) / 2, min_diff, 0.5f);
 
   if (hsv1[2] + hsv2[2] > 1.0)
     diff = -diff;
@@ -1277,7 +1389,7 @@ SkColor NativeThemeBase::GetControlColor(ControlColorId color_id,
   if (InForcedColorsMode() && features::IsForcedColorsEnabled())
     return GetHighContrastControlColor(color_id, color_scheme);
 
-  if(color_scheme == ColorScheme::kDark)
+  if (color_scheme == ColorScheme::kDark)
     return GetDarkModeControlColor(color_id);
 
   switch (color_id) {
@@ -1372,8 +1484,9 @@ SkColor NativeThemeBase::GetDarkModeControlColor(
     case kButtonBorder:
     case kButtonFill:
       return SkColorSetRGB(0x6B, 0x6B, 0x6B);
-    case kLightenLayer:
     case kAutoCompleteBackground:
+      return SkColorSetARGB(0x66, 0x46, 0x5a, 0x7e);
+    case kLightenLayer:
     case kBackground:
       return SkColorSetRGB(0x3B, 0x3B, 0x3B);
     case kBorder:

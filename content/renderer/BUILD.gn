@@ -74,8 +74,6 @@ target(link_target_type, "renderer") {
     "in_process_renderer_thread.h",
     "internal_document_state_data.cc",
     "internal_document_state_data.h",
-    "loader/navigation_body_loader.cc",
-    "loader/navigation_body_loader.h",
     "media/audio_decoder.cc",
     "media/audio_decoder.h",
     "media/batching_media_log.cc",
@@ -229,10 +227,7 @@ target(link_target_type, "renderer") {
     ]
   }
 
-  configs += [
-    "//content:content_implementation",
-    "//build/config/compiler:no_size_t_to_int_warning",
-  ]
+  configs += [ "//content:content_implementation" ]
   defines = []
 
   public_deps = [
@@ -246,6 +241,7 @@ target(link_target_type, "renderer") {
     "//base:i18n",
     "//build:chromecast_buildflags",
     "//build:chromeos_buildflags",
+    "//build:os_buildflags",
     "//cc",
     "//cc/animation",
     "//cc/mojo_embedder",
@@ -266,6 +262,7 @@ target(link_target_type, "renderer") {
     "//content/common:buildflags",
     "//content/gpu:gpu_sources",
     "//content/public/child:child_sources",
+    "//content/services/shared_storage_worklet",
     "//crypto",
     "//crypto:platform",
     "//device/base/synchronization",
@@ -278,7 +275,6 @@ target(link_target_type, "renderer") {
     "//gpu/command_buffer/client:webgpu_interface",
     "//media",
     "//media:media_buildflags",
-    "//media/blink",
     "//media/capture",
     "//media/gpu",
     "//media/gpu/ipc/client",
@@ -313,6 +309,7 @@ target(link_target_type, "renderer") {
     "//third_party/blink/public:blink",
     "//third_party/blink/public:buildflags",
     "//third_party/blink/public/common",
+    "//third_party/blink/public/platform/media",
     "//third_party/blink/public/strings:strings_grit",
     "//third_party/boringssl",
     "//third_party/icu",
@@ -354,16 +351,10 @@ target(link_target_type, "renderer") {
   }
 
   if (is_fuchsia) {
-    sources += [
-      "media/fuchsia_renderer_factory.cc",
-      "media/fuchsia_renderer_factory.h",
-      "renderer_main_platform_delegate_fuchsia.cc",
-    ]
+    sources += [ "renderer_main_platform_delegate_fuchsia.cc" ]
 
     deps += [
-      "//media/fuchsia/audio",
       "//media/fuchsia/cdm/client",
-      "//media/fuchsia/mojom",
       "//third_party/fuchsia-sdk/sdk/pkg/sys_cpp",
     ]
   }
@@ -376,6 +367,15 @@ target(link_target_type, "renderer") {
     }
 
     if (is_chromecast) {
+      if (enable_cast_audio_renderer) {
+        sources += [
+          "media/cast_renderer_factory.cc",
+          "media/cast_renderer_factory.h",
+        ]
+
+        deps += [ "//chromecast/media/audio:audio_renderer" ]
+      }
+
       deps += [
         "//media/remoting:remoting_constants",
         "//media/remoting:remoting_renderer",
@@ -384,7 +384,11 @@ target(link_target_type, "renderer") {
   }
 
   if (enable_cast_streaming_renderer) {
-    deps += [ "//media/cast/receiver:cast_streaming_renderer" ]
+    deps += [
+      "//components/cast_streaming/public",
+      "//media/cast/receiver:cast_streaming_renderer",
+      "//media/cast/receiver:cast_streaming_renderer_controller_proxy",
+    ]
   }
 
   if (enable_plugins) {
@@ -406,7 +410,6 @@ target(link_target_type, "renderer") {
       "pepper/content_renderer_pepper_host_factory.h",
       "pepper/event_conversion.cc",
       "pepper/event_conversion.h",
-      "pepper/gfx_conversion.h",
       "pepper/host_array_buffer_var.cc",
       "pepper/host_array_buffer_var.h",
       "pepper/host_dispatcher_wrapper.cc",
@@ -531,6 +534,17 @@ target(link_target_type, "renderer") {
     ]
   }
 
+  if (is_win) {
+    sources += [
+      "media/win/dcomp_texture_factory.cc",
+      "media/win/dcomp_texture_factory.h",
+      "media/win/dcomp_texture_host.cc",
+      "media/win/dcomp_texture_host.h",
+      "media/win/dcomp_texture_wrapper_impl.cc",
+      "media/win/dcomp_texture_wrapper_impl.h",
+    ]
+  }
+
   if (is_linux || is_chromeos || is_android) {
     deps += [ "//sandbox:sandbox_buildflags" ]
   }
@@ -538,9 +552,12 @@ target(link_target_type, "renderer") {
   if (is_chromeos_ash) {
     deps += [
       "//chromeos:chromeos_export",
-      "//chromeos/memory/userspace_swap",
       "//chromeos/system:system",
     ]
+
+    if (target_cpu == "x64") {
+      deps += [ "//chromeos/memory/userspace_swap" ]
+    }
   }
 
   if (use_ozone) {

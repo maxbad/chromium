@@ -15,15 +15,14 @@
 #include "base/check_op.h"
 #include "base/feature_list.h"
 #include "base/json/json_writer.h"
-#include "base/macros.h"
 #include "base/metrics/histogram_functions.h"
 #include "chrome/browser/ash/profiles/profile_helper.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/browser/supervised_user/supervised_user_features.h"
 #include "chrome/browser/supervised_user/supervised_user_service.h"
 #include "chrome/browser/supervised_user/supervised_user_service_factory.h"
 #include "chrome/browser/ui/webui/chromeos/system_web_dialog_delegate.h"
 #include "chrome/common/webui_url_constants.h"
+#include "components/account_manager_core/pref_names.h"
 #include "components/prefs/pref_service.h"
 #include "components/session_manager/core/session_manager.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
@@ -74,7 +73,7 @@ GURL GetInlineLoginUrl(const std::string& email) {
     return GetUrlWithEmailParam(chrome::kChromeUIChromeSigninURL, email);
   }
   if (!ProfileManager::GetActiveUserProfile()->GetPrefs()->GetBoolean(
-          chromeos::prefs::kSecondaryGoogleAccountSigninAllowed)) {
+          ::account_manager::prefs::kSecondaryGoogleAccountSigninAllowed)) {
     // Addition of secondary Google Accounts is not allowed.
     return GURL(chrome::kChromeUIAccountManagerErrorURL);
   }
@@ -170,8 +169,7 @@ void InlineLoginDialogChromeOS::GetDialogSize(gfx::Size* size) const {
   const display::Display display =
       display::Screen::GetScreen()->GetDisplayNearestWindow(dialog_window());
 
-  if (ProfileManager::GetActiveUserProfile()->IsChild() &&
-      base::FeatureList::IsEnabled(supervised_users::kEduCoexistenceFlowV2)) {
+  if (ProfileManager::GetActiveUserProfile()->IsChild()) {
     size->SetSize(
         std::min(kEduCoexistenceSigninDialogWidth, display.work_area().width()),
         std::min(kEduCoexistenceSigninDialogHeight,
@@ -184,9 +182,7 @@ void InlineLoginDialogChromeOS::GetDialogSize(gfx::Size* size) const {
 }
 
 ui::ModalType InlineLoginDialogChromeOS::GetDialogModalType() const {
-  return chromeos::features::IsAccountManagementFlowsV2Enabled()
-             ? ui::MODAL_TYPE_SYSTEM
-             : ui::MODAL_TYPE_NONE;
+  return ui::MODAL_TYPE_SYSTEM;
 }
 
 bool InlineLoginDialogChromeOS::ShouldShowDialogTitle() const {

@@ -34,8 +34,7 @@ namespace {
 
 // Time to wait for borealis' main app to appear. This is done almost
 // immediately by garcon on launch so a short timeout is sufficient.
-constexpr base::TimeDelta kWaitForMainAppTimeout =
-    base::TimeDelta::FromSeconds(5);
+constexpr base::TimeDelta kWaitForMainAppTimeout = base::Seconds(5);
 
 }  // namespace
 
@@ -254,7 +253,7 @@ class BorealisInstallerImpl::Uninstallation
     vm_tools::concierge::DestroyDiskImageRequest request;
     request.set_cryptohome_id(
         chromeos::ProfileHelper::GetUserIdHashFromProfile(profile_));
-    request.set_disk_path(uninstall_info_->vm_name);
+    request.set_vm_name(uninstall_info_->vm_name);
     chromeos::ConciergeClient::Get()->DestroyDiskImage(
         std::move(request), base::BindOnce(&Uninstallation::OnDiskRemoved,
                                            weak_factory_.GetWeakPtr()));
@@ -343,6 +342,10 @@ void BorealisInstallerImpl::Start() {
     return;
   }
 
+  // Reset mic permission, we don't want it to persist across
+  // re-installation.
+  profile_->GetPrefs()->SetBoolean(prefs::kBorealisMicAllowed, false);
+
   auto install_info = std::make_unique<InstallInfo>();
   install_info->vm_name = "borealis";
   install_info->container_name = "penguin";
@@ -389,12 +392,15 @@ void BorealisInstallerImpl::Uninstall(
 
 void BorealisInstallerImpl::AddObserver(Observer* observer) {
   DCHECK(observer);
+  DCHECK(observers_.empty());
   observers_.AddObserver(observer);
 }
 
 void BorealisInstallerImpl::RemoveObserver(Observer* observer) {
   DCHECK(observer);
+  DCHECK(observers_.HasObserver(observer));
   observers_.RemoveObserver(observer);
+  DCHECK(observers_.empty());
 }
 
 void BorealisInstallerImpl::SetMainAppTimeoutForTesting(
@@ -461,7 +467,7 @@ void BorealisInstallerImpl::OnInstallComplete(
     base::TimeDelta duration =
         in_progress_installation_
             ? base::TimeTicks::Now() - in_progress_installation_->start_time()
-            : base::TimeDelta::FromSeconds(0);
+            : base::Seconds(0);
     in_progress_installation_.reset();
     installing_state_ = InstallingState::kInactive;
     if (result == BorealisInstallResult::kSuccess) {

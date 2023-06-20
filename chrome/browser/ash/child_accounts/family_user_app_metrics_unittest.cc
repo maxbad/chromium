@@ -33,7 +33,7 @@ namespace ash {
 
 namespace {
 
-constexpr base::TimeDelta kOneDay = base::TimeDelta::FromDays(1);
+constexpr base::TimeDelta kOneDay = base::Days(1);
 constexpr char kStartTime[] = "1 Jan 2020 21:15";
 constexpr int kStart = static_cast<int>(apps::mojom::AppType::kUnknown);  // 0
 constexpr int kEnd =
@@ -178,6 +178,10 @@ class FamilyUserAppMetricsTest
         /*last_launch_time=*/base::Time::Now() - kOneDay,
         apps::mojom::AppType::kStandaloneBrowser));
     deltas.push_back(MakeApp(
+        /*app_id=*/"lca", /*app_name=*/"lacros chrome app",
+        /*last_launch_time=*/base::Time::Now() - kOneDay,
+        apps::mojom::AppType::kStandaloneBrowserExtension));
+    deltas.push_back(MakeApp(
         /*app_id=*/"r", /*app_name=*/"remote",
         /*last_launch_time=*/base::Time::Now() - kOneDay,
         apps::mojom::AppType::kRemote));
@@ -198,7 +202,7 @@ class FamilyUserAppMetricsTest
     window_->Init(ui::LAYER_NOT_DRAWN);
     instances.push_back(std::make_unique<apps::Instance>(
         /*app_id=*/"a",
-        std::make_unique<apps::Instance::InstanceKey>(window_.get())));
+        apps::Instance::InstanceKey::ForWindowBasedApp(window_.get())));
     instance_registry.OnInstances(instances);
   }
 

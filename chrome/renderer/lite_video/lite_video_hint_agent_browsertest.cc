@@ -6,7 +6,6 @@
 
 #include <memory>
 
-#include "base/macros.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
 #include "chrome/common/chrome_features.h"
@@ -15,6 +14,7 @@
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/renderer/render_frame.h"
 #include "content/public/renderer/render_view.h"
+#include "services/network/public/mojom/url_response_head.mojom.h"
 #include "services/network/test/test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/platform/web_network_state_notifier.h"
@@ -138,8 +138,8 @@ class LiteVideoHintAgentTest : public ChromeRenderViewTest {
         previews::mojom::LiteVideoHint::New();
     hint->kilobytes_to_buffer_before_throttle = 10;
     hint->target_downlink_bandwidth_kbps = 60;
-    hint->target_downlink_rtt_latency = base::TimeDelta::FromMilliseconds(500);
-    hint->max_throttling_delay = base::TimeDelta::FromSeconds(5);
+    hint->target_downlink_rtt_latency = base::Milliseconds(500);
+    hint->max_throttling_delay = base::Seconds(5);
     lite_video_hint_agent_->SetLiteVideoHint(std::move(hint));
   }
 
@@ -198,7 +198,7 @@ TEST_F(LiteVideoHintAgentTest, CacheControlNoTransformNotThrottled) {
                                     true /* set_cache_control_no_transform */);
   histogram_tester().ExpectTotalCount("LiteVideo.URLLoader.ThrottleLatency", 1);
   EXPECT_TRUE(throttle_info->is_throttled());
-  task_environment_.FastForwardBy(base::TimeDelta::FromSeconds(10));
+  task_environment_.FastForwardBy(base::Seconds(10));
   base::RunLoop().RunUntilIdle();
   EXPECT_FALSE(throttle_info->is_throttled());
 
@@ -231,7 +231,7 @@ TEST_F(LiteVideoHintAgentTest, MissingContentLengthResponseThrottled) {
   throttle_info = CreateThrottleAndSendResponse(net::HTTP_OK, "video/mp4", -1);
   histogram_tester().ExpectTotalCount("LiteVideo.URLLoader.ThrottleLatency", 1);
   EXPECT_TRUE(throttle_info->is_throttled());
-  task_environment_.FastForwardBy(base::TimeDelta::FromSeconds(10));
+  task_environment_.FastForwardBy(base::Seconds(10));
   base::RunLoop().RunUntilIdle();
   EXPECT_FALSE(throttle_info->is_throttled());
 }
@@ -264,7 +264,7 @@ TEST_F(LiteVideoHintAgentTest, MediaResponseThrottled) {
       CreateThrottleAndSendResponse(net::HTTP_OK, "video/mp4", 440000);
   histogram_tester().ExpectTotalCount("LiteVideo.URLLoader.ThrottleLatency", 1);
   EXPECT_TRUE(throttle_info->is_throttled());
-  task_environment_.FastForwardBy(base::TimeDelta::FromSeconds(10));
+  task_environment_.FastForwardBy(base::Seconds(10));
   base::RunLoop().RunUntilIdle();
   EXPECT_FALSE(throttle_info->is_throttled());
 
@@ -355,7 +355,7 @@ TEST_F(LiteVideoHintAgentTest, RespectsMaxActiveThrottlesLimit) {
                                       51);
   EXPECT_TRUE(throttle_info->is_throttled());
 
-  task_environment_.FastForwardBy(base::TimeDelta::FromSeconds(50));
+  task_environment_.FastForwardBy(base::Seconds(50));
   base::RunLoop().RunUntilIdle();
   for (const auto& throttle : throttles) {
     EXPECT_FALSE(throttle->is_throttled());

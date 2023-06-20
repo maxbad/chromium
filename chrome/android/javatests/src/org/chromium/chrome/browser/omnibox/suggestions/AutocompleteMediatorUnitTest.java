@@ -36,12 +36,13 @@ import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
 import org.chromium.base.ContextUtils;
+import org.chromium.base.jank_tracker.DummyJankTracker;
 import org.chromium.base.test.BaseJUnit4ClassRunner;
 import org.chromium.base.test.UiThreadTest;
 import org.chromium.base.test.util.Batch;
 import org.chromium.base.test.util.CriteriaHelper;
+import org.chromium.base.test.util.JniMocker;
 import org.chromium.chrome.browser.flags.ChromeFeatureList;
-import org.chromium.chrome.browser.lifecycle.ActivityLifecycleDispatcher;
 import org.chromium.chrome.browser.omnibox.LocationBarDataProvider;
 import org.chromium.chrome.browser.omnibox.OmniboxSuggestionType;
 import org.chromium.chrome.browser.omnibox.UrlBarEditingTextStateProvider;
@@ -165,6 +166,9 @@ public class AutocompleteMediatorUnitTest {
     @Rule
     public TestRule mProcessor = new Features.JUnitProcessor();
 
+    @Rule
+    public JniMocker mJniMocker = new JniMocker();
+
     @Mock
     AutocompleteDelegateForTest mAutocompleteDelegate;
 
@@ -181,10 +185,10 @@ public class AutocompleteMediatorUnitTest {
     AutocompleteController mAutocompleteController;
 
     @Mock
-    LocationBarDataProvider mLocationBarDataProvider;
+    AutocompleteController.Natives mAutocompleteControllerJniMock;
 
     @Mock
-    ActivityLifecycleDispatcher mLifecycleDispatcher;
+    LocationBarDataProvider mLocationBarDataProvider;
 
     @Mock
     ModalDialogManager mModalDialogManager;
@@ -205,18 +209,20 @@ public class AutocompleteMediatorUnitTest {
 
         mHandler = new ImmediatePostingHandler();
 
-        mSuggestionModels = new ModelList();
-        mListModel = new PropertyModel(SuggestionListProperties.ALL_KEYS);
-        mListModel.set(SuggestionListProperties.SUGGESTION_MODELS, mSuggestionModels);
+        mJniMocker.mock(AutocompleteControllerJni.TEST_HOOKS, mAutocompleteControllerJniMock);
+        doReturn(mAutocompleteController).when(mAutocompleteControllerJniMock).getForProfile(any());
 
-        AutocompleteControllerFactory.setControllerForTesting(mAutocompleteController);
         // clang-format off
-        mMediator = new AutocompleteMediator(ContextUtils.getApplicationContext(),
-                mAutocompleteDelegate, mTextStateProvider, mListModel,
-                mHandler, mLifecycleDispatcher, () -> mModalDialogManager, null, null,
-                mLocationBarDataProvider, tab -> {}, null, url -> false);
-
         TestThreadUtils.runOnUiThreadBlocking(() -> {
+            mSuggestionModels = new ModelList();
+            mListModel = new PropertyModel(SuggestionListProperties.ALL_KEYS);
+            mListModel.set(SuggestionListProperties.SUGGESTION_MODELS, mSuggestionModels);
+
+            mMediator = new AutocompleteMediator(ContextUtils.getApplicationContext(),
+                    mAutocompleteDelegate, mTextStateProvider, mListModel,
+                    mHandler, () -> mModalDialogManager, null, null,
+                    mLocationBarDataProvider, tab -> {}, null, url -> false, new DummyJankTracker(),
+                    (pixelSize, callback) -> {});
             mMediator.setAutocompleteProfile(mProfile);
         });
         // clang-format on

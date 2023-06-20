@@ -70,6 +70,10 @@ class ThumbnailTabHelperBrowserTest : public InProcessBrowserTest {
         base::FilePath().AppendASCII("bot2.html"));
   }
 
+  ThumbnailTabHelperBrowserTest(const ThumbnailTabHelperBrowserTest&) = delete;
+  ThumbnailTabHelperBrowserTest& operator=(
+      const ThumbnailTabHelperBrowserTest&) = delete;
+
 #if BUILDFLAG(ENABLE_SESSION_SERVICE)
   void ConfigureTabLoader(TabLoader* tab_loader) {
     TabLoaderTester tester(tab_loader);
@@ -114,7 +118,7 @@ class ThumbnailTabHelperBrowserTest : public InProcessBrowserTest {
   void EnsureTabLoaded(content::WebContents* tab) {
     content::NavigationController* controller = &tab->GetController();
     if (!controller->NeedsReload() && !controller->GetPendingEntry() &&
-        !controller->GetWebContents()->IsLoading())
+        !tab->IsLoading())
       return;
 
     content::WindowedNotificationObserver observer(
@@ -149,8 +153,6 @@ class ThumbnailTabHelperBrowserTest : public InProcessBrowserTest {
 
  private:
   base::test::ScopedFeatureList scoped_feature_list_;
-
-  DISALLOW_COPY_AND_ASSIGN(ThumbnailTabHelperBrowserTest);
 };
 
 IN_PROC_BROWSER_TEST_F(ThumbnailTabHelperBrowserTest,

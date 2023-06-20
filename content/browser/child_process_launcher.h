@@ -8,7 +8,6 @@
 #include <memory>
 #include <string>
 
-#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/process/kill.h"
@@ -23,6 +22,7 @@
 #include "content/public/browser/child_process_termination_info.h"
 #include "content/public/common/result_codes.h"
 #include "mojo/public/cpp/system/invitation.h"
+#include "third_party/perfetto/include/perfetto/tracing/traced_proto.h"
 
 #if defined(OS_ANDROID)
 #include "content/public/browser/android/child_process_importance.h"
@@ -31,6 +31,14 @@
 namespace base {
 class CommandLine;
 }
+
+namespace perfetto {
+namespace protos {
+namespace pbzero {
+class ChildProcessLauncherPriority;
+}
+}  // namespace protos
+}  // namespace perfetto
 
 namespace content {
 
@@ -87,6 +95,10 @@ struct ChildProcessLauncherPriority {
   bool operator!=(const ChildProcessLauncherPriority& other) const {
     return !(*this == other);
   }
+
+  void WriteIntoTrace(
+      perfetto::TracedProto<
+          perfetto::protos::pbzero::ChildProcessLauncherPriority> proto);
 
   // Prefer |is_background()| to inspecting these fields individually (to ensure
   // all logic uses the same notion of "backgrounded").
@@ -174,6 +186,10 @@ class CONTENT_EXPORT ChildProcessLauncher {
       const mojo::ProcessErrorCallback& process_error_callback,
       std::map<std::string, base::FilePath> files_to_preload,
       bool terminate_on_shutdown = true);
+
+  ChildProcessLauncher(const ChildProcessLauncher&) = delete;
+  ChildProcessLauncher& operator=(const ChildProcessLauncher&) = delete;
+
   ~ChildProcessLauncher();
 
   // True if the process is being launched and so the handle isn't available.
@@ -245,8 +261,6 @@ class CONTENT_EXPORT ChildProcessLauncher {
   SEQUENCE_CHECKER(sequence_checker_);
 
   base::WeakPtrFactory<ChildProcessLauncher> weak_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(ChildProcessLauncher);
 };
 
 }  // namespace content

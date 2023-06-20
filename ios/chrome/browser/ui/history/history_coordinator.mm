@@ -24,10 +24,9 @@
 #include "ios/chrome/browser/ui/history/history_ui_delegate.h"
 #include "ios/chrome/browser/ui/history/ios_browsing_history_driver.h"
 #import "ios/chrome/browser/ui/history/public/history_presentation_delegate.h"
-#import "ios/chrome/browser/ui/menu/action_factory.h"
+#import "ios/chrome/browser/ui/menu/browser_action_factory.h"
 #import "ios/chrome/browser/ui/menu/menu_histograms.h"
 #import "ios/chrome/browser/ui/sharing/sharing_coordinator.h"
-#import "ios/chrome/browser/ui/table_view/feature_flags.h"
 #import "ios/chrome/browser/ui/table_view/table_view_navigation_controller.h"
 #include "ios/chrome/browser/ui/util/ui_util.h"
 
@@ -76,13 +75,11 @@
   self.historyTableViewController.browser = self.browser;
   self.historyTableViewController.loadStrategy = self.loadStrategy;
 
-  if (@available(iOS 13.0, *)) {
-    self.historyTableViewController.menuProvider = self;
-  }
+  self.historyTableViewController.menuProvider = self;
 
   DCHECK(!_browserObserver);
-  _browserObserver = std::make_unique<BrowserObserverBridge>(self);
-  self.browser->AddObserver(_browserObserver.get());
+  _browserObserver =
+      std::make_unique<BrowserObserverBridge>(self.browser, self);
 
   // Initialize and set HistoryMediator
   self.mediator = [[HistoryMediator alloc]
@@ -109,15 +106,11 @@
       self.presentationDelegate;
 
   BOOL useCustomPresentation = YES;
-  if (IsCollectionsCardPresentationStyleEnabled()) {
-    if (@available(iOS 13, *)) {
       [self.historyNavigationController
           setModalPresentationStyle:UIModalPresentationFormSheet];
       self.historyNavigationController.presentationController.delegate =
           self.historyTableViewController;
       useCustomPresentation = NO;
-    }
-  }
 
   if (useCustomPresentation) {
     self.historyTransitioningDelegate =
@@ -143,8 +136,6 @@
   self.sharingCoordinator = nil;
 
   if (_browserObserver) {
-    DCHECK(self.browser);
-    self.browser->RemoveObserver(_browserObserver.get());
     _browserObserver.reset();
   }
 
@@ -196,8 +187,7 @@
 
 - (UIContextMenuConfiguration*)contextMenuConfigurationForItem:
                                    (HistoryEntryItem*)item
-                                                      withView:(UIView*)view
-    API_AVAILABLE(ios(13.0)) {
+                                                      withView:(UIView*)view {
   __weak id<HistoryEntryItemDelegate> historyItemDelegate =
       self.historyTableViewController;
   __weak __typeof(self) weakSelf = self;
@@ -214,9 +204,9 @@
     // Record that this context menu was shown to the user.
     RecordMenuShown(MenuScenario::kHistoryEntry);
 
-    ActionFactory* actionFactory =
-        [[ActionFactory alloc] initWithBrowser:strongSelf.browser
-                                      scenario:MenuScenario::kHistoryEntry];
+    BrowserActionFactory* actionFactory = [[BrowserActionFactory alloc]
+        initWithBrowser:strongSelf.browser
+               scenario:MenuScenario::kHistoryEntry];
 
     NSMutableArray<UIMenuElement*>* menuElements =
         [[NSMutableArray alloc] init];
@@ -272,8 +262,6 @@
 - (void)browserDestroyed:(Browser*)browser {
   DCHECK_EQ(browser, self.browser);
   self.historyTableViewController.browser = nil;
-  browser->RemoveObserver(_browserObserver.get());
-  _browserObserver.reset();
 }
 
 #pragma mark - Private

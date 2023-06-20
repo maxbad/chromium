@@ -14,7 +14,9 @@
 // This test case verifies that chrome triggers LoadShillProfile for the
 // unmanaged user case and the managed user with/without network policy cases.
 
+#include "ash/public/cpp/login_screen_test_api.h"
 #include "base/bind.h"
+#include "base/bind_internal.h"
 #include "base/run_loop.h"
 #include "chrome/browser/ash/login/login_manager_test.h"
 #include "chrome/browser/ash/login/test/login_manager_mixin.h"
@@ -29,17 +31,17 @@
 #include "chromeos/login/auth/user_context.h"
 #include "components/account_id/account_id.h"
 #include "components/policy/proto/chrome_settings.pb.h"
+#include "components/user_manager/user_names.h"
 #include "content/public/test/browser_test.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-using testing::ElementsAre;
-
-namespace chromeos {
-
-namespace em = enterprise_management;
-
+namespace ash {
 namespace {
+
+namespace em = ::enterprise_management;
+
+using ::testing::ElementsAre;
 
 constexpr char kUnmanagedUser[] = "unmanaged@gmail.com";
 constexpr char kUnmanagedGaiaID[] = "33333";
@@ -104,18 +106,17 @@ class ShillProfileLoadingTest : public LoginManagerTest {
     chromeos::SessionManagerClient::InitializeFakeInMemory();
   }
 
-  const chromeos::LoginManagerMixin::TestUserInfo unmanaged_user_{
+  const LoginManagerMixin::TestUserInfo unmanaged_user_{
       AccountId::FromUserEmailGaiaId(kUnmanagedUser, kUnmanagedGaiaID)};
-  const chromeos::LoginManagerMixin::TestUserInfo secondary_unmanaged_user_{
+  const LoginManagerMixin::TestUserInfo secondary_unmanaged_user_{
       AccountId::FromUserEmailGaiaId(kSecondaryUnmanagedUser,
                                      kSecondaryUnmanagedGaiaID)};
-  const chromeos::LoginManagerMixin::TestUserInfo managed_user_{
+  const LoginManagerMixin::TestUserInfo managed_user_{
       AccountId::FromUserEmailGaiaId(kManagedUser, kManagedGaiaID)};
 
-  chromeos::UserPolicyMixin user_policy_mixin_{&mixin_host_,
-                                               managed_user_.account_id};
-  chromeos::LoginManagerMixin login_manager_{&mixin_host_,
-                                             {managed_user_, unmanaged_user_}};
+  UserPolicyMixin user_policy_mixin_{&mixin_host_, managed_user_.account_id};
+  LoginManagerMixin login_manager_{&mixin_host_,
+                                   {managed_user_, unmanaged_user_}};
 };
 
 // Verifies that the LoadShillProfile method call is invoked on
@@ -130,7 +131,7 @@ IN_PROC_BROWSER_TEST_F(ShillProfileLoadingTest, UnmanagedUser) {
           unmanaged_user_.account_id))));
 
   // Adding a secondary user does not re-trigger loading the shill profile.
-  chromeos::UserAddingScreen::Get()->Start();
+  UserAddingScreen::Get()->Start();
   AddUser(secondary_unmanaged_user_.account_id);
   EXPECT_THAT(
       waiter.invocations(),
@@ -210,4 +211,38 @@ IN_PROC_BROWSER_TEST_F(ShillProfileLoadingTest,
             LoginManagerTest::kPassword);
 }
 
-}  // namespace chromeos
+class ShillProfileLoadingGuestLoginTest : public ShillProfileLoadingTest {
+ protected:
+  ShillProfileLoadingGuestLoginTest() {
+    login_manager_.set_session_restore_enabled();
+  }
+
+  ~ShillProfileLoadingGuestLoginTest() override = default;
+
+  // ShillProfileLoadingTest:
+  void SetUpInProcessBrowserTestFixture() override {
+    ShillProfileLoadingTest::SetUpInProcessBrowserTestFixture();
+    FakeSessionManagerClient::Get()->set_supports_browser_restart(true);
+  }
+};
+
+IN_PROC_BROWSER_TEST_F(ShillProfileLoadingGuestLoginTest, GuestLogin) {
+  base::RunLoop restart_job_waiter;
+  FakeSessionManagerClient::Get()->set_restart_job_callback(
+      restart_job_waiter.QuitClosure());
+
+  LoadShillProfileWaiter load_shill_profile_waiter(
+      FakeSessionManagerClient::Get());
+  ASSERT_TRUE(LoginScreenTestApi::ClickGuestButton());
+
+  restart_job_waiter.Run();
+
+  // Before restarting, chrome is supposed to have triggered loading the shill
+  // profile for the guest.
+  EXPECT_THAT(
+      load_shill_profile_waiter.invocations(),
+      ElementsAre(EqualsProto(cryptohome::CreateAccountIdentifierFromAccountId(
+          user_manager::GuestAccountId()))));
+}
+
+}  // namespace ash

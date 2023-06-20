@@ -11,7 +11,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/sequence_checker.h"
-#include "base/sequenced_task_runner.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/time/time.h"
 #include "base/types/pass_key.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
@@ -100,7 +100,7 @@ namespace v8_memory {
 //       // Creating a V8DetailedMemoryRequest with the |graph| parameter
 //       // automatically starts measurements.
 //       request_ = std::make_unique<V8DetailedMemoryRequest>(
-//           base::TimeDelta::FromSeconds(30), graph);
+//           base::Seconds(30), graph);
 //       observer_ = std::make_unique<Observer>();
 //       request_->AddObserver(observer_.get());
 //     }
@@ -149,6 +149,16 @@ class V8DetailedMemoryExecutionContextData {
     v8_bytes_used_ = v8_bytes_used;
   }
 
+  // Returns the number of bytes used by canvas elements for this frame at the
+  // last measurement. It is empty if the frame has no canvas elements.
+  absl::optional<uint64_t> canvas_bytes_used() const {
+    return canvas_bytes_used_;
+  }
+
+  void set_canvas_bytes_used(uint64_t canvas_bytes_used) {
+    canvas_bytes_used_ = canvas_bytes_used;
+  }
+
   // TODO(906991): Remove this once PlzDedicatedWorker ships. Until then
   // the browser does not know URLs of dedicated workers, so we pass them
   // together with the measurement result and store in ExecutionContext data.
@@ -175,6 +185,7 @@ class V8DetailedMemoryExecutionContextData {
       const WorkerNode* node);
 
   uint64_t v8_bytes_used_ = 0;
+  absl::optional<uint64_t> canvas_bytes_used_;
   absl::optional<std::string> url_;
 };
 
@@ -194,6 +205,16 @@ class V8DetailedMemoryProcessData {
 
   void set_detached_v8_bytes_used(uint64_t detached_v8_bytes_used) {
     detached_v8_bytes_used_ = detached_v8_bytes_used;
+  }
+
+  // Returns the number of bytes used by canvas elements at the last
+  // measurement in this process that could not be attributed to a frame.
+  uint64_t detached_canvas_bytes_used() const {
+    return detached_canvas_bytes_used_;
+  }
+
+  void set_detached_canvas_bytes_used(uint64_t detached_canvas_bytes_used) {
+    detached_canvas_bytes_used_ = detached_canvas_bytes_used;
   }
 
   // Returns the number of bytes used by V8 at the last measurement in this
@@ -225,6 +246,7 @@ class V8DetailedMemoryProcessData {
   static V8DetailedMemoryProcessData* GetOrCreateForTesting(
       const ProcessNode* node);
   uint64_t detached_v8_bytes_used_ = 0;
+  uint64_t detached_canvas_bytes_used_ = 0;
   uint64_t shared_v8_bytes_used_ = 0;
   uint64_t blink_bytes_used_ = 0;
 };

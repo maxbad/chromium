@@ -62,7 +62,11 @@ std::unique_ptr<AnimationWorkletOutput> ProxyClientMutate(
 std::unique_ptr<WorkletAnimationEffectTimings> CreateEffectTimings() {
   auto timings = base::MakeRefCounted<base::RefCountedData<Vector<Timing>>>();
   timings->data.push_back(Timing());
-  return std::make_unique<WorkletAnimationEffectTimings>(std::move(timings));
+  auto normalized_timings = base::MakeRefCounted<
+      base::RefCountedData<Vector<Timing::NormalizedTiming>>>();
+  normalized_timings->data.push_back(Timing::NormalizedTiming());
+  return std::make_unique<WorkletAnimationEffectTimings>(
+      std::move(timings), std::move(normalized_timings));
 }
 
 }  // namespace
@@ -296,8 +300,7 @@ class AnimationWorkletGlobalScopeTest : public PageTestBase {
         ProxyClientMutate(state, global_scope);
 
     EXPECT_EQ(output->animations.size(), 1ul);
-    EXPECT_EQ(output->animations[0].local_times[0],
-              base::TimeDelta::FromMillisecondsD(123));
+    EXPECT_EQ(output->animations[0].local_times[0], base::Milliseconds(123));
 
     waitable_event->Signal();
   }

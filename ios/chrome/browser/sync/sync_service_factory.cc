@@ -31,6 +31,7 @@
 #include "ios/chrome/browser/reading_list/reading_list_model_factory.h"
 #include "ios/chrome/browser/search_engines/template_url_service_factory.h"
 #include "ios/chrome/browser/signin/about_signin_internals_factory.h"
+#import "ios/chrome/browser/signin/chrome_account_manager_service_factory.h"
 #include "ios/chrome/browser/signin/identity_manager_factory.h"
 #include "ios/chrome/browser/sync/consent_auditor_factory.h"
 #include "ios/chrome/browser/sync/device_info_sync_service_factory.h"
@@ -46,26 +47,6 @@
 #include "ios/web/public/thread/web_thread.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "url/gurl.h"
-
-namespace {
-
-void UpdateNetworkTimeOnUIThread(base::Time network_time,
-                                 base::TimeDelta resolution,
-                                 base::TimeDelta latency,
-                                 base::TimeTicks post_time) {
-  GetApplicationContext()->GetNetworkTimeTracker()->UpdateNetworkTime(
-      network_time, resolution, latency, post_time);
-}
-
-void UpdateNetworkTime(const base::Time& network_time,
-                       const base::TimeDelta& resolution,
-                       const base::TimeDelta& latency) {
-  base::PostTask(FROM_HERE, {web::WebThread::UI},
-                 base::BindOnce(&UpdateNetworkTimeOnUIThread, network_time,
-                                resolution, latency, base::TimeTicks::Now()));
-}
-
-}  // namespace
 
 // static
 SyncServiceFactory* SyncServiceFactory::GetInstance() {
@@ -117,6 +98,7 @@ SyncServiceFactory::SyncServiceFactory()
   // when it is shut down.  Specify those dependencies here to build the proper
   // destruction order.
   DependsOn(autofill::PersonalDataManagerFactory::GetInstance());
+  DependsOn(ChromeAccountManagerServiceFactory::GetInstance());
   DependsOn(ConsentAuditorFactory::GetInstance());
   DependsOn(DeviceInfoSyncServiceFactory::GetInstance());
   DependsOn(ios::AboutSigninInternalsFactory::GetInstance());
@@ -159,8 +141,6 @@ std::unique_ptr<KeyedService> SyncServiceFactory::BuildServiceInstanceFor(
   init_params.start_behavior = syncer::SyncServiceImpl::MANUAL_START;
   init_params.sync_client =
       std::make_unique<IOSChromeSyncClient>(browser_state);
-  init_params.network_time_update_callback =
-      base::BindRepeating(&UpdateNetworkTime);
   init_params.url_loader_factory = browser_state->GetSharedURLLoaderFactory();
   init_params.network_connection_tracker =
       GetApplicationContext()->GetNetworkConnectionTracker();

@@ -8,7 +8,6 @@
 #include <string>
 
 #include "base/gtest_prod_util.h"
-#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/sequence_checker.h"
@@ -50,7 +49,8 @@ class UpgradeDetector {
     // UPGRADE_ANNOYANCE_SEVERE = 4,  // Removed in 2018-03 for lack of use.
     UPGRADE_ANNOYANCE_CRITICAL = 5,  // Red exclamation mark.
     UPGRADE_ANNOYANCE_VERY_LOW = 6,  // Green early warning for canary and dev.
-    UPGRADE_ANNOYANCE_MAX_VALUE = UPGRADE_ANNOYANCE_VERY_LOW
+    UPGRADE_ANNOYANCE_GRACE = 7,     // Red last warning before deadline.
+    UPGRADE_ANNOYANCE_MAX_VALUE = UPGRADE_ANNOYANCE_GRACE
   };
 
   struct RelaunchWindow {
@@ -61,8 +61,7 @@ class UpgradeDetector {
 
     bool IsValid() const {
       return hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59 &&
-             duration >= base::TimeDelta::FromMinutes(1) &&
-             duration != base::TimeDelta::Max();
+             duration >= base::Minutes(1) && duration != base::TimeDelta::Max();
     }
 
     int hour;
@@ -72,6 +71,9 @@ class UpgradeDetector {
 
   // Returns the singleton implementation instance.
   static UpgradeDetector* GetInstance();
+
+  UpgradeDetector(const UpgradeDetector&) = delete;
+  UpgradeDetector& operator=(const UpgradeDetector&) = delete;
 
   virtual ~UpgradeDetector();
 
@@ -151,12 +153,10 @@ class UpgradeDetector {
     return upgrade_notification_stage_;
   }
 
-  // Returns the delta between "elevated" and "high" annoyance levels.
-  virtual base::TimeDelta GetHighAnnoyanceLevelDelta() = 0;
-
-  // Returns the tick count at which "high" annoyance level will be (or was)
-  // reached, or a null tick count if an upgrade has not yet been detected.
-  virtual base::Time GetHighAnnoyanceDeadline() = 0;
+  // Returns the time at which `level` annoyance level will be (or was) reached,
+  // or a null time object if an upgrade has not yet been detected.
+  virtual base::Time GetAnnoyanceLevelDeadline(
+      UpgradeNotificationAnnoyanceLevel level) = 0;
 
   // Overrides the "high" annoyance deadline, setting it to |deadline|. On
   // Chrome OS, this also sets the "elevated" annoyance deadline to the time at
@@ -171,7 +171,7 @@ class UpgradeDetector {
 
   // Overrides the relaunch notification style to required if |override|; else
   // resets the override so that the policy settings take effect.
-  void OverrideRelaunchNotificationToRequired(bool override);
+  void OverrideRelaunchNotificationToRequired(bool overridden);
 
   void AddObserver(UpgradeObserver* observer);
 
@@ -212,16 +212,12 @@ class UpgradeDetector {
   static base::TimeDelta GetRelaunchNotificationPeriod();
   static bool IsRelaunchNotificationPolicyEnabled();
 
-  // Returns the adjusted deadline as per the relaunch window from
-  // `UpgradeDetector::GetRelaunchWindow()`. If the deadline has already passed
-  // the window for the day, it is prolonged for the next day within the window.
-  // If the `deadline` already falls within the window, no change is made.
-  static base::Time AdjustDeadline(base::Time deadline);
-
-  // Returns the relaunch window specified via the RelaunchWindow policy
-  // setting, or the default one via
-  // 'UpgradeDetector::GetDefaultRelaunchWindow()` if unset or set incorrectly.
-  static RelaunchWindow GetRelaunchWindow();
+  // Returns the adjusted deadline to fall within `window`. If the
+  // `deadline` has already passed the window for the day, it is prolonged for
+  // the next day within the window. If the `deadline` already falls within the
+  // window, no change is made.
+  static base::Time AdjustDeadline(base::Time deadline,
+                                   const RelaunchWindow& window);
 
   // Returns the relaunch window specified via the RelaunchWindow policy
   // setting, or nullopt if unset or set incorrectly.
@@ -230,6 +226,11 @@ class UpgradeDetector {
   // Returns the default relaunch window within which the relaunch should take
   // place. It is 2am to 4am from Chrome OS and the whole day for others.
   static RelaunchWindow GetDefaultRelaunchWindow();
+
+  // Returns the delta between "grace" and "high" annoyance levels using
+  // `elevated_to_high_delta` which is the delta between "elevated" and "high"
+  // annoyance levels.
+  static base::TimeDelta GetGracePeriod(base::TimeDelta elevated_to_high_delta);
 
   const base::Clock* clock() {
     DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
@@ -263,7 +264,7 @@ class UpgradeDetector {
 
   // Notifies about a request to override the relaunch notification style to
   // required or reset the overridden style.
-  void NotifyRelaunchOverriddenToRequired(bool override);
+  void NotifyRelaunchOverriddenToRequired(bool overridden);
 
   // Triggers a critical update, which starts a timer that checks the machine
   // idle state. Protected and virtual so that it could be overridden by tests.
@@ -395,8 +396,6 @@ class UpgradeDetector {
   base::ObserverList<UpgradeObserver>::Unchecked observer_list_;
 
   base::WeakPtrFactory<UpgradeDetector> weak_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(UpgradeDetector);
 };
 
 #endif  // CHROME_BROWSER_UPGRADE_DETECTOR_UPGRADE_DETECTOR_H_

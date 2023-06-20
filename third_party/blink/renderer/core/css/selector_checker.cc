@@ -32,6 +32,7 @@
 #include "base/auto_reset.h"
 #include "third_party/blink/public/mojom/input/focus_type.mojom-blink.h"
 #include "third_party/blink/renderer/core/css/css_selector_list.h"
+#include "third_party/blink/renderer/core/css/has_argument_match_context.h"
 #include "third_party/blink/renderer/core/css/has_matched_cache_scope.h"
 #include "third_party/blink/renderer/core/css/part_names.h"
 #include "third_party/blink/renderer/core/css/style_engine.h"
@@ -216,6 +217,7 @@ bool SelectorChecker::Match(const SelectorCheckingContext& context,
     if (context.selector->IsLastInTagHistory())
       return false;
   }
+  HasMatchedCacheScope has_matched_cache_scope(&context.element->GetDocument());
   return MatchSelector(context, result) == kSelectorMatches;
 }
 
@@ -236,18 +238,8 @@ SelectorChecker::MatchStatus SelectorChecker::MatchSelector(
   if (sub_result.dynamic_pseudo != kPseudoIdNone)
     result.dynamic_pseudo = sub_result.dynamic_pseudo;
 
-  // Fix the perf test regression : https://crbug.com/1216100
-  // Place the LIKELY conditional branch early to separate the
-  // ':has' argument matching sequence.
-  if (LIKELY(!context.in_has_argument_selector)) {
-    if (context.selector->IsLastInTagHistory())
-      return kSelectorMatches;
-  } else {
-    if (context.selector->IsLastInTagHistory()) {
-      result.has_argument_leftmost_compound_match = context.element;
-      return kSelectorMatches;
-    }
-  }
+  if (context.selector->IsLastInTagHistory())
+    return kSelectorMatches;
 
   MatchStatus match;
   if (context.selector->Relation() != CSSSelector::kSubSelector) {
@@ -322,19 +314,15 @@ SelectorChecker::MatchStatus SelectorChecker::MatchForRelation(
   next_context.pseudo_id = kPseudoIdNone;
 
   switch (relation) {
+    case CSSSelector::kRelativeDescendant:
+      DCHECK(result.has_argument_leftmost_compound_matches);
+      result.has_argument_leftmost_compound_matches->push_back(context.element);
+      FALLTHROUGH;
     case CSSSelector::kDescendant:
       if (next_context.selector->GetPseudoType() == CSSSelector::kPseudoScope) {
         if (next_context.selector->IsLastInTagHistory()) {
-          // Fix the perf test regression : https://crbug.com/1216100
-          // Place the LIKELY conditional branch early to separate the
-          // ':has' argument matching sequence.
-          if (LIKELY(!context.in_has_argument_selector)) {
-            if (context.scope->IsDocumentFragment())
-              return kSelectorMatches;
-          } else {
-            result.has_argument_leftmost_compound_match = context.element;
+          if (context.scope->IsDocumentFragment())
             return kSelectorMatches;
-          }
         }
       }
       for (next_context.element = ParentElement(next_context);
@@ -349,6 +337,10 @@ SelectorChecker::MatchStatus SelectorChecker::MatchForRelation(
           next_context.is_inside_visited_link = false;
       }
       return kSelectorFailsCompletely;
+    case CSSSelector::kRelativeChild:
+      DCHECK(result.has_argument_leftmost_compound_matches);
+      result.has_argument_leftmost_compound_matches->push_back(context.element);
+      FALLTHROUGH;
     case CSSSelector::kChild: {
       if (next_context.selector->GetPseudoType() == CSSSelector::kPseudoScope) {
         if (next_context.selector->IsLastInTagHistory()) {
@@ -363,6 +355,10 @@ SelectorChecker::MatchStatus SelectorChecker::MatchForRelation(
         return kSelectorFailsCompletely;
       return MatchSelector(next_context, result);
     }
+    case CSSSelector::kRelativeDirectAdjacent:
+      DCHECK(result.has_argument_leftmost_compound_matches);
+      result.has_argument_leftmost_compound_matches->push_back(context.element);
+      FALLTHROUGH;
     case CSSSelector::kDirectAdjacent:
       if (mode_ == kResolvingStyle) {
         if (ContainerNode* parent =
@@ -374,7 +370,10 @@ SelectorChecker::MatchStatus SelectorChecker::MatchForRelation(
       if (!next_context.element)
         return kSelectorFailsAllSiblings;
       return MatchSelector(next_context, result);
-
+    case CSSSelector::kRelativeIndirectAdjacent:
+      DCHECK(result.has_argument_leftmost_compound_matches);
+      result.has_argument_leftmost_compound_matches->push_back(context.element);
+      FALLTHROUGH;
     case CSSSelector::kIndirectAdjacent:
       if (mode_ == kResolvingStyle) {
         if (ContainerNode* parent =
@@ -656,8 +655,11 @@ bool SelectorChecker::CheckPseudoHas(const SelectorCheckingContext& context,
   DCHECK(document.GetHasMatchedCacheScope());
   Element* element = context.element;
   SelectorCheckingContext sub_context(element);
-  sub_context.scope = element;
-  sub_context.in_has_argument_selector = true;
+  // TODO(blee@igalia.com) Need to clarify the :scope dependency in relative
+  // selector definition.
+  // - spec : https://www.w3.org/TR/selectors-4/#relative
+  // - csswg issue : https://github.com/w3c/csswg-drafts/issues/6399
+  sub_context.scope = context.scope;
   // sub_context.is_inside_visited_link is false (by default) to disable
   // :visited matching when it is in the :has argument
 
@@ -683,64 +685,129 @@ bool SelectorChecker::CheckPseudoHas(const SelectorCheckingContext& context,
     }
 
     sub_context.selector = selector;
+    HasArgumentMatchContext has_argument_match_context(selector);
 
-    // TODO(blee@igalia.com)
-    // 1. Need to check how to handle the shadow tree cases
-    //    (e.g. ':has(::slotted(img))', ':has(component::part(my-part))')
-    // 2. Need to add logics for other combinators
-    //    (e.g. ':has(:scope > .a)', ':has(:scope ~ .a)', ':has(:scope + .a)'
-    for (Element& descendant : ElementTraversal::DescendantsOf(*element)) {
-      // Get the cache item of matching ':has(<selector>)' on the descendant.
-      // to skip argument selector matching on the descendant.
-      //  - If the descendant was already marked as matched,
-      //    mark the element as matched, and return true.
-      //  - If the descendant was already checked but not matched,
-      //    move to the next descendant.
-      //  - Otherwise, mark the descendant as checked but not matched.
-      {  // Limit the the AddResult scope to prevent SECURITY_DCHECK
-        auto cache_result = map.insert(&descendant, false);  // Mark as checked
-        if (!cache_result.is_new_entry) {  // Was already marked as checked
-          if (!cache_result.stored_value->value)  // Was not marked as matched
-            continue;
-          map.Set(element, true);  // Mark element as matched
-          return true;
-        }
+    bool depth_fixed = has_argument_match_context.GetDepthFixed();
+
+    // To prevent incorrect 'NotChecked' status while matching ':has' pseudo
+    // class, change the argument matching context scope when the ':has'
+    // argument matching traversal cannot be fixed with a certain depth and
+    // adjacent distance.
+    //
+    // For example, When we tries to match '.a:has(.b .c) .d' on below DOM,
+    // <div id=d1 class="a">
+    //  <div id=d2 class="b">
+    //   <div id=d3 class="a">
+    //    <div id=d4 class="c">
+    //      <div id=d5 class="d"></div>
+    //    </div>
+    //   </div>
+    //  </div>
+    // </div>
+    // the ':has(.b .c)' selector will be checked on the #d3 element first
+    // because the selector '.a:has(.b .c) .d' will be matched upward from
+    // the #d5 element.
+    //  1) '.d' will be matched first on #d5
+    //  2) move to the #d3 until the '.a' matched
+    //  3) match the ':has(.b .c)' on the #d3
+    //    3.1) match the argument selector '.b .c' on the descendants of #d3
+    //  4) move to the #d1 until the '.a' matched
+    //  5) match the ':has(.b .c)' on the #d1
+    //    5.1) match the argument selector '.b .c' on the descendants of #d1
+    //
+    // The argument selector '.b .c' will not be matched on the #d4 at this
+    // step if the argument matching scope is limited to #d3. But the '.b .c'
+    // can be matched on the #d4 if the argument matching scope is #d1.
+    // To prevent duplicated argument matching operation, the #d1 should be
+    // marked as 'Matched' at the step 3.
+    //
+    // TODO(blee@igalia.com) Need to clarify the :scope dependency in relative
+    // selector definition.
+    // - spec : https://www.w3.org/TR/selectors-4/#relative
+    // - csswg issue : https://github.com/w3c/csswg-drafts/issues/6399
+    if (!depth_fixed) {
+      sub_context.relative_leftmost_element =
+          &element->GetTreeScope().RootNode();
+    } else if (has_argument_match_context.GetAdjacentDistanceFixed()) {
+      if (ContainerNode* parent_node = element->parentNode()) {
+        sub_context.relative_leftmost_element =
+            Traversal<Element>::FirstChild(*parent_node);
+      } else {
+        sub_context.relative_leftmost_element = element;
       }
+    } else {
+      sub_context.relative_leftmost_element = element;
+    }
 
-      // Match the argument selector <selector> on the descendant element,
-      // and move to the next descendant if not matched.
-      sub_context.element = &descendant;
-      MatchResult sub_result;
-      if (MatchSelector(sub_context, sub_result) != kSelectorMatches)
+    bool selector_matched = false;
+    for (HasArgumentSubtreeIterator iterator(*element,
+                                             has_argument_match_context);
+         !iterator.IsEnd(); ++iterator) {
+      if (depth_fixed && !iterator.IsAtFixedDepth())
         continue;
+      sub_context.element = iterator.Get();
+      HeapVector<Member<Element>> has_argument_leftmost_compound_matches;
+      MatchResult sub_result;
+      sub_result.has_argument_leftmost_compound_matches =
+          &has_argument_leftmost_compound_matches;
 
-      if (sub_result.has_argument_leftmost_compound_match) {
-        // Mark the ancestors of the element that matches leftmost compound
-        // of the argument selector <selector>. Make those elements as matched
-        // until it reaches the nullptr or the element(:has scope element).
-        // The reason of stopping at the :has scope element is to avoid
-        // duplicate parent tree traversal.
-        // For example, matching ':has(.a)' with nested .a elements will
-        // generate parent tree traversal for every .a elements when
-        // recalculating the entire document.
-        // With this restriction, we can prevent those redundants. It is
-        // OK not to mark every ancestors for every argument matching because
-        // it is enough to cache the matching status until meet the :has scope
-        // element. After those are cached, the cached status can be used as
-        // the status of :has scope element or descendant elements of the :has
-        // in another selector. (Please refer the above steps to get a cache
-        // item and return/continue early)
-        sub_context.element = sub_result.has_argument_leftmost_compound_match;
-        for (sub_context.element = ParentElement(sub_context);
-             sub_context.element && sub_context.element != element;
-             sub_context.element = ParentElement(sub_context)) {
-          map.Set(sub_context.element, true);  // Mark as matched
-        }
+      MatchSelector(sub_context, sub_result);
+
+      switch (has_argument_match_context.GetLeftMostRelation()) {
+        case CSSSelector::kRelativeDescendant:
+          map.insert(iterator.Get(), false);  // Mark as checked
+          if (!has_argument_leftmost_compound_matches.IsEmpty()) {
+            sub_context.element =
+                has_argument_leftmost_compound_matches.front();
+            for (sub_context.element = ParentElement(sub_context);
+                 sub_context.element;
+                 sub_context.element = ParentElement(sub_context)) {
+              map.Set(sub_context.element, true);  // Mark as matched
+              if (sub_context.element == element)
+                selector_matched = true;
+            }
+          }
+          break;
+        case CSSSelector::kRelativeChild:
+          for (auto leftmost : has_argument_leftmost_compound_matches) {
+            Element* parent = leftmost->parentElement();
+            map.Set(parent, true);  // Mark as matched
+            if (parent == element)
+              selector_matched = true;
+          }
+          break;
+        case CSSSelector::kRelativeDirectAdjacent:
+          if (!depth_fixed && !iterator.IsAtSiblingOfHasScope())
+            map.insert(iterator.Get(), false);  // Mark as checked
+          for (auto leftmost : has_argument_leftmost_compound_matches) {
+            if (Element* sibling =
+                    Traversal<Element>::PreviousSibling(*leftmost)) {
+              map.Set(sibling, true);  // Mark as matched
+              if (sibling == element)
+                selector_matched = true;
+            }
+          }
+          break;
+        case CSSSelector::kRelativeIndirectAdjacent:
+          if (!depth_fixed)
+            map.insert(iterator.Get(), false);  // Mark as checked
+          for (auto leftmost : has_argument_leftmost_compound_matches) {
+            for (Element* sibling =
+                     Traversal<Element>::PreviousSibling(*leftmost);
+                 sibling;
+                 sibling = Traversal<Element>::PreviousSibling(*sibling)) {
+              map.Set(sibling, true);  // Mark as matched
+              if (sibling == element)
+                selector_matched = true;
+            }
+          }
+          break;
+        default:
+          NOTREACHED();
+          break;
       }
-
-      if (sub_context.element)
-        map.Set(element, true);  // Mark the element as matched
-      return true;
+      if (selector_matched)
+        return true;
     }
   }
   return false;
@@ -762,8 +829,6 @@ bool SelectorChecker::CheckPseudoClass(const SelectorCheckingContext& context,
   switch (selector.GetPseudoType()) {
     case CSSSelector::kPseudoNot:
       return CheckPseudoNot(context, result);
-    case CSSSelector::kPseudoHas:
-      return CheckPseudoHas(context, result);
     case CSSSelector::kPseudoEmpty: {
       bool is_empty = true;
       bool has_whitespace = false;
@@ -913,7 +978,8 @@ bool SelectorChecker::CheckPseudoClass(const SelectorCheckingContext& context,
           return true;
       }
     } break;
-    case CSSSelector::kPseudoAutofill: {
+    case CSSSelector::kPseudoAutofill:
+    case CSSSelector::kPseudoWebKitAutofill: {
       auto* html_form_element = DynamicTo<HTMLFormControlElement>(&element);
       return html_form_element && html_form_element->IsAutofilled();
     }
@@ -924,8 +990,7 @@ bool SelectorChecker::CheckPseudoClass(const SelectorCheckingContext& context,
     }
     case CSSSelector::kPseudoAutofillSelected: {
       auto* html_form_element = DynamicTo<HTMLFormControlElement>(&element);
-      return html_form_element && html_form_element->GetAutofillState() ==
-                                      WebAutofillState::kAutofilled;
+      return html_form_element && html_form_element->HighlightAutofilled();
     }
     case CSSSelector::kPseudoAnyLink:
     case CSSSelector::kPseudoWebkitAnyLink:
@@ -1181,6 +1246,23 @@ bool SelectorChecker::CheckPseudoClass(const SelectorCheckingContext& context,
       if (const auto* dialog_element = DynamicTo<HTMLDialogElement>(element))
         return dialog_element->IsModal();
       return false;
+    case CSSSelector::kPseudoHas:
+      if (mode_ == kResolvingStyle) {
+        if (context.in_rightmost_compound) {
+          // Set 'AffectedByHas' flag to indicate that the element is affected
+          // by a ':has()' state. It means that, when we have a mutation on a
+          // descendant of the element, we may need to invalidate the style of
+          // the element because the mutation can affect the state of this
+          // ':has()' selector.
+          element_style_->SetAffectedByHas();
+          element_style_->SetAncestorsAffectedByHas(true);
+        }
+        // TODO(blee@igalia.com) non-terminal ':has() is not supported yet
+      }
+      return CheckPseudoHas(context, result);
+    case CSSSelector::kPseudoRelativeLeftmost:
+      DCHECK(context.relative_leftmost_element);
+      return context.relative_leftmost_element == &element;
     case CSSSelector::kPseudoUnknown:
     default:
       NOTREACHED();
@@ -1249,9 +1331,13 @@ bool SelectorChecker::CheckPseudoElement(const SelectorCheckingContext& context,
       return true;
     }
     case CSSSelector::kPseudoHighlight: {
-      const AtomicString& highlight_name = selector.Argument();
       result.dynamic_pseudo = PseudoId::kPseudoIdHighlight;
-      return highlight_name == pseudo_argument_;
+      // A null pseudo_argument_ means we are matching rules on the originating
+      // element. We keep track of which pseudo elements may match for the
+      // element through result.dynamic_pseudo. For ::highlight() pseudo
+      // elements we have a single flag for tracking whether an element may
+      // match _any_ ::highlight() element (kPseudoIdHighlight).
+      return !pseudo_argument_ || pseudo_argument_ == selector.Argument();
     }
     case CSSSelector::kPseudoTargetText:
       if (!is_ua_rule_) {

@@ -11,10 +11,11 @@
 #import "ios/chrome/browser/main/browser.h"
 #include "ios/chrome/browser/passwords/ios_chrome_password_check_manager.h"
 #include "ios/chrome/browser/passwords/ios_chrome_password_check_manager_factory.h"
-#include "ios/chrome/browser/signin/authentication_service_factory.h"
 #include "ios/chrome/browser/sync/sync_setup_service_factory.h"
 #import "ios/chrome/browser/ui/commands/application_commands.h"
 #import "ios/chrome/browser/ui/commands/command_dispatcher.h"
+#import "ios/chrome/browser/ui/settings/password/password_details/add_password_coordinator.h"
+#import "ios/chrome/browser/ui/settings/password/password_details/add_password_coordinator_delegate.h"
 #import "ios/chrome/browser/ui/settings/password/password_details/password_details_coordinator.h"
 #import "ios/chrome/browser/ui/settings/password/password_details/password_details_coordinator_delegate.h"
 #import "ios/chrome/browser/ui/settings/password/password_issues_coordinator.h"
@@ -31,6 +32,7 @@
 #endif
 
 @interface PasswordsCoordinator () <
+    AddPasswordCoordinatorDelegate,
     PasswordDetailsCoordinatorDelegate,
     PasswordIssuesCoordinatorDelegate,
     PasswordsSettingsCommands,
@@ -55,9 +57,12 @@
 @property(nonatomic, strong)
     PasswordIssuesCoordinator* passwordIssuesCoordinator;
 
-// Coordinator for password details.
+// Coordinator for editing existing password details.
 @property(nonatomic, strong)
     PasswordDetailsCoordinator* passwordDetailsCoordinator;
+
+// Coordinator for add password details.
+@property(nonatomic, strong) AddPasswordCoordinator* addPasswordCoordinator;
 
 @end
 
@@ -96,9 +101,6 @@
 - (void)start {
   self.mediator = [[PasswordsMediator alloc]
       initWithPasswordCheckManager:[self passwordCheckManager]
-                       authService:AuthenticationServiceFactory::
-                                       GetForBrowserState(
-                                           self.browser->GetBrowserState())
                        syncService:SyncSetupServiceFactory::GetForBrowserState(
                                        self.browser->GetBrowserState())];
   self.reauthModule = [[ReauthenticationModule alloc]
@@ -156,6 +158,17 @@
   [self.passwordDetailsCoordinator start];
 }
 
+- (void)showAddPasswordSheet {
+  DCHECK(!self.addPasswordCoordinator);
+  self.addPasswordCoordinator = [[AddPasswordCoordinator alloc]
+      initWithBaseViewController:self.viewController
+                         browser:self.browser
+                    reauthModule:self.reauthModule
+            passwordCheckManager:[self passwordCheckManager].get()];
+  self.addPasswordCoordinator.delegate = self;
+  [self.addPasswordCoordinator start];
+}
+
 #pragma mark - PasswordsTableViewControllerPresentationDelegate
 
 - (void)passwordsTableViewControllerDismissed {
@@ -194,6 +207,33 @@
   DCHECK_EQ(self.passwordDetailsCoordinator, coordinator);
   [self.mediator deletePasswordForm:password];
   [self.baseNavigationController popViewControllerAnimated:YES];
+}
+
+#pragma mark AddPasswordDetailsCoordinatorDelegate
+
+- (void)passwordDetailsTableViewControllerDidFinish:
+    (AddPasswordCoordinator*)coordinator {
+  DCHECK_EQ(self.addPasswordCoordinator, coordinator);
+  [self.addPasswordCoordinator stop];
+  self.addPasswordCoordinator.delegate = nil;
+  self.addPasswordCoordinator = nil;
+}
+
+- (void)setMostRecentlyUpdatedPasswordDetails:
+    (const password_manager::PasswordForm&)password {
+  [self.passwordsViewController setMostRecentlyUpdatedPasswordDetails:password];
+}
+
+- (void)dismissAddViewControllerAndShowPasswordDetails:
+            (const password_manager::PasswordForm&)password
+                                           coordinator:(AddPasswordCoordinator*)
+                                                           coordinator {
+  DCHECK(self.addPasswordCoordinator &&
+         self.addPasswordCoordinator == coordinator);
+  [self passwordDetailsTableViewControllerDidFinish:coordinator];
+  [self showDetailedViewForForm:password];
+  [self.passwordDetailsCoordinator
+          showPasswordDetailsInEditModeWithoutAuthentication];
 }
 
 #pragma mark Private

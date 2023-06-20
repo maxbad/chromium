@@ -235,6 +235,10 @@ TEST_F(PrimaryAccountManagerTest, UnconsentedSignOutWhileProhibited) {
   signin_client()->set_is_signout_allowed(false);
   manager_->ClearPrimaryAccount(signin_metrics::SIGNOUT_TEST,
                                 signin_metrics::SignoutDelete::kIgnoreMetric);
+  EXPECT_TRUE(manager_->HasPrimaryAccount(ConsentLevel::kSignin));
+  signin_client()->set_is_signout_allowed(true);
+  manager_->ClearPrimaryAccount(signin_metrics::SIGNOUT_TEST,
+                                signin_metrics::SignoutDelete::kIgnoreMetric);
   EXPECT_FALSE(manager_->HasPrimaryAccount(ConsentLevel::kSignin));
 }
 
@@ -361,7 +365,7 @@ TEST_F(PrimaryAccountManagerTest, GaiaIdMigration) {
   client_prefs->SetInteger(prefs::kAccountIdMigrationState,
                            AccountTrackerService::MIGRATION_NOT_STARTED);
   ListPrefUpdate update(client_prefs, prefs::kAccountInfo);
-  update->Clear();
+  update->ClearList();
   auto dict = std::make_unique<base::DictionaryValue>();
   dict->SetString("account_id", email);
   dict->SetString("email", email);
@@ -394,7 +398,7 @@ TEST_F(PrimaryAccountManagerTest, GaiaIdMigrationCrashInTheMiddle) {
   client_prefs->SetInteger(prefs::kAccountIdMigrationState,
                            AccountTrackerService::MIGRATION_NOT_STARTED);
   ListPrefUpdate update(client_prefs, prefs::kAccountInfo);
-  update->Clear();
+  update->ClearList();
   auto dict = std::make_unique<base::DictionaryValue>();
   dict->SetString("account_id", email);
   dict->SetString("email", email);
@@ -416,10 +420,8 @@ TEST_F(PrimaryAccountManagerTest, GaiaIdMigrationCrashInTheMiddle) {
 }
 
 #if !BUILDFLAG(IS_CHROMEOS_ASH)
+// Test that force migrating the account id to Gaia ID is finished.
 TEST_F(PrimaryAccountManagerTest, GaiaIdMigration_ForceAllAccounts) {
-  base::test::ScopedFeatureList scoped_feature_list;
-  scoped_feature_list.InitAndEnableFeature(switches::kForceAccountIdMigration);
-
   ASSERT_EQ(AccountTrackerService::MIGRATION_DONE,
             account_tracker()->GetMigrationState());
   std::string email = "user@gmail.com";
@@ -429,7 +431,7 @@ TEST_F(PrimaryAccountManagerTest, GaiaIdMigration_ForceAllAccounts) {
   client_prefs->SetInteger(prefs::kAccountIdMigrationState,
                            AccountTrackerService::MIGRATION_NOT_STARTED);
   ListPrefUpdate update(client_prefs, prefs::kAccountInfo);
-  update->Clear();
+  update->ClearList();
   auto dict = std::make_unique<base::DictionaryValue>();
   dict->SetString("account_id", email);
   dict->SetString("email", email);

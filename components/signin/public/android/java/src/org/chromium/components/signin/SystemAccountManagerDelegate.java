@@ -18,7 +18,6 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
-import android.os.Build;
 import android.os.Bundle;
 import android.os.PatternMatcher;
 import android.os.Process;
@@ -34,9 +33,9 @@ import org.chromium.base.Callback;
 import org.chromium.base.ContextUtils;
 import org.chromium.base.Log;
 import org.chromium.base.ThreadUtils;
-import org.chromium.base.library_loader.LibraryLoader;
 import org.chromium.base.metrics.RecordHistogram;
 import org.chromium.components.externalauth.ExternalAuthUtils;
+import org.chromium.components.signin.metrics.FetchAccountCapabilitiesFromSystemLibraryResult;
 
 import java.io.IOException;
 
@@ -87,7 +86,7 @@ public class SystemAccountManagerDelegate implements AccountManagerDelegate {
             long startTime = SystemClock.elapsedRealtime();
             Account[] accounts =
                     mAccountManager.getAccountsByType(GoogleAuthUtil.GOOGLE_ACCOUNT_TYPE);
-            recordElapsedTimeHistogram("Signin.AndroidGetAccountsTime_AccountManager",
+            RecordHistogram.recordTimesHistogram("Signin.AndroidGetAccountsTime_AccountManager",
                     SystemClock.elapsedRealtime() - startTime);
             return accounts;
         }
@@ -147,21 +146,12 @@ public class SystemAccountManagerDelegate implements AccountManagerDelegate {
     }
 
     @Override
-    public boolean hasCapability(Account account, String capability) {
-        return false;
-    }
-
-    /**
-     * Records a histogram value for how long time an action has taken using
-     * {@link RecordHistogram#recordTimesHistogram(String, long))} if the browser
-     * process has been initialized.
-     *
-     * @param histogramName the name of the histogram.
-     * @param elapsedMs the elapsed time in milliseconds.
-     */
-    protected static void recordElapsedTimeHistogram(String histogramName, long elapsedMs) {
-        if (!LibraryLoader.getInstance().isInitialized()) return;
-        RecordHistogram.recordTimesHistogram(histogramName, elapsedMs);
+    public @CapabilityResponse int hasCapability(Account account, String capability) {
+        RecordHistogram.recordEnumeratedHistogram(
+                "Signin.AccountCapabilities.GetFromSystemLibraryResult",
+                FetchAccountCapabilitiesFromSystemLibraryResult.API_NOT_AVAILABLE,
+                FetchAccountCapabilitiesFromSystemLibraryResult.MAX_VALUE + 1);
+        return CapabilityResponse.EXCEPTION;
     }
 
     // No permission is needed on 23+ and Chrome always has MANAGE_ACCOUNTS permission on lower APIs
@@ -187,13 +177,6 @@ public class SystemAccountManagerDelegate implements AccountManagerDelegate {
     public void updateCredentials(
             Account account, Activity activity, final Callback<Boolean> callback) {
         ThreadUtils.assertOnUiThread();
-        if (!hasManageAccountsPermission()) {
-            if (callback != null) {
-                ThreadUtils.postOnUiThread(callback.bind(false));
-            }
-            return;
-        }
-
         AccountManagerCallback<Bundle> realCallback = future -> {
             Bundle bundle = null;
             try {
@@ -233,15 +216,6 @@ public class SystemAccountManagerDelegate implements AccountManagerDelegate {
     protected boolean hasGetAccountsPermission() {
         return ApiCompatibilityUtils.checkPermission(ContextUtils.getApplicationContext(),
                        Manifest.permission.GET_ACCOUNTS, Process.myPid(), Process.myUid())
-                == PackageManager.PERMISSION_GRANTED;
-    }
-
-    protected boolean hasManageAccountsPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            return true;
-        }
-        return ApiCompatibilityUtils.checkPermission(ContextUtils.getApplicationContext(),
-                       "android.permission.MANAGE_ACCOUNTS", Process.myPid(), Process.myUid())
                 == PackageManager.PERMISSION_GRANTED;
     }
 }

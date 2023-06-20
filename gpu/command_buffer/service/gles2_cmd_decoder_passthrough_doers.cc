@@ -7,8 +7,9 @@
 #include <memory>
 
 #include "base/callback_helpers.h"
+#include "base/containers/cxx20_erase.h"
+#include "base/cxx17_backports.h"
 #include "base/metrics/histogram_macros.h"
-#include "base/numerics/ranges.h"
 #include "base/strings/string_number_conversions.h"
 #include "build/build_config.h"
 #include "gpu/command_buffer/common/discardable_handle.h"
@@ -21,6 +22,8 @@
 #include "gpu/command_buffer/service/shared_image_factory.h"
 #include "gpu/command_buffer/service/shared_image_representation.h"
 #include "ui/gfx/geometry/rect_conversions.h"
+#include "ui/gfx/overlay_plane_data.h"
+#include "ui/gfx/overlay_priority_hint.h"
 #include "ui/gl/ca_renderer_layer_params.h"
 #include "ui/gl/dc_renderer_layer_params.h"
 #include "ui/gl/gl_utils.h"
@@ -391,6 +394,9 @@ error::Error GLES2DecoderPassthroughImpl::DoBindBuffer(GLenum target,
 
   DCHECK(bound_buffers_.find(target) != bound_buffers_.end());
   bound_buffers_[target] = buffer;
+  if (target == GL_ELEMENT_ARRAY_BUFFER) {
+    bound_element_array_buffer_dirty_ = false;
+  }
 
   return error::kNoError;
 }
@@ -408,6 +414,9 @@ error::Error GLES2DecoderPassthroughImpl::DoBindBufferBase(GLenum target,
 
   DCHECK(bound_buffers_.find(target) != bound_buffers_.end());
   bound_buffers_[target] = buffer;
+  if (target == GL_ELEMENT_ARRAY_BUFFER) {
+    bound_element_array_buffer_dirty_ = false;
+  }
 
   return error::kNoError;
 }
@@ -428,6 +437,9 @@ error::Error GLES2DecoderPassthroughImpl::DoBindBufferRange(GLenum target,
 
   DCHECK(bound_buffers_.find(target) != bound_buffers_.end());
   bound_buffers_[target] = buffer;
+  if (target == GL_ELEMENT_ARRAY_BUFFER) {
+    bound_element_array_buffer_dirty_ = false;
+  }
 
   return error::kNoError;
 }
@@ -528,6 +540,10 @@ error::Error GLES2DecoderPassthroughImpl::DoBindTexture(GLenum target,
   RemovePendingBindingTexture(target, active_texture_unit_);
 
   if (service_id != 0) {
+    // Label the texture with additional context info
+    const char* label = ContextTypeToLabel(feature_info_->context_type());
+    api()->glObjectLabelFn(GL_TEXTURE, service_id, strlen(label), label);
+
     // Create a new texture object to track this texture
     if (!resources_->texture_object_map.GetServiceID(texture,
                                                      &texture_passthrough) ||
@@ -641,6 +657,10 @@ error::Error GLES2DecoderPassthroughImpl::DoBufferData(GLenum target,
   api()->glBufferDataFn(target, size, data, usage);
   if (CheckErrorCallbackState()) {
     return error::kNoError;
+  }
+
+  if (target == GL_ELEMENT_ARRAY_BUFFER) {
+    LazilyUpdateCurrentlyBoundElementArrayBuffer();
   }
 
   // Calling buffer data on a mapped buffer will implicitly unmap it
@@ -961,6 +981,8 @@ error::Error GLES2DecoderPassthroughImpl::DoDeleteBuffers(
     InsertError(GL_INVALID_VALUE, "n cannot be negative.");
     return error::kNoError;
   }
+
+  LazilyUpdateCurrentlyBoundElementArrayBuffer();
 
   std::vector<GLuint> service_ids(n, 0);
   for (GLsizei ii = 0; ii < n; ++ii) {
@@ -1285,6 +1307,10 @@ error::Error GLES2DecoderPassthroughImpl::DoFlushMappedBufferRange(
     GLenum target,
     GLintptr offset,
     GLsizeiptr size) {
+  if (target == GL_ELEMENT_ARRAY_BUFFER) {
+    LazilyUpdateCurrentlyBoundElementArrayBuffer();
+  }
+
   auto bound_buffers_iter = bound_buffers_.find(target);
   if (bound_buffers_iter == bound_buffers_.end() ||
       bound_buffers_iter->second == 0) {
@@ -3780,7 +3806,7 @@ error::Error GLES2DecoderPassthroughImpl::DoIsVertexArrayOES(GLuint array,
 error::Error GLES2DecoderPassthroughImpl::DoBindVertexArrayOES(GLuint array) {
   api()->glBindVertexArrayOESFn(
       GetVertexArrayServiceID(array, &vertex_array_id_map_));
-  UpdateCurrentlyBoundElementArrayBuffer();
+  bound_element_array_buffer_dirty_ = true;
   return error::kNoError;
 }
 
@@ -3839,7 +3865,9 @@ error::Error GLES2DecoderPassthroughImpl::DoSwapBuffers(uint64_t swap_id,
 
   client()->OnSwapBuffers(swap_id, flags);
   if (surface_->SupportsAsyncSwap()) {
-    TRACE_EVENT_ASYNC_BEGIN0("gpu", "AsyncSwapBuffers", swap_id);
+    TRACE_EVENT_NESTABLE_ASYNC_BEGIN0(
+        "gpu", "AsyncSwapBuffers",
+        TRACE_ID_WITH_SCOPE("AsyncSwapBuffers", swap_id));
     surface_->SwapBuffersAsync(
         base::BindOnce(
             &GLES2DecoderPassthroughImpl::CheckSwapBuffersAsyncResult,
@@ -3913,6 +3941,9 @@ error::Error GLES2DecoderPassthroughImpl::DoMapBufferRange(
   // Track the mapping of this buffer so that data can be synchronized when it
   // is unmapped
   DCHECK(bound_buffers_.find(target) != bound_buffers_.end());
+  if (target == GL_ELEMENT_ARRAY_BUFFER) {
+    LazilyUpdateCurrentlyBoundElementArrayBuffer();
+  }
   GLuint client_buffer = bound_buffers_.at(target);
 
   MappedBuffer mapped_buffer_info;
@@ -3933,6 +3964,9 @@ error::Error GLES2DecoderPassthroughImpl::DoMapBufferRange(
 }
 
 error::Error GLES2DecoderPassthroughImpl::DoUnmapBuffer(GLenum target) {
+  if (target == GL_ELEMENT_ARRAY_BUFFER) {
+    LazilyUpdateCurrentlyBoundElementArrayBuffer();
+  }
   auto bound_buffers_iter = bound_buffers_.find(target);
   if (bound_buffers_iter == bound_buffers_.end()) {
     InsertError(GL_INVALID_ENUM, "Invalid buffer target.");
@@ -3981,8 +4015,8 @@ error::Error GLES2DecoderPassthroughImpl::DoResizeCHROMIUM(
   static_assert(sizeof(GLuint) >= sizeof(int), "Unexpected GLuint size.");
   static const GLuint kMaxDimension =
       static_cast<GLuint>(std::numeric_limits<int>::max());
-  gfx::Size safe_size(base::ClampToRange(width, 1U, kMaxDimension),
-                      base::ClampToRange(height, 1U, kMaxDimension));
+  gfx::Size safe_size(base::clamp(width, 1U, kMaxDimension),
+                      base::clamp(height, 1U, kMaxDimension));
   if (offscreen_) {
     if (!ResizeOffscreenFramebuffer(safe_size)) {
       LOG(ERROR) << "GLES2DecoderPassthroughImpl: Context lost because "
@@ -4444,7 +4478,9 @@ error::Error GLES2DecoderPassthroughImpl::DoPostSubBufferCHROMIUM(
 
   client()->OnSwapBuffers(swap_id, flags);
   if (surface_->SupportsAsyncSwap()) {
-    TRACE_EVENT_ASYNC_BEGIN0("gpu", "AsyncSwapBuffers", swap_id);
+    TRACE_EVENT_NESTABLE_ASYNC_BEGIN0(
+        "gpu", "AsyncSwapBuffers",
+        TRACE_ID_WITH_SCOPE("AsyncSwapBuffers", swap_id));
     surface_->PostSubBufferAsync(
         x, y, width, height,
         base::BindOnce(
@@ -4728,7 +4764,16 @@ error::Error GLES2DecoderPassthroughImpl::DoDescheduleUntilFinishedCHROMIUM() {
   if (!gl::GLFence::IsSupported()) {
     return error::kNoError;
   }
-  deschedule_until_finished_fences_.push_back(gl::GLFence::Create());
+
+  auto fence = gl::GLFence::Create();
+  if (!fence) {
+    InsertError(GL_INVALID_OPERATION, "gl::GLFence::Create() failed.");
+    MarkContextLost(error::kUnknown);
+    group_->LoseContexts(error::kUnknown);
+    return error::kLostContext;
+  }
+
+  deschedule_until_finished_fences_.push_back(std::move(fence));
 
   if (deschedule_until_finished_fences_.size() == 1) {
     return error::kNoError;
@@ -4741,8 +4786,9 @@ error::Error GLES2DecoderPassthroughImpl::DoDescheduleUntilFinishedCHROMIUM() {
     return error::kNoError;
   }
 
-  TRACE_EVENT_ASYNC_BEGIN0(
-      "cc", "GLES2DecoderPassthroughImpl::DescheduleUntilFinished", this);
+  TRACE_EVENT_NESTABLE_ASYNC_BEGIN0(
+      "cc", "GLES2DecoderPassthroughImpl::DescheduleUntilFinished",
+      TRACE_ID_LOCAL(this));
   client()->OnDescheduleUntilFinished();
   return error::kDeferLaterCommands;
 }
@@ -4815,10 +4861,15 @@ error::Error GLES2DecoderPassthroughImpl::DoScheduleOverlayPlaneCHROMIUM(
   }
 
   if (!surface_->ScheduleOverlayPlane(
-          plane_z_order, transform, image,
-          gfx::Rect(bounds_x, bounds_y, bounds_width, bounds_height),
-          gfx::RectF(uv_x, uv_y, uv_width, uv_height), enable_blend,
-          std::move(gpu_fence))) {
+          image, std::move(gpu_fence),
+          gfx::OverlayPlaneData(
+              plane_z_order, transform,
+              gfx::Rect(bounds_x, bounds_y, bounds_width, bounds_height),
+              gfx::RectF(uv_x, uv_y, uv_width, uv_height), enable_blend,
+              /*damage_rect=*/gfx::Rect(), /*opacity=*/1.0f,
+              gfx::OverlayPriorityHint::kNone,
+              /*rounded_corners*/ gfx::RRectF(), image->color_space(),
+              /*hdr_metadata=*/absl::nullopt))) {
     InsertError(GL_INVALID_OPERATION, "failed to schedule overlay");
     return error::kNoError;
   }
@@ -5032,7 +5083,9 @@ error::Error GLES2DecoderPassthroughImpl::DoCommitOverlayPlanesCHROMIUM(
 
   client()->OnSwapBuffers(swap_id, flags);
   if (surface_->SupportsAsyncSwap()) {
-    TRACE_EVENT_ASYNC_BEGIN0("gpu", "AsyncSwapBuffers", swap_id);
+    TRACE_EVENT_NESTABLE_ASYNC_BEGIN0(
+        "gpu", "AsyncSwapBuffers",
+        TRACE_ID_WITH_SCOPE("AsyncSwapBuffers", swap_id));
     surface_->CommitOverlayPlanesAsync(
         base::BindOnce(
             &GLES2DecoderPassthroughImpl::CheckSwapBuffersAsyncResult,

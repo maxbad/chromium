@@ -14,10 +14,10 @@
 #include "chrome/browser/ui/webui/reset_password/reset_password.mojom.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/grit/browser_resources.h"
-#include "components/safe_browsing/content/password_protection/password_protection_service.h"
+#include "components/safe_browsing/content/browser/password_protection/password_protection_service.h"
+#include "components/safe_browsing/core/browser/password_protection/metrics_util.h"
+#include "components/safe_browsing/core/common/proto/csd.pb.h"
 #include "components/safe_browsing/core/common/safe_browsing_prefs.h"
-#include "components/safe_browsing/core/password_protection/metrics_util.h"
-#include "components/safe_browsing/core/proto/csd.pb.h"
 #include "components/strings/grit/components_strings.h"
 #include "components/url_formatter/url_formatter.h"
 #include "components/user_prefs/user_prefs.h"
@@ -55,6 +55,9 @@ class ResetPasswordHandlerImpl : public mojom::ResetPasswordHandler {
     DCHECK(web_contents);
   }
 
+  ResetPasswordHandlerImpl(const ResetPasswordHandlerImpl&) = delete;
+  ResetPasswordHandlerImpl& operator=(const ResetPasswordHandlerImpl&) = delete;
+
   ~ResetPasswordHandlerImpl() override {}
 
   // mojom::ResetPasswordHandler overrides:
@@ -77,8 +80,6 @@ class ResetPasswordHandlerImpl : public mojom::ResetPasswordHandler {
  private:
   content::WebContents* web_contents_;
   mojo::Receiver<mojom::ResetPasswordHandler> receiver_;
-
-  DISALLOW_COPY_AND_ASSIGN(ResetPasswordHandlerImpl);
 };
 
 // Gets the reused password type from post data, or returns

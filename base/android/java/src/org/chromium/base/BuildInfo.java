@@ -13,10 +13,7 @@ import android.content.pm.PackageManager;
 import android.content.pm.PackageManager.NameNotFoundException;
 import android.content.res.Configuration;
 import android.os.Build;
-import android.os.Build.VERSION;
 import android.text.TextUtils;
-
-import androidx.annotation.ChecksSdkIntAtLeast;
 
 import org.chromium.base.annotations.CalledByNative;
 import org.chromium.base.compat.ApiHelperForP;
@@ -32,10 +29,6 @@ public class BuildInfo {
 
     private static PackageInfo sBrowserPackageInfo;
     private static boolean sInitialized;
-
-    // TODO(crbug.com/1192402): Replace this with Build.VERSION_CODES.S in the code once chromium
-    // import Android S SDK.
-    public static final int ANDROID_S_API_SDK_INT = 31;
 
     /** Not a member variable to avoid creating the instance early (it is set early in start up). */
     private static String sFirebaseAppId = "";
@@ -221,25 +214,19 @@ public class BuildInfo {
     /**
      * Checks if the device is running on a pre-release version of Android S or a release version of
      * Android S or newer.
-     * <p>
-     * <strong>Note:</strong> When Android S is finalized for release, this method will be
-     * deprecated and all calls should be replaced with {@code Build.VERSION.SDK_INT >=
-     * Build.VERSION_CODES.S}.
      *
      * @return {@code true} if S APIs are available for use, {@code false} otherwise
      */
-    @ChecksSdkIntAtLeast(codename = "S")
     public static boolean isAtLeastS() {
-        return VERSION.CODENAME.equals("S");
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.S;
     }
 
     /**
-     * Checks if the application targets pre-release SDK S
+     * Checks if the application targets at least released SDK S
      */
     public static boolean targetsAtLeastS() {
-        return isAtLeastS()
-                && ContextUtils.getApplicationContext().getApplicationInfo().targetSdkVersion
-                == Build.VERSION_CODES.CUR_DEVELOPMENT;
+        int version = ContextUtils.getApplicationContext().getApplicationInfo().targetSdkVersion;
+        return version >= Build.VERSION_CODES.S;
     }
 
     // End:BuildCompat

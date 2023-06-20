@@ -14,7 +14,7 @@
 #include "chrome/browser/ui/views/accessibility/non_accessible_image_view.h"
 #include "chrome/browser/ui/views/bubble_anchor_util_views.h"
 #include "chrome/browser/ui/views/chrome_layout_provider.h"
-#include "chrome/browser/ui/views/page_info/page_info_bubble_view.h"
+#include "chrome/browser/ui/views/page_info/page_info_view_factory.h"
 #include "chrome/grit/theme_resources.h"
 #include "components/security_state/core/security_state.h"
 #include "components/strings/grit/components_strings.h"
@@ -238,14 +238,9 @@ void SafetyTipPageInfoBubbleView::OnVisibilityChanged(
   GetWidget()->CloseWithReason(views::Widget::ClosedReason::kUnspecified);
 }
 
-void SafetyTipPageInfoBubbleView::DidStartNavigation(
-    content::NavigationHandle* handle) {
-  if (!handle->IsInMainFrame() || handle->IsSameDocument()) {
-    return;
-  }
-
+void SafetyTipPageInfoBubbleView::PrimaryPageChanged(content::Page& page) {
   if (action_taken_ == SafetyTipInteraction::kNoAction) {
-    action_taken_ = SafetyTipInteraction::kStartNewNavigation;
+    action_taken_ = SafetyTipInteraction::kChangePrimaryPage;
   }
 
   // There's no great ClosedReason for this, so we use kUnspecified to signal
@@ -307,7 +302,7 @@ void SafetyTipPageInfoBubbleView::MaybeAddButtons(
           this),
       l10n_util::GetStringUTF16(GetSafetyTipLeaveButtonId(safety_tip_status)));
   leave_button->SetProminent(true);
-  leave_button->SetID(PageInfoBubbleView::VIEW_ID_PAGE_INFO_BUTTON_LEAVE_SITE);
+  leave_button->SetID(PageInfoViewFactory::VIEW_ID_PAGE_INFO_BUTTON_LEAVE_SITE);
   leave_button_ = button_layout->AddView(std::move(leave_button));
 
   bottom_layout->StartRowWithPadding(views::GridLayout::kFixedSize, column_id,

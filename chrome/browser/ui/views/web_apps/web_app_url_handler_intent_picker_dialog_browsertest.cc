@@ -8,8 +8,10 @@
 #include <vector>
 
 #include "base/callback_helpers.h"
+#include "base/containers/flat_set.h"
 #include "base/files/file_path.h"
 #include "base/test/bind.h"
+#include "base/test/metrics/histogram_tester.h"
 #include "base/test/mock_callback.h"
 #include "base/time/time.h"
 #include "chrome/browser/profiles/profile.h"
@@ -17,13 +19,13 @@
 #include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/browser/ui/test/test_browser_dialog.h"
 #include "chrome/browser/ui/views/web_apps/web_app_url_handler_intent_picker_dialog_view.h"
-#include "chrome/browser/web_applications/components/os_integration_manager.h"
-#include "chrome/browser/web_applications/components/url_handler_launch_params.h"
-#include "chrome/browser/web_applications/components/url_handler_manager.h"
-#include "chrome/browser/web_applications/components/web_app_id.h"
-#include "chrome/browser/web_applications/components/web_application_info.h"
+#include "chrome/browser/web_applications/os_integration_manager.h"
 #include "chrome/browser/web_applications/test/web_app_install_test_utils.h"
+#include "chrome/browser/web_applications/url_handler_launch_params.h"
+#include "chrome/browser/web_applications/url_handler_manager.h"
+#include "chrome/browser/web_applications/web_app_id.h"
 #include "chrome/browser/web_applications/web_app_provider.h"
+#include "chrome/browser/web_applications/web_application_info.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "components/keep_alive_registry/keep_alive_types.h"
 #include "components/keep_alive_registry/scoped_keep_alive.h"
@@ -60,7 +62,7 @@ web_app::AppId InstallTestWebApp(Profile* profile) {
   auto app_info = std::make_unique<WebApplicationInfo>();
   app_info->start_url = GURL(kStartUrl);
   app_info->title = kAppName;
-  app_info->open_as_window = true;
+  app_info->user_display_mode = blink::mojom::DisplayMode::kStandalone;
   return web_app::test::InstallWebApp(profile, std::move(app_info));
 }
 
@@ -84,6 +86,7 @@ IN_PROC_BROWSER_TEST_F(WebAppUrlHandlerIntentPickerDialogInProcessBrowserTest,
                        ShowWebAppUrlHandlerIntentPickerDialog) {
   views::NamedWidgetShownWaiter waiter(views::test::AnyWidgetTestPasskey{},
                                        kViewClassName);
+  base::HistogramTester histogram_tester;
   web_app::AppId test_app_id = InstallTestWebApp(browser()->profile());
 
   base::MockCallback<chrome::WebAppUrlHandlerAcceptanceCallback>
@@ -101,6 +104,7 @@ IN_PROC_BROWSER_TEST_F(WebAppUrlHandlerIntentPickerDialogInProcessBrowserTest,
   auto keep_alive = std::make_unique<ScopedKeepAlive>(
       KeepAliveOrigin::WEB_APP_INTENT_PICKER, KeepAliveRestartOption::DISABLED);
   WebAppUrlHandlerIntentPickerView::Show(
+      GURL(kStartUrl),
       CreateUrlHandlerLaunchParams(browser()->profile()->GetPath(),
                                    test_app_id),
       std::move(keep_alive), show_dialog_callback.Get());
@@ -109,12 +113,16 @@ IN_PROC_BROWSER_TEST_F(WebAppUrlHandlerIntentPickerDialogInProcessBrowserTest,
       views::Widget::ClosedReason::kEscKeyPressed);
   EXPECT_FALSE(dialog_accepted);
   EXPECT_FALSE(result_launch_params.has_value());
+  histogram_tester.ExpectUniqueSample(
+      "WebApp.UrlHandling.DialogState",
+      WebAppUrlHandlerIntentPickerView::DialogState::kClosed, 1);
 }
 
 IN_PROC_BROWSER_TEST_F(WebAppUrlHandlerIntentPickerDialogInProcessBrowserTest,
                        OpenIsDisabledByDefault) {
   views::NamedWidgetShownWaiter waiter(views::test::AnyWidgetTestPasskey{},
                                        kViewClassName);
+  base::HistogramTester histogram_tester;
   web_app::AppId test_app_id = InstallTestWebApp(browser()->profile());
 
   base::MockCallback<chrome::WebAppUrlHandlerAcceptanceCallback>
@@ -134,6 +142,7 @@ IN_PROC_BROWSER_TEST_F(WebAppUrlHandlerIntentPickerDialogInProcessBrowserTest,
   auto keep_alive = std::make_unique<ScopedKeepAlive>(
       KeepAliveOrigin::WEB_APP_INTENT_PICKER, KeepAliveRestartOption::DISABLED);
   WebAppUrlHandlerIntentPickerView::Show(
+      GURL(kStartUrl),
       CreateUrlHandlerLaunchParams(browser()->profile()->GetPath(),
                                    test_app_id),
       std::move(keep_alive), show_dialog_callback.Get());
@@ -143,12 +152,16 @@ IN_PROC_BROWSER_TEST_F(WebAppUrlHandlerIntentPickerDialogInProcessBrowserTest,
   // Verify "Open" button is disabled by default.
   EXPECT_FALSE(dialog_delegate->GetOkButton()->GetEnabled());
   AutoCloseDialog(widget);
+  histogram_tester.ExpectUniqueSample(
+      "WebApp.UrlHandling.DialogState",
+      WebAppUrlHandlerIntentPickerView::DialogState::kClosed, 1);
 }
 
 IN_PROC_BROWSER_TEST_F(WebAppUrlHandlerIntentPickerDialogInProcessBrowserTest,
                        SelectBrowser) {
   views::NamedWidgetShownWaiter waiter(views::test::AnyWidgetTestPasskey{},
                                        kViewClassName);
+  base::HistogramTester histogram_tester;
   web_app::AppId test_app_id = InstallTestWebApp(browser()->profile());
 
   base::MockCallback<chrome::WebAppUrlHandlerAcceptanceCallback>
@@ -169,18 +182,25 @@ IN_PROC_BROWSER_TEST_F(WebAppUrlHandlerIntentPickerDialogInProcessBrowserTest,
       browser()->profile()->GetPath(), test_app_id);
   auto keep_alive = std::make_unique<ScopedKeepAlive>(
       KeepAliveOrigin::WEB_APP_INTENT_PICKER, KeepAliveRestartOption::DISABLED);
-  WebAppUrlHandlerIntentPickerView::Show(
-      launch_params_list, std::move(keep_alive), show_dialog_callback.Get());
+  WebAppUrlHandlerIntentPickerView::Show(GURL(kStartUrl), launch_params_list,
+                                         std::move(keep_alive),
+                                         show_dialog_callback.Get());
 
   AutoCloseDialog(waiter.WaitIfNeededAndGet());
   EXPECT_TRUE(dialog_accepted);
   EXPECT_FALSE(result_launch_params.has_value());
+  histogram_tester.ExpectUniqueSample(
+      "WebApp.UrlHandling.DialogState",
+      WebAppUrlHandlerIntentPickerView::DialogState::
+          kBrowserAcceptedNoRememberChoice,
+      1);
 }
 
 IN_PROC_BROWSER_TEST_F(WebAppUrlHandlerIntentPickerDialogInProcessBrowserTest,
                        SelectApp) {
   views::NamedWidgetShownWaiter waiter(views::test::AnyWidgetTestPasskey{},
                                        kViewClassName);
+  base::HistogramTester histogram_tester;
   web_app::AppId test_app_id = InstallTestWebApp(browser()->profile());
 
   base::MockCallback<chrome::WebAppUrlHandlerAcceptanceCallback>
@@ -201,13 +221,46 @@ IN_PROC_BROWSER_TEST_F(WebAppUrlHandlerIntentPickerDialogInProcessBrowserTest,
       browser()->profile()->GetPath(), test_app_id);
   auto keep_alive = std::make_unique<ScopedKeepAlive>(
       KeepAliveOrigin::WEB_APP_INTENT_PICKER, KeepAliveRestartOption::DISABLED);
-  WebAppUrlHandlerIntentPickerView::Show(
-      launch_params_list, std::move(keep_alive), show_dialog_callback.Get());
+  WebAppUrlHandlerIntentPickerView::Show(GURL(kStartUrl), launch_params_list,
+                                         std::move(keep_alive),
+                                         show_dialog_callback.Get());
 
   AutoCloseDialog(waiter.WaitIfNeededAndGet());
   // Select the second choice - the app.
   EXPECT_TRUE(dialog_accepted);
   EXPECT_EQ(result_launch_params, launch_params_list[0]);
+  histogram_tester.ExpectUniqueSample(
+      "WebApp.UrlHandling.DialogState",
+      WebAppUrlHandlerIntentPickerView::DialogState::
+          kAppAcceptedNoRememberChoice,
+      1);
+}
+
+IN_PROC_BROWSER_TEST_F(WebAppUrlHandlerIntentPickerDialogInProcessBrowserTest,
+                       FilterOutInvalidProfiles) {
+  // Test valid profile path is kept.
+  base::FilePath current_profile_path = browser()->profile()->GetPath();
+  std::vector<web_app::UrlHandlerLaunchParams> launch_params_list =
+      CreateUrlHandlerLaunchParams(current_profile_path, "app id 1");
+  auto valid_profiles =
+      WebAppUrlHandlerIntentPickerView::GetUrlHandlingValidProfiles(
+          launch_params_list);
+  EXPECT_EQ(1u, valid_profiles.size());
+  EXPECT_EQ(1u, launch_params_list.size());
+  EXPECT_EQ(launch_params_list.front().profile_path, current_profile_path);
+
+  // Add an invalid profile path.
+  launch_params_list.emplace_back(
+      current_profile_path.Append(FILE_PATH_LITERAL("Nonexistent")), "app id 2",
+      GURL(kStartUrl), web_app::UrlHandlerSavedChoice::kNone,
+      base::Time::Now());
+  // Verify the invalid profile is not returned.
+  auto new_valid_profiles =
+      WebAppUrlHandlerIntentPickerView::GetUrlHandlingValidProfiles(
+          launch_params_list);
+  EXPECT_EQ(1u, launch_params_list.size());
+  EXPECT_EQ(1u, new_valid_profiles.size());
+  EXPECT_EQ(valid_profiles, new_valid_profiles);
 }
 
 class WebAppUrlHandlerIntentPickerDialogInteractiveBrowserTest
@@ -223,15 +276,27 @@ class WebAppUrlHandlerIntentPickerDialogInteractiveBrowserTest
         KeepAliveOrigin::WEB_APP_INTENT_PICKER,
         KeepAliveRestartOption::DISABLED);
     WebAppUrlHandlerIntentPickerView::Show(
+        GURL(kStartUrl),
         CreateUrlHandlerLaunchParams(browser()->profile()->GetPath(),
                                      test_app_id),
         std::move(keep_alive), base::DoNothing());
-    waiter.WaitIfNeededAndGet()->CloseWithReason(
-        views::Widget::ClosedReason::kEscKeyPressed);
+    if (should_close_) {
+      waiter.WaitIfNeededAndGet()->CloseWithReason(
+          views::Widget::ClosedReason::kEscKeyPressed);
+    }
   }
+
+ protected:
+  bool should_close_ = true;
 };
 
 IN_PROC_BROWSER_TEST_F(WebAppUrlHandlerIntentPickerDialogInteractiveBrowserTest,
                        InvokeUi_CloseDialog) {
+  ShowAndVerifyUi();
+}
+
+IN_PROC_BROWSER_TEST_F(WebAppUrlHandlerIntentPickerDialogInteractiveBrowserTest,
+                       InvokeUi_default) {
+  should_close_ = false;
   ShowAndVerifyUi();
 }

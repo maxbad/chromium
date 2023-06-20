@@ -16,6 +16,7 @@
 #include "ui/events/keycodes/dom/dom_code.h"
 #include "ui/gfx/range/range.h"
 #include "ui/views/accessibility/view_accessibility.h"
+#include "ui/views/border.h"
 #include "ui/views/layout/box_layout.h"
 #include "ui/views/layout/fill_layout.h"
 
@@ -226,7 +227,7 @@ FixedLengthCodeInput::FixedLengthCodeInput(int length,
 
     // Ignores the a11y focus of |field| because the a11y needs to focus to the
     // FixedLengthCodeInput object.
-    field->GetViewAccessibility().OverrideIsIgnored(true);
+    field->GetViewAccessibility().set_propagate_focus_to_ancestor(true);
     input_fields_.push_back(field);
     AddChildView(field);
     layout->SetFlexForView(field, 1);

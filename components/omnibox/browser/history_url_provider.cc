@@ -13,9 +13,9 @@
 #include "base/feature_list.h"
 #include "base/location.h"
 #include "base/metrics/histogram_macros.h"
-#include "base/single_thread_task_runner.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/threading/sequenced_task_runner_handle.h"
 #include "base/time/time.h"
 #include "base/trace_event/memory_usage_estimator.h"
@@ -33,10 +33,8 @@
 #include "components/omnibox/browser/history_provider.h"
 #include "components/omnibox/browser/in_memory_url_index_types.h"
 #include "components/omnibox/browser/omnibox_field_trial.h"
-#include "components/omnibox/browser/url_index_private_data.h"
 #include "components/omnibox/browser/url_prefix.h"
 #include "components/omnibox/browser/verbatim_match.h"
-#include "components/omnibox/common/omnibox_features.h"
 #include "components/prefs/pref_service.h"
 #include "components/search_engines/omnibox_focus_type.h"
 #include "components/search_engines/search_terms_data.h"
@@ -368,11 +366,11 @@ const int HistoryURLProvider::kBaseScoreForNonInlineableResult = 900;
 // VisitClassifier is used to classify the type of visit to a particular url.
 class HistoryURLProvider::VisitClassifier {
  public:
-  enum Type {
-    INVALID,             // Navigations to the URL are not allowed.
-    UNVISITED_INTRANET,  // A navigable URL for which we have no visit data but
+  enum class Type {
+    kInvalid,            // Navigations to the URL are not allowed.
+    kUnvisitedIntranet,  // A navigable URL for which we have no visit data but
                          // which is known to refer to a visited intranet host.
-    VISITED,             // The site has been previously visited.
+    kVisited,            // The site has been previously visited.
   };
 
   VisitClassifier(HistoryURLProvider* provider,
@@ -401,9 +399,7 @@ HistoryURLProvider::VisitClassifier::VisitClassifier(
     HistoryURLProvider* provider,
     const AutocompleteInput& input,
     history::URLDatabase* db)
-    : provider_(provider),
-      db_(db),
-      type_(INVALID) {
+    : provider_(provider), db_(db), type_(Type::kInvalid) {
   // Detect email addresses.  These cases will look like "http://user@site/",
   // and because the history backend strips auth creds, we'll get a bogus exact
   // match below if the user has visited "site".
@@ -429,7 +425,7 @@ HistoryURLProvider::VisitClassifier::VisitClassifier(
         base::UTF16ToUTF8(prefix_it->prefix + input.text()), desired_tld);
     if (url_with_prefix.is_valid() &&
         db_->GetRowForURL(url_with_prefix, &url_row_) && !url_row_.hidden()) {
-      type_ = VISITED;
+      type_ = Type::kVisited;
       return;
     }
   }
@@ -442,7 +438,7 @@ HistoryURLProvider::VisitClassifier::VisitClassifier(
   const GURL as_known_intranet_url = provider_->AsKnownIntranetURL(db_, input);
   if (as_known_intranet_url.is_valid()) {
     url_row_ = history::URLRow(as_known_intranet_url);
-    type_ = UNVISITED_INTRANET;
+    type_ = Type::kUnvisitedIntranet;
   }
 }
 
@@ -695,8 +691,6 @@ void HistoryURLProvider::DoAutocomplete(history::HistoryBackend* backend,
 
   if (search_url_database_) {
     const URLPrefixes& prefixes = URLPrefix::GetURLPrefixes();
-    const bool hide_visits_from_cct =
-        base::FeatureList::IsEnabled(omnibox::kHideVisitsFromCct);
     for (auto i(prefixes.begin()); i != prefixes.end(); ++i) {
       if (params->cancel_flag.IsSet())
         return;  // Canceled in the middle of a query, give up.
@@ -713,12 +707,6 @@ void HistoryURLProvider::DoAutocomplete(history::HistoryBackend* backend,
                                 !backend, &url_matches);
       for (history::URLRows::const_iterator j(url_matches.begin());
            j != url_matches.end(); ++j) {
-        if (hide_visits_from_cct && backend) {
-          history::VisitVector visits;
-          if (db->GetVisitsForUrl2(j->id(), &visits) &&
-              URLIndexPrivateData::ShouldExcludeBecauseOfCctVisits(visits))
-            continue;
-        }
         const GURL& row_url = j->url();
         const URLPrefix* best_prefix = URLPrefix::BestURLPrefix(
             base::UTF8ToUTF16(row_url.spec()), std::u16string());
@@ -753,7 +741,7 @@ void HistoryURLProvider::DoAutocomplete(history::HistoryBackend* backend,
   params->have_what_you_typed_match =
       (params->input.type() != metrics::OmniboxInputType::QUERY) &&
       ((params->input.type() != metrics::OmniboxInputType::UNKNOWN) ||
-       (classifier.type() == VisitClassifier::UNVISITED_INTRANET) ||
+       (classifier.type() == VisitClassifier::Type::kUnvisitedIntranet) ||
        !params->trim_http ||
        (AutocompleteInput::NumNonHostComponents(params->input.parts()) > 0) ||
        !params->default_search_provider);
@@ -912,14 +900,14 @@ bool HistoryURLProvider::FixupExactSuggestion(
   MatchType type = INLINE_AUTOCOMPLETE;
 
   switch (classifier.type()) {
-    case VisitClassifier::INVALID:
+    case VisitClassifier::Type::kInvalid:
       return false;
-    case VisitClassifier::UNVISITED_INTRANET:
+    case VisitClassifier::Type::kUnvisitedIntranet:
       params->what_you_typed_match.destination_url = classifier.url_row().url();
       type = UNVISITED_INTRANET;
       break;
     default:
-      DCHECK_EQ(VisitClassifier::VISITED, classifier.type());
+      DCHECK_EQ(VisitClassifier::Type::kVisited, classifier.type());
       params->what_you_typed_match.deletable =
           params->allow_deleting_browser_history;
       // We have data for this match, use it.

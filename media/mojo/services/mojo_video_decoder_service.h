@@ -8,7 +8,6 @@
 #include <map>
 #include <memory>
 
-#include "base/macros.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/unguessable_token.h"
@@ -41,18 +40,21 @@ class MEDIA_MOJO_EXPORT MojoVideoDecoderService final
   explicit MojoVideoDecoderService(
       MojoMediaClient* mojo_media_client,
       MojoCdmServiceContext* mojo_cdm_service_context);
+
+  MojoVideoDecoderService(const MojoVideoDecoderService&) = delete;
+  MojoVideoDecoderService& operator=(const MojoVideoDecoderService&) = delete;
+
   ~MojoVideoDecoderService() final;
 
   // mojom::VideoDecoder implementation
   void GetSupportedConfigs(GetSupportedConfigsCallback callback) final;
   void Construct(
       mojo::PendingAssociatedRemote<mojom::VideoDecoderClient> client,
-      mojo::PendingAssociatedRemote<mojom::MediaLog> media_log,
+      mojo::PendingRemote<mojom::MediaLog> media_log,
       mojo::PendingReceiver<mojom::VideoFrameHandleReleaser>
           video_frame_handle_receiver,
       mojo::ScopedDataPipeConsumerHandle decoder_buffer_pipe,
       mojom::CommandBufferIdPtr command_buffer_id,
-      VideoDecoderImplementation implementation,
       const gfx::ColorSpace& target_color_space) final;
   void Initialize(const VideoDecoderConfig& config,
                   bool low_delay,
@@ -86,9 +88,6 @@ class MEDIA_MOJO_EXPORT MojoVideoDecoderService final
   void OnDecoderRequestedOverlayInfo(
       bool restart_for_transitions,
       ProvideOverlayInfoCB provide_overlay_info_cb);
-
-  // Implementation value provided at the time of Construct().
-  absl::optional<VideoDecoderImplementation> implementation_;
 
   // Whether this instance is active (Decode() was called at least once).
   bool is_active_instance_ = false;
@@ -130,8 +129,6 @@ class MEDIA_MOJO_EXPORT MojoVideoDecoderService final
 
   base::WeakPtr<MojoVideoDecoderService> weak_this_;
   base::WeakPtrFactory<MojoVideoDecoderService> weak_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(MojoVideoDecoderService);
 };
 
 }  // namespace media

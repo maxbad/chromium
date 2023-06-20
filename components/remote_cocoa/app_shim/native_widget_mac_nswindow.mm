@@ -127,12 +127,17 @@
                       ofObject:(id)object
                         change:(NSDictionary*)change
                        context:(void*)context {
-  DCHECK(_isEnforcingNeverMadeVisible);
-  DCHECK([keyPath isEqual:@"visible"]);
-  DCHECK_EQ(object, self);
-  DCHECK_EQ(context, nil);
-  if ([change[NSKeyValueChangeNewKey] boolValue])
-    base::debug::DumpWithoutCrashing();
+  if ([keyPath isEqual:@"visible"]) {
+    DCHECK(_isEnforcingNeverMadeVisible);
+    DCHECK_EQ(object, self);
+    DCHECK_EQ(context, nil);
+    if ([change[NSKeyValueChangeNewKey] boolValue])
+      base::debug::DumpWithoutCrashing();
+  }
+  [super observeValueForKeyPath:keyPath
+                       ofObject:object
+                         change:change
+                        context:context];
 }
 
 // Public methods.
@@ -392,6 +397,20 @@
 // regardless of their window style, so override that behavior here.
 - (BOOL)_canMiniaturize {
   return YES;
+}
+
+- (BOOL)respondsToSelector:(SEL)aSelector {
+  // If this window or its parent does not handle commands, remove it from the
+  // chain.
+  bool isCommandDispatch =
+      aSelector == @selector(commandDispatch:) ||
+      aSelector == @selector(commandDispatchUsingKeyModifiers:);
+  if (isCommandDispatch && _commandHandler == nil &&
+      [_commandDispatcher bubbleParent] == nil) {
+    return NO;
+  }
+
+  return [super respondsToSelector:aSelector];
 }
 
 // CommandDispatchingWindow implementation.

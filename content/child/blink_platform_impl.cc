@@ -17,13 +17,13 @@
 #include "base/rand_util.h"
 #include "base/run_loop.h"
 #include "base/sequence_checker.h"
-#include "base/single_thread_task_runner.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/lock.h"
 #include "base/system/sys_info.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "base/trace_event/memory_allocator_dump_guid.h"
@@ -69,7 +69,7 @@ namespace {
 struct DataResource {
   const char* name;
   int id;
-  ui::ScaleFactor scale_factor;
+  ui::ResourceScaleFactor scale_factor;
 };
 
 class NestedMessageLoopRunnerImpl
@@ -117,6 +117,11 @@ class ThreadSafeBrowserInterfaceBrokerProxyImpl
   ThreadSafeBrowserInterfaceBrokerProxyImpl()
       : process_host_(GetChildProcessHost()) {}
 
+  ThreadSafeBrowserInterfaceBrokerProxyImpl(
+      const ThreadSafeBrowserInterfaceBrokerProxyImpl&) = delete;
+  ThreadSafeBrowserInterfaceBrokerProxyImpl& operator=(
+      const ThreadSafeBrowserInterfaceBrokerProxyImpl&) = delete;
+
   // blink::ThreadSafeBrowserInterfaceBrokerProxy implementation:
   void GetInterfaceImpl(mojo::GenericPendingReceiver receiver) override {
     if (process_host_)
@@ -127,8 +132,6 @@ class ThreadSafeBrowserInterfaceBrokerProxyImpl
   ~ThreadSafeBrowserInterfaceBrokerProxyImpl() override = default;
 
   const mojo::SharedRemote<mojom::ChildProcessHost> process_host_;
-
-  DISALLOW_COPY_AND_ASSIGN(ThreadSafeBrowserInterfaceBrokerProxyImpl);
 };
 
 }  // namespace
@@ -150,8 +153,9 @@ void BlinkPlatformImpl::RecordAction(const blink::UserMetricsAction& name) {
     child_thread->RecordComputedAction(name.Action());
 }
 
-WebData BlinkPlatformImpl::GetDataResource(int resource_id,
-                                           ui::ScaleFactor scale_factor) {
+WebData BlinkPlatformImpl::GetDataResource(
+    int resource_id,
+    ui::ResourceScaleFactor scale_factor) {
   base::StringPiece resource =
       GetContentClient()->GetDataResource(resource_id, scale_factor);
   return WebData(resource.data(), resource.size());
@@ -159,7 +163,7 @@ WebData BlinkPlatformImpl::GetDataResource(int resource_id,
 
 WebData BlinkPlatformImpl::UncompressDataResource(int resource_id) {
   base::StringPiece resource =
-      GetContentClient()->GetDataResource(resource_id, ui::SCALE_FACTOR_NONE);
+      GetContentClient()->GetDataResource(resource_id, ui::kScaleFactorNone);
   if (resource.empty())
     return WebData(resource.data(), resource.size());
   std::string uncompressed;

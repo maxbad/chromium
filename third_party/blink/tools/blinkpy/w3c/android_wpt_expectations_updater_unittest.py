@@ -144,7 +144,7 @@ class AndroidWPTExpectationsUpdaterTest(LoggingTestCase):
             '\n'
             '# Add untriaged failures in this block\n'
             'crbug.com/1050754 external/wpt/bar.html [ Failure ]\n'
-            'crbug.com/1050754 external/wpt/new3.html [ Failure Crash ]\n'
+            'crbug.com/1050754 external/wpt/new3.html [ Crash Failure ]\n'
             '\n'
             '# This comment will not be deleted\n')
         self.assertEqual(content, _new_expectations)
@@ -197,7 +197,7 @@ class AndroidWPTExpectationsUpdaterTest(LoggingTestCase):
             if '--diff-filter=D' in cmd:
                 return 'external/wpt/foo2.html'
             if '--diff-filter=R' in cmd:
-                return 'C external/wpt/foo1.html external/wpt/foo3.html'
+                return 'C\texternal/wpt/foo1.html\texternal/wpt/foo3.html'
             if '--diff-filter=M' in cmd:
                 return 'external/wpt/bar.html'
             return ''

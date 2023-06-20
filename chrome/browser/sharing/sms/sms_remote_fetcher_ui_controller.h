@@ -10,7 +10,6 @@
 
 #include "base/callback.h"
 #include "base/callback_forward.h"
-#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/sharing/sharing_metrics.h"
 #include "chrome/browser/sharing/sharing_service.h"
@@ -61,7 +60,7 @@ class SmsRemoteFetcherUiController
       SharingSendMessageResult result,
       std::unique_ptr<chrome_browser_sharing::ResponseMessage> response);
 
-  base::OnceClosure FetchRemoteSms(const url::Origin& origin,
+  base::OnceClosure FetchRemoteSms(const std::vector<url::Origin>& origin_list,
                                    OnRemoteCallback callback);
 
  protected:

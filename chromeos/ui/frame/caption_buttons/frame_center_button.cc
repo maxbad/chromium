@@ -4,11 +4,16 @@
 
 #include "chromeos/ui/frame/caption_buttons/frame_center_button.h"
 
+#include <algorithm>
+
+#include "base/i18n/rtl.h"
+#include "base/numerics/safe_conversions.h"
 #include "chromeos/ui/vector_icons/vector_icons.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_tree_host.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/base/metadata/metadata_impl_macros.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/paint_vector_icon.h"
@@ -43,8 +48,9 @@ gfx::Size FrameCenterButton::GetMinimumSize() const {
   gfx::Size size = GetPreferredSize();
   // Similar to CalculatePreferredSize(), but allow the text width to be zero.
   size.set_width((sub_icon_image_
-                      ? icon_image().width() / 2 + kMarginBetweenContents +
-                            sub_icon_image_->width() / 2
+                      ? base::ClampCeil(icon_image().width() / 2.0f) +
+                            kMarginBetweenContents +
+                            base::ClampCeil(sub_icon_image_->width() / 2.0f)
                       : 0) +
                  views::kCaptionButtonWidth);
   return size;
@@ -78,7 +84,6 @@ void FrameCenterButton::SetText(absl::optional<std::u16string> text) {
     std::unique_ptr<gfx::RenderText> render_text =
         gfx::RenderText::CreateRenderText();
     render_text->SetFontList(views::CustomFrameView::GetWindowTitleFontList());
-    render_text->SetColor(GetButtonColor(GetBackgroundColor()));
     render_text->SetHorizontalAlignment(gfx::ALIGN_CENTER);
     render_text->SetVerticalAlignment(gfx::ALIGN_MIDDLE);
     text_ = std::move(render_text);
@@ -105,9 +110,11 @@ gfx::Size FrameCenterButton::CalculatePreferredSize() const {
   gfx::Size size = views::View::CalculatePreferredSize();
 
   size.set_width(
-      (text_ || sub_icon_image_ ? icon_image().width() / 2 : 0) +
+      (text_ || sub_icon_image_ ? base::ClampCeil(icon_image().width() / 2.0f)
+                                : 0) +
       (text_ ? kMarginBetweenContents + text_->GetStringSize().width() : 0) +
-      (sub_icon_image_ ? kMarginBetweenContents + sub_icon_image_->width() / 2
+      (sub_icon_image_ ? kMarginBetweenContents +
+                             base::ClampCeil(sub_icon_image_->width() / 2.0f)
                        : 0) +
       views::kCaptionButtonWidth);
   return size;
@@ -136,15 +143,24 @@ void FrameCenterButton::DrawIconContents(gfx::Canvas* canvas,
   // The width available is basically the same as width(), but we need to
   // adjust the corner radius on both sides from views::kCaptionButtonWidth to
   // the actual content radius.
-  int available_content_width = width() - views::kCaptionButtonWidth +
-                                icon_image().width() / 2 +
-                                (sub_icon_image_ ? sub_icon_image_->width() / 2
-                                                 : icon_image().width() / 2);
+  int available_content_width =
+      width() - views::kCaptionButtonWidth +
+      base::ClampCeil(icon_image().width() / 2.0f) +
+      (sub_icon_image_ ? base::ClampCeil(sub_icon_image_->width() / 2.0f)
+                       : base::ClampCeil(icon_image().width() / 2.0f));
   int content_width = std::min(full_content_width, available_content_width);
   int current_offset = (width() - content_width) / 2;
 
-  canvas->DrawImageInt(icon_image(), current_offset, y, flags);
-  current_offset += icon_image().width() + kMarginBetweenContents;
+  absl::optional<gfx::ImageSkia> left_icon = icon_image();
+  absl::optional<gfx::ImageSkia> right_icon = sub_icon_image_;
+  if (base::i18n::IsRTL())
+    std::swap(left_icon, right_icon);
+
+  if (left_icon) {
+    canvas->DrawImageInt(*left_icon, current_offset,
+                         (height() - left_icon->height()) / 2, flags);
+    current_offset += left_icon->width() + kMarginBetweenContents;
+  }
 
   if (text_) {
     int available_text_width =
@@ -156,13 +172,15 @@ void FrameCenterButton::DrawIconContents(gfx::Canvas* canvas,
         std::min(text_->GetStringSize().width(), available_text_width),
         text_->GetStringSize().height());
     text_->SetDisplayRect(text_bounds);
+    text_->SetColor(
+        SkColorSetA(GetButtonColor(GetBackgroundColor()), flags.getAlpha()));
     text_->Draw(canvas);
     current_offset += text_bounds.width() + kMarginBetweenContents;
   }
 
-  if (sub_icon_image_) {
-    canvas->DrawImageInt(*sub_icon_image_, current_offset,
-                         (height() - sub_icon_image_->height()) / 2, flags);
+  if (right_icon) {
+    canvas->DrawImageInt(*right_icon, current_offset,
+                         (height() - right_icon->height()) / 2, flags);
   }
 }
 
@@ -187,5 +205,8 @@ void FrameCenterButton::OnBackgroundColorChanged() {
   if (text_)
     text_->SetColor(GetButtonColor(GetBackgroundColor()));
 }
+
+BEGIN_METADATA(FrameCenterButton, views::FrameCaptionButton)
+END_METADATA
 
 }  // namespace chromeos

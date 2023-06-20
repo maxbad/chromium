@@ -76,7 +76,8 @@ class PlayerFrameMediator implements PlayerFrameViewDelegate, PlayerFrameMediato
 
     PlayerFrameMediator(PropertyModel model, PlayerCompositorDelegate compositorDelegate,
             PlayerGestureListener gestureListener, UnguessableToken frameGuid, Size contentSize,
-            int initialScrollX, int initialScrollY, Runnable initialViewportSizeAvailable) {
+            int initialScrollX, int initialScrollY, Runnable initialViewportSizeAvailable,
+            boolean shouldCompressBitmaps) {
         mBitmapScaleMatrix = new Matrix();
         mModel = model;
         mModel.set(PlayerFrameProperties.SCALE_MATRIX, mBitmapScaleMatrix);
@@ -89,9 +90,9 @@ class PlayerFrameMediator implements PlayerFrameViewDelegate, PlayerFrameMediato
         mGuid = frameGuid;
         mContentSize = contentSize;
         SequencedTaskRunner taskRunner =
-                PostTask.createSequencedTaskRunner(TaskTraits.USER_VISIBLE);
-        mBitmapStateController = new PlayerFrameBitmapStateController(
-                mGuid, mViewport, mContentSize, mCompositorDelegate, this, taskRunner);
+                PostTask.createSequencedTaskRunner(TaskTraits.THREAD_POOL_USER_VISIBLE);
+        mBitmapStateController = new PlayerFrameBitmapStateController(mGuid, mViewport,
+                mContentSize, mCompositorDelegate, this, taskRunner, shouldCompressBitmaps);
         mViewport.offset(initialScrollX, initialScrollY);
         mViewport.setScale(0f);
         mInitialViewportSizeAvailable = initialViewportSizeAvailable;
@@ -116,6 +117,7 @@ class PlayerFrameMediator implements PlayerFrameViewDelegate, PlayerFrameMediato
         final int top = Math.max(0,
                 Math.min(Math.round(mViewport.getTransY()),
                         Math.round(mContentSize.getHeight() * scaleFactor) - height));
+
         mViewport.setTrans(left, top);
         mViewport.setSize(width, height);
         final float oldScaleFactor = mViewport.getScale();
@@ -245,6 +247,10 @@ class PlayerFrameMediator implements PlayerFrameViewDelegate, PlayerFrameMediato
     @Override
     public void updateVisuals(boolean scaleUpdated) {
         final float scaleFactor = mViewport.getScale();
+
+        // Prevent updates before the viewport is ready.
+        if (scaleFactor == 0f || mViewport.getWidth() == 0 || mViewport.getHeight() == 0) return;
+
         PlayerFrameBitmapState activeLoadingState =
                 mBitmapStateController.getBitmapState(scaleUpdated);
 

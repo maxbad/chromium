@@ -14,6 +14,7 @@
 #include "base/containers/contains.h"
 #include "base/containers/fixed_flat_map.h"
 #include "base/feature_list.h"
+#include "base/strings/string_piece.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/policy/dlp/data_transfer_dlp_controller.h"
@@ -27,6 +28,7 @@
 #include "components/policy/core/common/policy_pref_names.h"
 #include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/pref_service.h"
+#include "components/reporting/client/report_queue_factory.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "url/gurl.h"
 #include "url/origin.h"
@@ -143,8 +145,8 @@ std::pair<DlpRulesManager::Level, absl::optional<T>> GetMaxJoinRestrictionLevel(
     const DlpRulesManager::Restriction restriction,
     const std::map<RuleId, T>& selected_rules,
     const std::map<DlpRulesManager::Restriction,
-                   std::map<RuleId, DlpRulesManager::Level>>&
-        restrictions_map) {
+                   std::map<RuleId, DlpRulesManager::Level>>& restrictions_map,
+    const bool ignore_allow = false) {
   auto restriction_it = restrictions_map.find(restriction);
   if (restriction_it == restrictions_map.end())
     return std::make_pair(DlpRulesManager::Level::kAllow, absl::nullopt);
@@ -158,6 +160,10 @@ std::pair<DlpRulesManager::Level, absl::optional<T>> GetMaxJoinRestrictionLevel(
   for (const auto& rule_pair : selected_rules) {
     const auto& restriction_rule_itr = restriction_rules.find(rule_pair.first);
     if (restriction_rule_itr == restriction_rules.end()) {
+      continue;
+    }
+    if (ignore_allow &&
+        restriction_rule_itr->second == DlpRulesManager::Level::kAllow) {
       continue;
     }
     if (restriction_rule_itr->second > max_level.first) {
@@ -200,6 +206,7 @@ DlpRulesManagerImpl::~DlpRulesManagerImpl() {
 void DlpRulesManagerImpl::RegisterPrefs(PrefRegistrySimple* registry) {
   registry->RegisterBooleanPref(policy_prefs::kDlpReportingEnabled, false);
   registry->RegisterListPref(policy_prefs::kDlpRulesList);
+  registry->RegisterIntegerPref(policy_prefs::kDlpClipboardCheckSizeLimit, 0);
 }
 
 DlpRulesManager::Level DlpRulesManagerImpl::IsRestricted(
@@ -216,6 +223,19 @@ DlpRulesManager::Level DlpRulesManagerImpl::IsRestricted(
 
   return GetMaxJoinRestrictionLevel(restriction, src_rules_map,
                                     restrictions_map_)
+      .first;
+}
+
+DlpRulesManager::Level DlpRulesManagerImpl::IsRestrictedByAnyRule(
+    const GURL& source,
+    Restriction restriction) const {
+  DCHECK(src_url_matcher_);
+
+  const RulesConditionsMap src_rules_map = MatchUrlAndGetRulesMapping(
+      source, src_url_matcher_.get(), src_url_rules_mapping_);
+
+  return GetMaxJoinRestrictionLevel(restriction, src_rules_map,
+                                    restrictions_map_, /*ignore_allow=*/true)
       .first;
 }
 
@@ -318,7 +338,8 @@ DlpRulesManager::Level DlpRulesManagerImpl::IsRestrictedComponent(
   return level_url_pair.first;
 }
 
-DlpRulesManagerImpl::DlpRulesManagerImpl(PrefService* local_state) {
+DlpRulesManagerImpl::DlpRulesManagerImpl(PrefService* local_state,
+                                         base::StringPiece dm_token_value) {
   pref_change_registrar_.Init(local_state);
   pref_change_registrar_.Add(
       policy_prefs::kDlpRulesList,
@@ -326,8 +347,12 @@ DlpRulesManagerImpl::DlpRulesManagerImpl(PrefService* local_state) {
                           base::Unretained(this)));
   OnPolicyUpdate();
 
-  if (IsReportingEnabled())
-    reporting_manager_ = std::make_unique<DlpReportingManager>();
+  if (!IsReportingEnabled())
+    return;
+  reporting_manager_ = std::make_unique<DlpReportingManager>();
+  reporting::ReportQueueFactory::Create(
+      dm_token_value, reporting::Destination::DLP_EVENTS,
+      reporting_manager_->GetReportQueueSetter());
 }
 
 bool DlpRulesManagerImpl::IsReportingEnabled() const {
@@ -367,6 +392,11 @@ std::string DlpRulesManagerImpl::GetSourceUrlPattern(const GURL& source_url,
     }
   }
   return std::string();
+}
+
+int DlpRulesManagerImpl::GetClipboardCheckSizeLimitInBytes() const {
+  return pref_change_registrar_.prefs()->GetInteger(
+      policy_prefs::kDlpClipboardCheckSizeLimit);
 }
 
 void DlpRulesManagerImpl::OnPolicyUpdate() {
@@ -481,7 +511,9 @@ void DlpRulesManagerImpl::OnPolicyUpdate() {
   }
 
   // TODO(crbug.com/1174501) Shutdown the daemon when restrictions are empty.
-  if (request_to_daemon.rules_size() > 0) {
+  if (request_to_daemon.rules_size() > 0 &&
+      base::FeatureList::IsEnabled(
+          features::kDataLeakPreventionFilesRestriction)) {
     DlpBooleanHistogram(dlp::kFilesDaemonStartedUMA, true);
     chromeos::DlpClient::Get()->SetDlpFilesPolicy(
         request_to_daemon, base::BindOnce(&OnSetDlpFilesPolicy));

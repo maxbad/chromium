@@ -2,14 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "chrome/browser/payments/android/payment_app_service_bridge.h"
-
 #include <vector>
 
 #include "base/bind.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/payments/content/android/payment_app_service_bridge.h"
 #include "components/payments/content/payment_manifest_web_data_service.h"
 #include "components/payments/content/payment_request_spec.h"
 #include "content/public/browser/web_contents.h"
@@ -27,7 +26,8 @@ class MockCallback {
   MockCallback() = default;
   MOCK_METHOD1(NotifyPaymentAppCreated, void(std::unique_ptr<PaymentApp> app));
   MOCK_METHOD1(NotifyCanMakePaymentCalculated, void(bool can_make_payment));
-  MOCK_METHOD1(NotifyPaymentAppCreationError, void(const std::string& error));
+  MOCK_METHOD2(NotifyPaymentAppCreationError,
+               void(const std::string& error, AppCreationFailureReason reason));
   MOCK_METHOD0(NotifyDoneCreatingPaymentApps, void(void));
   MOCK_METHOD0(SetCanMakePaymentEvenWithoutApps, void(void));
 };
@@ -138,8 +138,11 @@ TEST_P(PaymentAppServiceBridgeUnitTest, Smoke) {
   EXPECT_CALL(mock_callback, SetCanMakePaymentEvenWithoutApps());
   bridge->SetCanMakePaymentEvenWithoutApps();
 
-  EXPECT_CALL(mock_callback, NotifyPaymentAppCreationError("some error"));
-  bridge->OnPaymentAppCreationError("some error");
+  EXPECT_CALL(mock_callback,
+              NotifyPaymentAppCreationError("some error",
+                                            AppCreationFailureReason::UNKNOWN));
+  bridge->OnPaymentAppCreationError("some error",
+                                    AppCreationFailureReason::UNKNOWN);
 
   // NotifyDoneCreatingPaymentApps() is only called after
   // OnDoneCreatingPaymentApps() is called for each payment factories in

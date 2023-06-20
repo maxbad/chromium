@@ -10,7 +10,9 @@
 #include <utility>
 
 #include "base/check.h"
+#include "base/location.h"
 #include "base/logging.h"
+#include "base/task/sequenced_task_runner.h"
 #include "chromeos/services/libassistant/grpc/grpc_client_cq_tag.h"
 #include "chromeos/services/libassistant/grpc/grpc_util.h"
 #include "third_party/grpc/src/include/grpcpp/client_context.h"
@@ -31,6 +33,8 @@ namespace libassistant {
 struct StateConfig {
   StateConfig() = default;
   ~StateConfig() = default;
+  StateConfig(int32_t retries, int64_t timeout_in_ms)
+      : max_retries(retries), timeout_in_ms(timeout_in_ms) {}
 
   // The maximum retry attempts for the client call if it failed.
   int32_t max_retries = 0;
@@ -59,8 +63,10 @@ class RPCState : public GrpcClientCQTag {
            const grpc::string& method,
            const google::protobuf::MessageLite& request,
            ResponseCallback<grpc::Status, Response> done,
+           scoped_refptr<base::SequencedTaskRunner> callback_task_runner,
            StateConfig config)
       : async_cb_(std::move(done)),
+        callback_task_runner_(callback_task_runner),
         cq_(cq),
         stub_(channel),
         method_(method),
@@ -68,6 +74,8 @@ class RPCState : public GrpcClientCQTag {
         max_retries_(config.max_retries),
         wait_for_ready_(config.wait_for_ready) {
     DCHECK(cq);
+    DCHECK(callback_task_runner);
+
     grpc::Status s = GrpcSerializeProto(request, &request_buf_);
     if (!s.ok()) {
       LOG(ERROR) << "GrpcSerializeProto returned with non-ok status: "
@@ -103,6 +111,7 @@ class RPCState : public GrpcClientCQTag {
   }
 
   // GrpcClientCQTag overrides:
+  // Invoked from the completion queue thread.
   void OnCompleted(State state) override {
     VLOG(3) << "Completed call: " << method_;
 
@@ -137,6 +146,7 @@ class RPCState : public GrpcClientCQTag {
     }
   }
 
+  // Runs on the completion queue thread.
   void ParseAndCallDone() {
     if (!GrpcParseProto(&response_buf_, &async_response_)) {
       LOG(ERROR) << "RPC parse response failed.";
@@ -144,9 +154,13 @@ class RPCState : public GrpcClientCQTag {
     StateDone();
   }
 
+  // Run on the completion queue thread.
   void StateDone() {
     DCHECK(async_cb_);
-    std::move(async_cb_).Run(status_, std::move(async_response_));
+    // |async_cb_| must be invoked from its original sequence.
+    callback_task_runner_->PostTask(
+        FROM_HERE,
+        base::BindOnce(std::move(async_cb_), status_, async_response_));
 
     delete this;
   }
@@ -173,7 +187,9 @@ class RPCState : public GrpcClientCQTag {
   // Status of a RPC call. The status is OK if the call finished with no errors.
   grpc::Status status_;
 
+  // |async_cb_| must always be called from the main thread.
   ResponseCallback<grpc::Status, Response> async_cb_;
+  scoped_refptr<base::SequencedTaskRunner> callback_task_runner_;
 
   // An instance used by an async gRPC client to manage asynchronous rpc
   // operations. An RPC call is bound to a CompletionQueue when performed

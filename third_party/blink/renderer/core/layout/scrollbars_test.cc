@@ -16,6 +16,7 @@
 #include "third_party/blink/renderer/core/html/html_iframe_element.h"
 #include "third_party/blink/renderer/core/input/event_handler.h"
 #include "third_party/blink/renderer/core/inspector/dev_tools_emulator.h"
+#include "third_party/blink/renderer/core/layout/custom_scrollbar.h"
 #include "third_party/blink/renderer/core/layout/layout_custom_scrollbar_part.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/page/page.h"
@@ -199,7 +200,7 @@ class ScrollbarsTest : public PaintTestConfigurations, public SimTest {
 
   WebCoalescedInputEvent GenerateWheelGestureEvent(
       WebInputEvent::Type type,
-      const IntPoint& position,
+      const gfx::Point& position,
       ScrollOffset offset = ScrollOffset()) {
     return GenerateGestureEvent(type, WebGestureDevice::kTouchpad, position,
                                 offset);
@@ -207,7 +208,7 @@ class ScrollbarsTest : public PaintTestConfigurations, public SimTest {
 
   WebCoalescedInputEvent GenerateTouchGestureEvent(
       WebInputEvent::Type type,
-      const IntPoint& position,
+      const gfx::Point& position,
       ScrollOffset offset = ScrollOffset()) {
     return GenerateGestureEvent(type, WebGestureDevice::kTouchscreen, position,
                                 offset);
@@ -232,19 +233,19 @@ class ScrollbarsTest : public PaintTestConfigurations, public SimTest {
  protected:
   WebCoalescedInputEvent GenerateGestureEvent(WebInputEvent::Type type,
                                               WebGestureDevice device,
-                                              const IntPoint& position,
+                                              const gfx::Point& position,
                                               ScrollOffset offset) {
     WebGestureEvent event(type, WebInputEvent::kNoModifiers,
                           base::TimeTicks::Now(), device);
 
-    event.SetPositionInWidget(gfx::PointF(position.X(), position.Y()));
+    event.SetPositionInWidget(gfx::PointF(position.x(), position.y()));
 
     if (type == WebInputEvent::Type::kGestureScrollUpdate) {
-      event.data.scroll_update.delta_x = offset.Width();
-      event.data.scroll_update.delta_y = offset.Height();
+      event.data.scroll_update.delta_x = offset.width();
+      event.data.scroll_update.delta_y = offset.height();
     } else if (type == WebInputEvent::Type::kGestureScrollBegin) {
-      event.data.scroll_begin.delta_x_hint = offset.Width();
-      event.data.scroll_begin.delta_y_hint = offset.Height();
+      event.data.scroll_begin.delta_x_hint = offset.width();
+      event.data.scroll_begin.delta_y_hint = offset.height();
     }
     return WebCoalescedInputEvent(event, ui::LatencyInfo());
   }
@@ -372,9 +373,9 @@ TEST(ScrollbarsTestWithOwnWebViewHelper, ScrollbarSizeForUseZoomDSF) {
       device_scale);
   web_view_impl->MainFrameViewWidget()->Resize(gfx::Size(400, 300));
 
-  EXPECT_EQ(clampTo<int>(std::floor(horizontal_scrollbar * device_scale)),
+  EXPECT_EQ(ClampTo<int>(std::floor(horizontal_scrollbar * device_scale)),
             visual_viewport.LayerForHorizontalScrollbar()->bounds().height());
-  EXPECT_EQ(clampTo<int>(std::floor(vertical_scrollbar * device_scale)),
+  EXPECT_EQ(ClampTo<int>(std::floor(vertical_scrollbar * device_scale)),
             visual_viewport.LayerForVerticalScrollbar()->bounds().width());
 
   web_view_impl->MainFrameViewWidget()->SetDeviceScaleFactorForTesting(1.f);
@@ -448,7 +449,7 @@ TEST_P(ScrollbarsTest, TransparentBackgroundUsesDarkOverlayColorTheme) {
   ENABLE_OVERLAY_SCROLLBARS(true);
 
   WebView().MainFrameViewWidget()->Resize(gfx::Size(800, 600));
-  WebView().SetBaseBackgroundColor(SK_ColorTRANSPARENT);
+  WebView().SetPageBaseBackgroundColor(SK_ColorTRANSPARENT);
   SimRequest request("https://example.com/test.html", "text/html");
   LoadURL("https://example.com/test.html");
   request.Complete(R"HTML(
@@ -1480,8 +1481,7 @@ TEST_P(ScrollbarsTestWithVirtualTimer, TestNonCompositedOverlayScrollbarsFade) {
   ScopedMockOverlayScrollbars mock_overlay_scrollbars(true);
 
   TimeAdvance();
-  constexpr base::TimeDelta kMockOverlayFadeOutDelay =
-      base::TimeDelta::FromSeconds(5);
+  constexpr base::TimeDelta kMockOverlayFadeOutDelay = base::Seconds(5);
 
   ScrollbarTheme& theme = GetScrollbarTheme();
   ASSERT_TRUE(theme.IsMockTheme());
@@ -1577,11 +1577,7 @@ class ScrollbarAppearanceTest : public ScrollbarsTest {
 // Test both overlay and non-overlay scrollbars.
 INSTANTIATE_TEST_SUITE_P(All,
                          ScrollbarAppearanceTest,
-                         ::testing::Values(0,
-                                           kUseOverlayScrollbars,
-                                           kCompositeAfterPaint,
-                                           kUseOverlayScrollbars |
-                                               kCompositeAfterPaint));
+                         ::testing::Values(0, kUseOverlayScrollbars));
 
 // Make sure native scrollbar can change by Emulator.
 // Disable on Android since Android always enable OverlayScrollbar.
@@ -1728,7 +1724,7 @@ TEST_P(ScrollbarAppearanceTest, HugeScrollingThumbPosition) {
 
   Compositor().BeginFrame();
 
-  int scroll_y = scrollable_area->GetScrollOffset().Height();
+  int scroll_y = scrollable_area->GetScrollOffset().height();
   ASSERT_EQ(9999000, scroll_y);
 
   Scrollbar* scrollbar = scrollable_area->VerticalScrollbar();
@@ -2067,8 +2063,8 @@ TEST_P(ScrollbarsTest, AutosizeTest) {
     Compositor().BeginFrame();
     EXPECT_FALSE(layout_viewport->VerticalScrollbar());
     EXPECT_FALSE(layout_viewport->HorizontalScrollbar());
-    EXPECT_EQ(100, frame_view->FrameRect().Width());
-    EXPECT_EQ(150, frame_view->FrameRect().Height());
+    EXPECT_EQ(100, frame_view->FrameRect().width());
+    EXPECT_EQ(150, frame_view->FrameRect().height());
   }
 
   // Subsequent autosizes should be stable. Specifically checking the condition
@@ -2078,8 +2074,8 @@ TEST_P(ScrollbarsTest, AutosizeTest) {
     Compositor().BeginFrame();
     EXPECT_FALSE(layout_viewport->VerticalScrollbar());
     EXPECT_FALSE(layout_viewport->HorizontalScrollbar());
-    EXPECT_EQ(100, frame_view->FrameRect().Width());
-    EXPECT_EQ(150, frame_view->FrameRect().Height());
+    EXPECT_EQ(100, frame_view->FrameRect().width());
+    EXPECT_EQ(150, frame_view->FrameRect().height());
   }
 
   // Try again.
@@ -2088,8 +2084,8 @@ TEST_P(ScrollbarsTest, AutosizeTest) {
     Compositor().BeginFrame();
     EXPECT_FALSE(layout_viewport->VerticalScrollbar());
     EXPECT_FALSE(layout_viewport->HorizontalScrollbar());
-    EXPECT_EQ(100, frame_view->FrameRect().Width());
-    EXPECT_EQ(150, frame_view->FrameRect().Height());
+    EXPECT_EQ(100, frame_view->FrameRect().width());
+    EXPECT_EQ(150, frame_view->FrameRect().height());
   }
 }
 
@@ -2392,12 +2388,12 @@ TEST_P(ScrollbarsTest, UseCounterNegativeWhenThumbIsNotScrolledWithMouse) {
   // Scrolling the page with a mouse wheel won't trigger the UseCounter.
   WebView().MainFrameViewWidget()->HandleInputEvent(
       GenerateWheelGestureEvent(WebInputEvent::Type::kGestureScrollBegin,
-                                IntPoint(100, 100), ScrollOffset(0, -100)));
+                                gfx::Point(100, 100), ScrollOffset(0, -100)));
   WebView().MainFrameViewWidget()->HandleInputEvent(
       GenerateWheelGestureEvent(WebInputEvent::Type::kGestureScrollUpdate,
-                                IntPoint(100, 100), ScrollOffset(0, -100)));
+                                gfx::Point(100, 100), ScrollOffset(0, -100)));
   WebView().MainFrameViewWidget()->HandleInputEvent(GenerateWheelGestureEvent(
-      WebInputEvent::Type::kGestureScrollEnd, IntPoint(100, 100)));
+      WebInputEvent::Type::kGestureScrollEnd, gfx::Point(100, 100)));
   EXPECT_FALSE(GetDocument().IsUseCounted(
       WebFeature::kVerticalScrollbarThumbScrollingWithMouse));
 
@@ -2515,39 +2511,39 @@ TEST_P(ScrollbarsTest, UseCounterNegativeWhenThumbIsNotScrolledWithTouch) {
 
   // Tapping on the vertical scrollbar won't trigger the UseCounter.
   WebView().MainFrameViewWidget()->HandleInputEvent(GenerateTouchGestureEvent(
-      WebInputEvent::Type::kGestureTapDown, IntPoint(195, 175)));
+      WebInputEvent::Type::kGestureTapDown, gfx::Point(195, 175)));
   EXPECT_EQ(vertical_scrollbar->PressedPart(),
             ScrollbarPart::kForwardTrackPart);
   WebView().MainFrameViewWidget()->HandleInputEvent(GenerateTouchGestureEvent(
-      WebInputEvent::Type::kGestureTapCancel, IntPoint(195, 175)));
+      WebInputEvent::Type::kGestureTapCancel, gfx::Point(195, 175)));
   EXPECT_FALSE(GetDocument().IsUseCounted(
       WebFeature::kVerticalScrollbarThumbScrollingWithTouch));
 
   // Tapping on the horizontal scrollbar won't trigger the UseCounter.
   WebView().MainFrameViewWidget()->HandleInputEvent(GenerateTouchGestureEvent(
-      WebInputEvent::Type::kGestureTapDown, IntPoint(175, 195)));
+      WebInputEvent::Type::kGestureTapDown, gfx::Point(175, 195)));
   EXPECT_EQ(horizontal_scrollbar->PressedPart(),
             ScrollbarPart::kForwardTrackPart);
   WebView().MainFrameViewWidget()->HandleInputEvent(GenerateTouchGestureEvent(
-      WebInputEvent::Type::kGestureTapCancel, IntPoint(175, 195)));
+      WebInputEvent::Type::kGestureTapCancel, gfx::Point(175, 195)));
   EXPECT_FALSE(GetDocument().IsUseCounted(
       WebFeature::kHorizontalScrollbarThumbScrollingWithTouch));
 
   // Tapping outside the scrollbar and then releasing over the thumb of the
   // vertical scrollbar won't trigger the UseCounter.
   WebView().MainFrameViewWidget()->HandleInputEvent(GenerateTouchGestureEvent(
-      WebInputEvent::Type::kGestureTapDown, IntPoint(50, 50)));
+      WebInputEvent::Type::kGestureTapDown, gfx::Point(50, 50)));
   WebView().MainFrameViewWidget()->HandleInputEvent(GenerateTouchGestureEvent(
-      WebInputEvent::Type::kGestureTapCancel, IntPoint(195, 5)));
+      WebInputEvent::Type::kGestureTapCancel, gfx::Point(195, 5)));
   EXPECT_FALSE(GetDocument().IsUseCounted(
       WebFeature::kVerticalScrollbarThumbScrollingWithTouch));
 
   // Tapping outside the scrollbar and then releasing over the thumb of the
   // horizontal scrollbar won't trigger the UseCounter.
   WebView().MainFrameViewWidget()->HandleInputEvent(GenerateTouchGestureEvent(
-      WebInputEvent::Type::kGestureTapDown, IntPoint(50, 50)));
+      WebInputEvent::Type::kGestureTapDown, gfx::Point(50, 50)));
   WebView().MainFrameViewWidget()->HandleInputEvent(GenerateTouchGestureEvent(
-      WebInputEvent::Type::kGestureTapCancel, IntPoint(5, 195)));
+      WebInputEvent::Type::kGestureTapCancel, gfx::Point(5, 195)));
   EXPECT_FALSE(GetDocument().IsUseCounted(
       WebFeature::kHorizontalScrollbarThumbScrollingWithTouch));
 }
@@ -2581,19 +2577,19 @@ TEST_P(ScrollbarsTest, UseCounterPositiveWhenThumbIsScrolledWithTouch) {
 
   // Clicking the thumb on the vertical scrollbar will trigger the UseCounter.
   WebView().MainFrameViewWidget()->HandleInputEvent(GenerateTouchGestureEvent(
-      WebInputEvent::Type::kGestureTapDown, IntPoint(195, 5)));
+      WebInputEvent::Type::kGestureTapDown, gfx::Point(195, 5)));
   EXPECT_EQ(vertical_scrollbar->PressedPart(), ScrollbarPart::kThumbPart);
   WebView().MainFrameViewWidget()->HandleInputEvent(GenerateTouchGestureEvent(
-      WebInputEvent::Type::kGestureTapCancel, IntPoint(195, 5)));
+      WebInputEvent::Type::kGestureTapCancel, gfx::Point(195, 5)));
   EXPECT_TRUE(GetDocument().IsUseCounted(
       WebFeature::kVerticalScrollbarThumbScrollingWithTouch));
 
   // Clicking the thumb on the horizontal scrollbar will trigger the UseCounter.
   WebView().MainFrameViewWidget()->HandleInputEvent(GenerateTouchGestureEvent(
-      WebInputEvent::Type::kGestureTapDown, IntPoint(5, 195)));
+      WebInputEvent::Type::kGestureTapDown, gfx::Point(5, 195)));
   EXPECT_EQ(horizontal_scrollbar->PressedPart(), ScrollbarPart::kThumbPart);
   WebView().MainFrameViewWidget()->HandleInputEvent(GenerateTouchGestureEvent(
-      WebInputEvent::Type::kGestureTapCancel, IntPoint(5, 195)));
+      WebInputEvent::Type::kGestureTapCancel, gfx::Point(5, 195)));
   EXPECT_TRUE(GetDocument().IsUseCounted(
       WebFeature::kHorizontalScrollbarThumbScrollingWithTouch));
 }
@@ -2782,7 +2778,7 @@ TEST_P(ScrollbarsTestWithVirtualTimer,
 
   SimRequest request("https://example.com/test.html", "text/html");
   LoadURL("https://example.com/test.html");
-  RunTasksForPeriod(base::TimeDelta::FromMilliseconds(1000));
+  RunTasksForPeriod(base::Milliseconds(1000));
   request.Complete(R"HTML(
     <!DOCTYPE html>
     <style>
@@ -2830,15 +2826,15 @@ TEST_P(ScrollbarsTestWithVirtualTimer,
   ASSERT_EQ(scrollbar->PressedPart(), ScrollbarPart::kForwardButtonEndPart);
 
   // Wait for 2 delay.
-  RunTasksForPeriod(base::TimeDelta::FromMilliseconds(1000));
-  RunTasksForPeriod(base::TimeDelta::FromMilliseconds(1000));
+  RunTasksForPeriod(base::Milliseconds(1000));
+  RunTasksForPeriod(base::Milliseconds(1000));
   // Change #big size.
   MainFrame().ExecuteScript(WebScriptSource(
       "document.getElementById('big').style.height = '1000px';"));
   Compositor().BeginFrame();
 
-  RunTasksForPeriod(base::TimeDelta::FromMilliseconds(1000));
-  RunTasksForPeriod(base::TimeDelta::FromMilliseconds(1000));
+  RunTasksForPeriod(base::Milliseconds(1000));
+  RunTasksForPeriod(base::Milliseconds(1000));
 
   // Verify that the scrollbar autopress timer requested some scrolls via
   // gestures. The button was pressed for 2 seconds and the timer fires
@@ -2894,8 +2890,8 @@ class ScrollbarTrackMarginsTest : public ScrollbarsTest {
     ASSERT_TRUE(vertical_track_);
   }
 
-  LayoutCustomScrollbarPart* horizontal_track_ = nullptr;
-  LayoutCustomScrollbarPart* vertical_track_ = nullptr;
+  Persistent<LayoutCustomScrollbarPart> horizontal_track_;
+  Persistent<LayoutCustomScrollbarPart> vertical_track_;
 };
 
 INSTANTIATE_PAINT_TEST_SUITE_P(ScrollbarTrackMarginsTest);
@@ -3015,41 +3011,13 @@ TEST_P(ScrollbarsTest, ScrollbarGutterWithHorizontalTextAndClassicScrollbars) {
       #stable {
         scrollbar-gutter: stable;
       }
-      #stable_both {
-        scrollbar-gutter: stable both;
-      }
-      #always {
-        scrollbar-gutter: always;
-      }
-      #always_both {
-        scrollbar-gutter: always both;
-      }
-      #stable_force {
-        overflow: visible;
-        scrollbar-gutter: stable force;
-      }
-      #stable_both_force {
-        overflow: hidden;
-        scrollbar-gutter: stable both force;
-      }
-      #always_force {
-        overflow: visible;
-        scrollbar-gutter: always force;
-      }
-      #always_both_force {
-        overflow: hidden;
-        scrollbar-gutter: always both force;
+      #stable_both_edges {
+        scrollbar-gutter: stable both-edges;
       }
     </style>
     <div id="auto"></div>
     <div id="stable"></div>
-    <div id="stable_both"></div>
-    <div id="always"></div>
-    <div id="always_both"></div>
-    <div id="stable_force"></div>
-    <div id="stable_both_force"></div>
-    <div id="always_force"></div>
-    <div id="always_both_force"></div>
+    <div id="stable_both_edges"></div>
   )HTML");
   Compositor().BeginFrame();
   auto* auto_ = GetDocument().getElementById("auto");
@@ -3072,63 +3040,16 @@ TEST_P(ScrollbarsTest, ScrollbarGutterWithHorizontalTextAndClassicScrollbars) {
   EXPECT_EQ(box_stable_scrollbars.left, 0);
   EXPECT_EQ(box_stable_scrollbars.right, 15);
 
-  auto* stable_both = GetDocument().getElementById("stable_both");
-  auto* box_stable_both = stable_both->GetLayoutBox();
-  EXPECT_EQ(box_stable_both->OffsetWidth(), 100);
-  EXPECT_EQ(box_stable_both->ClientWidth(), 70);
-  NGPhysicalBoxStrut box_stable_both_scrollbars =
-      box_stable_both->ComputeScrollbars();
-  EXPECT_EQ(box_stable_both_scrollbars.top, 0);
-  EXPECT_EQ(box_stable_both_scrollbars.bottom, 0);
-  EXPECT_EQ(box_stable_both_scrollbars.left, 15);
-  EXPECT_EQ(box_stable_both_scrollbars.right, 15);
-
-  auto* always = GetDocument().getElementById("always");
-  auto* box_always = always->GetLayoutBox();
-  EXPECT_EQ(box_always->OffsetWidth(), 100);
-  EXPECT_EQ(box_always->ClientWidth(), 85);
-  NGPhysicalBoxStrut box_always_scrollbars = box_always->ComputeScrollbars();
-  EXPECT_EQ(box_always_scrollbars.top, 0);
-  EXPECT_EQ(box_always_scrollbars.bottom, 0);
-  EXPECT_EQ(box_always_scrollbars.left, 0);
-  EXPECT_EQ(box_always_scrollbars.right, 15);
-
-  auto* always_both = GetDocument().getElementById("always_both");
-  auto* box_always_both = always_both->GetLayoutBox();
-  EXPECT_EQ(box_always_both->OffsetWidth(), 100);
-  EXPECT_EQ(box_always_both->ClientWidth(), 70);
-  NGPhysicalBoxStrut box_always_both_scrollbars =
-      box_always_both->ComputeScrollbars();
-  EXPECT_EQ(box_always_both_scrollbars.top, 0);
-  EXPECT_EQ(box_always_both_scrollbars.bottom, 0);
-  EXPECT_EQ(box_always_both_scrollbars.left, 15);
-  EXPECT_EQ(box_always_both_scrollbars.right, 15);
-
-  auto* stable_force = GetDocument().getElementById("stable_force");
-  auto* box_stable_force = stable_force->GetLayoutBox();
-  EXPECT_EQ(box_stable_force->OffsetWidth(), 100);
-  EXPECT_EQ(box_stable_force->ClientWidth(), 85);
-  EXPECT_EQ(box_stable_force->ComputeScrollbars(), box_stable_scrollbars);
-
-  auto* stable_both_force = GetDocument().getElementById("stable_both_force");
-  auto* box_stable_both_force = stable_both_force->GetLayoutBox();
-  EXPECT_EQ(box_stable_both_force->OffsetWidth(), 100);
-  EXPECT_EQ(box_stable_both_force->ClientWidth(), 70);
-  EXPECT_EQ(box_stable_both_force->ComputeScrollbars(),
-            box_stable_both_scrollbars);
-
-  auto* always_force = GetDocument().getElementById("always_force");
-  auto* box_always_force = always_force->GetLayoutBox();
-  EXPECT_EQ(box_always_force->OffsetWidth(), 100);
-  EXPECT_EQ(box_always_force->ClientWidth(), 85);
-  EXPECT_EQ(box_always_force->ComputeScrollbars(), box_always_scrollbars);
-
-  auto* always_both_force = GetDocument().getElementById("always_both_force");
-  auto* box_always_both_force = always_both_force->GetLayoutBox();
-  EXPECT_EQ(box_always_both_force->OffsetWidth(), 100);
-  EXPECT_EQ(box_always_both_force->ClientWidth(), 70);
-  EXPECT_EQ(box_always_both_force->ComputeScrollbars(),
-            box_always_both_scrollbars);
+  auto* stable_both_edges = GetDocument().getElementById("stable_both_edges");
+  auto* box_stable_both_edges = stable_both_edges->GetLayoutBox();
+  EXPECT_EQ(box_stable_both_edges->OffsetWidth(), 100);
+  EXPECT_EQ(box_stable_both_edges->ClientWidth(), 70);
+  NGPhysicalBoxStrut box_stable_both_edges_scrollbars =
+      box_stable_both_edges->ComputeScrollbars();
+  EXPECT_EQ(box_stable_both_edges_scrollbars.top, 0);
+  EXPECT_EQ(box_stable_both_edges_scrollbars.bottom, 0);
+  EXPECT_EQ(box_stable_both_edges_scrollbars.left, 15);
+  EXPECT_EQ(box_stable_both_edges_scrollbars.right, 15);
 }
 
 // Test scrollbar-gutter values with classic scrollbars and vertical-rl text.
@@ -3154,41 +3075,13 @@ TEST_P(ScrollbarsTest, ScrollbarGutterWithVerticalTextAndClassicScrollbars) {
       #stable {
         scrollbar-gutter: stable;
       }
-      #stable_both {
-        scrollbar-gutter: stable both;
-      }
-      #always {
-        scrollbar-gutter: always;
-      }
-      #always_both {
-        scrollbar-gutter: always both;
-      }
-      #stable_force {
-        overflow: hidden;
-        scrollbar-gutter: stable force;
-      }
-      #stable_both_force {
-        overflow: visible;
-        scrollbar-gutter: stable both force;
-      }
-      #always_force {
-        overflow: hidden;
-        scrollbar-gutter: always force;
-      }
-      #always_both_force {
-        overflow: visible;
-        scrollbar-gutter: always both force;
+      #stable_both_edges {
+        scrollbar-gutter: stable both-edges;
       }
     </style>
     <div id="auto"></div>
     <div id="stable"></div>
-    <div id="stable_both"></div>
-    <div id="always"></div>
-    <div id="always_both"></div>
-    <div id="stable_force"></div>
-    <div id="stable_both_force"></div>
-    <div id="always_force"></div>
-    <div id="always_both_force"></div>
+    <div id="stable_both_edges"></div>
   )HTML");
   Compositor().BeginFrame();
   auto* auto_ = GetDocument().getElementById("auto");
@@ -3211,63 +3104,16 @@ TEST_P(ScrollbarsTest, ScrollbarGutterWithVerticalTextAndClassicScrollbars) {
   EXPECT_EQ(box_stable_scrollbars.left, 0);
   EXPECT_EQ(box_stable_scrollbars.right, 0);
 
-  auto* stable_both = GetDocument().getElementById("stable_both");
-  auto* box_stable_both = stable_both->GetLayoutBox();
-  EXPECT_EQ(box_stable_both->OffsetHeight(), 100);
-  EXPECT_EQ(box_stable_both->ClientHeight(), 70);
-  NGPhysicalBoxStrut box_stable_both_scrollbars =
-      box_stable_both->ComputeScrollbars();
-  EXPECT_EQ(box_stable_both_scrollbars.top, 15);
-  EXPECT_EQ(box_stable_both_scrollbars.bottom, 15);
-  EXPECT_EQ(box_stable_both_scrollbars.left, 0);
-  EXPECT_EQ(box_stable_both_scrollbars.right, 0);
-
-  auto* always = GetDocument().getElementById("always");
-  auto* box_always = always->GetLayoutBox();
-  EXPECT_EQ(box_always->OffsetHeight(), 100);
-  EXPECT_EQ(box_always->ClientHeight(), 85);
-  NGPhysicalBoxStrut box_always_scrollbars = box_always->ComputeScrollbars();
-  EXPECT_EQ(box_always_scrollbars.top, 0);
-  EXPECT_EQ(box_always_scrollbars.bottom, 15);
-  EXPECT_EQ(box_always_scrollbars.left, 0);
-  EXPECT_EQ(box_always_scrollbars.right, 0);
-
-  auto* always_both = GetDocument().getElementById("always_both");
-  auto* box_always_both = always_both->GetLayoutBox();
-  EXPECT_EQ(box_always_both->OffsetHeight(), 100);
-  EXPECT_EQ(box_always_both->ClientHeight(), 70);
-  NGPhysicalBoxStrut box_always_both_scrollbars =
-      box_always_both->ComputeScrollbars();
-  EXPECT_EQ(box_always_both_scrollbars.top, 15);
-  EXPECT_EQ(box_always_both_scrollbars.bottom, 15);
-  EXPECT_EQ(box_always_both_scrollbars.left, 0);
-  EXPECT_EQ(box_always_both_scrollbars.right, 0);
-
-  auto* stable_force = GetDocument().getElementById("stable_force");
-  auto* box_stable_force = stable_force->GetLayoutBox();
-  EXPECT_EQ(box_stable_force->OffsetHeight(), 100);
-  EXPECT_EQ(box_stable_force->ClientHeight(), 85);
-  EXPECT_EQ(box_stable_force->ComputeScrollbars(), box_stable_scrollbars);
-
-  auto* stable_both_force = GetDocument().getElementById("stable_both_force");
-  auto* box_stable_both_force = stable_both_force->GetLayoutBox();
-  EXPECT_EQ(box_stable_both_force->OffsetHeight(), 100);
-  EXPECT_EQ(box_stable_both_force->ClientHeight(), 70);
-  EXPECT_EQ(box_stable_both_force->ComputeScrollbars(),
-            box_stable_both_scrollbars);
-
-  auto* always_force = GetDocument().getElementById("always_force");
-  auto* box_always_force = always_force->GetLayoutBox();
-  EXPECT_EQ(box_always_force->OffsetHeight(), 100);
-  EXPECT_EQ(box_always_force->ClientHeight(), 85);
-  EXPECT_EQ(box_always_force->ComputeScrollbars(), box_always_scrollbars);
-
-  auto* always_both_force = GetDocument().getElementById("always_both_force");
-  auto* box_always_both_force = always_both_force->GetLayoutBox();
-  EXPECT_EQ(box_always_both_force->OffsetHeight(), 100);
-  EXPECT_EQ(box_always_both_force->ClientHeight(), 70);
-  EXPECT_EQ(box_always_both_force->ComputeScrollbars(),
-            box_always_both_scrollbars);
+  auto* stable_both_edges = GetDocument().getElementById("stable_both_edges");
+  auto* box_stable_both_edges = stable_both_edges->GetLayoutBox();
+  EXPECT_EQ(box_stable_both_edges->OffsetHeight(), 100);
+  EXPECT_EQ(box_stable_both_edges->ClientHeight(), 70);
+  NGPhysicalBoxStrut box_stable_both_edges_scrollbars =
+      box_stable_both_edges->ComputeScrollbars();
+  EXPECT_EQ(box_stable_both_edges_scrollbars.top, 15);
+  EXPECT_EQ(box_stable_both_edges_scrollbars.bottom, 15);
+  EXPECT_EQ(box_stable_both_edges_scrollbars.left, 0);
+  EXPECT_EQ(box_stable_both_edges_scrollbars.right, 0);
 }
 
 // Test scrollbar-gutter values with overlay scrollbars and horizontal-tb text.
@@ -3294,41 +3140,13 @@ TEST_P(ScrollbarsTest, ScrollbarGutterWithHorizontalTextAndOverlayScrollbars) {
       #stable {
         scrollbar-gutter: stable;
       }
-      #stable_both {
-        scrollbar-gutter: stable both;
-      }
-      #always {
-        scrollbar-gutter: always;
-      }
-      #always_both {
-        scrollbar-gutter: always both;
-      }
-      #stable_force {
-        overflow: hidden;
-        scrollbar-gutter: stable force;
-      }
-      #stable_both_force {
-        overflow: visible;
-        scrollbar-gutter: stable both force;
-      }
-      #always_force {
-        overflow: hidden;
-        scrollbar-gutter: always force;
-      }
-      #always_both_force {
-        overflow: visible;
-        scrollbar-gutter: always both force;
+      #stable_both_edges {
+        scrollbar-gutter: stable both-edges;
       }
     </style>
     <div id="auto"></div>
     <div id="stable"></div>
-    <div id="stable_both"></div>
-    <div id="always"></div>
-    <div id="always_both"></div>
-    <div id="stable_force"></div>
-    <div id="stable_both_force"></div>
-    <div id="always_force"></div>
-    <div id="always_both_force"></div>
+    <div id="stable_both_edges"></div>
   )HTML");
   Compositor().BeginFrame();
   auto* auto_ = GetDocument().getElementById("auto");
@@ -3351,69 +3169,16 @@ TEST_P(ScrollbarsTest, ScrollbarGutterWithHorizontalTextAndOverlayScrollbars) {
   EXPECT_EQ(box_stable_scrollbars.left, 0);
   EXPECT_EQ(box_stable_scrollbars.right, 0);
 
-  auto* stable_both = GetDocument().getElementById("stable_both");
-  auto* box_stable_both = stable_both->GetLayoutBox();
-  EXPECT_EQ(box_stable_both->OffsetWidth(), 100);
-  EXPECT_EQ(box_stable_both->ClientWidth(), 100);
-  NGPhysicalBoxStrut box_stable_both_scrollbars =
-      box_stable_both->ComputeScrollbars();
-  EXPECT_EQ(box_stable_both_scrollbars.top, 0);
-  EXPECT_EQ(box_stable_both_scrollbars.bottom, 0);
-  EXPECT_EQ(box_stable_both_scrollbars.left, 0);
-  EXPECT_EQ(box_stable_both_scrollbars.right, 0);
-
-  // The size of overlay scrollbars is different between operating systems,
-  // which is why we use these relative comparisons.
-
-  auto* always = GetDocument().getElementById("always");
-  auto* box_always = always->GetLayoutBox();
-  EXPECT_EQ(box_always->OffsetWidth(), 100);
-  EXPECT_LT(box_always->ClientWidth(), box_auto->ClientWidth());
-  NGPhysicalBoxStrut box_always_scrollbars = box_always->ComputeScrollbars();
-  EXPECT_EQ(box_always_scrollbars.top, 0);
-  EXPECT_EQ(box_always_scrollbars.bottom, 0);
-  EXPECT_EQ(box_always_scrollbars.left, 0);
-  // scrollbar gutter
-  EXPECT_GT(box_always_scrollbars.right, 0);
-
-  auto* always_both = GetDocument().getElementById("always_both");
-  auto* box_always_both = always_both->GetLayoutBox();
-  EXPECT_EQ(box_always_both->OffsetWidth(), 100);
-  EXPECT_LT(box_always_both->ClientWidth(), box_always->ClientWidth());
-  NGPhysicalBoxStrut box_always_both_scrollbars =
-      box_always_both->ComputeScrollbars();
-  EXPECT_EQ(box_always_both_scrollbars.top, 0);
-  EXPECT_EQ(box_always_both_scrollbars.bottom, 0);
-  // scrollbar gutters
-  EXPECT_GT(box_always_both_scrollbars.left, 0);
-  EXPECT_GT(box_always_both_scrollbars.right, 0);
-
-  auto* stable_force = GetDocument().getElementById("stable_force");
-  auto* box_stable_force = stable_force->GetLayoutBox();
-  EXPECT_EQ(box_stable_force->OffsetWidth(), 100);
-  EXPECT_EQ(box_stable_force->ClientWidth(), 100);
-  EXPECT_EQ(box_stable_force->ComputeScrollbars(), box_stable_scrollbars);
-
-  auto* stable_both_force = GetDocument().getElementById("stable_both_force");
-  auto* box_stable_both_force = stable_both_force->GetLayoutBox();
-  EXPECT_EQ(box_stable_both_force->OffsetWidth(), 100);
-  EXPECT_EQ(box_stable_both_force->ClientWidth(), 100);
-  EXPECT_EQ(box_stable_both_force->ComputeScrollbars(),
-            box_stable_both_scrollbars);
-
-  auto* always_force = GetDocument().getElementById("always_force");
-  auto* box_always_force = always_force->GetLayoutBox();
-  EXPECT_EQ(box_always_force->OffsetWidth(), 100);
-  EXPECT_LT(box_always_force->ClientWidth(), box_auto->ClientWidth());
-  EXPECT_EQ(box_always_force->ComputeScrollbars(), box_always_scrollbars);
-
-  auto* always_both_force = GetDocument().getElementById("always_both_force");
-  auto* box_always_both_force = always_both_force->GetLayoutBox();
-  EXPECT_EQ(box_always_both_force->OffsetWidth(), 100);
-  EXPECT_LT(box_always_both_force->ClientWidth(),
-            box_always_force->ClientWidth());
-  EXPECT_EQ(box_always_both_force->ComputeScrollbars(),
-            box_always_both_scrollbars);
+  auto* stable_both_edges = GetDocument().getElementById("stable_both_edges");
+  auto* box_stable_both_edges = stable_both_edges->GetLayoutBox();
+  EXPECT_EQ(box_stable_both_edges->OffsetWidth(), 100);
+  EXPECT_EQ(box_stable_both_edges->ClientWidth(), 100);
+  NGPhysicalBoxStrut box_stable_both_edges_scrollbars =
+      box_stable_both_edges->ComputeScrollbars();
+  EXPECT_EQ(box_stable_both_edges_scrollbars.top, 0);
+  EXPECT_EQ(box_stable_both_edges_scrollbars.bottom, 0);
+  EXPECT_EQ(box_stable_both_edges_scrollbars.left, 0);
+  EXPECT_EQ(box_stable_both_edges_scrollbars.right, 0);
 }
 
 // Test scrollbar-gutter values with overlay scrollbars and vertical-rl text.
@@ -3440,41 +3205,13 @@ TEST_P(ScrollbarsTest, ScrollbarGutterWithVerticalTextAndOverlayScrollbars) {
       #stable {
         scrollbar-gutter: stable;
       }
-      #stable_both {
-        scrollbar-gutter: stable both;
-      }
-      #always {
-        scrollbar-gutter: always;
-      }
-      #always_both {
-        scrollbar-gutter: always both;
-      }
-      #stable_force {
-        overflow: visible;
-        scrollbar-gutter: stable force;
-      }
-      #stable_both_force {
-        overflow: hidden;
-        scrollbar-gutter: stable both force;
-      }
-      #always_force {
-        overflow: visible;
-        scrollbar-gutter: always force;
-      }
-      #always_both_force {
-        overflow: hidden;
-        scrollbar-gutter: always both force;
+      #stable_both_edges {
+        scrollbar-gutter: stable both-edges;
       }
     </style>
     <div id="auto"></div>
     <div id="stable"></div>
-    <div id="stable_both"></div>
-    <div id="always"></div>
-    <div id="always_both"></div>
-    <div id="stable_force"></div>
-    <div id="stable_both_force"></div>
-    <div id="always_force"></div>
-    <div id="always_both_force"></div>
+    <div id="stable_both_edges"></div>
   )HTML");
   Compositor().BeginFrame();
   auto* auto_ = GetDocument().getElementById("auto");
@@ -3497,71 +3234,21 @@ TEST_P(ScrollbarsTest, ScrollbarGutterWithVerticalTextAndOverlayScrollbars) {
   EXPECT_EQ(box_stable_scrollbars.left, 0);
   EXPECT_EQ(box_stable_scrollbars.right, 0);
 
-  auto* stable_both = GetDocument().getElementById("stable_both");
-  auto* box_stable_both = stable_both->GetLayoutBox();
-  EXPECT_EQ(box_stable_both->OffsetHeight(), 100);
-  EXPECT_EQ(box_stable_both->ClientHeight(), 100);
-  NGPhysicalBoxStrut box_stable_both_scrollbars =
-      box_stable_both->ComputeScrollbars();
-  EXPECT_EQ(box_stable_both_scrollbars.top, 0);
-  EXPECT_EQ(box_stable_both_scrollbars.bottom, 0);
-  EXPECT_EQ(box_stable_both_scrollbars.left, 0);
-  EXPECT_EQ(box_stable_both_scrollbars.right, 0);
-
-  auto* always = GetDocument().getElementById("always");
-  auto* box_always = always->GetLayoutBox();
-  EXPECT_EQ(box_always->OffsetHeight(), 100);
-  EXPECT_LT(box_always->ClientHeight(), box_auto->ClientHeight());
-  NGPhysicalBoxStrut box_always_scrollbars = box_always->ComputeScrollbars();
-  EXPECT_EQ(box_always_scrollbars.top, 0);
-  // scrollbar gutter
-  EXPECT_GT(box_always_scrollbars.bottom, 0);
-  EXPECT_EQ(box_always_scrollbars.left, 0);
-  EXPECT_EQ(box_always_scrollbars.right, 0);
-
-  auto* always_both = GetDocument().getElementById("always_both");
-  auto* box_always_both = always_both->GetLayoutBox();
-  EXPECT_EQ(box_always_both->OffsetHeight(), 100);
-  EXPECT_LT(box_always_both->ClientHeight(), box_always->ClientHeight());
-  NGPhysicalBoxStrut box_always_both_scrollbars =
-      box_always_both->ComputeScrollbars();
-  // scrollbar gutters
-  EXPECT_GT(box_always_both_scrollbars.top, 0);
-  EXPECT_GT(box_always_both_scrollbars.bottom, 0);
-  EXPECT_EQ(box_always_both_scrollbars.left, 0);
-  EXPECT_EQ(box_always_both_scrollbars.right, 0);
-
-  auto* stable_force = GetDocument().getElementById("stable_force");
-  auto* box_stable_force = stable_force->GetLayoutBox();
-  EXPECT_EQ(box_stable_force->OffsetHeight(), 100);
-  EXPECT_EQ(box_stable_force->ClientHeight(), 100);
-  EXPECT_EQ(box_stable_force->ComputeScrollbars(), box_stable_scrollbars);
-
-  auto* stable_both_force = GetDocument().getElementById("stable_both_force");
-  auto* box_stable_both_force = stable_both_force->GetLayoutBox();
-  EXPECT_EQ(box_stable_both_force->OffsetHeight(), 100);
-  EXPECT_EQ(box_stable_both_force->ClientHeight(), 100);
-  EXPECT_EQ(box_stable_both_force->ComputeScrollbars(),
-            box_stable_both_scrollbars);
-
-  // TODO this fails because overflow is "visible"
-  auto* always_force = GetDocument().getElementById("always_force");
-  auto* box_always_force = always_force->GetLayoutBox();
-  EXPECT_EQ(box_always_force->OffsetHeight(), 100);
-  EXPECT_LT(box_always_force->ClientHeight(), box_auto->ClientHeight());
-  EXPECT_EQ(box_always_force->ComputeScrollbars(), box_always_scrollbars);
-
-  auto* always_both_force = GetDocument().getElementById("always_both_force");
-  auto* box_always_both_force = always_both_force->GetLayoutBox();
-  EXPECT_EQ(box_always_both_force->OffsetHeight(), 100);
-  EXPECT_LT(box_always_both_force->ClientHeight(),
-            box_always_force->ClientHeight());
-  EXPECT_EQ(box_always_both_force->ComputeScrollbars(),
-            box_always_both_scrollbars);
+  auto* stable_both_edges = GetDocument().getElementById("stable_both_edges");
+  auto* box_stable_both_edges = stable_both_edges->GetLayoutBox();
+  EXPECT_EQ(box_stable_both_edges->OffsetHeight(), 100);
+  EXPECT_EQ(box_stable_both_edges->ClientHeight(), 100);
+  NGPhysicalBoxStrut box_stable_both_edges_scrollbars =
+      box_stable_both_edges->ComputeScrollbars();
+  EXPECT_EQ(box_stable_both_edges_scrollbars.top, 0);
+  EXPECT_EQ(box_stable_both_edges_scrollbars.bottom, 0);
+  EXPECT_EQ(box_stable_both_edges_scrollbars.left, 0);
+  EXPECT_EQ(box_stable_both_edges_scrollbars.right, 0);
 }
 
-// Test the additional gutter created by the "both" keyword of scrollbar-gutter.
-TEST_P(ScrollbarsTest, ScrollbarGutterBothKeywordWithClassicScrollbars) {
+// Test events on the additional gutter created by the "both-edges" keyword of
+// scrollbar-gutter.
+TEST_P(ScrollbarsTest, ScrollbarGutterBothEdgesKeywordWithClassicScrollbars) {
   // This test requires that scrollbars take up space.
   ENABLE_OVERLAY_SCROLLBARS(false);
 
@@ -3575,7 +3262,7 @@ TEST_P(ScrollbarsTest, ScrollbarGutterBothKeywordWithClassicScrollbars) {
         margin: 0;
       }
       #container {
-        scrollbar-gutter: always both;
+        scrollbar-gutter: stable both-edges;
         width: 200px;
         height: 200px;
         overflow: auto;
@@ -3617,24 +3304,24 @@ TEST_P(ScrollbarsTest, ScrollbarGutterBothKeywordWithClassicScrollbars) {
   // Scroll down.
   WebView().MainFrameViewWidget()->HandleInputEvent(
       GenerateWheelGestureEvent(WebInputEvent::Type::kGestureScrollBegin,
-                                IntPoint(5, 5), ScrollOffset(0, -100)));
+                                gfx::Point(5, 5), ScrollOffset(0, -100)));
   WebView().MainFrameViewWidget()->HandleInputEvent(
       GenerateWheelGestureEvent(WebInputEvent::Type::kGestureScrollUpdate,
-                                IntPoint(5, 5), ScrollOffset(0, -100)));
+                                gfx::Point(5, 5), ScrollOffset(0, -100)));
   WebView().MainFrameViewWidget()->HandleInputEvent(GenerateWheelGestureEvent(
-      WebInputEvent::Type::kGestureScrollEnd, IntPoint(5, 5)));
+      WebInputEvent::Type::kGestureScrollEnd, gfx::Point(5, 5)));
 
   EXPECT_EQ(container->scrollTop(), 100);
 
   // Scroll up.
   WebView().MainFrameViewWidget()->HandleInputEvent(
       GenerateWheelGestureEvent(WebInputEvent::Type::kGestureScrollBegin,
-                                IntPoint(5, 5), ScrollOffset(0, 100)));
+                                gfx::Point(5, 5), ScrollOffset(0, 100)));
   WebView().MainFrameViewWidget()->HandleInputEvent(
       GenerateWheelGestureEvent(WebInputEvent::Type::kGestureScrollUpdate,
-                                IntPoint(5, 5), ScrollOffset(0, 100)));
+                                gfx::Point(5, 5), ScrollOffset(0, 100)));
   WebView().MainFrameViewWidget()->HandleInputEvent(GenerateWheelGestureEvent(
-      WebInputEvent::Type::kGestureScrollEnd, IntPoint(195, 5)));
+      WebInputEvent::Type::kGestureScrollEnd, gfx::Point(195, 5)));
 
   EXPECT_EQ(container->scrollTop(), 0);
 }

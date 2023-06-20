@@ -19,15 +19,16 @@
 #include "base/files/platform_file.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/task/task_runner.h"
 #include "base/task/task_traits.h"
 #include "base/task/thread_pool.h"
-#include "base/task_runner.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_task_runner_handle.h"
+#include "components/reporting/compression/compression_module.h"
 #include "components/reporting/encryption/encryption_module_interface.h"
 #include "components/reporting/encryption/primitives.h"
 #include "components/reporting/encryption/verification.h"
-#include "components/reporting/proto/record.pb.h"
+#include "components/reporting/proto/synced/record.pb.h"
 #include "components/reporting/storage/storage_configuration.h"
 #include "components/reporting/storage/storage_queue.h"
 #include "components/reporting/storage/storage_uploader_interface.h"
@@ -44,6 +45,11 @@ namespace {
 // Parameters of individual queues.
 // TODO(b/159352842): Deliver space and upload parameters from outside.
 
+constexpr base::FilePath::CharType kSecurityQueueSubdir[] =
+    FILE_PATH_LITERAL("Security");
+constexpr base::FilePath::CharType kSecurityQueuePrefix[] =
+    FILE_PATH_LITERAL("P_Security");
+
 constexpr base::FilePath::CharType kImmediateQueueSubdir[] =
     FILE_PATH_LITERAL("Immediate");
 constexpr base::FilePath::CharType kImmediateQueuePrefix[] =
@@ -53,22 +59,19 @@ constexpr base::FilePath::CharType kFastBatchQueueSubdir[] =
     FILE_PATH_LITERAL("FastBatch");
 constexpr base::FilePath::CharType kFastBatchQueuePrefix[] =
     FILE_PATH_LITERAL("P_FastBatch");
-constexpr base::TimeDelta kFastBatchUploadPeriod =
-    base::TimeDelta::FromSeconds(1);
+constexpr base::TimeDelta kFastBatchUploadPeriod = base::Seconds(1);
 
 constexpr base::FilePath::CharType kSlowBatchQueueSubdir[] =
     FILE_PATH_LITERAL("SlowBatch");
 constexpr base::FilePath::CharType kSlowBatchQueuePrefix[] =
     FILE_PATH_LITERAL("P_SlowBatch");
-constexpr base::TimeDelta kSlowBatchUploadPeriod =
-    base::TimeDelta::FromSeconds(20);
+constexpr base::TimeDelta kSlowBatchUploadPeriod = base::Seconds(20);
 
 constexpr base::FilePath::CharType kBackgroundQueueSubdir[] =
     FILE_PATH_LITERAL("Background");
 constexpr base::FilePath::CharType kBackgroundQueuePrefix[] =
     FILE_PATH_LITERAL("P_Background");
-constexpr base::TimeDelta kBackgroundQueueUploadPeriod =
-    base::TimeDelta::FromMinutes(1);
+constexpr base::TimeDelta kBackgroundQueueUploadPeriod = base::Minutes(1);
 
 constexpr base::FilePath::CharType kManualQueueSubdir[] =
     FILE_PATH_LITERAL("Manual");
@@ -79,34 +82,55 @@ constexpr base::TimeDelta kManualUploadPeriod = base::TimeDelta::Max();
 constexpr base::FilePath::CharType kEncryptionKeyFilePrefix[] =
     FILE_PATH_LITERAL("EncryptionKey.");
 const int32_t kEncryptionKeyMaxFileSize = 256;
+const uint64_t kQueueSize = 2 * 1024LL * 1024LL;
+
+// Failed upload retry delay: if an upload fails and there are no more incoming
+// events, collected events will not get uploaded for an indefinite time (see
+// b/192666219).
+constexpr base::TimeDelta kFailedUploadRetryDelay = base::Seconds(1);
 
 // Returns vector of <priority, queue_options> for all expected queues in
 // Storage. Queues are all located under the given root directory.
 std::vector<std::pair<Priority, QueueOptions>> ExpectedQueues(
     const StorageOptions& options) {
   return {
-      std::make_pair(IMMEDIATE, QueueOptions(options)
-                                    .set_subdirectory(kImmediateQueueSubdir)
-                                    .set_file_prefix(kImmediateQueuePrefix)),
+      std::make_pair(SECURITY,
+                     QueueOptions(options)
+                         .set_subdirectory(kSecurityQueueSubdir)
+                         .set_file_prefix(kSecurityQueuePrefix)
+                         .set_upload_retry_delay(kFailedUploadRetryDelay)
+                         .set_max_single_file_size(kQueueSize)),
+      std::make_pair(IMMEDIATE,
+                     QueueOptions(options)
+                         .set_subdirectory(kImmediateQueueSubdir)
+                         .set_file_prefix(kImmediateQueuePrefix)
+                         .set_upload_retry_delay(kFailedUploadRetryDelay)
+                         .set_max_single_file_size(kQueueSize)),
       std::make_pair(FAST_BATCH,
                      QueueOptions(options)
                          .set_subdirectory(kFastBatchQueueSubdir)
                          .set_file_prefix(kFastBatchQueuePrefix)
-                         .set_upload_period(kFastBatchUploadPeriod)),
+                         .set_upload_period(kFastBatchUploadPeriod)
+                         .set_max_single_file_size(kQueueSize)),
       std::make_pair(SLOW_BATCH,
                      QueueOptions(options)
                          .set_subdirectory(kSlowBatchQueueSubdir)
                          .set_file_prefix(kSlowBatchQueuePrefix)
-                         .set_upload_period(kSlowBatchUploadPeriod)),
+                         .set_upload_period(kSlowBatchUploadPeriod)
+                         .set_max_single_file_size(kQueueSize)),
       std::make_pair(BACKGROUND_BATCH,
                      QueueOptions(options)
                          .set_subdirectory(kBackgroundQueueSubdir)
                          .set_file_prefix(kBackgroundQueuePrefix)
-                         .set_upload_period(kBackgroundQueueUploadPeriod)),
-      std::make_pair(MANUAL_BATCH, QueueOptions(options)
-                                       .set_subdirectory(kManualQueueSubdir)
-                                       .set_file_prefix(kManualQueuePrefix)
-                                       .set_upload_period(kManualUploadPeriod)),
+                         .set_upload_period(kBackgroundQueueUploadPeriod)
+                         .set_max_single_file_size(kQueueSize)),
+      std::make_pair(MANUAL_BATCH,
+                     QueueOptions(options)
+                         .set_subdirectory(kManualQueueSubdir)
+                         .set_file_prefix(kManualQueuePrefix)
+                         .set_upload_period(kManualUploadPeriod)
+                         .set_upload_retry_delay(kFailedUploadRetryDelay)
+                         .set_max_single_file_size(kQueueSize)),
   };
 }
 
@@ -123,10 +147,13 @@ class Storage::QueueUploaderInterface : public UploaderInterface {
   static void AsyncProvideUploader(
       Priority priority,
       Storage* storage,
+      UploaderInterface::UploadReason reason,
       UploaderInterfaceResultCb start_uploader_cb) {
     storage->async_start_upload_cb_.Run(
-        /*need_encryption_key=*/EncryptionModuleInterface::is_enabled() &&
-            storage->encryption_module_->need_encryption_key(),
+        (/*need_encryption_key=*/EncryptionModuleInterface::is_enabled() &&
+         storage->encryption_module_->need_encryption_key())
+            ? UploaderInterface::UploadReason::KEY_DELIVERY
+            : reason,
         base::BindOnce(&QueueUploaderInterface::WrapInstantiatedUploader,
                        priority, std::move(start_uploader_cb)));
   }
@@ -134,14 +161,14 @@ class Storage::QueueUploaderInterface : public UploaderInterface {
   void ProcessRecord(EncryptedRecord encrypted_record,
                      base::OnceCallback<void(bool)> processed_cb) override {
     // Update sequencing information: add Priority.
-    SequencingInformation* const sequencing_info =
-        encrypted_record.mutable_sequencing_information();
+    SequenceInformation* const sequencing_info =
+        encrypted_record.mutable_sequence_information();
     sequencing_info->set_priority(priority_);
     storage_interface_->ProcessRecord(std::move(encrypted_record),
                                       std::move(processed_cb));
   }
 
-  void ProcessGap(SequencingInformation start,
+  void ProcessGap(SequenceInformation start,
                   uint64_t count,
                   base::OnceCallback<void(bool)> processed_cb) override {
     // Update sequencing information: add Priority.
@@ -213,7 +240,7 @@ class Storage::KeyDelivery {
         base::BindOnce(&KeyDelivery::EncryptionKeyReceiverReady,
                        base::Unretained(this));
     async_start_upload_cb_.Run(
-        /*need_encryption_key=*/true,
+        UploaderInterface::UploadReason::KEY_DELIVERY,
         base::BindOnce(&KeyDelivery::WrapInstantiatedKeyUploader,
                        /*priority=*/MANUAL_BATCH,
                        std::move(start_uploader_cb)));
@@ -416,8 +443,8 @@ class Storage::KeyInStorage {
       key_files_to_remove.erase(result.first);
     }
     // Delete all files assigned for deletion.
-    for (const auto& full_name : key_files_to_remove) {
-      base::DeleteFile(full_name);  // Ignore errors, if any.
+    for (const auto& file_to_remove : key_files_to_remove) {
+      base::DeleteFile(file_to_remove);  // Ignore errors, if any.
     }
   }
 
@@ -533,6 +560,7 @@ void Storage::Create(
     const StorageOptions& options,
     UploaderInterface::AsyncStartUploaderCb async_start_upload_cb,
     scoped_refptr<EncryptionModuleInterface> encryption_module,
+    scoped_refptr<CompressionModule> compression_module,
     base::OnceCallback<void(StatusOr<scoped_refptr<Storage>>)> completion_cb) {
   // Initialize Storage object, populating all the queues.
   class StorageInitContext
@@ -556,8 +584,14 @@ void Storage::Create(
     void OnStart() override {
       CheckOnValidSequence();
 
-      // Locate the latest signed_encryption_key file with matching key
-      // signature after deserialization.
+      // If encryption is not enabled, proceed with the queues.
+      if (!EncryptionModuleInterface::is_enabled()) {
+        InitAllQueues();
+        return;
+      }
+
+      // Encryption is enabled. Locate the latest signed_encryption_key file
+      // with matching key signature after deserialization.
       const auto download_key_result =
           storage_->key_in_storage_->DownloadKeyFile();
       if (!download_key_result.ok()) {
@@ -592,6 +626,11 @@ void Storage::Create(
                "status="
             << status;
       }
+      InitAllQueues();
+    }
+
+    void InitAllQueues() {
+      CheckOnValidSequence();
 
       // Construct all queues.
       count_ = queues_options_.size();
@@ -603,7 +642,7 @@ void Storage::Create(
             base::BindRepeating(&QueueUploaderInterface::AsyncProvideUploader,
                                 /*priority=*/queue_options.first,
                                 base::Unretained(storage_.get())),
-            storage_->encryption_module_,
+            storage_->encryption_module_, storage_->compression_module_,
             base::BindOnce(&StorageInitContext::ScheduleAddQueue,
                            base::Unretained(this),
                            /*priority=*/queue_options.first));
@@ -650,8 +689,9 @@ void Storage::Create(
 
   // Create Storage object.
   // Cannot use base::MakeRefCounted<Storage>, because constructor is private.
-  scoped_refptr<Storage> storage = base::WrapRefCounted(new Storage(
-      options, encryption_module, std::move(async_start_upload_cb)));
+  scoped_refptr<Storage> storage = base::WrapRefCounted(
+      new Storage(options, encryption_module, compression_module,
+                  std::move(async_start_upload_cb)));
 
   // Asynchronously run initialization.
   Start<StorageInitContext>(ExpectedQueues(storage->options_),
@@ -660,10 +700,12 @@ void Storage::Create(
 
 Storage::Storage(const StorageOptions& options,
                  scoped_refptr<EncryptionModuleInterface> encryption_module,
+                 scoped_refptr<CompressionModule> compression_module,
                  UploaderInterface::AsyncStartUploaderCb async_start_upload_cb)
     : options_(options),
       encryption_module_(encryption_module),
       key_delivery_(std::make_unique<KeyDelivery>(async_start_upload_cb)),
+      compression_module_(compression_module),
       key_in_storage_(std::make_unique<KeyInStorage>(
           options.signature_verification_public_key(),
           options.directory())),

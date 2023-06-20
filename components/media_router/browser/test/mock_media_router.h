@@ -96,7 +96,7 @@ class MockMediaRouter : public MediaRouterBase {
                     base::TimeDelta timeout,
                     bool incognito));
 
-  MOCK_METHOD1(DetachRoute, void(const MediaRoute::Id& route_id));
+  MOCK_METHOD1(DetachRoute, void(MediaRoute::Id route_id));
   MOCK_METHOD1(TerminateRoute, void(const MediaRoute::Id& route_id));
   MOCK_METHOD2(SendRouteMessage,
                void(const MediaRoute::Id& route_id,
@@ -125,6 +125,7 @@ class MockMediaRouter : public MediaRouterBase {
                     mojo::PendingRemote<mojom::MediaStatusObserver> observer));
   MOCK_METHOD0(GetLogger, LoggerImpl*());
 #endif  // !defined(OS_ANDROID)
+  MOCK_CONST_METHOD0(GetState, base::Value());
   MOCK_METHOD1(OnAddPresentationConnectionStateChangedCallbackInvoked,
                void(const content::PresentationConnectionStateChangedCallback&
                         callback));

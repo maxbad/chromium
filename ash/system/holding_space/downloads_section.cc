@@ -6,6 +6,7 @@
 
 #include "ash/bubble/bubble_utils.h"
 #include "ash/bubble/simple_grid_layout.h"
+#include "ash/constants/ash_features.h"
 #include "ash/public/cpp/holding_space/holding_space_client.h"
 #include "ash/public/cpp/holding_space/holding_space_constants.h"
 #include "ash/public/cpp/holding_space/holding_space_controller.h"
@@ -21,6 +22,7 @@
 #include "ui/gfx/paint_vector_icon.h"
 #include "ui/views/accessibility/view_accessibility.h"
 #include "ui/views/controls/button/button.h"
+#include "ui/views/controls/focus_ring.h"
 #include "ui/views/controls/highlight_path_generator.h"
 #include "ui/views/controls/image_view.h"
 #include "ui/views/controls/label.h"
@@ -29,9 +31,6 @@
 namespace ash {
 
 namespace {
-
-constexpr int kNumberOfChipsPerRow = 2;
-constexpr int kChipSpacing = 8;
 
 // CallbackPathGenerator -------------------------------------------------------
 
@@ -82,7 +81,7 @@ class Header : public views::Button {
     // Focus ring.
     // Though the entirety of the header is focusable and behaves as a single
     // button, the focus ring is drawn as a circle around just the `chevron_`.
-    focus_ring()->SetPathGenerator(
+    views::FocusRing::Get(this)->SetPathGenerator(
         std::make_unique<CallbackPathGenerator>(base::BindRepeating(
             [](const views::View* chevron) {
               const float radius = chevron->width() / 2.f;
@@ -110,8 +109,9 @@ class Header : public views::Button {
             AshColorProvider::ContentLayerType::kIconColorPrimary)));
 
     // Focus ring.
-    focus_ring()->SetColor(ash_color_provider->GetControlsLayerColor(
-        AshColorProvider::ControlsLayerType::kFocusRingColor));
+    views::FocusRing::Get(this)->SetColor(
+        ash_color_provider->GetControlsLayerColor(
+            AshColorProvider::ControlsLayerType::kFocusRingColor));
   }
 
   void OnPressed() {
@@ -138,8 +138,12 @@ DownloadsSection::DownloadsSection(HoldingSpaceViewDelegate* delegate)
            HoldingSpaceItem::Type::kDownload,
            HoldingSpaceItem::Type::kLacrosDownload,
            HoldingSpaceItem::Type::kNearbyShare,
-           HoldingSpaceItem::Type::kPrintedPdf, HoldingSpaceItem::Type::kScan},
-          /*max_count=*/kMaxDownloads) {}
+           HoldingSpaceItem::Type::kPrintedPdf, HoldingSpaceItem::Type::kScan,
+           HoldingSpaceItem::Type::kPhoneHubCameraRoll},
+          /*max_count=*/
+          features::IsHoldingSpaceInProgressDownloadsIntegrationEnabled()
+              ? kMaxDownloadsWithInProgressDownloadIntegration
+              : kMaxDownloads) {}
 
 DownloadsSection::~DownloadsSection() = default;
 
@@ -157,8 +161,9 @@ std::unique_ptr<views::View> DownloadsSection::CreateHeader() {
 std::unique_ptr<views::View> DownloadsSection::CreateContainer() {
   auto container = std::make_unique<views::View>();
   container->SetLayoutManager(std::make_unique<SimpleGridLayout>(
-      kNumberOfChipsPerRow, /*column_spacing=*/kChipSpacing,
-      /*row_spacing=*/kChipSpacing));
+      kHoldingSpaceChipCountPerRow,
+      /*column_spacing=*/kHoldingSpaceSectionContainerChildSpacing,
+      /*row_spacing=*/kHoldingSpaceSectionContainerChildSpacing));
   return container;
 }
 

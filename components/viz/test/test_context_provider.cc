@@ -50,6 +50,12 @@ class TestGLES2InterfaceForContextProvider : public TestGLES2Interface {
       std::string additional_extensions = std::string())
       : extension_string_(
             BuildExtensionString(std::move(additional_extensions))) {}
+
+  TestGLES2InterfaceForContextProvider(
+      const TestGLES2InterfaceForContextProvider&) = delete;
+  TestGLES2InterfaceForContextProvider& operator=(
+      const TestGLES2InterfaceForContextProvider&) = delete;
+
   ~TestGLES2InterfaceForContextProvider() override = default;
 
   // TestGLES2Interface:
@@ -114,8 +120,6 @@ class TestGLES2InterfaceForContextProvider : public TestGLES2Interface {
   }
 
   const std::string extension_string_;
-
-  DISALLOW_COPY_AND_ASSIGN(TestGLES2InterfaceForContextProvider);
 };
 
 }  // namespace
@@ -165,6 +169,21 @@ gpu::Mailbox TestSharedImageInterface::CreateSharedImage(
   shared_images_.insert(mailbox);
   most_recent_size_ = gpu_memory_buffer->GetSize();
   return mailbox;
+}
+
+std::vector<gpu::Mailbox>
+TestSharedImageInterface::CreateSharedImageVideoPlanes(
+    gfx::GpuMemoryBuffer* gpu_memory_buffer,
+    gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
+    uint32_t usage) {
+  base::AutoLock locked(lock_);
+  auto mailboxes =
+      std::vector<gpu::Mailbox>{gpu::Mailbox::GenerateForSharedImage(),
+                                gpu::Mailbox::GenerateForSharedImage()};
+  shared_images_.insert(mailboxes[0]);
+  shared_images_.insert(mailboxes[1]);
+  most_recent_size_ = gpu_memory_buffer->GetSize();
+  return mailboxes;
 }
 
 gpu::Mailbox TestSharedImageInterface::CreateSharedImageWithAHB(

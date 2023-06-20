@@ -24,8 +24,8 @@
 #include "content/browser/indexed_db/indexed_db_database_callbacks.h"
 #include "content/browser/indexed_db/indexed_db_database_error.h"
 #include "content/browser/indexed_db/indexed_db_leveldb_coding.h"
-#include "content/browser/indexed_db/indexed_db_origin_state.h"
 #include "content/browser/indexed_db/indexed_db_reporting.h"
+#include "content/browser/indexed_db/indexed_db_storage_key_state.h"
 #include "third_party/blink/public/common/indexeddb/indexeddb_metadata.h"
 #include "third_party/blink/public/mojom/indexeddb/indexeddb.mojom.h"
 #include "third_party/leveldatabase/env_chromium.h"
@@ -53,14 +53,17 @@ enum class RequestState {
 // callback.
 class IndexedDBConnectionCoordinator::ConnectionRequest {
  public:
-  ConnectionRequest(IndexedDBOriginStateHandle origin_state_handle,
+  ConnectionRequest(IndexedDBStorageKeyStateHandle storage_key_state_handle,
                     IndexedDBDatabase* db,
                     IndexedDBConnectionCoordinator* connection_coordinator,
                     TasksAvailableCallback tasks_available_callback)
-      : origin_state_handle_(std::move(origin_state_handle)),
+      : storage_key_state_handle_(std::move(storage_key_state_handle)),
         db_(db),
         connection_coordinator_(connection_coordinator),
         tasks_available_callback_(std::move(tasks_available_callback)) {}
+
+  ConnectionRequest(const ConnectionRequest&) = delete;
+  ConnectionRequest& operator=(const ConnectionRequest&) = delete;
 
   virtual ~ConnectionRequest() {}
 
@@ -104,7 +107,7 @@ class IndexedDBConnectionCoordinator::ConnectionRequest {
  protected:
   RequestState state_ = RequestState::kNotStarted;
 
-  IndexedDBOriginStateHandle origin_state_handle_;
+  IndexedDBStorageKeyStateHandle storage_key_state_handle_;
   // This is safe because IndexedDBDatabase owns this object.
   IndexedDBDatabase* db_;
 
@@ -114,26 +117,26 @@ class IndexedDBConnectionCoordinator::ConnectionRequest {
   TasksAvailableCallback tasks_available_callback_;
 
   leveldb::Status saved_leveldb_status_;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(ConnectionRequest);
 };
 
 class IndexedDBConnectionCoordinator::OpenRequest
     : public IndexedDBConnectionCoordinator::ConnectionRequest {
  public:
-  OpenRequest(IndexedDBOriginStateHandle origin_state_handle,
+  OpenRequest(IndexedDBStorageKeyStateHandle storage_key_state_handle,
               IndexedDBDatabase* db,
               std::unique_ptr<IndexedDBPendingConnection> pending_connection,
               IndexedDBConnectionCoordinator* connection_coordinator,
               TasksAvailableCallback tasks_available_callback)
-      : ConnectionRequest(std::move(origin_state_handle),
+      : ConnectionRequest(std::move(storage_key_state_handle),
                           db,
                           connection_coordinator,
                           std::move(tasks_available_callback)),
         pending_(std::move(pending_connection)) {
     db_->metadata_.was_cold_open = pending_->was_cold_open;
   }
+
+  OpenRequest(const OpenRequest&) = delete;
+  OpenRequest& operator=(const OpenRequest&) = delete;
 
   // Note: the |tasks_available_callback_| is NOT called here because the state
   // is checked after this method.
@@ -171,7 +174,7 @@ class IndexedDBConnectionCoordinator::OpenRequest
       // DEFAULT_VERSION throws exception.)
       DCHECK(is_new_database);
       pending_->callbacks->OnSuccess(
-          db_->CreateConnection(std::move(origin_state_handle_),
+          db_->CreateConnection(std::move(storage_key_state_handle_),
                                 pending_->database_callbacks),
           db_->metadata_);
       state_ = RequestState::kDone;
@@ -182,7 +185,7 @@ class IndexedDBConnectionCoordinator::OpenRequest
         (new_version == old_version ||
          new_version == IndexedDBDatabaseMetadata::NO_VERSION)) {
       pending_->callbacks->OnSuccess(
-          db_->CreateConnection(std::move(origin_state_handle_),
+          db_->CreateConnection(std::move(storage_key_state_handle_),
                                 pending_->database_callbacks),
           db_->metadata_);
       state_ = RequestState::kDone;
@@ -275,7 +278,7 @@ class IndexedDBConnectionCoordinator::OpenRequest
     DCHECK(state_ == RequestState::kPendingLocks);
 
     DCHECK(!lock_receiver_.locks.empty());
-    connection_ = db_->CreateConnection(std::move(origin_state_handle_),
+    connection_ = db_->CreateConnection(std::move(storage_key_state_handle_),
                                         pending_->database_callbacks);
     DCHECK(!connection_ptr_for_close_comparision_);
     connection_ptr_for_close_comparision_ = connection_.get();
@@ -377,24 +380,26 @@ class IndexedDBConnectionCoordinator::OpenRequest
   IndexedDBConnection* connection_ptr_for_close_comparision_ = nullptr;
 
   base::WeakPtrFactory<OpenRequest> weak_factory_{this};
-  DISALLOW_COPY_AND_ASSIGN(OpenRequest);
 };
 
 class IndexedDBConnectionCoordinator::DeleteRequest
     : public IndexedDBConnectionCoordinator::ConnectionRequest {
  public:
-  DeleteRequest(IndexedDBOriginStateHandle origin_state_handle,
+  DeleteRequest(IndexedDBStorageKeyStateHandle storage_key_state_handle,
                 IndexedDBDatabase* db,
                 scoped_refptr<IndexedDBCallbacks> callbacks,
                 base::OnceClosure on_database_deleted,
                 IndexedDBConnectionCoordinator* connection_coordinator,
                 TasksAvailableCallback tasks_available_callback)
-      : ConnectionRequest(std::move(origin_state_handle),
+      : ConnectionRequest(std::move(storage_key_state_handle),
                           db,
                           connection_coordinator,
                           std::move(tasks_available_callback)),
         callbacks_(callbacks),
         on_database_deleted_(std::move(on_database_deleted)) {}
+
+  DeleteRequest(const DeleteRequest&) = delete;
+  DeleteRequest& operator=(const DeleteRequest&) = delete;
 
   void Perform(bool has_connections) override {
     if (!has_connections) {
@@ -510,7 +515,6 @@ class IndexedDBConnectionCoordinator::DeleteRequest
   base::OnceClosure on_database_deleted_;
 
   base::WeakPtrFactory<DeleteRequest> weak_factory_{this};
-  DISALLOW_COPY_AND_ASSIGN(DeleteRequest);
 };
 
 IndexedDBConnectionCoordinator::IndexedDBConnectionCoordinator(
@@ -520,20 +524,20 @@ IndexedDBConnectionCoordinator::IndexedDBConnectionCoordinator(
 IndexedDBConnectionCoordinator::~IndexedDBConnectionCoordinator() = default;
 
 void IndexedDBConnectionCoordinator::ScheduleOpenConnection(
-    IndexedDBOriginStateHandle origin_state_handle,
+    IndexedDBStorageKeyStateHandle storage_key_state_handle,
     std::unique_ptr<IndexedDBPendingConnection> connection) {
   request_queue_.push(std::make_unique<OpenRequest>(
-      std::move(origin_state_handle), db_, std::move(connection), this,
+      std::move(storage_key_state_handle), db_, std::move(connection), this,
       tasks_available_callback_));
   tasks_available_callback_.Run();
 }
 
 void IndexedDBConnectionCoordinator::ScheduleDeleteDatabase(
-    IndexedDBOriginStateHandle origin_state_handle,
+    IndexedDBStorageKeyStateHandle storage_key_state_handle,
     scoped_refptr<IndexedDBCallbacks> callbacks,
     base::OnceClosure on_deletion_complete) {
   request_queue_.push(std::make_unique<DeleteRequest>(
-      std::move(origin_state_handle), db_, callbacks,
+      std::move(storage_key_state_handle), db_, callbacks,
       std::move(on_deletion_complete), this, tasks_available_callback_));
   tasks_available_callback_.Run();
 }

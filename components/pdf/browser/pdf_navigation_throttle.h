@@ -5,6 +5,8 @@
 #ifndef COMPONENTS_PDF_BROWSER_PDF_NAVIGATION_THROTTLE_H_
 #define COMPONENTS_PDF_BROWSER_PDF_NAVIGATION_THROTTLE_H_
 
+#include <memory>
+
 #include "content/public/browser/navigation_throttle.h"
 
 namespace content {
@@ -13,15 +15,26 @@ class NavigationHandle;
 
 namespace pdf {
 
+class PdfStreamDelegate;
+
 class PdfNavigationThrottle final : public content::NavigationThrottle {
  public:
-  explicit PdfNavigationThrottle(content::NavigationHandle* navigation_handle);
+  static std::unique_ptr<content::NavigationThrottle> MaybeCreateThrottleFor(
+      content::NavigationHandle* navigation_handle,
+      std::unique_ptr<PdfStreamDelegate> stream_delegate);
+
+  PdfNavigationThrottle(content::NavigationHandle* navigation_handle,
+                        std::unique_ptr<PdfStreamDelegate> stream_delegate);
   PdfNavigationThrottle(const PdfNavigationThrottle&) = delete;
   PdfNavigationThrottle& operator=(const PdfNavigationThrottle&) = delete;
   ~PdfNavigationThrottle() override;
 
   // `content::NavigationThrottle`:
   const char* GetNameForLogging() override;
+  ThrottleCheckResult WillStartRequest() override;
+
+ private:
+  std::unique_ptr<PdfStreamDelegate> stream_delegate_;
 };
 
 }  // namespace pdf

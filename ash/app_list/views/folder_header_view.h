@@ -9,7 +9,6 @@
 
 #include "ash/app_list/model/app_list_item_observer.h"
 #include "ash/ash_export.h"
-#include "base/macros.h"
 #include "ui/views/controls/button/button.h"
 #include "ui/views/controls/textfield/textfield_controller.h"
 #include "ui/views/view.h"
@@ -29,11 +28,14 @@ class ASH_EXPORT FolderHeaderView : public views::View,
                                     public AppListItemObserver {
  public:
   explicit FolderHeaderView(FolderHeaderViewDelegate* delegate);
+
+  FolderHeaderView(const FolderHeaderView&) = delete;
+  FolderHeaderView& operator=(const FolderHeaderView&) = delete;
+
   ~FolderHeaderView() override;
 
   void SetFolderItem(AppListFolderItem* folder_item);
   void UpdateFolderNameVisibility(bool visible);
-  void OnFolderItemRemoved();
   bool HasTextFocus() const;
   void SetTextFocus();
   bool is_tablet_mode() const { return is_tablet_mode_; }
@@ -45,6 +47,8 @@ class ASH_EXPORT FolderHeaderView : public views::View,
   void OnBoundsChanged(const gfx::Rect& previous_bounds) override;
 
   views::Textfield* GetFolderNameViewForTest() const;
+
+  int GetMaxFolderNameCharLengthForTest() const;
 
  private:
   class FolderNameView;
@@ -64,10 +68,11 @@ class ASH_EXPORT FolderHeaderView : public views::View,
   // Returns true if folder name is enabled, only for testing use.
   bool IsFolderNameEnabledForTest() const;
 
-  int GetMaxFolderNameWidth() const;
+  // Returns the folder name.
+  std::u16string GetFolderName() const;
 
-  // Returns elided folder name from |folder_name|.
-  std::u16string GetElidedFolderName(const std::u16string& folder_name) const;
+  // Returns elided folder name.
+  std::u16string GetElidedFolderName() const;
 
   // Returns whether |folder_name_view_| should clear focus based on
   // |key_event_|.
@@ -111,8 +116,6 @@ class ASH_EXPORT FolderHeaderView : public views::View,
   bool folder_name_visible_;
 
   bool is_tablet_mode_;
-
-  DISALLOW_COPY_AND_ASSIGN(FolderHeaderView);
 };
 
 }  // namespace ash

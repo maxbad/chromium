@@ -4,70 +4,17 @@
 
 #include "third_party/blink/renderer/core/layout/ng/svg/ng_svg_text_layout_algorithm.h"
 
+#include "base/trace_event/trace_event.h"
+#include "third_party/blink/renderer/core/layout/ng/svg/resolved_text_layout_attributes_iterator.h"
 #include "third_party/blink/renderer/core/layout/ng/svg/svg_inline_node_data.h"
 #include "third_party/blink/renderer/core/layout/svg/layout_svg_inline_text.h"
 #include "third_party/blink/renderer/core/layout/svg/layout_svg_text_path.h"
 #include "third_party/blink/renderer/core/svg/svg_animated_length.h"
 #include "third_party/blink/renderer/core/svg/svg_length_context.h"
 #include "third_party/blink/renderer/core/svg/svg_text_content_element.h"
+#include "ui/gfx/geometry/rect_conversions.h"
 
 namespace blink {
-
-namespace {
-
-// This class wraps a sparse list, |Vector<std::pair<unsigned,
-// NGSvgCharacterData>>|, so that it looks to have NGSvgCharacterData for
-// any index.
-//
-// For example, if |resolved| contains the following pairs:
-//     resolved[0]: (0, NGSvgCharacterData)
-//     resolved[1]: (10, NGSvgCharacterData)
-//     resolved[2]: (42, NGSvgCharacterData)
-//
-// AdvanceTo(0) returns the NGSvgCharacterData at [0].
-// AdvanceTo(1 - 9) returns the default NGSvgCharacterData, which has no data.
-// AdvanceTo(10) returns the NGSvgCharacterData at [1].
-// AdvanceTo(11 - 41) returns the default NGSvgCharacterData.
-// AdvanceTo(42) returns the NGSvgCharacterData at [2].
-// AdvanceTo(43 or greater) returns the default NGSvgCharacterData.
-class ResolvedIterator final {
- public:
-  explicit ResolvedIterator(
-      const Vector<std::pair<unsigned, NGSvgCharacterData>>& resolved)
-      : resolved_(resolved) {}
-  ResolvedIterator(const ResolvedIterator&) = delete;
-  ResolvedIterator& operator=(const ResolvedIterator&) = delete;
-
-  const NGSvgCharacterData& AdvanceTo(unsigned addressable_index) {
-    if (index_ >= resolved_.size())
-      return default_data_;
-    if (addressable_index < resolved_[index_].first)
-      return default_data_;
-    if (addressable_index == resolved_[index_].first)
-      return resolved_[index_].second;
-    auto* it = std::find_if(resolved_.begin() + index_, resolved_.end(),
-                            [addressable_index](const auto& pair) {
-                              return addressable_index <= pair.first;
-                            });
-    index_ = std::distance(resolved_.begin(), it);
-    return AdvanceTo(addressable_index);
-  }
-
- private:
-  const NGSvgCharacterData default_data_;
-  const Vector<std::pair<unsigned, NGSvgCharacterData>>& resolved_;
-  unsigned index_ = 0u;
-};
-
-unsigned NextCodePointOffset(StringView string, unsigned offset) {
-  ++offset;
-  if (offset < string.length() && U16_IS_LEAD(string[offset - 1]) &&
-      U16_IS_TRAIL(string[offset]))
-    ++offset;
-  return offset;
-}
-
-}  // anonymous namespace
 
 // See https://svgwg.org/svg2-draft/text.html#TextLayoutAlgorithm
 
@@ -83,6 +30,7 @@ NGSvgTextLayoutAlgorithm::NGSvgTextLayoutAlgorithm(NGInlineNode node,
 void NGSvgTextLayoutAlgorithm::Layout(
     const String& ifc_text_content,
     NGFragmentItemsBuilder::ItemWithOffsetList& items) {
+  TRACE_EVENT0("blink", "NGSvgTextLayoutAlgorithm::Layout");
   // https://svgwg.org/svg2-draft/text.html#TextLayoutAlgorithm
   //
   // The major difference from the algorithm in the specification:
@@ -90,7 +38,7 @@ void NGSvgTextLayoutAlgorithm::Layout(
   // "CSS_positions", and "resolved" is the number of addressable characters.
 
   // 1. Setup
-  if (!Setup(items.size()))
+  if (!Setup(ifc_text_content.length()))
     return;
 
   // 2. Set flags and assign initial positions
@@ -102,7 +50,8 @@ void NGSvgTextLayoutAlgorithm::Layout(
   // This was already done in PrepareLayout() step. See
   // NGSvgTextLayoutAttributesBuilder.
   // Copy |rotate| and |anchored_chunk| fields.
-  ResolvedIterator iterator(inline_node_.SvgCharacterDataList());
+  ResolvedTextLayoutAttributesIterator iterator(
+      inline_node_.SvgCharacterDataList());
   for (wtf_size_t i = 0; i < result_.size(); ++i) {
     const NGSvgCharacterData& resolve = iterator.AdvanceTo(i);
     if (resolve.HasRotate())
@@ -126,46 +75,7 @@ void NGSvgTextLayoutAlgorithm::Layout(
   // 8. Position on path
   PositionOnPath(items);
 
-  // Write back the result to NGFragmentItems.
-  for (const SvgPerCharacterInfo& info : result_) {
-    if (info.middle)
-      continue;
-    NGFragmentItemsBuilder::ItemWithOffset& item = items[info.item_index];
-    const auto* layout_object =
-        To<LayoutSVGInlineText>(item->GetLayoutObject());
-    const auto font_baseline = item->Style().GetFontBaseline();
-    const auto& font_metrics =
-        layout_object->ScaledFont().PrimaryFont()->GetFontMetrics();
-    float x = *info.x;
-    float y = *info.y;
-    float width;
-    float height;
-    if (horizontal_) {
-      y -= font_metrics.FixedAscent(font_baseline);
-      width = info.inline_size;
-      height = item->Size().height;
-    } else {
-      x -= font_metrics.FixedDescent(font_baseline);
-      width = item->Size().width;
-      height = info.inline_size;
-    }
-    FloatRect scaled_rect(x, y, width, height);
-    const float scaling_factor = layout_object->ScalingFactor();
-    DCHECK_NE(scaling_factor, 0.0f);
-    PhysicalRect unscaled_rect(LayoutUnit(x / scaling_factor),
-                               LayoutUnit(y / scaling_factor),
-                               LayoutUnit(width / scaling_factor),
-                               LayoutUnit(height / scaling_factor));
-    auto data = std::make_unique<NGSvgFragmentData>();
-    data->shape_result = item->TextShapeResult();
-    data->text_offset = item->TextOffset();
-    data->rect = scaled_rect;
-    data->length_adjust_scale = info.length_adjust_scale;
-    data->angle = info.rotate.value_or(0.0f);
-    data->baseline_shift = info.baseline_shift;
-    data->in_text_path = info.in_text_path;
-    item.item.ConvertToSvgText(std::move(data), unscaled_rect, info.hidden);
-  }
+  WriteBackToFragmentItems(items);
 }
 
 bool NGSvgTextLayoutAlgorithm::Setup(wtf_size_t approximate_count) {
@@ -225,16 +135,17 @@ void NGSvgTextLayoutAlgorithm::SetFlags(
     // character as determined by the CSS renderer.
     const NGFragmentItem& item = *items[info.item_index];
     const LogicalOffset logical_offset = items[info.item_index].offset;
-    const auto& font_metrics = To<LayoutSVGInlineText>(item.GetLayoutObject())
-                                   ->ScaledFont()
-                                   .PrimaryFont()
-                                   ->GetFontMetrics();
-    FloatPoint offset(
-        logical_offset.inline_offset,
-        logical_offset.block_offset +
-            font_metrics.FixedAscent(item.Style().GetFontBaseline()));
+    LayoutUnit ascent;
+    if (const auto* font_data = To<LayoutSVGInlineText>(item.GetLayoutObject())
+                                    ->ScaledFont()
+                                    .PrimaryFont()) {
+      ascent = font_data->GetFontMetrics().FixedAscent(
+          item.Style().GetFontBaseline());
+    }
+    FloatPoint offset(logical_offset.inline_offset,
+                      logical_offset.block_offset + ascent);
     if (!horizontal_)
-      offset.Set(-offset.Y(), offset.X());
+      offset.SetPoint(-offset.y(), offset.x());
     css_positions_.push_back(offset);
 
     info.inline_size = horizontal_ ? item.Size().width : item.Size().height;
@@ -244,9 +155,9 @@ void NGSvgTextLayoutAlgorithm::SetFlags(
                            item.TextLength());
     // 2.2. Set middle to true if the character at index i is the second or
     // later character that corresponds to a typographic character.
-    for (unsigned text_offset = NextCodePointOffset(item_string, 0);
+    for (unsigned text_offset = item_string.NextCodePointOffset(0);
          text_offset < item_string.length();
-         text_offset = NextCodePointOffset(item_string, text_offset)) {
+         text_offset = item_string.NextCodePointOffset(text_offset)) {
       SvgPerCharacterInfo middle_info;
       middle_info.middle = true;
       middle_info.item_index = info.item_index;
@@ -265,20 +176,21 @@ void NGSvgTextLayoutAlgorithm::AdjustPositionsDxDy(
   // attributes".
   FloatPoint shift;
   // 2. For each array element with index i in result:
-  ResolvedIterator iterator(inline_node_.SvgCharacterDataList());
+  ResolvedTextLayoutAttributesIterator iterator(
+      inline_node_.SvgCharacterDataList());
   for (wtf_size_t i = 0; i < addressable_count_; ++i) {
     const NGSvgCharacterData& resolve = iterator.AdvanceTo(i);
     // https://github.com/w3c/svgwg/issues/846
     if (resolve.HasX())
-      shift.SetX(0.0f);
+      shift.set_x(0.0f);
     if (resolve.HasY())
-      shift.SetY(0.0f);
+      shift.set_y(0.0f);
 
     // If this character is the first one in a <textPath>, reset both of x
     // and y.
     if (IsFirstCharacterInTextPath(i)) {
-      shift.SetX(0.0f);
-      shift.SetY(0.0f);
+      shift.set_x(0.0f);
+      shift.set_y(0.0f);
     }
 
     // 2.1. If resolve_x[i] is unspecified, set it to 0. If resolve_y[i] is
@@ -287,13 +199,13 @@ void NGSvgTextLayoutAlgorithm::AdjustPositionsDxDy(
     // 2.2. Let shift.x = shift.x + resolve_x[i] and
     // shift.y = shift.y + resolve_y[i].
     // https://github.com/w3c/svgwg/issues/271
-    shift.Move(resolve.HasDx() ? resolve.dx : 0.0f,
-               resolve.HasDy() ? resolve.dy : 0.0f);
+    shift.Offset(resolve.HasDx() ? resolve.dx : 0.0f,
+                 resolve.HasDy() ? resolve.dy : 0.0f);
     // 2.3. Let result[i].x = CSS_positions[i].x + shift.x and
     // result[i].y = CSS_positions[i].y + shift.y.
     const float scaling_factor = ScalingFactorAt(items, i);
-    result_[i].x = css_positions_[i].X() + shift.X() * scaling_factor;
-    result_[i].y = css_positions_[i].Y() + shift.Y() * scaling_factor;
+    result_[i].x = css_positions_[i].x() + shift.x() * scaling_factor;
+    result_[i].y = css_positions_[i].y() + shift.y() * scaling_factor;
   }
 }
 
@@ -367,6 +279,9 @@ void NGSvgTextLayoutAlgorithm::ResolveTextLength(
 
   float shift;
   if (length_adjust == kSVGLengthAdjustSpacingAndGlyphs) {
+    // If the target range contains no glyphs, we do nothing.
+    if (min_position >= max_position)
+      return;
     float length_adjust_scale = text_length / (max_position - min_position);
     for (wtf_size_t k = i; k < j_plus_1; ++k) {
       SvgPerCharacterInfo& info = result_[k];
@@ -471,7 +386,7 @@ void NGSvgTextLayoutAlgorithm::AdjustPositionsXY(
   //   <position specified by x/y attributes>
   //   + <shift specified by dx/dy attributes>
   //   + <baseline-shift done in the inline layout>
-  // css_positions_[i].Y() for horizontal_ or css_positions_[i].X() for
+  // css_positions_[i].y() for horizontal_ or css_positions_[i].x() for
   // !horizontal_ represents baseline-shift because the block offsets of the
   // normal baseline is 0.
 
@@ -481,7 +396,8 @@ void NGSvgTextLayoutAlgorithm::AdjustPositionsXY(
   // 2. Set index = 1.
   // 3. While index < count:
   // 3.5. Set index to index + 1.
-  ResolvedIterator iterator(inline_node_.SvgCharacterDataList());
+  ResolvedTextLayoutAttributesIterator iterator(
+      inline_node_.SvgCharacterDataList());
   for (wtf_size_t i = 0; i < result_.size(); ++i) {
     const float scaling_factor = ScalingFactorAt(items, i);
     const NGSvgCharacterData& resolve = iterator.AdvanceTo(i);
@@ -489,36 +405,36 @@ void NGSvgTextLayoutAlgorithm::AdjustPositionsXY(
     // shift.x = resolved_x[index] − result.x[index].
     // https://github.com/w3c/svgwg/issues/845
     if (resolve.HasX()) {
-      shift.SetX(resolve.x * scaling_factor - css_positions_[i].X() -
-                 result_[i].text_length_shift_x);
+      shift.set_x(resolve.x * scaling_factor - css_positions_[i].x() -
+                  result_[i].text_length_shift_x);
       // Take into account of baseline-shift.
       if (!horizontal_)
-        shift.SetX(shift.X() + css_positions_[i].X());
+        shift.set_x(shift.x() + css_positions_[i].x());
     }
     // 3.2. If resolved_y[index] is set, then let
     // shift.y = resolved_y[index] − result.y[index].
     // https://github.com/w3c/svgwg/issues/845
     if (resolve.HasY()) {
-      shift.SetY(resolve.y * scaling_factor - css_positions_[i].Y() -
-                 result_[i].text_length_shift_y);
+      shift.set_y(resolve.y * scaling_factor - css_positions_[i].y() -
+                  result_[i].text_length_shift_y);
       // Take into account of baseline-shift.
       if (horizontal_)
-        shift.SetY(shift.Y() + css_positions_[i].Y());
+        shift.set_y(shift.y() + css_positions_[i].y());
     }
 
     // If this character is the first one in a <textPath>, reset the
     // block-direction shift.
     if (IsFirstCharacterInTextPath(i)) {
       if (horizontal_)
-        shift.SetY(0.0f);
+        shift.set_y(0.0f);
       else
-        shift.SetX(0.0f);
+        shift.set_x(0.0f);
     }
 
     // 3.3. Let result.x[index] = result.x[index] + shift.x and
     // result.y[index] = result.y[index] + shift.y.
-    result_[i].x = *result_[i].x + shift.X();
-    result_[i].y = *result_[i].y + shift.Y();
+    result_[i].x = *result_[i].x + shift.x();
+    result_[i].y = *result_[i].y + shift.y();
     // 3.4. If the "middle" and "anchored chunk" flags of result[index] are
     // both true, then:
     if (result_[i].middle && result_[i].anchored_chunk) {
@@ -545,7 +461,8 @@ void NGSvgTextLayoutAlgorithm::ApplyAnchoring(
     auto* next_anchor =
         std::find_if(result_.begin() + i + 1, result_.end(),
                      [](const auto& info) { return info.anchored_chunk; });
-    wtf_size_t j = std::distance(result_.begin(), next_anchor) - 1;
+    wtf_size_t j = static_cast<wtf_size_t>(
+        std::distance(result_.begin(), next_anchor) - 1);
 
     const auto& text_path_ranges = inline_node_.SvgTextPathRangeList();
     const auto* text_path_iter =
@@ -553,9 +470,7 @@ void NGSvgTextLayoutAlgorithm::ApplyAnchoring(
                      [i](const auto& range) {
                        return range.start_index <= i && i <= range.end_index;
                      });
-    bool in_text_path = false;
     if (text_path_iter != text_path_ranges.end()) {
-      in_text_path = true;
       // Anchoring should be scoped within the <textPath>.
       // Non-anchored text following <textPath> will be handled in
       // PositionOnPath().
@@ -659,8 +574,9 @@ void NGSvgTextLayoutAlgorithm::PositionOnPath(
         index >= ranges[range_index].start_index &&
         index <= ranges[range_index].end_index) {
       if (!in_path) {
-        path_mapper = To<LayoutSVGTextPath>(ranges[range_index].layout_object)
-                          ->LayoutPath();
+        path_mapper =
+            To<LayoutSVGTextPath>(ranges[range_index].layout_object.Get())
+                ->LayoutPath();
       }
       // 5.1.1. Set "in path" flag to true.
       in_path = true;
@@ -728,12 +644,12 @@ void NGSvgTextLayoutAlgorithm::PositionOnPath(
             info.rotate = point_tangent.tangent_in_degrees;
             if (*info.rotate == 0.0f) {
               if (horizontal_) {
-                info.x = point_tangent.point.X() * scaling_factor -
+                info.x = point_tangent.point.x() * scaling_factor -
                          info.inline_size / 2;
-                info.y = point_tangent.point.Y() * scaling_factor + *info.y;
+                info.y = point_tangent.point.y() * scaling_factor + *info.y;
               } else {
-                info.x = point_tangent.point.X() * scaling_factor + *info.x;
-                info.y = point_tangent.point.Y() * scaling_factor -
+                info.x = point_tangent.point.x() * scaling_factor + *info.x;
+                info.y = point_tangent.point.y() * scaling_factor -
                          info.inline_size / 2;
               }
             } else {
@@ -742,8 +658,8 @@ void NGSvgTextLayoutAlgorithm::PositionOnPath(
               // AffineTransform produced from baseline_shift and inline_size/2.
               // See |NGFragmentItem::BuildSVGTransformForTextPath()|.
               info.baseline_shift = horizontal_ ? *info.y : *info.x;
-              info.x = point_tangent.point.X() * scaling_factor;
-              info.y = point_tangent.point.Y() * scaling_factor;
+              info.x = point_tangent.point.x() * scaling_factor;
+              info.y = point_tangent.point.y() * scaling_factor;
             }
           }
         }
@@ -778,8 +694,8 @@ void NGSvgTextLayoutAlgorithm::PositionOnPath(
           PointAndTangent point_tangent;
           path_mapper->PointAndNormalAtLength(path_mapper->length(),
                                               point_tangent);
-          path_end_x = point_tangent.point.X() * scaling_factor - *info.x;
-          path_end_y = point_tangent.point.Y() * scaling_factor - *info.y;
+          path_end_x = point_tangent.point.x() * scaling_factor - *info.x;
+          path_end_y = point_tangent.point.y() * scaling_factor - *info.y;
         } else {
           // The 'current text position' should be at the next to the last
           // drawn character.
@@ -824,12 +740,78 @@ void NGSvgTextLayoutAlgorithm::PositionOnPath(
   }
 }
 
+void NGSvgTextLayoutAlgorithm::WriteBackToFragmentItems(
+    NGFragmentItemsBuilder::ItemWithOffsetList& items) {
+  gfx::RectF unscaled_visual_rect;
+  for (const SvgPerCharacterInfo& info : result_) {
+    if (info.middle)
+      continue;
+    NGFragmentItemsBuilder::ItemWithOffset& item = items[info.item_index];
+    const auto* layout_object =
+        To<LayoutSVGInlineText>(item->GetLayoutObject());
+    LayoutUnit ascent;
+    LayoutUnit descent;
+    if (const auto* font_data = layout_object->ScaledFont().PrimaryFont()) {
+      const auto& font_metrics = font_data->GetFontMetrics();
+      const auto font_baseline = item->Style().GetFontBaseline();
+      ascent = font_metrics.FixedAscent(font_baseline);
+      descent = font_metrics.FixedDescent(font_baseline);
+    }
+    float x = *info.x;
+    float y = *info.y;
+    float width;
+    float height;
+    if (horizontal_) {
+      y -= ascent;
+      width = info.inline_size;
+      height = item->Size().height;
+    } else {
+      x -= descent;
+      width = item->Size().width;
+      height = info.inline_size;
+    }
+    // Clamp values in order to avoid infinity values.
+    gfx::RectF scaled_rect(ClampTo<float>(x), ClampTo<float>(y),
+                           ClampTo<float>(width), ClampTo<float>(height));
+    const float scaling_factor = layout_object->ScalingFactor();
+    DCHECK_NE(scaling_factor, 0.0f);
+    gfx::RectF unscaled_rect = gfx::ScaleRect(scaled_rect, 1 / scaling_factor);
+    auto data = std::make_unique<NGSvgFragmentData>();
+    data->shape_result = item->TextShapeResult();
+    data->text_offset = item->TextOffset();
+    data->rect = scaled_rect;
+    data->length_adjust_scale = info.length_adjust_scale;
+    data->angle = info.rotate.value_or(0.0f);
+    data->baseline_shift = info.baseline_shift;
+    data->in_text_path = info.in_text_path;
+    item.item.ConvertToSvgText(std::move(data),
+                               PhysicalRect::EnclosingRect(unscaled_rect),
+                               info.hidden);
+
+    gfx::RectF transformd_rect = scaled_rect;
+    if (item.item.HasSvgTransformForBoundingBox()) {
+      transformd_rect =
+          item.item.BuildSvgTransformForBoundingBox().MapRect(transformd_rect);
+    }
+    transformd_rect.Scale(1 / scaling_factor);
+    unscaled_visual_rect.Union(transformd_rect);
+  }
+  if (items[0]->Type() == NGFragmentItem::kLine) {
+    items[0].item.SetSvgLineLocalRect(
+        PhysicalRect(gfx::ToEnclosingRect(unscaled_visual_rect)));
+  }
+  // |items| should not have kLine items other than the first one.
+  DCHECK_EQ(std::find_if(items.begin() + 1, items.end(),
+                         [](const auto& item) {
+                           return item->Type() == NGFragmentItem::kLine;
+                         }),
+            items.end());
+}
+
 float NGSvgTextLayoutAlgorithm::ScalingFactorAt(
     const NGFragmentItemsBuilder::ItemWithOffsetList& items,
     wtf_size_t addressable_index) const {
-  return To<LayoutSVGInlineText>(
-             items[result_[addressable_index].item_index]->GetLayoutObject())
-      ->ScalingFactor();
+  return items[result_[addressable_index].item_index]->SvgScalingFactor();
 }
 
 bool NGSvgTextLayoutAlgorithm::IsFirstCharacterInTextPath(

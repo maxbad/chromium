@@ -19,12 +19,14 @@
 #include "chrome/browser/ash/borealis/borealis_engagement_metrics.h"
 #include "chrome/browser/ash/borealis/borealis_game_mode_controller.h"
 #include "chrome/browser/ash/borealis/borealis_metrics.h"
+#include "chrome/browser/ash/borealis/borealis_power_controller.h"
 #include "chrome/browser/ash/borealis/borealis_service.h"
 #include "chrome/browser/ash/borealis/borealis_shutdown_monitor.h"
 #include "chrome/browser/ash/borealis/borealis_util.h"
 #include "chrome/browser/ash/borealis/borealis_window_manager.h"
 #include "chrome/browser/ash/guest_os/guest_os_registry_service_factory.h"
 #include "chrome/browser/ash/guest_os/guest_os_stability_monitor.h"
+#include "components/exo/shell_surface_util.h"
 #include "url/gurl.h"
 
 namespace borealis {
@@ -56,7 +58,7 @@ class BorealisLifetimeObserver
     : public BorealisWindowManager::AppWindowLifetimeObserver {
  public:
   explicit BorealisLifetimeObserver(Profile* profile)
-      : profile_(profile), observation_{this} {
+      : profile_(profile), observation_(this), weak_factory_(this) {
     observation_.Observe(
         &BorealisService::GetForProfile(profile_)->WindowManager());
   }
@@ -81,19 +83,11 @@ class BorealisLifetimeObserver
                      aura::Window* last_window) override {
     // Launch post-game survey.
     // TODO(b/188745351): Remove this once it's no longer wanted.
-    GURL url = FeedbackFormUrl(
+    FeedbackFormUrl(
         guest_os::GuestOsRegistryServiceFactory::GetForProfile(profile_),
-        app_id, base::UTF16ToUTF8(last_window->GetTitle()));
-    if (url.is_valid()) {
-      // Unretained is safe here since we transitively own the
-      // ScopedDelayedCallback's weak factory.
-      app_delayers_.emplace(
-          app_id,
-          std::make_unique<ScopedDelayedCallback>(
-              base::BindOnce(&BorealisLifetimeObserver::OnDelayComplete,
-                             base::Unretained(this), std::move(url), app_id),
-              base::TimeDelta::FromSeconds(5)));
-    }
+        app_id, base::UTF16ToUTF8(last_window->GetTitle()),
+        base::BindOnce(&BorealisLifetimeObserver::OnFeedbackUrlGenerated,
+                       weak_factory_.GetWeakPtr(), app_id));
   }
 
   void OnWindowManagerDeleted(BorealisWindowManager* window_manager) override {
@@ -102,9 +96,20 @@ class BorealisLifetimeObserver
   }
 
  private:
+  void OnFeedbackUrlGenerated(std::string app_id, GURL url) {
+    if (url.is_valid()) {
+      app_delayers_.emplace(
+          app_id, std::make_unique<ScopedDelayedCallback>(
+                      base::BindOnce(&BorealisLifetimeObserver::OnDelayComplete,
+                                     weak_factory_.GetWeakPtr(), std::move(url),
+                                     app_id),
+                      base::Seconds(5)));
+    }
+  }
+
   void OnDelayComplete(GURL gurl, std::string app_id) {
     app_delayers_.erase(app_id);
-    ash::NewWindowDelegate::GetInstance()->NewTabWithUrl(
+    ash::NewWindowDelegate::GetInstance()->OpenUrl(
         gurl, /*from_user_interaction=*/true);
   }
 
@@ -114,9 +119,56 @@ class BorealisLifetimeObserver
       observation_;
   base::flat_map<std::string, std::unique_ptr<ScopedDelayedCallback>>
       app_delayers_;
+
+  base::WeakPtrFactory<BorealisLifetimeObserver> weak_factory_;
+};
+
+// Borealis' main app extensively relies on self-activation, and it does not
+// handle being refused that activation very well. This class exists to allow
+// borealis' main app to self-activate at all times.
+//
+// TODO(b/190141156): Prevent crostini from spoofing borealis, which would allow
+// it to self-activate its windows.  This would only be a problem currently on
+// borealis-enabled systems, and only while borealis is running.
+class SelfActivationPermissionGranter
+    : public BorealisWindowManager::AppWindowLifetimeObserver {
+ public:
+  explicit SelfActivationPermissionGranter(Profile* profile)
+      : profile_(profile), observation_{this} {
+    observation_.Observe(
+        &BorealisService::GetForProfile(profile_)->WindowManager());
+  }
+
+  void OnWindowStarted(const std::string& app_id,
+                       aura::Window* window) override {
+    if (app_id == kBorealisMainAppId)
+      exo::GrantPermissionToActivateIndefinitely(window);
+  }
+
+  void OnWindowFinished(const std::string& app_id,
+                        aura::Window* window) override {
+    if (app_id == kBorealisMainAppId)
+      exo::RevokePermissionToActivate(window);
+  }
+
+  void OnWindowManagerDeleted(BorealisWindowManager* window_manager) override {
+    DCHECK(observation_.IsObservingSource(window_manager));
+    observation_.Reset();
+  }
+
+ private:
+  Profile* const profile_;
+  base::ScopedObservation<BorealisWindowManager,
+                          BorealisWindowManager::AppWindowLifetimeObserver>
+      observation_;
 };
 
 BorealisContext::~BorealisContext() = default;
+
+void BorealisContext::SetDiskManagerForTesting(
+    std::unique_ptr<BorealisDiskManager> disk_manager) {
+  disk_manager_ = std::move(disk_manager);
+}
 
 void BorealisContext::NotifyUnexpectedVmShutdown() {
   guest_os_stability_monitor_->LogUnexpectedVmShutdown();
@@ -130,7 +182,10 @@ BorealisContext::BorealisContext(Profile* profile)
               kBorealisStabilityHistogram)),
       game_mode_controller_(std::make_unique<BorealisGameModeController>()),
       engagement_metrics_(std::make_unique<BorealisEngagementMetrics>(profile)),
-      disk_manager_(std::make_unique<BorealisDiskManagerImpl>(this)) {}
+      disk_manager_(std::make_unique<BorealisDiskManagerImpl>(this)),
+      power_controller_(std::make_unique<BorealisPowerController>()),
+      self_activation_granter_(
+          std::make_unique<SelfActivationPermissionGranter>(profile)) {}
 
 std::unique_ptr<BorealisContext>
 BorealisContext::CreateBorealisContextForTesting(Profile* profile) {

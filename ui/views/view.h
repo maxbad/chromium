@@ -18,6 +18,7 @@
 #include "base/callback.h"
 #include "base/callback_list.h"
 #include "base/compiler_specific.h"
+#include "base/gtest_prod_util.h"
 #include "base/memory/ptr_util.h"
 #include "base/strings/string_piece.h"
 #include "build/build_config.h"
@@ -198,7 +199,7 @@ enum PropertyEffects {
 //   a callback.
 //
 //   base::CallbackListSubscription AddFrobbleChangedCallback(
-//       PropertyChangedCallback callback) WARN_UNUSED_RETURN;
+//       PropertyChangedCallback callback) WARN_UNUSED_RESULT;
 //
 //   Each callback uses the the existing base::Bind mechanisms which allow for
 //   various kinds of callbacks; object methods, normal functions and lambdas.
@@ -419,7 +420,7 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // for new code.
   template <typename T>
   T* AddChildView(T* view) {
-    AddChildViewAtImpl(view, int{children_.size()});
+    AddChildViewAtImpl(view, static_cast<int>(children_.size()));
     return view;
   }
   template <typename T>
@@ -450,9 +451,14 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
     return base::WrapUnique(view);
   }
 
-  // Removes all the children from this view. If |delete_children| is true,
-  // the views are deleted, unless marked as not parent owned.
-  void RemoveAllChildViews(bool delete_children);
+  // Removes all the children from this view. This deletes all children that are
+  // not set_owned_by_client(), which is deprecated.
+  void RemoveAllChildViews();
+
+  // TODO(pbos): Remove this method, deleting children when removing them should
+  // not be optional. If ownership needs to be preserved, use RemoveChildViewT()
+  // to retain ownership of the removed children.
+  void RemoveAllChildViewsWithoutDeleting();
 
   const Views& children() const { return children_; }
 
@@ -888,8 +894,6 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // The border object may be null.
   virtual void SetBorder(std::unique_ptr<Border> b);
   Border* GetBorder() const;
-  const Border* border() const { return border_.get(); }
-  Border* border() { return border_.get(); }
 
   // Get the theme provider from the parent widget.
   const ui::ThemeProvider* GetThemeProvider() const;
@@ -1183,6 +1187,17 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   virtual FocusBehavior GetFocusBehavior() const;
   void SetFocusBehavior(FocusBehavior focus_behavior);
 
+  // Set this to suppress default handling of focus for this View. By default
+  // native focus will be cleared and a11y events announced based on the new
+  // View focus.
+  // TODO(pbos): This is here to make removing focus behavior from the base
+  // implementation of OnFocus a no-op. Try to avoid new uses of this. Also
+  // investigate if this can be configured with more granularity (which event
+  // to fire on focus etc.).
+  void set_suppress_default_focus_handling() {
+    suppress_default_focus_handling_ = true;
+  }
+
   // Returns true if this view is focusable, |enabled_| and drawn.
   bool IsFocusable() const;
 
@@ -1253,6 +1268,8 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // to provide right-click menu display triggered by the keyboard (i.e. for the
   // Chrome toolbar Back and Forward buttons). No source needs to be specified,
   // as it is always equal to the current View.
+  // Note that this call is asynchronous for views menu and synchronous for
+  // mac's native menu.
   virtual void ShowContextMenu(const gfx::Point& p,
                                ui::MenuSourceType source_type);
 
@@ -2112,6 +2129,10 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // The focus behavior of the view in regular and accessibility mode.
   FocusBehavior focus_behavior_ = FocusBehavior::NEVER;
 
+  // This is set when focus events should be skipped after focus reaches this
+  // View.
+  bool suppress_default_focus_handling_ = false;
+
   // Context menus -------------------------------------------------------------
 
   // The menu controller.
@@ -2136,6 +2157,13 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // Manages the accessibility interface for this View.
   mutable std::unique_ptr<ViewAccessibility> view_accessibility_;
 
+#if DCHECK_IS_ON()
+  // Keeps track of whether accessibility checks for this View have run yet.
+  // They run once inside ::OnPaint() to keep overhead low. The idea is that if
+  // a View is ready to paint it should also be set up to be accessible.
+  bool has_run_accessibility_paint_checks_ = false;
+#endif
+
   // Observers -----------------------------------------------------------------
 
   base::ObserverList<ViewObserver>::Unchecked observers_;
@@ -2145,6 +2173,21 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
 };
 
 BEGIN_VIEW_BUILDER(VIEWS_EXPORT, View, BaseView)
+template <typename LayoutManager>
+BuilderT& SetLayoutManager(std::unique_ptr<LayoutManager> layout_manager) & {
+  auto setter = std::make_unique<::views::internal::PropertySetter<
+      ViewClass_, std::unique_ptr<LayoutManager>,
+      decltype((static_cast<LayoutManager* (
+                    ViewClass_::*)(std::unique_ptr<LayoutManager>)>(
+          &ViewClass_::SetLayoutManager))),
+      &ViewClass_::SetLayoutManager>>(std::move(layout_manager));
+  ::views::internal::ViewBuilderCore::AddPropertySetter(std::move(setter));
+  return *static_cast<BuilderT*>(this);
+}
+template <typename LayoutManager>
+BuilderT&& SetLayoutManager(std::unique_ptr<LayoutManager> layout_manager) && {
+  return std::move(this->SetLayoutManager(std::move(layout_manager)));
+}
 VIEW_BUILDER_PROPERTY(std::unique_ptr<Background>, Background)
 VIEW_BUILDER_PROPERTY(std::unique_ptr<Border>, Border)
 VIEW_BUILDER_PROPERTY(gfx::Rect, BoundsRect)

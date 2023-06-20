@@ -5,11 +5,9 @@
 #include "components/optimization_guide/core/hint_cache.h"
 
 #include <string>
-#include <vector>
 
 #include "base/bind.h"
 #include "base/files/scoped_temp_dir.h"
-#include "base/macros.h"
 #include "base/run_loop.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/test/metrics/histogram_tester.h"
@@ -35,6 +33,9 @@ class HintCacheTest : public ProtoDatabaseProviderTestBase,
                       public testing::WithParamInterface<bool> {
  public:
   HintCacheTest() : loaded_hint_(nullptr) {}
+
+  HintCacheTest(const HintCacheTest&) = delete;
+  HintCacheTest& operator=(const HintCacheTest&) = delete;
 
   ~HintCacheTest() override {}
 
@@ -137,7 +138,7 @@ class HintCacheTest : public ProtoDatabaseProviderTestBase,
     if (cache_duration_in_secs)
       hint.mutable_max_cache_duration()->set_seconds(*cache_duration_in_secs);
     proto::PageHint* page_hint = hint.add_page_hints();
-    page_hint->add_whitelisted_optimizations()->set_optimization_type(
+    page_hint->add_allowlisted_optimizations()->set_optimization_type(
         optimization_guide::proto::PERFORMANCE_HINTS);
     page_hint->set_page_pattern("whatever/*");
 
@@ -175,8 +176,6 @@ class HintCacheTest : public ProtoDatabaseProviderTestBase,
   bool are_component_hints_updated_;
   bool on_load_hint_callback_called_;
   bool are_fetched_hints_updated_;
-
-  DISALLOW_COPY_AND_ASSIGN(HintCacheTest);
 };
 
 INSTANTIATE_TEST_SUITE_P(WithPersistentStore,
@@ -601,7 +600,7 @@ TEST_P(HintCacheTest, ParseEmptyFetchedHints) {
   const int kMemoryCacheSize = 5;
   CreateAndInitializeHintCache(kMemoryCacheSize);
 
-  base::Time stored_time = base::Time().Now() + base::TimeDelta().FromDays(1);
+  base::Time stored_time = base::Time().Now() + base::Days(1);
   std::unique_ptr<proto::GetHintsResponse> get_hints_response =
       std::make_unique<proto::GetHintsResponse>();
 
@@ -657,8 +656,7 @@ TEST_P(HintCacheTest, StoreValidFetchedHintsWithServerProvidedExpiryTime) {
   EXPECT_TRUE(hint_cache()->GetHostKeyedHintIfLoaded("host.domain.org"));
 
   // Set time so hint should be expired.
-  MoveClockForwardBy(
-      base::TimeDelta::FromSeconds(kFetchedHintExpirationSecs + 1));
+  MoveClockForwardBy(base::Seconds(kFetchedHintExpirationSecs + 1));
   EXPECT_FALSE(hint_cache()->GetHostKeyedHintIfLoaded("host.domain.org"));
 }
 
@@ -696,7 +694,7 @@ TEST_P(HintCacheTest, StoreValidFetchedHintsWithDefaultExpiryTime) {
   // Set time so hint should be expired.
   MoveClockForwardBy(
       optimization_guide::features::StoredFetchedHintsFreshnessDuration() +
-      base::TimeDelta::FromSeconds(1));
+      base::Seconds(1));
   EXPECT_FALSE(hint_cache()->GetHostKeyedHintIfLoaded("host.domain.org"));
 }
 
@@ -742,7 +740,7 @@ TEST_P(HintCacheTest, URLKeyedHintExpired) {
 
   EXPECT_TRUE(hint_cache()->GetURLKeyedHint(url));
 
-  MoveClockForwardBy(base::TimeDelta().FromSeconds(cache_duration_in_secs + 1));
+  MoveClockForwardBy(base::Seconds(cache_duration_in_secs + 1));
   EXPECT_FALSE(hint_cache()->GetURLKeyedHint(url));
 }
 
@@ -787,7 +785,7 @@ TEST_P(HintCacheTest, PurgeExpiredFetchedHints) {
   EXPECT_TRUE(hint_cache()->HasHint("shouldpurge.com"));
   EXPECT_TRUE(hint_cache()->HasHint("notpurged.com"));
 
-  MoveClockForwardBy(base::TimeDelta().FromSeconds(cache_duration_in_secs + 1));
+  MoveClockForwardBy(base::Seconds(cache_duration_in_secs + 1));
 
   hint_cache()->PurgeExpiredFetchedHints();
   RunUntilIdle();
@@ -936,7 +934,7 @@ TEST_P(HintCacheTest, ProcessHintsNoUpdateData) {
 }
 
 TEST_P(HintCacheTest,
-       ProcessHintsWithNoPageHintsOrWhitelistedOptimizationsAndUpdateData) {
+       ProcessHintsWithNoPageHintsOrAllowlistedOptimizationsAndUpdateData) {
   const int kMemoryCacheSize = 5;
   CreateAndInitializeHintCache(kMemoryCacheSize);
 
@@ -958,14 +956,14 @@ TEST_P(HintCacheTest,
 }
 
 TEST_P(HintCacheTest,
-       ProcessHintsWithNoPageHintsButHasWhitelistedOptimizationsAndUpdateData) {
+       ProcessHintsWithNoPageHintsButHasAllowlistedOptimizationsAndUpdateData) {
   const int kMemoryCacheSize = 5;
   CreateAndInitializeHintCache(kMemoryCacheSize);
 
   proto::Hint hint;
   hint.set_key("whatever.com");
   hint.set_key_representation(proto::HOST);
-  hint.add_whitelisted_optimizations()->set_optimization_type(
+  hint.add_allowlisted_optimizations()->set_optimization_type(
       optimization_guide::proto::DEFER_ALL_SCRIPT);
 
   google::protobuf::RepeatedPtrField<proto::Hint> hints;

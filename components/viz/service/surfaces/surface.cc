@@ -12,8 +12,8 @@
 #include <utility>
 
 #include "base/containers/contains.h"
+#include "base/containers/cxx20_erase.h"
 #include "base/metrics/histogram_functions.h"
-#include "base/stl_util.h"
 #include "base/time/tick_clock.h"
 #include "base/trace_event/trace_event.h"
 #include "base/trace_event/traced_value.h"
@@ -255,6 +255,16 @@ Surface::QueueFrameResult Surface::QueueFrame(
   } else {
     pending_frame_data_ = FrameData(std::move(frame), frame_index);
 
+    auto traced_value = std::make_unique<base::trace_event::TracedValue>();
+    traced_value->BeginArray("Pending");
+    for (auto& it : activation_dependencies_)
+      traced_value->AppendString(it.ToString());
+    traced_value->EndArray();
+    TRACE_EVENT_NESTABLE_ASYNC_BEGIN2(
+        "viz", "SurfaceQueuedPending", TRACE_ID_LOCAL(this), "LocalSurfaceId",
+        surface_info_.id().ToString(), "ActivationDependencies",
+        std::move(traced_value));
+
     deadline_->Set(ResolveFrameDeadline(pending_frame_data_->frame));
     if (deadline_->HasDeadlinePassed()) {
       ActivatePendingFrameForDeadline();
@@ -264,15 +274,6 @@ Surface::QueueFrameResult Surface::QueueFrame(
       // that client, leading to the group being unblocked.
       for (auto* it : blocking_allocation_groups_)
         it->AckLastestActiveUnAckedFrame();
-      auto traced_value = std::make_unique<base::trace_event::TracedValue>();
-      traced_value->BeginArray("Pending");
-      for (auto& it : activation_dependencies_)
-        traced_value->AppendString(it.ToString());
-      traced_value->EndArray();
-      TRACE_EVENT_NESTABLE_ASYNC_BEGIN2(
-          "viz", "SurfaceQueuedPending", TRACE_ID_LOCAL(this), "LocalSurfaceId",
-          surface_info_.id().ToString(), "ActivationDependencies",
-          std::move(traced_value));
       result = QueueFrameResult::ACCEPTED_PENDING;
     }
   }
@@ -301,7 +302,7 @@ void Surface::RequestCopyOfOutput(
   if (!active_frame_data_)
     return;
 
-  for (auto& render_pass : active_frame_data_->frame.render_pass_list) {
+  for (auto& render_pass : GetActiveOrInterpolatedFrame().render_pass_list) {
     if (render_pass->subtree_capture_id ==
         pending_copy_output_request.subtree_capture_id) {
       RequestCopyOfOutputOnRenderPass(
@@ -321,7 +322,7 @@ void Surface::RequestCopyOfOutputOnRootRenderPass(
 
   RequestCopyOfOutputOnRenderPass(
       std::move(copy_request),
-      *active_frame_data_->frame.render_pass_list.back());
+      *GetActiveOrInterpolatedFrame().render_pass_list.back());
 }
 
 bool Surface::RequestCopyOfOutputOnActiveFrameRenderPassId(
@@ -334,7 +335,7 @@ bool Surface::RequestCopyOfOutputOnActiveFrameRenderPassId(
 
   // Find a render pass with a given id, and attach the copy output request on
   // it.
-  for (auto& render_pass : active_frame_data_->frame.render_pass_list) {
+  for (auto& render_pass : GetActiveOrInterpolatedFrame().render_pass_list) {
     if (render_pass->id == render_pass_id) {
       RequestCopyOfOutputOnRenderPass(std::move(copy_request), *render_pass);
       return true;
@@ -465,6 +466,10 @@ void Surface::RecomputeActiveReferencedSurfaces() {
 void Surface::ActivateFrame(FrameData frame_data) {
   TRACE_EVENT1("viz", "Surface::ActivateFrame", "SurfaceId",
                surface_id().ToString());
+
+  // The interpolated frame is based off of the active frame. If we're
+  // activating a new frame we need to do interpolation again (if needed).
+  interpolated_frame_.reset();
 
   // Save root pass copy requests.
   std::vector<std::unique_ptr<CopyOutputRequest>> old_copy_requests;
@@ -609,7 +614,8 @@ void Surface::TakeCopyOutputRequests(Surface::CopyRequestsMap* copy_requests) {
   if (!active_frame_data_)
     return;
 
-  for (const auto& render_pass : active_frame_data_->frame.render_pass_list) {
+  for (const auto& render_pass :
+       GetActiveOrInterpolatedFrame().render_pass_list) {
     for (auto& request : render_pass->copy_requests) {
       copy_requests->insert(
           std::make_pair(render_pass->id, std::move(request)));
@@ -631,7 +637,7 @@ void Surface::TakeCopyOutputRequestsFromClient() {
 
 bool Surface::HasCopyOutputRequests() const {
   return active_frame_data_ &&
-         active_frame_data_->frame.HasCopyOutputRequests();
+         GetActiveOrInterpolatedFrame().HasCopyOutputRequests();
 }
 
 const CompositorFrame& Surface::GetActiveFrame() const {
@@ -644,6 +650,10 @@ const CompositorFrame& Surface::GetActiveOrInterpolatedFrame() const {
   if (interpolated_frame_.has_value())
     return *interpolated_frame_;
   return active_frame_data_->frame;
+}
+
+bool Surface::HasInterpolatedFrame() const {
+  return interpolated_frame_.has_value();
 }
 
 const CompositorFrameMetadata& Surface::GetActiveFrameMetadata() const {
@@ -761,7 +771,8 @@ void Surface::UnrefFrameResourcesAndRunCallbacks(
 
 void Surface::ClearCopyRequests() {
   if (active_frame_data_) {
-    for (const auto& render_pass : active_frame_data_->frame.render_pass_list) {
+    for (const auto& render_pass :
+         GetActiveOrInterpolatedFrame().render_pass_list) {
       // When the container is cleared, all copy requests within it will
       // auto-send an empty result as they are being destroyed.
       render_pass->copy_requests.clear();

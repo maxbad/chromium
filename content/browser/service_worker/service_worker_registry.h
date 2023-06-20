@@ -9,15 +9,21 @@
 
 #include "base/containers/flat_set.h"
 #include "base/containers/unique_ptr_adapters.h"
+#include "base/gtest_prod_util.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/threading/sequence_bound.h"
+#include "components/services/storage/public/cpp/buckets/bucket_info.h"
+#include "components/services/storage/public/cpp/quota_error_or.h"
 #include "components/services/storage/public/mojom/service_worker_storage_control.mojom.h"
 #include "content/browser/service_worker/service_worker_registration.h"
 #include "content/common/content_export.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "storage/browser/quota/storage_policy_observer.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
-#include "third_party/blink/public/common/storage_key/storage_key.h"
+
+namespace blink {
+class StorageKey;
+}  // namespace blink
 
 namespace storage {
 class QuotaManagerProxy;
@@ -57,10 +63,8 @@ class CONTENT_EXPORT ServiceWorkerRegistry {
   using FindRegistrationCallback = base::OnceCallback<void(
       blink::ServiceWorkerStatusCode status,
       scoped_refptr<ServiceWorkerRegistration> registration)>;
-  // TODO(crbug.com/1199077) Update this and associated functions once
-  // quota_client.mojom::GetOriginsForType is modified for StorageKey.
-  using GetRegisteredOriginsCallback =
-      base::OnceCallback<void(const std::vector<url::Origin>& origins)>;
+  using GetRegisteredStorageKeysCallback = base::OnceCallback<void(
+      const std::vector<blink::StorageKey>& storage_keys)>;
   using GetRegistrationsCallback = base::OnceCallback<void(
       blink::ServiceWorkerStatusCode status,
       const std::vector<scoped_refptr<ServiceWorkerRegistration>>&
@@ -77,9 +81,7 @@ class CONTENT_EXPORT ServiceWorkerRegistry {
   using GetUserDataForAllRegistrationsCallback = base::OnceCallback<void(
       const std::vector<std::pair<int64_t, std::string>>& user_data,
       blink::ServiceWorkerStatusCode status)>;
-  // TODO(crbug.com/1199077): Update this and associated functions once
-  // quota_client.mojom::GetOriginUsage is modified for StorageKey.
-  using GetStorageUsageForOriginCallback =
+  using GetStorageUsageForStorageKeyCallback =
       base::OnceCallback<void(blink::ServiceWorkerStatusCode status,
                               int64_t usage)>;
   using StatusCallback =
@@ -103,6 +105,7 @@ class CONTENT_EXPORT ServiceWorkerRegistry {
       scoped_refptr<ServiceWorkerRegistration> registration)>;
   void CreateNewRegistration(
       blink::mojom::ServiceWorkerRegistrationOptions options,
+      const blink::StorageKey& key,
       NewRegistrationCallback callback);
 
   // Create a new instance of ServiceWorkerVersion which is associated with the
@@ -113,7 +116,6 @@ class CONTENT_EXPORT ServiceWorkerRegistry {
   void CreateNewVersion(scoped_refptr<ServiceWorkerRegistration> registration,
                         const GURL& script_url,
                         blink::mojom::ScriptType script_type,
-                        const blink::StorageKey& key,
                         NewVersionCallback callback);
 
   // Finds registration for `client_url`, `scope`, or `registration_id` with the
@@ -149,9 +151,11 @@ class CONTENT_EXPORT ServiceWorkerRegistry {
   // Returns all stored and installing registrations for a given StorageKey.
   void GetRegistrationsForStorageKey(const blink::StorageKey& key,
                                      GetRegistrationsCallback callback);
-  // Reads the total resource size stored in the storage for a given origin.
-  void GetStorageUsageForStorageKey(const blink::StorageKey& key,
-                                    GetStorageUsageForOriginCallback callback);
+  // Reads the total resource size stored in the storage for a given storage
+  // key.
+  void GetStorageUsageForStorageKey(
+      const blink::StorageKey& key,
+      GetStorageUsageForStorageKeyCallback callback);
 
   // Returns info about all stored and initially installing registrations.
   // TODO(crbug.com/807440,1055677): Consider removing this method. Getting all
@@ -245,9 +249,9 @@ class CONTENT_EXPORT ServiceWorkerRegistry {
       const std::string& key_prefix,
       GetUserDataForAllRegistrationsCallback callback);
 
-  // Returns a set of origins which have at least one stored registration.
+  // Returns a set of storage keys which have at least one stored registration.
   // The set doesn't include installing/uninstalling/uninstalled registrations.
-  void GetRegisteredOrigins(GetRegisteredOriginsCallback callback);
+  void GetRegisteredStorageKeys(GetRegisteredStorageKeysCallback callback);
 
   // Performs internal storage cleanup. Operations to the storage in the past
   // (e.g. deletion) are usually recorded in disk for a certain period until
@@ -294,6 +298,12 @@ class CONTENT_EXPORT ServiceWorkerRegistry {
       mojo::PendingRemote<storage::mojom::ServiceWorkerLiveVersionRef>
           version_reference);
 
+  void CreateNewRegistrationWithBucketInfo(
+      blink::mojom::ServiceWorkerRegistrationOptions options,
+      const blink::StorageKey& key,
+      NewRegistrationCallback callback,
+      storage::QuotaErrorOr<storage::BucketInfo> result);
+
   // Looks up live registrations and returns an optional value which may contain
   // a "findable" registration. See the implementation of this method for
   // what "findable" means and when a registration is returned.
@@ -328,7 +338,7 @@ class CONTENT_EXPORT ServiceWorkerRegistry {
       storage::mojom::ServiceWorkerDatabaseStatus database_status,
       RegistrationList registration_data_list);
   void DidGetStorageUsageForStorageKey(
-      GetStorageUsageForOriginCallback callback,
+      GetStorageUsageForStorageKeyCallback callback,
       storage::mojom::ServiceWorkerDatabaseStatus database_status,
       int64_t usage);
   void DidStoreRegistration(
@@ -377,15 +387,14 @@ class CONTENT_EXPORT ServiceWorkerRegistry {
 
   void DidGetNewRegistrationId(
       blink::mojom::ServiceWorkerRegistrationOptions options,
+      const blink::StorageKey& key,
       NewRegistrationCallback callback,
       int64_t registration_id);
-  // TODO(http://crbug.com/1199077): Update function when ServiceWorkerVersion
-  // supports StorageKey
+
   void DidGetNewVersionId(
       scoped_refptr<ServiceWorkerRegistration> registration,
       const GURL& script_url,
       blink::mojom::ScriptType script_type,
-      const blink::StorageKey& key,
       NewVersionCallback callback,
       int64_t version_id,
       mojo::PendingRemote<storage::mojom::ServiceWorkerLiveVersionRef>
@@ -396,14 +405,14 @@ class CONTENT_EXPORT ServiceWorkerRegistry {
       StatusCallback callback,
       storage::mojom::ServiceWorkerDatabaseStatus status);
 
-  void DidGetRegisteredOrigins(GetRegisteredOriginsCallback callback,
-                               const std::vector<blink::StorageKey>& keys);
+  void DidGetRegisteredStorageKeys(GetRegisteredStorageKeysCallback callback,
+                                   const std::vector<blink::StorageKey>& keys);
   void DidPerformStorageCleanup(base::OnceClosure callback);
   void DidDisable();
   void DidApplyPolicyUpdates(
       storage::mojom::ServiceWorkerDatabaseStatus status);
-  void DidGetRegisteredOriginsOnStartup(
-      const std::vector<url::Origin>& origins);
+  void DidGetRegisteredStorageKeysOnStartup(
+      const std::vector<blink::StorageKey>& storage_keys);
   void ApplyPolicyUpdates(
       std::vector<storage::mojom::StoragePolicyUpdatePtr> policy_updates);
   bool ShouldPurgeOnShutdownForTesting(const blink::StorageKey& key);

@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "base/containers/contains.h"
+#include "base/containers/cxx20_erase.h"
 #include "base/memory/ptr_util.h"
 #include "cc/metrics/compositor_frame_reporting_controller.h"
 #include "cc/metrics/frame_sequence_tracker.h"
@@ -231,11 +232,12 @@ void FrameSequenceTrackerCollection::NotifyImplFrameCausedNoDamage(
 }
 
 void FrameSequenceTrackerCollection::NotifyMainFrameCausedNoDamage(
-    const viz::BeginFrameArgs& args) {
+    const viz::BeginFrameArgs& args,
+    bool aborted) {
   for (auto& tracker : frame_trackers_)
-    tracker.second->ReportMainFrameCausedNoDamage(args);
+    tracker.second->ReportMainFrameCausedNoDamage(args, aborted);
   for (auto& tracker : custom_frame_trackers_)
-    tracker.second->ReportMainFrameCausedNoDamage(args);
+    tracker.second->ReportMainFrameCausedNoDamage(args, aborted);
 }
 
 void FrameSequenceTrackerCollection::NotifyPauseFrameProduction() {

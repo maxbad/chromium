@@ -10,8 +10,10 @@
 // users' preferences, and FeatureList.
 
 #include <stdint.h>
+
 #include <deque>
 #include <string>
+#include <vector>
 
 #include "chromeos/dbus/dbus_method_call_status.h"
 
@@ -20,7 +22,6 @@ class Window;
 }  // namespace aura
 
 namespace base {
-class CommandLine;
 struct SystemMemoryInfoKB;
 }  // namespace base
 
@@ -105,6 +106,10 @@ bool IsArcVmUseHugePages();
 // vm_tools/init/arcvm_dev.conf file are ignored during ARCVM start.
 bool IsArcVmDevConfIgnored();
 
+// Returns true if ureadahead is disabled completely, including host and guest
+// parts. See also |GetArcVmUreadaheadMode|.
+bool IsUreadaheadDisabled();
+
 // Returns mode of operation for ureadahead during the ARCVM boot flow.
 // Valid modes are readahead, generate, or disabled.
 ArcVmUreadaheadMode GetArcVmUreadaheadMode(SystemMemoryInfoCallback callback);
@@ -122,10 +127,6 @@ bool ShouldArcAlwaysStartWithNoPlayStore();
 // Returns true if ARC OptIn ui needs to be shown for testing.
 bool ShouldShowOptInForTesting();
 
-// Enables to always start ARC without Play Store for testing, by appending the
-// command line flag.
-void SetArcAlwaysStartWithoutPlayStoreForTesting();
-
 // Returns true if ARC is installed and running ARC kiosk apps on the current
 // device is officially supported.
 // It doesn't follow that ARC is available for user sessions and
@@ -136,13 +137,6 @@ void SetArcAlwaysStartWithoutPlayStoreForTesting();
 // Also not that this function may return true when ARC is not running in
 // Kiosk mode, it checks only ARC Kiosk availability.
 bool IsArcKioskAvailable();
-
-// For testing ARC in browser tests, this function should be called in
-// SetUpCommandLine(), and its argument should be passed to this function.
-// Also, in unittests, this can be called in SetUp() with
-// base::CommandLine::ForCurrentProcess().
-// |command_line| must not be nullptr.
-void SetArcAvailableCommandLineForTesting(base::CommandLine* command_line);
 
 // Returns true if ARC should run under Kiosk mode for the current profile.
 // As it can return true only when user is already initialized, it implies
@@ -195,11 +189,6 @@ bool IsArcLocaleSyncDisabled();
 
 // Returns true in case ARC Play Auto Install flow is disabled.
 bool IsArcPlayAutoInstallDisabled();
-
-// Adjusts the amount of CPU the ARC instance is allowed to use. When
-// |cpu_restriction_state| is CPU_RESTRICTION_BACKGROUND, the limit is adjusted
-// so ARC can only use tightly restricted CPU resources.
-void SetArcCpuRestriction(CpuRestrictionState cpu_restriction_state);
 
 // Returns the Android density that should be used for the given device scale
 // factor used on chrome.

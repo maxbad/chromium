@@ -12,7 +12,6 @@
 #include <vector>
 
 #include "base/callback.h"
-#include "base/containers/span.h"
 #include "base/macros.h"
 #include "build/chromeos_buildflags.h"
 #include "device/bluetooth/bluetooth_remote_gatt_characteristic.h"
@@ -35,6 +34,12 @@ class MockBluetoothGattCharacteristic
                                   const BluetoothUUID& uuid,
                                   Properties properties,
                                   Permissions permissions);
+
+  MockBluetoothGattCharacteristic(const MockBluetoothGattCharacteristic&) =
+      delete;
+  MockBluetoothGattCharacteristic& operator=(
+      const MockBluetoothGattCharacteristic&) = delete;
+
   ~MockBluetoothGattCharacteristic() override;
 
   MOCK_CONST_METHOD0(GetIdentifier, std::string());
@@ -140,9 +145,6 @@ class MockBluetoothGattCharacteristic
                void(BluetoothRemoteGattDescriptor*,
                     base::OnceClosure&,
                     ErrorCallback&));
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(MockBluetoothGattCharacteristic);
 };
 
 }  // namespace device

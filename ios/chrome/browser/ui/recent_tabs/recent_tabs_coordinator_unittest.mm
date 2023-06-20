@@ -20,6 +20,8 @@
 #include "ios/chrome/browser/browser_state/test_chrome_browser_state.h"
 #include "ios/chrome/browser/main/test_browser.h"
 #include "ios/chrome/browser/sessions/ios_chrome_tab_restore_service_factory.h"
+#import "ios/chrome/browser/signin/authentication_service_factory.h"
+#import "ios/chrome/browser/signin/authentication_service_fake.h"
 #include "ios/chrome/browser/sync/session_sync_service_factory.h"
 #include "ios/chrome/browser/sync/sync_setup_service.h"
 #include "ios/chrome/browser/sync/sync_setup_service_factory.h"
@@ -118,6 +120,10 @@ class RecentTabsTableCoordinatorTest : public BlockCleanupTest {
 
     TestChromeBrowserState::Builder test_cbs_builder;
     test_cbs_builder.AddTestingFactory(
+        AuthenticationServiceFactory::GetInstance(),
+        base::BindRepeating(
+            &AuthenticationServiceFake::CreateAuthenticationService));
+    test_cbs_builder.AddTestingFactory(
         SyncSetupServiceFactory::GetInstance(),
         base::BindRepeating(&SyncSetupServiceMock::CreateKeyedService));
     test_cbs_builder.AddTestingFactory(
@@ -127,6 +133,10 @@ class RecentTabsTableCoordinatorTest : public BlockCleanupTest {
     test_cbs_builder.AddTestingFactory(
         IOSChromeTabRestoreServiceFactory::GetInstance(),
         IOSChromeTabRestoreServiceFactory::GetDefaultFactory());
+    test_cbs_builder.AddTestingFactory(
+        AuthenticationServiceFactory::GetInstance(),
+        base::BindRepeating(
+            &AuthenticationServiceFake::CreateAuthenticationService));
     chrome_browser_state_ = test_cbs_builder.Build();
 
     browser_ = std::make_unique<TestBrowser>(chrome_browser_state_.get(),
@@ -174,7 +184,7 @@ class RecentTabsTableCoordinatorTest : public BlockCleanupTest {
     SyncSetupServiceMock* syncSetupService = static_cast<SyncSetupServiceMock*>(
         SyncSetupServiceFactory::GetForBrowserState(
             chrome_browser_state_.get()));
-    ON_CALL(*syncSetupService, IsSyncEnabled())
+    ON_CALL(*syncSetupService, CanSyncFeatureStart())
         .WillByDefault(Return(syncEnabled));
     ON_CALL(*syncSetupService, IsDataTypePreferred(syncer::PROXY_TABS))
         .WillByDefault(Return(true));
@@ -235,6 +245,7 @@ class RecentTabsTableCoordinatorTest : public BlockCleanupTest {
 };
 
 TEST_F(RecentTabsTableCoordinatorTest, TestConstructorDestructor) {
+  SetupSyncState(NO, NO, NO, NO);
   CreateController();
   EXPECT_TRUE(coordinator_);
 }

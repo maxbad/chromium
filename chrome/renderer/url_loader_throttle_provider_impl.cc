@@ -23,7 +23,7 @@
 #include "chrome/renderer/subresource_redirect/subresource_redirect_url_loader_throttle.h"
 #include "components/no_state_prefetch/renderer/no_state_prefetch_helper.h"
 #include "components/safe_browsing/content/renderer/renderer_url_loader_throttle.h"
-#include "components/safe_browsing/core/features.h"
+#include "components/safe_browsing/core/common/features.h"
 #include "content/public/common/content_features.h"
 #include "content/public/renderer/render_frame.h"
 #include "content/public/renderer/render_thread.h"
@@ -196,10 +196,11 @@ URLLoaderThrottleProviderImpl::CreateThrottles(
           ->chromeos_listener()));
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
 
-  auto throttle = subresource_redirect::SubresourceRedirectURLLoaderThrottle::
-      MaybeCreateThrottle(request, render_frame_id);
-  if (throttle)
-    throttles.emplace_back(std::move(throttle));
+  auto subresource_redirect_throttle =
+      subresource_redirect::SubresourceRedirectURLLoaderThrottle::
+          MaybeCreateThrottle(request, render_frame_id);
+  if (subresource_redirect_throttle)
+    throttles.emplace_back(std::move(subresource_redirect_throttle));
   auto src_video_redirect_throttle =
       subresource_redirect::SrcVideoRedirectURLLoaderThrottle::
           MaybeCreateThrottle(request, render_frame_id);
@@ -207,10 +208,11 @@ URLLoaderThrottleProviderImpl::CreateThrottles(
     throttles.emplace_back(std::move(src_video_redirect_throttle));
 
   if (render_frame_id != MSG_ROUTING_NONE) {
-    auto throttle = lite_video::LiteVideoURLLoaderThrottle::MaybeCreateThrottle(
-        request, render_frame_id);
-    if (throttle)
-      throttles.emplace_back(std::move(throttle));
+    auto lite_video_throttle =
+        lite_video::LiteVideoURLLoaderThrottle::MaybeCreateThrottle(
+            request, render_frame_id);
+    if (lite_video_throttle)
+      throttles.emplace_back(std::move(lite_video_throttle));
   }
 
   return throttles;

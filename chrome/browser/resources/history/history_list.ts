@@ -8,18 +8,18 @@ import 'chrome://resources/polymer/v3_0/iron-list/iron-list.js';
 import 'chrome://resources/polymer/v3_0/iron-scroll-threshold/iron-scroll-threshold.js';
 import './shared_style.js';
 
-import {CrActionMenuElement} from 'chrome://resources/cr_elements/cr_action_menu/cr_action_menu.m.js';
+import {CrA11yAnnouncerElement} from 'chrome://resources/cr_elements/cr_a11y_announcer/cr_a11y_announcer.js';
+import {CrActionMenuElement} from 'chrome://resources/cr_elements/cr_action_menu/cr_action_menu.js';
 import {CrDialogElement} from 'chrome://resources/cr_elements/cr_dialog/cr_dialog.m.js';
 import {CrLazyRenderElement} from 'chrome://resources/cr_elements/cr_lazy_render/cr_lazy_render.m.js';
 import {assert} from 'chrome://resources/js/assert.m.js';
-import {I18nBehavior, I18nBehaviorInterface} from 'chrome://resources/js/i18n_behavior.m.js';
+import {I18nMixin} from 'chrome://resources/js/i18n_mixin.js';
 import {loadTimeData} from 'chrome://resources/js/load_time_data.m.js';
 import {getDeepActiveElement} from 'chrome://resources/js/util.m.js';
-import {WebUIListenerBehavior, WebUIListenerBehaviorInterface} from 'chrome://resources/js/web_ui_listener_behavior.m.js';
-import {IronA11yAnnouncer} from 'chrome://resources/polymer/v3_0/iron-a11y-announcer/iron-a11y-announcer.js';
+import {WebUIListenerMixin} from 'chrome://resources/js/web_ui_listener_mixin.js';
 import {IronListElement} from 'chrome://resources/polymer/v3_0/iron-list/iron-list.js';
 import {IronScrollThresholdElement} from 'chrome://resources/polymer/v3_0/iron-scroll-threshold/iron-scroll-threshold.js';
-import {html, mixinBehaviors, PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
+import {html, PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 
 import {BrowserService} from './browser_service.js';
 import {BROWSING_GAP_TIME, UMA_MAX_BUCKET_VALUE, UMA_MAX_SUBSET_BUCKET_VALUE} from './constants.js';
@@ -49,8 +49,8 @@ export interface HistoryListElement {
   $: {
     'infinite-list': IronListElement,
     'scroll-threshold': IronScrollThresholdElement,
-    'dialog': CrLazyRenderElement,
-    'sharedMenu': CrLazyRenderElement,
+    'dialog': CrLazyRenderElement<CrDialogElement>,
+    'sharedMenu': CrLazyRenderElement<CrActionMenuElement>,
   };
 }
 
@@ -62,9 +62,7 @@ declare global {
   }
 }
 
-const HistoryListElementBase =
-    mixinBehaviors([I18nBehavior, WebUIListenerBehavior], PolymerElement) as
-    {new (): PolymerElement & I18nBehavior & WebUIListenerBehavior};
+const HistoryListElementBase = WebUIListenerMixin(I18nMixin(PolymerElement));
 
 export class HistoryListElement extends HistoryListElementBase {
   static get is() {
@@ -162,10 +160,8 @@ export class HistoryListElement extends HistoryListElementBase {
     this.closeMenu_();
 
     if (info.term && !this.queryState.incremental) {
-      IronA11yAnnouncer.requestAvailability();
-      this.fire_(
-          'iron-announce',
-          {text: searchResultsTitle(results.length, info.term)});
+      CrA11yAnnouncerElement.getInstance().announce(
+          searchResultsTitle(results.length, info.term));
     }
 
     this.addNewResults(results, this.queryState.incremental, info.finished);
@@ -248,10 +244,6 @@ export class HistoryListElement extends HistoryListElementBase {
     });
 
     assert(this.selectedItems.size === 0);
-
-    IronA11yAnnouncer.requestAvailability();
-    this.fire_(
-        'iron-announce', {text: loadTimeData.getString('itemsUnselected')});
   }
 
   /** @return {number} */
@@ -273,7 +265,7 @@ export class HistoryListElement extends HistoryListElementBase {
     if (this.queryState.searchTerm !== '') {
       browserService.recordAction('SearchResultRemove');
     }
-    (this.$.dialog.get() as CrDialogElement).showModal();
+    this.$.dialog.get().showModal();
 
     // TODO(dbeam): remove focus flicker caused by showModal() + focus().
     (this.shadowRoot!.querySelector('.action-button') as HTMLElement).focus();
@@ -345,7 +337,7 @@ export class HistoryListElement extends HistoryListElementBase {
    * Closes the overflow menu.
    */
   private closeMenu_() {
-    const menu = this.$.sharedMenu.getIfExists() as CrActionMenuElement;
+    const menu = this.$.sharedMenu.getIfExists();
     if (menu && menu.open) {
       this.actionMenuModel_ = null;
       menu.close();
@@ -359,15 +351,15 @@ export class HistoryListElement extends HistoryListElementBase {
     BrowserService.getInstance().recordAction('ConfirmRemoveSelected');
 
     this.deleteSelected_();
-    const dialog = assert(this.$.dialog.getIfExists()) as CrDialogElement;
-    dialog.close();
+    const dialog = assert(this.$.dialog.getIfExists());
+    dialog!.close();
   }
 
   private onDialogCancelTap_() {
     BrowserService.getInstance().recordAction('CancelRemoveSelected');
 
-    const dialog = assert(this.$.dialog.getIfExists()) as CrDialogElement;
-    dialog.close();
+    const dialog = assert(this.$.dialog.getIfExists());
+    dialog!.close();
   }
 
   /**
@@ -412,14 +404,13 @@ export class HistoryListElement extends HistoryListElementBase {
 
     const target = e.detail.target;
     this.actionMenuModel_ = e.detail;
-    const menu = this.$.sharedMenu.get() as CrActionMenuElement;
-    menu.showAt(target);
+    this.$.sharedMenu.get().showAt(target);
   }
 
   private onMoreFromSiteTap_() {
     BrowserService.getInstance().recordAction('EntryMenuShowMoreFromSite');
 
-    const menu = assert(this.$.sharedMenu.getIfExists());
+    assert(this.$.sharedMenu.getIfExists());
     this.fire_('change-query', {search: this.actionMenuModel_!.item.domain});
     this.actionMenuModel_ = null;
     this.closeMenu_();
@@ -440,10 +431,13 @@ export class HistoryListElement extends HistoryListElementBase {
     browserService.recordAction('EntryMenuRemoveFromHistory');
 
     assert(!this.pendingDelete);
-    const menu = assert(this.$.sharedMenu.getIfExists());
+    assert(this.$.sharedMenu.getIfExists());
     const itemData = this.actionMenuModel_!;
 
     this.deleteItems_([itemData.item]).then(() => {
+      CrA11yAnnouncerElement.getInstance().announce(
+          this.i18n('deleteSuccess', itemData.item.title));
+
       // This unselect-all resets the toolbar when deleting a selected item
       // and clears selection state which can be invalid if items move
       // around during deletion.

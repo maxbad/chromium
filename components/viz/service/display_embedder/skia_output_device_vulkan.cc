@@ -25,6 +25,10 @@
 #include "third_party/skia/include/gpu/GrDirectContext.h"
 #include "third_party/skia/include/gpu/vk/GrVkTypes.h"
 
+#if defined(OS_ANDROID)
+#include <android/native_window_jni.h>
+#endif
+
 namespace viz {
 
 // static
@@ -161,7 +165,9 @@ void SkiaOutputDeviceVulkan::PostSubBuffer(const gfx::Rect& rect,
 }
 
 SkSurface* SkiaOutputDeviceVulkan::BeginPaint(
+    bool allocate_frame_buffer,
     std::vector<GrBackendSemaphore>* end_semaphores) {
+  DCHECK(!allocate_frame_buffer);
   DCHECK(vulkan_surface_);
   DCHECK(!scoped_write_);
 
@@ -258,6 +264,12 @@ bool SkiaOutputDeviceVulkan::Initialize() {
   accelerated_widget =
       gpu::GpuSurfaceLookup::GetInstance()->AcquireNativeWidget(
           surface_handle_, &can_be_used_with_surface_control);
+  base::ScopedClosureRunner release_runner(base::BindOnce(
+      [](gfx::AcceleratedWidget widget) {
+        if (widget)
+          ANativeWindow_release(widget);
+      },
+      accelerated_widget));
 #else
   accelerated_widget = surface_handle_;
 #endif

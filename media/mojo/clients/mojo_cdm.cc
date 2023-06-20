@@ -12,7 +12,8 @@
 #include "base/callback_helpers.h"
 #include "base/location.h"
 #include "base/metrics/histogram_macros.h"
-#include "base/single_thread_task_runner.h"
+#include "base/stl_util.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "media/base/cdm_context.h"
 #include "media/base/cdm_key_information.h"
@@ -88,7 +89,7 @@ MojoCdm::~MojoCdm() {
   // Reject any outstanding promises and close all the existing sessions.
   cdm_promise_adapter_.Clear(CdmPromiseAdapter::ClearReason::kDestruction);
   cdm_session_tracker_.CloseRemainingSessions(
-      session_closed_cb_, CdmSessionClosedReason::kCdmUnavailable);
+      session_closed_cb_, CdmSessionClosedReason::kInternalError);
 }
 
 // Using base::Unretained(this) below is safe because |this| owns |remote_cdm_|,
@@ -109,7 +110,7 @@ void MojoCdm::OnConnectionError(uint32_t custom_reason,
   // promises and close all the existing sessions.
   cdm_promise_adapter_.Clear(CdmPromiseAdapter::ClearReason::kConnectionError);
   cdm_session_tracker_.CloseRemainingSessions(
-      session_closed_cb_, CdmSessionClosedReason::kCdmUnavailable);
+      session_closed_cb_, CdmSessionClosedReason::kInternalError);
 }
 
 void MojoCdm::SetServerCertificate(const std::vector<uint8_t>& certificate,

@@ -13,6 +13,14 @@ uint32_t SharedImageInterface::UsageForMailbox(const Mailbox& mailbox) {
 void SharedImageInterface::NotifyMailboxAdded(const Mailbox& /*mailbox*/,
                                               uint32_t /*usage*/) {}
 
+std::vector<Mailbox> SharedImageInterface::CreateSharedImageVideoPlanes(
+    gfx::GpuMemoryBuffer* gpu_memory_buffer,
+    GpuMemoryBufferManager* gpu_memory_buffer_manager,
+    uint32_t usage) {
+  NOTREACHED();
+  return {};
+}
+
 Mailbox SharedImageInterface::CreateSharedImageWithAHB(
     const Mailbox& mailbox,
     uint32_t usage,
@@ -31,6 +39,11 @@ Mailbox SharedImageInterface::CreateSharedImage(
   return CreateSharedImage(gpu_memory_buffer, gpu_memory_buffer_manager,
                            gfx::BufferPlane::DEFAULT, color_space,
                            surface_origin, alpha_type, usage);
+}
+
+void SharedImageInterface::CopyToGpuMemoryBuffer(const SyncToken& sync_token,
+                                                 const Mailbox& mailbox) {
+  NOTREACHED();
 }
 
 }  // namespace gpu

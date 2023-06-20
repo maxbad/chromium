@@ -42,7 +42,9 @@
 #include "third_party/blink/renderer/core/html_names.h"
 #include "third_party/blink/renderer/core/input_type_names.h"
 #include "third_party/blink/renderer/core/layout/layout_block.h"
+#include "third_party/blink/renderer/core/layout/layout_embedded_content.h"
 #include "third_party/blink/renderer/core/layout/layout_image.h"
+#include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_physical_box_fragment.h"
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/page/scrolling/top_document_root_scroller_controller.h"
@@ -133,6 +135,7 @@ void HitTestResult::PopulateFromCachedResult(const HitTestResult& other) {
 }
 
 void HitTestResult::Trace(Visitor* visitor) const {
+  visitor->Trace(hit_test_request_);
   visitor->Trace(inner_node_);
   visitor->Trace(inert_node_);
   visitor->Trace(inner_element_);
@@ -172,7 +175,7 @@ PositionWithAffinity HitTestResult::GetPosition() const {
     return PositionWithAffinity();
 
   // We should never have a layout object that is within a locked subtree.
-  CHECK(!DisplayLockUtilities::NearestLockedExclusiveAncestor(*layout_object));
+  CHECK(!DisplayLockUtilities::LockedAncestorPreventingPaint(*layout_object));
 
   // If the layout object is blocked by display lock, we return the beginning of
   // the node as the position. This is because we don't paint contents of the
@@ -203,7 +206,7 @@ PositionWithAffinity HitTestResult::GetPositionForInnerNodeOrImageMapImage()
   if (!layout_object)
     return PositionWithAffinity();
   // We should never have a layout object that is within a locked subtree.
-  CHECK(!DisplayLockUtilities::NearestLockedExclusiveAncestor(*layout_object));
+  CHECK(!DisplayLockUtilities::LockedAncestorPreventingPaint(*layout_object));
 
   // If the layout object is blocked by display lock, we return the beginning of
   // the node as the position. This is because we don't paint contents of the
@@ -257,7 +260,10 @@ CompositorElementId HitTestResult::GetScrollableContainer() const {
           cur_box->UniqueId(), CompositorElementIdNamespace::kScroll);
     }
 
-    cur_box = cur_box->ContainingBlock();
+    if (IsA<LayoutView>(cur_box))
+      cur_box = cur_box->GetFrame()->OwnerLayoutObject();
+    else
+      cur_box = cur_box->ContainingBlock();
   }
 
   return InnerNode()
@@ -508,26 +514,40 @@ bool HitTestResult::IsContentEditable() const {
   return HasEditableStyle(*inner_node_);
 }
 
-ListBasedHitTestBehavior HitTestResult::AddNodeToListBasedTestResult(
+std::tuple<bool, ListBasedHitTestBehavior>
+HitTestResult::AddNodeToListBasedTestResultInternal(
     Node* node,
-    const HitTestLocation& location,
-    const PhysicalRect& rect) {
+    const HitTestLocation& location) {
   // If we are in the process of retargeting for `inert`, continue.
   if (GetHitTestRequest().RetargetForInert() && InertNode() && !InnerNode())
-    return kContinueHitTesting;
+    return std::make_tuple(false, kContinueHitTesting);
 
   // If not a list-based test, stop testing because the hit has been found.
   if (!GetHitTestRequest().ListBased())
-    return kStopHitTesting;
+    return std::make_tuple(false, kStopHitTesting);
 
   if (!node)
-    return kContinueHitTesting;
+    return std::make_tuple(false, kContinueHitTesting);
 
   MutableListBasedTestResult().insert(node);
 
   if (GetHitTestRequest().PenetratingList())
-    return kContinueHitTesting;
+    return std::make_tuple(false, kContinueHitTesting);
 
+  // The second argument will be ignored.
+  return std::make_tuple(true, kContinueHitTesting);
+}
+
+ListBasedHitTestBehavior HitTestResult::AddNodeToListBasedTestResult(
+    Node* node,
+    const HitTestLocation& location,
+    const PhysicalRect& rect) {
+  bool should_check_containment;
+  ListBasedHitTestBehavior behavior;
+  std::tie(should_check_containment, behavior) =
+      AddNodeToListBasedTestResultInternal(node, location);
+  if (!should_check_containment)
+    return behavior;
   return rect.Contains(location.BoundingBox()) ? kStopHitTesting
                                                : kContinueHitTesting;
 }
@@ -535,23 +555,28 @@ ListBasedHitTestBehavior HitTestResult::AddNodeToListBasedTestResult(
 ListBasedHitTestBehavior HitTestResult::AddNodeToListBasedTestResult(
     Node* node,
     const HitTestLocation& location,
+    const FloatQuad& quad) {
+  bool should_check_containment;
+  ListBasedHitTestBehavior behavior;
+  std::tie(should_check_containment, behavior) =
+      AddNodeToListBasedTestResultInternal(node, location);
+  if (!should_check_containment)
+    return behavior;
+  return quad.ContainsQuad(FloatRect(location.BoundingBox()))
+             ? kStopHitTesting
+             : kContinueHitTesting;
+}
+
+ListBasedHitTestBehavior HitTestResult::AddNodeToListBasedTestResult(
+    Node* node,
+    const HitTestLocation& location,
     const Region& region) {
-  // If we are in the process of retargeting for `inert`, continue.
-  if (GetHitTestRequest().RetargetForInert() && InertNode() && !InnerNode())
-    return kContinueHitTesting;
-
-  // If not a list-based test, stop testing because the hit has been found.
-  if (!GetHitTestRequest().ListBased())
-    return kStopHitTesting;
-
-  if (!node)
-    return kContinueHitTesting;
-
-  MutableListBasedTestResult().insert(node);
-
-  if (GetHitTestRequest().PenetratingList())
-    return kContinueHitTesting;
-
+  bool should_check_containment;
+  ListBasedHitTestBehavior behavior;
+  std::tie(should_check_containment, behavior) =
+      AddNodeToListBasedTestResultInternal(node, location);
+  if (!should_check_containment)
+    return behavior;
   return region.Contains(location.EnclosingIntRect()) ? kStopHitTesting
                                                       : kContinueHitTesting;
 }

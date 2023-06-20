@@ -74,6 +74,47 @@ TEST(ExtensionActionHandlerTest, LoadInvisiblePageActionIconUnpacked) {
       error);
 }
 
+using ExtensionActionHandlerManifestTest = ManifestTest;
+
+TEST_F(ExtensionActionHandlerManifestTest, NoActionSpecified_ManifestV2) {
+  constexpr char kManifest[] =
+      R"({
+           "name": "Test",
+           "manifest_version": 2,
+           "version": "0.1"
+         })";
+
+  base::Value manifest_value = base::test::ParseJson(kManifest);
+  ASSERT_TRUE(manifest_value.is_dict());
+  scoped_refptr<const Extension> extension =
+      LoadAndExpectSuccess(ManifestData(std::move(manifest_value), "test"));
+  ASSERT_TRUE(extension);
+
+  const ActionInfo* action_info =
+      GetActionInfoOfType(*extension, ActionInfo::TYPE_PAGE);
+  ASSERT_TRUE(action_info);
+}
+
+TEST_F(ExtensionActionHandlerManifestTest, NoActionSpecified_ManifestV3) {
+  constexpr char kManifest[] =
+      R"({
+           "name": "Test",
+           "manifest_version": 3,
+           "version": "0.1"
+         })";
+
+  base::Value manifest_value = base::test::ParseJson(kManifest);
+  ASSERT_TRUE(manifest_value.is_dict());
+  scoped_refptr<const Extension> extension =
+      LoadAndExpectSuccess(ManifestData(std::move(manifest_value), "test"));
+  ASSERT_TRUE(extension);
+
+  const ActionInfo* action_info =
+      GetActionInfoOfType(*extension, ActionInfo::TYPE_ACTION);
+  ASSERT_TRUE(action_info);
+  EXPECT_EQ(ActionInfo::STATE_DISABLED, action_info->default_state);
+}
+
 // A parameterized test suite to test each different extension action key
 // ("page_action", "browser_action", "action").
 class ExtensionActionManifestTest
@@ -81,6 +122,11 @@ class ExtensionActionManifestTest
       public testing::WithParamInterface<ActionInfo::Type> {
  public:
   ExtensionActionManifestTest() {}
+
+  ExtensionActionManifestTest(const ExtensionActionManifestTest&) = delete;
+  ExtensionActionManifestTest& operator=(const ExtensionActionManifestTest&) =
+      delete;
+
   ~ExtensionActionManifestTest() override {}
 
   // Constructs and returns a ManifestData object with the provided
@@ -106,8 +152,6 @@ class ExtensionActionManifestTest
  private:
   // The "action" key is restricted to trunk.
   ScopedCurrentChannel scoped_channel_{version_info::Channel::UNKNOWN};
-
-  DISALLOW_COPY_AND_ASSIGN(ExtensionActionManifestTest);
 };
 
 // Tests that parsing an action succeeds and properly populates the given

@@ -9,7 +9,7 @@
 #include "base/android/jni_string.h"
 #include "base/feature_list.h"
 #include "base/notreached.h"
-#include "components/safe_browsing/core/features.h"
+#include "components/safe_browsing/core/common/features.h"
 
 using base::android::ConvertJavaStringToUTF8;
 using base::android::JavaParamRef;
@@ -28,6 +28,8 @@ const base::Feature* const kFeaturesExposedToJava[] = {
     &features::kWebViewTestFeature,
     &features::kWebViewMeasureScreenCoverage,
     &features::kWebViewJavaJsBridgeMojo,
+    &features::kWebViewUseMetricsUploadService,
+    &features::kWebViewLogFirstPartyPageTimeSpent,
 };
 
 const base::Feature* FindFeatureExposedToJava(const std::string& feature_name) {

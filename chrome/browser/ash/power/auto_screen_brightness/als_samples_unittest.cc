@@ -43,11 +43,12 @@ void CheckAverageAndStdDev(const AlsAvgStdDev& result,
 
 TEST(AmbientLightSampleBufferTest, Basic) {
   base::SimpleTestTickClock tick_clock;
-  AmbientLightSampleBuffer buffer(base::TimeDelta::FromSeconds(5));
+  AmbientLightSampleBuffer buffer(base::Seconds(5));
   std::vector<double> expected_data;
   for (int i = 1; i < 6; ++i) {
-    tick_clock.Advance(base::TimeDelta::FromSeconds(1));
-    const AmbientLightSampleBuffer::Sample sample = {i, tick_clock.NowTicks()};
+    tick_clock.Advance(base::Seconds(1));
+    const AmbientLightSampleBuffer::Sample sample = {static_cast<double>(i),
+                                                     tick_clock.NowTicks()};
     expected_data.push_back(i);
     buffer.SaveToBuffer(sample);
     EXPECT_EQ(buffer.NumberOfSamplesForTesting(), static_cast<size_t>(i));
@@ -60,7 +61,7 @@ TEST(AmbientLightSampleBufferTest, Basic) {
   }
 
   // Add another two items that will push out the oldest.
-  tick_clock.Advance(base::TimeDelta::FromSeconds(1));
+  tick_clock.Advance(base::Seconds(1));
   buffer.SaveToBuffer({10, tick_clock.NowTicks()});
 
   EXPECT_EQ(buffer.NumberOfSamplesForTesting(), 5u);
@@ -69,7 +70,7 @@ TEST(AmbientLightSampleBufferTest, Basic) {
       {2, 3, 4, 5, 10});
   EXPECT_EQ(buffer.NumberOfSamplesForTesting(), 5u);
 
-  tick_clock.Advance(base::TimeDelta::FromSeconds(1));
+  tick_clock.Advance(base::Seconds(1));
   buffer.SaveToBuffer({20, tick_clock.NowTicks()});
   EXPECT_EQ(buffer.NumberOfSamplesForTesting(), 5u);
   CheckAverageAndStdDev(
@@ -78,7 +79,7 @@ TEST(AmbientLightSampleBufferTest, Basic) {
   EXPECT_EQ(buffer.NumberOfSamplesForTesting(), 5u);
 
   // Add another item but it doesn't push out the oldest.
-  tick_clock.Advance(base::TimeDelta::FromMilliseconds(1));
+  tick_clock.Advance(base::Milliseconds(1));
   buffer.SaveToBuffer({100, tick_clock.NowTicks()});
   EXPECT_EQ(buffer.NumberOfSamplesForTesting(), 6u);
   CheckAverageAndStdDev(
@@ -89,8 +90,8 @@ TEST(AmbientLightSampleBufferTest, Basic) {
 
 TEST(AmbientLightSampleBufferTest, LargeSampleTimeGap) {
   base::SimpleTestTickClock tick_clock;
-  AmbientLightSampleBuffer buffer(base::TimeDelta::FromSeconds(5));
-  tick_clock.Advance(base::TimeDelta::FromSeconds(1));
+  AmbientLightSampleBuffer buffer(base::Seconds(5));
+  tick_clock.Advance(base::Seconds(1));
   const AmbientLightSampleBuffer::Sample sample = {10, tick_clock.NowTicks()};
   buffer.SaveToBuffer(sample);
   EXPECT_EQ(buffer.NumberOfSamplesForTesting(), 1u);
@@ -99,7 +100,7 @@ TEST(AmbientLightSampleBufferTest, LargeSampleTimeGap) {
   EXPECT_EQ(buffer.NumberOfSamplesForTesting(), 1u);
 
   // Another samples arrives sufficiently late so the 1st sample is pushed out.
-  tick_clock.Advance(base::TimeDelta::FromSeconds(5));
+  tick_clock.Advance(base::Seconds(5));
   buffer.SaveToBuffer({20, tick_clock.NowTicks()});
   EXPECT_EQ(buffer.NumberOfSamplesForTesting(), 1u);
   CheckAverageAndStdDev(
@@ -109,8 +110,8 @@ TEST(AmbientLightSampleBufferTest, LargeSampleTimeGap) {
 
 TEST(AmbientLightSampleBufferTest, AverageTimeTooLate) {
   base::SimpleTestTickClock tick_clock;
-  AmbientLightSampleBuffer buffer(base::TimeDelta::FromSeconds(5));
-  tick_clock.Advance(base::TimeDelta::FromSeconds(1));
+  AmbientLightSampleBuffer buffer(base::Seconds(5));
+  tick_clock.Advance(base::Seconds(1));
   const AmbientLightSampleBuffer::Sample sample = {10, tick_clock.NowTicks()};
   buffer.SaveToBuffer(sample);
   EXPECT_EQ(buffer.NumberOfSamplesForTesting(), 1u);
@@ -120,7 +121,7 @@ TEST(AmbientLightSampleBufferTest, AverageTimeTooLate) {
 
   // When average is calculated, all samples are too old, hence average is
   // nullopt.
-  tick_clock.Advance(base::TimeDelta::FromSeconds(5));
+  tick_clock.Advance(base::Seconds(5));
   EXPECT_EQ(buffer.NumberOfSamplesForTesting(), 1u);
   EXPECT_FALSE(
       buffer.AverageAmbientWithStdDev(tick_clock.NowTicks()).has_value());
@@ -129,13 +130,13 @@ TEST(AmbientLightSampleBufferTest, AverageTimeTooLate) {
 
 TEST(AmbientLightSampleBufferTest, BufferCleared) {
   base::SimpleTestTickClock tick_clock;
-  AmbientLightSampleBuffer buffer(base::TimeDelta::FromSeconds(5));
+  AmbientLightSampleBuffer buffer(base::Seconds(5));
 
   // Save two data points and verify.
-  tick_clock.Advance(base::TimeDelta::FromSeconds(1));
+  tick_clock.Advance(base::Seconds(1));
   buffer.SaveToBuffer({10, tick_clock.NowTicks()});
 
-  tick_clock.Advance(base::TimeDelta::FromSeconds(1));
+  tick_clock.Advance(base::Seconds(1));
   buffer.SaveToBuffer({20, tick_clock.NowTicks()});
 
   EXPECT_EQ(buffer.NumberOfSamplesForTesting(), 2u);
@@ -151,10 +152,10 @@ TEST(AmbientLightSampleBufferTest, BufferCleared) {
       buffer.AverageAmbientWithStdDev(tick_clock.NowTicks()).has_value());
 
   // Save another two data points and verify.
-  tick_clock.Advance(base::TimeDelta::FromSeconds(1));
+  tick_clock.Advance(base::Seconds(1));
   buffer.SaveToBuffer({30, tick_clock.NowTicks()});
 
-  tick_clock.Advance(base::TimeDelta::FromSeconds(1));
+  tick_clock.Advance(base::Seconds(1));
   buffer.SaveToBuffer({40, tick_clock.NowTicks()});
   avg_std = buffer.AverageAmbientWithStdDev(tick_clock.NowTicks()).value();
   CheckAverageAndStdDev(avg_std, {30, 40});

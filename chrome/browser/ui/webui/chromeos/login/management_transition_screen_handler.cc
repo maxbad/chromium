@@ -23,11 +23,17 @@
 
 namespace {
 
-constexpr base::TimeDelta kWaitingTimeout = base::TimeDelta::FromMinutes(2);
+constexpr base::TimeDelta kWaitingTimeout = base::Minutes(2);
 
 }  // namespace
 
 namespace chromeos {
+namespace {
+
+// Management transition screen step names.
+const char kManagementTransitionStepError[] = "error";
+
+}  // namespace
 
 constexpr StaticOobeScreenId ManagementTransitionScreenView::kScreenId;
 
@@ -98,7 +104,7 @@ void ManagementTransitionScreenHandler::Show() {
 
   registrar_.Init(profile->GetPrefs());
   registrar_.Add(
-      arc::prefs::kArcSupervisionTransition,
+      arc::prefs::kArcManagementTransition,
       base::BindRepeating(
           &ManagementTransitionScreenHandler::OnManagementTransitionFinished,
           weak_factory_.GetWeakPtr()));
@@ -112,7 +118,7 @@ void ManagementTransitionScreenHandler::Show() {
 
   base::DictionaryValue data;
   data.SetInteger("arcTransition",
-                  static_cast<int>(arc::GetSupervisionTransition(profile)));
+                  static_cast<int>(arc::GetManagementTransition(profile)));
   data.SetString(
       "managementEntity",
       chrome::GetAccountManagerIdentity(profile).value_or(std::string()));
@@ -133,6 +139,10 @@ void ManagementTransitionScreenHandler::Initialize() {
   show_on_init_ = false;
 }
 
+void ManagementTransitionScreenHandler::ShowStep(const char* step) {
+  CallJS("login.ManagementTransitionScreen.showStep", std::string(step));
+}
+
 void ManagementTransitionScreenHandler::OnManagementTransitionFailed() {
   LOG(ERROR) << "Management transition failed; resetting ARC++ data.";
   // Prevent ARC++ data removal below from triggering the success flow (since it
@@ -141,10 +151,7 @@ void ManagementTransitionScreenHandler::OnManagementTransitionFailed() {
   timed_out_ = true;
   arc::ArcSessionManager::Get()->RequestArcDataRemoval();
   arc::ArcSessionManager::Get()->StopAndEnableArc();
-  if (screen_) {
-    AllowJavascript();
-    FireWebUIListener("management-transition-failed");
-  }
+  ShowStep(kManagementTransitionStepError);
 }
 
 void ManagementTransitionScreenHandler::OnManagementTransitionFinished() {

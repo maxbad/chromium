@@ -52,17 +52,17 @@ struct SupportSessionParams {
   // Do not prompt local user for approval when connecting. Used for Admin
   // initiated connections using the RemoteCommand infrastructure.
   [EnableIf=is_chromeos]
-  bool suppress_user_dialogs;
+  bool suppress_user_dialogs = false;
 
   // Do not show connection notifications in the system tray. Used for Admin
   // initiated connections using the RemoteCommand infrastructure.
   [EnableIf=is_chromeos]
-  bool suppress_notifications;
+  bool suppress_notifications = false;
 
   // Terminate the session if local user input is received. Used for Admin
   // initiated connections using the RemoteCommand infrastructure.
   [EnableIf=is_chromeos]
-  bool terminate_upon_input;
+  bool terminate_upon_input = false;
 };
 
 // Represents the state of the remote support host NAT device policies.
@@ -105,7 +105,10 @@ interface SupportHostObserver {
   OnHostStateConnected@4(string remote_username);
 
   // Indicates the remote support host is now disconnected.
-  OnHostStateDisconnected@6();
+  // |disconnect_reason| is a stringified protocol::ErrorCode which indicates
+  // the reason the session was disconnected. It is not meant to be displayed
+  // directly in the UI.
+  OnHostStateDisconnected@6([MinVersion=1] string? disconnect_reason);
 
   // Indicates there was a change to the NAT device policy.
   OnNatPolicyChanged@7(NatPolicyState nat_policy_state);

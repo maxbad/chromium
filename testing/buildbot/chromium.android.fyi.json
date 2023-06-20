@@ -25,7 +25,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -63,18 +64,93 @@
       }
     ]
   },
-  "Android arm64 Builder (dbg) (reclient)": {
-    "additional_compile_targets": [
-      "all"
-    ]
-  },
-  "android-11-x86-fyi-rel": {
+  "android-10-x86-fyi-rel-tests": {
     "gtest_tests": [
       {
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb"
+          "--avd-config=../../tools/android/avd/proto/generic_android29.textpb"
+        ],
+        "merge": {
+          "args": [
+            "--bucket",
+            "chromium-result-details",
+            "--test-name",
+            "webview_cts_tests"
+          ],
+          "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
+        },
+        "resultdb": {
+          "enable": true,
+          "has_native_resultdb_integration": true
+        },
+        "swarming": {
+          "can_use_on_swarming_builders": true,
+          "cipd_packages": [
+            {
+              "cipd_package": "chromium/android_webview/tools/cts_archive",
+              "location": "android_webview/tools/cts_archive",
+              "revision": "ai8Ig4HlO0vG6aP_JP2uhyruE2yPzze8PFP1g8Z4_hgC"
+            },
+            {
+              "cipd_package": "infra/tools/luci/logdog/butler/${platform}",
+              "location": "bin",
+              "revision": "git_revision:ff387eadf445b24c935f1cf7d6ddd279f8a6b04c"
+            }
+          ],
+          "dimension_sets": [
+            {
+              "cpu": "x86-64",
+              "device_os": null,
+              "device_type": null,
+              "machine_type": "n1-standard-4|e2-standard-4",
+              "os": "Ubuntu-16.04|Ubuntu-18.04",
+              "pool": "chromium.tests.avd"
+            }
+          ],
+          "named_caches": [
+            {
+              "name": "avd_generic_android29",
+              "path": ".android"
+            },
+            {
+              "name": "system_images_android_29_google_apis_x86",
+              "path": ".emulator_sdk"
+            }
+          ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android29"
+              }
+            ]
+          },
+          "output_links": [
+            {
+              "link": [
+                "https://luci-logdog.appspot.com/v/?s",
+                "=android%2Fswarming%2Flogcats%2F",
+                "${TASK_ID}%2F%2B%2Funified_logcats"
+              ],
+              "name": "shard #${SHARD_INDEX} logcats"
+            }
+          ],
+          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com",
+          "shards": 2
+        },
+        "test": "webview_cts_tests",
+        "test_id_prefix": "ninja://android_webview/test:webview_cts_tests/"
+      }
+    ]
+  },
+  "android-12-x64-fyi-rel": {
+    "gtest_tests": [
+      {
+        "args": [
+          "--gs-results-bucket=chromium-result-details",
+          "--recover-devices",
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -86,7 +162,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -102,21 +179,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -136,7 +220,7 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -148,7 +232,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -164,21 +249,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -189,8 +281,7 @@
               "name": "shard #${SHARD_INDEX} logcats"
             }
           ],
-          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com",
-          "shards": 2
+          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
         "test": "android_browsertests",
         "test_id_prefix": "ninja://chrome/test:android_browsertests/"
@@ -200,7 +291,7 @@
           "--test-launcher-batch-limit=1",
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -212,7 +303,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -228,21 +320,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -262,7 +361,7 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -274,7 +373,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -290,21 +390,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -324,14 +431,15 @@
         "args": [
           "angle_unittests",
           "-v",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [],
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -347,21 +455,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
         "test": "angle_unittests",
@@ -372,8 +487,9 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb",
-          "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_11.base_unittests.filter"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb",
+          "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator.base_unittests.filter",
+          "--gtest_filter=-ModuleCacheTest.CheckAgainstProcMaps"
         ],
         "merge": {
           "args": [
@@ -385,7 +501,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -401,21 +518,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -435,69 +559,7 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb"
-        ],
-        "merge": {
-          "args": [
-            "--bucket",
-            "chromium-result-details",
-            "--test-name",
-            "base_util_unittests"
-          ],
-          "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
-        },
-        "resultdb": {
-          "enable": true
-        },
-        "swarming": {
-          "can_use_on_swarming_builders": true,
-          "cipd_packages": [
-            {
-              "cipd_package": "infra/tools/luci/logdog/butler/${platform}",
-              "location": "bin",
-              "revision": "git_revision:ff387eadf445b24c935f1cf7d6ddd279f8a6b04c"
-            }
-          ],
-          "dimension_sets": [
-            {
-              "cpu": "x86-64",
-              "device_os": null,
-              "device_type": null,
-              "machine_type": "n1-standard-4",
-              "os": "Ubuntu-16.04|Ubuntu-18.04",
-              "pool": "chromium.tests.avd"
-            }
-          ],
-          "named_caches": [
-            {
-              "name": "avd_generic_android30",
-              "path": ".android"
-            },
-            {
-              "name": "system_images_android_30_google_apis_x86",
-              "path": ".emulator_sdk"
-            }
-          ],
-          "output_links": [
-            {
-              "link": [
-                "https://luci-logdog.appspot.com/v/?s",
-                "=android%2Fswarming%2Flogcats%2F",
-                "${TASK_ID}%2F%2B%2Funified_logcats"
-              ],
-              "name": "shard #${SHARD_INDEX} logcats"
-            }
-          ],
-          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
-        },
-        "test": "base_util_unittests",
-        "test_id_prefix": "ninja://base/util:base_util_unittests/"
-      },
-      {
-        "args": [
-          "--gs-results-bucket=chromium-result-details",
-          "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -509,7 +571,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -525,21 +588,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -559,7 +629,7 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -571,7 +641,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -587,21 +658,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -621,7 +699,7 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -633,7 +711,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -649,21 +728,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -683,8 +769,8 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb",
-          "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_11.blink_unittests.filter"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb",
+          "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator.blink_unittests.filter"
         ],
         "merge": {
           "args": [
@@ -697,7 +783,8 @@
         },
         "name": "webkit_unit_tests",
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -713,21 +800,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -739,7 +833,7 @@
             }
           ],
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com",
-          "shards": 4
+          "shards": 6
         },
         "test": "blink_unittests",
         "test_id_prefix": "ninja://third_party/blink/renderer/controller:blink_unittests/"
@@ -748,7 +842,7 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -760,7 +854,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -776,21 +871,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -810,7 +912,7 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -822,7 +924,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -838,21 +941,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -872,7 +982,7 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -884,7 +994,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -900,21 +1011,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -935,7 +1053,7 @@
           "--gtest_filter=-*UsingRealWebcam*",
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -947,7 +1065,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -963,21 +1082,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -997,7 +1123,7 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -1009,7 +1135,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -1025,21 +1152,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -1059,8 +1193,7 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb",
-          "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_11.cc_unittests.filter"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -1072,7 +1205,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -1088,21 +1222,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -1122,7 +1263,7 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -1134,7 +1275,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -1150,21 +1292,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -1182,11 +1331,11 @@
       },
       {
         "args": [
+          "--gtest_filter=-org.chromium.chrome.browser.contextualsearch.ContextualSearchManagerTest.test*ExternalNavigationWithUserGesture*:org.chromium.chrome.browser.externalnav.UrlOverridingTest.test*UserGesture*:org.chromium.chrome.browser.externalnav.UrlOverridingTest.testNavigationFromXHRCallback:org.chromium.chrome.browser.externalnav.UrlOverridingTest.testNavigationFromXHRCallbackAndShortTimeout:org.chromium.chrome.browser.externalnav.UrlOverridingTest.testNavigationFromXHRCallbackInSubFrame:org.chromium.chrome.browser.externalnav.UrlOverridingTest.testRedirectionFromIntent*",
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb",
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb",
           "--git-revision=${got_revision}",
-          "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_11.chrome_public_test_apk.filter",
           "--timeout-scale=2.0"
         ],
         "merge": {
@@ -1204,7 +1353,8 @@
           "--buildbucket-id=${buildbucket_build_id}"
         ],
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -1220,21 +1370,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -1246,7 +1403,86 @@
             }
           ],
           "service_account": "chrome-gold@chops-service-accounts.iam.gserviceaccount.com",
-          "shards": 30
+          "shards": 20
+        },
+        "test": "chrome_public_test_apk",
+        "test_id_prefix": "ninja://chrome/android:chrome_public_test_apk/"
+      },
+      {
+        "args": [
+          "--gtest_filter=org.chromium.chrome.browser.contextualsearch.ContextualSearchManagerTest.test*ExternalNavigationWithUserGesture*:org.chromium.chrome.browser.externalnav.UrlOverridingTest.test*UserGesture*:org.chromium.chrome.browser.externalnav.UrlOverridingTest.testNavigationFromXHRCallback:org.chromium.chrome.browser.externalnav.UrlOverridingTest.testNavigationFromXHRCallbackAndShortTimeout:org.chromium.chrome.browser.externalnav.UrlOverridingTest.testNavigationFromXHRCallbackInSubFrame:org.chromium.chrome.browser.externalnav.UrlOverridingTest.testRedirectionFromIntent*",
+          "--gs-results-bucket=chromium-result-details",
+          "--recover-devices",
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb",
+          "--git-revision=${got_revision}",
+          "--avd-config=../../tools/android/avd/proto/generic_playstore_android31.textpb"
+        ],
+        "merge": {
+          "args": [
+            "--bucket",
+            "chromium-result-details",
+            "--test-name",
+            "chrome_public_test_apk_with_playstore"
+          ],
+          "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
+        },
+        "name": "chrome_public_test_apk_with_playstore",
+        "precommit_args": [
+          "--gerrit-issue=${patch_issue}",
+          "--gerrit-patchset=${patch_set}",
+          "--buildbucket-id=${buildbucket_build_id}"
+        ],
+        "resultdb": {
+          "enable": true,
+          "has_native_resultdb_integration": true
+        },
+        "swarming": {
+          "can_use_on_swarming_builders": true,
+          "cipd_packages": [
+            {
+              "cipd_package": "infra/tools/luci/logdog/butler/${platform}",
+              "location": "bin",
+              "revision": "git_revision:ff387eadf445b24c935f1cf7d6ddd279f8a6b04c"
+            }
+          ],
+          "dimension_sets": [
+            {
+              "cpu": "x86-64",
+              "device_os": null,
+              "device_type": null,
+              "machine_type": "e2-standard-8",
+              "os": "Ubuntu-16.04|Ubuntu-18.04",
+              "pool": "chromium.tests.avd"
+            }
+          ],
+          "named_caches": [
+            {
+              "name": "avd_generic_playstore_android31",
+              "path": ".android"
+            },
+            {
+              "name": "system_images_android_31_google_apis_playstore_x64",
+              "path": ".emulator_sdk"
+            }
+          ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_playstore_android31"
+              }
+            ]
+          },
+          "output_links": [
+            {
+              "link": [
+                "https://luci-logdog.appspot.com/v/?s",
+                "=android%2Fswarming%2Flogcats%2F",
+                "${TASK_ID}%2F%2B%2Funified_logcats"
+              ],
+              "name": "shard #${SHARD_INDEX} logcats"
+            }
+          ],
+          "service_account": "chrome-gold@chops-service-accounts.iam.gserviceaccount.com"
         },
         "test": "chrome_public_test_apk",
         "test_id_prefix": "ninja://chrome/android:chrome_public_test_apk/"
@@ -1255,7 +1491,83 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb",
+          "--git-revision=${got_revision}"
+        ],
+        "merge": {
+          "args": [
+            "--bucket",
+            "chromium-result-details",
+            "--test-name",
+            "chrome_public_unit_test_apk"
+          ],
+          "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
+        },
+        "precommit_args": [
+          "--gerrit-issue=${patch_issue}",
+          "--gerrit-patchset=${patch_set}",
+          "--buildbucket-id=${buildbucket_build_id}"
+        ],
+        "resultdb": {
+          "enable": true,
+          "has_native_resultdb_integration": true
+        },
+        "swarming": {
+          "can_use_on_swarming_builders": true,
+          "cipd_packages": [
+            {
+              "cipd_package": "infra/tools/luci/logdog/butler/${platform}",
+              "location": "bin",
+              "revision": "git_revision:ff387eadf445b24c935f1cf7d6ddd279f8a6b04c"
+            }
+          ],
+          "dimension_sets": [
+            {
+              "cpu": "x86-64",
+              "device_os": null,
+              "device_type": null,
+              "machine_type": "e2-standard-8",
+              "os": "Ubuntu-16.04|Ubuntu-18.04",
+              "pool": "chromium.tests.avd"
+            }
+          ],
+          "named_caches": [
+            {
+              "name": "avd_generic_android31",
+              "path": ".android"
+            },
+            {
+              "name": "system_images_android_31_google_apis_x64",
+              "path": ".emulator_sdk"
+            }
+          ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
+          "output_links": [
+            {
+              "link": [
+                "https://luci-logdog.appspot.com/v/?s",
+                "=android%2Fswarming%2Flogcats%2F",
+                "${TASK_ID}%2F%2B%2Funified_logcats"
+              ],
+              "name": "shard #${SHARD_INDEX} logcats"
+            }
+          ],
+          "service_account": "chrome-gold@chops-service-accounts.iam.gserviceaccount.com"
+        },
+        "test": "chrome_public_unit_test_apk",
+        "test_id_prefix": "ninja://chrome/android:chrome_public_unit_test_apk/"
+      },
+      {
+        "args": [
+          "--gs-results-bucket=chromium-result-details",
+          "--recover-devices",
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -1267,7 +1579,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -1283,21 +1596,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -1308,8 +1628,7 @@
               "name": "shard #${SHARD_INDEX} logcats"
             }
           ],
-          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com",
-          "shards": 2
+          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
         "test": "components_browsertests",
         "test_id_prefix": "ninja://components:components_browsertests/"
@@ -1318,8 +1637,7 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb",
-          "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_11.components_unittests.filter"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -1331,7 +1649,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -1347,21 +1666,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -1382,7 +1708,7 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -1394,7 +1720,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -1410,21 +1737,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -1436,7 +1770,7 @@
             }
           ],
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com",
-          "shards": 30
+          "shards": 9
         },
         "test": "content_browsertests",
         "test_id_prefix": "ninja://content/test:content_browsertests/"
@@ -1445,8 +1779,7 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb",
-          "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_11.content_shell_test_apk.filter"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -1458,7 +1791,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -1474,21 +1808,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -1509,7 +1850,7 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -1521,7 +1862,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -1537,21 +1879,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -1572,8 +1921,8 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb",
-          "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_11.crashpad_tests.filter"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb",
+          "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_12.crashpad_tests.filter"
         ],
         "merge": {
           "args": [
@@ -1585,7 +1934,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -1601,21 +1951,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -1635,7 +1992,7 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -1647,7 +2004,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -1663,21 +2021,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -1697,7 +2062,7 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -1709,7 +2074,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -1725,21 +2091,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -1759,7 +2132,7 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -1771,7 +2144,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -1787,21 +2161,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -1821,7 +2202,7 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -1833,7 +2214,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -1849,21 +2231,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -1883,7 +2272,7 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -1895,7 +2284,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -1911,21 +2301,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -1945,7 +2342,7 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -1957,7 +2354,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -1973,21 +2371,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -2007,7 +2412,7 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -2019,7 +2424,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -2035,21 +2441,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -2070,8 +2483,7 @@
           "--use-cmd-decoder=validating",
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb",
-          "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_11.gl_tests.filter"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -2084,7 +2496,8 @@
         },
         "name": "gl_tests_validating",
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -2100,21 +2513,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -2134,7 +2554,7 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -2146,7 +2566,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -2162,21 +2583,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -2196,7 +2624,7 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -2208,7 +2636,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -2224,21 +2653,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -2258,7 +2694,7 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -2270,7 +2706,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -2286,21 +2723,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -2320,7 +2764,7 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -2332,7 +2776,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -2348,21 +2793,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -2382,7 +2834,7 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -2394,7 +2846,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -2410,21 +2863,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -2444,7 +2904,7 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -2456,7 +2916,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -2472,21 +2933,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -2506,7 +2974,7 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -2518,7 +2986,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -2534,21 +3003,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -2568,7 +3044,7 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -2580,7 +3056,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -2596,21 +3073,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -2630,7 +3114,7 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -2642,7 +3126,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -2658,21 +3143,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -2692,70 +3184,7 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb"
-        ],
-        "merge": {
-          "args": [
-            "--bucket",
-            "chromium-result-details",
-            "--test-name",
-            "media_blink_unittests"
-          ],
-          "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
-        },
-        "resultdb": {
-          "enable": true
-        },
-        "swarming": {
-          "can_use_on_swarming_builders": true,
-          "cipd_packages": [
-            {
-              "cipd_package": "infra/tools/luci/logdog/butler/${platform}",
-              "location": "bin",
-              "revision": "git_revision:ff387eadf445b24c935f1cf7d6ddd279f8a6b04c"
-            }
-          ],
-          "dimension_sets": [
-            {
-              "cpu": "x86-64",
-              "device_os": null,
-              "device_type": null,
-              "machine_type": "n1-standard-4",
-              "os": "Ubuntu-16.04|Ubuntu-18.04",
-              "pool": "chromium.tests.avd"
-            }
-          ],
-          "named_caches": [
-            {
-              "name": "avd_generic_android30",
-              "path": ".android"
-            },
-            {
-              "name": "system_images_android_30_google_apis_x86",
-              "path": ".emulator_sdk"
-            }
-          ],
-          "output_links": [
-            {
-              "link": [
-                "https://luci-logdog.appspot.com/v/?s",
-                "=android%2Fswarming%2Flogcats%2F",
-                "${TASK_ID}%2F%2B%2Funified_logcats"
-              ],
-              "name": "shard #${SHARD_INDEX} logcats"
-            }
-          ],
-          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
-        },
-        "test": "media_blink_unittests",
-        "test_id_prefix": "ninja://media/blink:media_blink_unittests/"
-      },
-      {
-        "args": [
-          "--gs-results-bucket=chromium-result-details",
-          "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb",
-          "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_11.media_unittests.filter"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -2767,7 +3196,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -2783,21 +3213,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -2817,7 +3254,7 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -2829,7 +3266,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -2845,21 +3283,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -2879,7 +3324,7 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -2891,7 +3336,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -2907,21 +3353,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -2941,7 +3394,7 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -2953,7 +3406,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -2969,21 +3423,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -3003,7 +3464,7 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -3015,7 +3476,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -3031,21 +3493,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -3065,7 +3534,7 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -3077,7 +3546,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -3093,21 +3563,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -3127,7 +3604,7 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -3139,7 +3616,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -3155,21 +3633,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -3189,8 +3674,7 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb",
-          "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_11.net_unittests.filter"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -3202,7 +3686,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -3218,21 +3703,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -3253,19 +3745,20 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
             "--bucket",
             "chromium-result-details",
             "--test-name",
-            "sandbox_linux_unittests"
+            "perfetto_unittests"
           ],
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -3281,21 +3774,98 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
+          "output_links": [
+            {
+              "link": [
+                "https://luci-logdog.appspot.com/v/?s",
+                "=android%2Fswarming%2Flogcats%2F",
+                "${TASK_ID}%2F%2B%2Funified_logcats"
+              ],
+              "name": "shard #${SHARD_INDEX} logcats"
+            }
+          ],
+          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
+        },
+        "test": "perfetto_unittests",
+        "test_id_prefix": "ninja://third_party/perfetto:perfetto_unittests/"
+      },
+      {
+        "args": [
+          "--gs-results-bucket=chromium-result-details",
+          "--recover-devices",
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
+        ],
+        "merge": {
+          "args": [
+            "--bucket",
+            "chromium-result-details",
+            "--test-name",
+            "sandbox_linux_unittests"
+          ],
+          "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
+        },
+        "resultdb": {
+          "enable": true,
+          "has_native_resultdb_integration": true
+        },
+        "swarming": {
+          "can_use_on_swarming_builders": true,
+          "cipd_packages": [
+            {
+              "cipd_package": "infra/tools/luci/logdog/butler/${platform}",
+              "location": "bin",
+              "revision": "git_revision:ff387eadf445b24c935f1cf7d6ddd279f8a6b04c"
+            }
+          ],
+          "dimension_sets": [
+            {
+              "cpu": "x86-64",
+              "device_os": null,
+              "device_type": null,
+              "machine_type": "e2-standard-8",
+              "os": "Ubuntu-16.04|Ubuntu-18.04",
+              "pool": "chromium.tests.avd"
+            }
+          ],
+          "named_caches": [
+            {
+              "name": "avd_generic_android31",
+              "path": ".android"
+            },
+            {
+              "name": "system_images_android_31_google_apis_x64",
+              "path": ".emulator_sdk"
+            }
+          ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -3315,7 +3885,7 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -3327,7 +3897,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -3343,21 +3914,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -3377,7 +3955,7 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -3389,7 +3967,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -3405,21 +3984,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -3439,7 +4025,7 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -3451,7 +4037,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -3467,21 +4054,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -3501,7 +4095,7 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -3513,7 +4107,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -3529,21 +4124,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -3563,7 +4165,7 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -3575,7 +4177,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -3591,21 +4194,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -3625,19 +4235,20 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
             "--bucket",
             "chromium-result-details",
             "--test-name",
-            "ui_android_unittests"
+            "system_webview_shell_layout_test_apk"
           ],
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -3653,21 +4264,98 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
+          "output_links": [
+            {
+              "link": [
+                "https://luci-logdog.appspot.com/v/?s",
+                "=android%2Fswarming%2Flogcats%2F",
+                "${TASK_ID}%2F%2B%2Funified_logcats"
+              ],
+              "name": "shard #${SHARD_INDEX} logcats"
+            }
+          ],
+          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
+        },
+        "test": "system_webview_shell_layout_test_apk",
+        "test_id_prefix": "ninja://android_webview/tools/system_webview_shell:system_webview_shell_layout_test_apk/"
+      },
+      {
+        "args": [
+          "--gs-results-bucket=chromium-result-details",
+          "--recover-devices",
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
+        ],
+        "merge": {
+          "args": [
+            "--bucket",
+            "chromium-result-details",
+            "--test-name",
+            "ui_android_unittests"
+          ],
+          "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
+        },
+        "resultdb": {
+          "enable": true,
+          "has_native_resultdb_integration": true
+        },
+        "swarming": {
+          "can_use_on_swarming_builders": true,
+          "cipd_packages": [
+            {
+              "cipd_package": "infra/tools/luci/logdog/butler/${platform}",
+              "location": "bin",
+              "revision": "git_revision:ff387eadf445b24c935f1cf7d6ddd279f8a6b04c"
+            }
+          ],
+          "dimension_sets": [
+            {
+              "cpu": "x86-64",
+              "device_os": null,
+              "device_type": null,
+              "machine_type": "e2-standard-8",
+              "os": "Ubuntu-16.04|Ubuntu-18.04",
+              "pool": "chromium.tests.avd"
+            }
+          ],
+          "named_caches": [
+            {
+              "name": "avd_generic_android31",
+              "path": ".android"
+            },
+            {
+              "name": "system_images_android_31_google_apis_x64",
+              "path": ".emulator_sdk"
+            }
+          ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -3687,7 +4375,7 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -3699,7 +4387,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -3715,21 +4404,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -3749,7 +4445,7 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -3761,7 +4457,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -3777,21 +4474,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -3811,7 +4515,7 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -3823,7 +4527,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -3839,21 +4544,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -3874,7 +4586,7 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -3886,7 +4598,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -3902,21 +4615,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -3936,8 +4656,7 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb",
-          "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_11.viz_unittests.filter"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -3949,7 +4668,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -3965,21 +4685,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -3999,8 +4726,7 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb",
-          "--gtest_filter=-DownloadBrowserTest.OverrideDownloadDirectory"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -4012,7 +4738,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -4028,21 +4755,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -4062,20 +4796,20 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb",
-          "--gtest_filter=-org.chromium.weblayer.test.MediaCaptureTest.*"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
             "--bucket",
             "chromium-result-details",
             "--test-name",
-            "weblayer_private_instrumentation_test_apk"
+            "weblayer_bundle_test"
           ],
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -4091,21 +4825,168 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
+          "output_links": [
+            {
+              "link": [
+                "https://luci-logdog.appspot.com/v/?s",
+                "=android%2Fswarming%2Flogcats%2F",
+                "${TASK_ID}%2F%2B%2Funified_logcats"
+              ],
+              "name": "shard #${SHARD_INDEX} logcats"
+            }
+          ],
+          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
+        },
+        "test": "weblayer_bundle_test",
+        "test_id_prefix": "ninja://weblayer/browser/android/javatests:weblayer_bundle_test/"
+      },
+      {
+        "args": [
+          "--gs-results-bucket=chromium-result-details",
+          "--recover-devices",
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
+        ],
+        "merge": {
+          "args": [
+            "--bucket",
+            "chromium-result-details",
+            "--test-name",
+            "weblayer_instrumentation_test_apk"
+          ],
+          "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
+        },
+        "resultdb": {
+          "enable": true,
+          "has_native_resultdb_integration": true
+        },
+        "swarming": {
+          "can_use_on_swarming_builders": true,
+          "cipd_packages": [
+            {
+              "cipd_package": "infra/tools/luci/logdog/butler/${platform}",
+              "location": "bin",
+              "revision": "git_revision:ff387eadf445b24c935f1cf7d6ddd279f8a6b04c"
+            }
+          ],
+          "dimension_sets": [
+            {
+              "cpu": "x86-64",
+              "device_os": null,
+              "device_type": null,
+              "machine_type": "e2-standard-8",
+              "os": "Ubuntu-16.04|Ubuntu-18.04",
+              "pool": "chromium.tests.avd"
+            }
+          ],
+          "named_caches": [
+            {
+              "name": "avd_generic_android31",
+              "path": ".android"
+            },
+            {
+              "name": "system_images_android_31_google_apis_x64",
+              "path": ".emulator_sdk"
+            }
+          ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
+          "output_links": [
+            {
+              "link": [
+                "https://luci-logdog.appspot.com/v/?s",
+                "=android%2Fswarming%2Flogcats%2F",
+                "${TASK_ID}%2F%2B%2Funified_logcats"
+              ],
+              "name": "shard #${SHARD_INDEX} logcats"
+            }
+          ],
+          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
+        },
+        "test": "weblayer_instrumentation_test_apk",
+        "test_id_prefix": "ninja://weblayer/browser/android/javatests:weblayer_instrumentation_test_apk/"
+      },
+      {
+        "args": [
+          "--gs-results-bucket=chromium-result-details",
+          "--recover-devices",
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
+        ],
+        "merge": {
+          "args": [
+            "--bucket",
+            "chromium-result-details",
+            "--test-name",
+            "weblayer_private_instrumentation_test_apk"
+          ],
+          "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
+        },
+        "resultdb": {
+          "enable": true,
+          "has_native_resultdb_integration": true
+        },
+        "swarming": {
+          "can_use_on_swarming_builders": true,
+          "cipd_packages": [
+            {
+              "cipd_package": "infra/tools/luci/logdog/butler/${platform}",
+              "location": "bin",
+              "revision": "git_revision:ff387eadf445b24c935f1cf7d6ddd279f8a6b04c"
+            }
+          ],
+          "dimension_sets": [
+            {
+              "cpu": "x86-64",
+              "device_os": null,
+              "device_type": null,
+              "machine_type": "e2-standard-8",
+              "os": "Ubuntu-16.04|Ubuntu-18.04",
+              "pool": "chromium.tests.avd"
+            }
+          ],
+          "named_caches": [
+            {
+              "name": "avd_generic_android31",
+              "path": ".android"
+            },
+            {
+              "name": "system_images_android_31_google_apis_x64",
+              "path": ".emulator_sdk"
+            }
+          ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -4125,7 +5006,7 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -4137,7 +5018,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -4153,21 +5035,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -4187,8 +5076,83 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb",
-          "--gtest_filter=-org.chromium.net.NetworkChangeNotifierTest.testNetworkChangeNotifierJavaObservers"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
+        ],
+        "merge": {
+          "args": [
+            "--bucket",
+            "chromium-result-details",
+            "--test-name",
+            "webview_64_cts_tests"
+          ],
+          "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
+        },
+        "resultdb": {
+          "enable": true,
+          "has_native_resultdb_integration": true
+        },
+        "swarming": {
+          "can_use_on_swarming_builders": true,
+          "cipd_packages": [
+            {
+              "cipd_package": "chromium/android_webview/tools/cts_archive",
+              "location": "android_webview/tools/cts_archive",
+              "revision": "ai8Ig4HlO0vG6aP_JP2uhyruE2yPzze8PFP1g8Z4_hgC"
+            },
+            {
+              "cipd_package": "infra/tools/luci/logdog/butler/${platform}",
+              "location": "bin",
+              "revision": "git_revision:ff387eadf445b24c935f1cf7d6ddd279f8a6b04c"
+            }
+          ],
+          "dimension_sets": [
+            {
+              "cpu": "x86-64",
+              "device_os": null,
+              "device_type": null,
+              "machine_type": "e2-standard-8",
+              "os": "Ubuntu-16.04|Ubuntu-18.04",
+              "pool": "chromium.tests.avd"
+            }
+          ],
+          "named_caches": [
+            {
+              "name": "avd_generic_android31",
+              "path": ".android"
+            },
+            {
+              "name": "system_images_android_31_google_apis_x64",
+              "path": ".emulator_sdk"
+            }
+          ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
+          "output_links": [
+            {
+              "link": [
+                "https://luci-logdog.appspot.com/v/?s",
+                "=android%2Fswarming%2Flogcats%2F",
+                "${TASK_ID}%2F%2B%2Funified_logcats"
+              ],
+              "name": "shard #${SHARD_INDEX} logcats"
+            }
+          ],
+          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com",
+          "shards": 2
+        },
+        "test": "webview_64_cts_tests",
+        "test_id_prefix": "ninja://android_webview/test:webview_64_cts_tests/"
+      },
+      {
+        "args": [
+          "--gs-results-bucket=chromium-result-details",
+          "--recover-devices",
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -4200,7 +5164,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -4216,21 +5181,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -4251,19 +5223,20 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
             "--bucket",
             "chromium-result-details",
             "--test-name",
-            "wtf_unittests"
+            "webview_ui_test_app_test_apk"
           ],
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -4279,21 +5252,98 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
+          "output_links": [
+            {
+              "link": [
+                "https://luci-logdog.appspot.com/v/?s",
+                "=android%2Fswarming%2Flogcats%2F",
+                "${TASK_ID}%2F%2B%2Funified_logcats"
+              ],
+              "name": "shard #${SHARD_INDEX} logcats"
+            }
+          ],
+          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
+        },
+        "test": "webview_ui_test_app_test_apk",
+        "test_id_prefix": "ninja://android_webview/tools/automated_ui_tests:webview_ui_test_app_test_apk/"
+      },
+      {
+        "args": [
+          "--gs-results-bucket=chromium-result-details",
+          "--recover-devices",
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
+        ],
+        "merge": {
+          "args": [
+            "--bucket",
+            "chromium-result-details",
+            "--test-name",
+            "wtf_unittests"
+          ],
+          "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
+        },
+        "resultdb": {
+          "enable": true,
+          "has_native_resultdb_integration": true
+        },
+        "swarming": {
+          "can_use_on_swarming_builders": true,
+          "cipd_packages": [
+            {
+              "cipd_package": "infra/tools/luci/logdog/butler/${platform}",
+              "location": "bin",
+              "revision": "git_revision:ff387eadf445b24c935f1cf7d6ddd279f8a6b04c"
+            }
+          ],
+          "dimension_sets": [
+            {
+              "cpu": "x86-64",
+              "device_os": null,
+              "device_type": null,
+              "machine_type": "e2-standard-8",
+              "os": "Ubuntu-16.04|Ubuntu-18.04",
+              "pool": "chromium.tests.avd"
+            }
+          ],
+          "named_caches": [
+            {
+              "name": "avd_generic_android31",
+              "path": ".android"
+            },
+            {
+              "name": "system_images_android_31_google_apis_x64",
+              "path": ".emulator_sdk"
+            }
+          ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -4313,7 +5363,7 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android30.textpb"
+          "--avd-config=../../tools/android/avd/proto/generic_android31.textpb"
         ],
         "merge": {
           "args": [
@@ -4325,7 +5375,8 @@
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -4341,21 +5392,28 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
           ],
           "named_caches": [
             {
-              "name": "avd_generic_android30",
+              "name": "avd_generic_android31",
               "path": ".android"
             },
             {
-              "name": "system_images_android_30_google_apis_x86",
+              "name": "system_images_android_31_google_apis_x64",
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android31"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -4373,9 +5431,19 @@
       }
     ]
   },
+  "android-annotator-rel": {
+    "scripts": [
+      {
+        "name": "test_traffic_annotation_auditor",
+        "script": "test_traffic_annotation_auditor.py",
+        "swarming": {}
+      }
+    ]
+  },
   "android-pie-arm64-wpt-rel-non-cq": {
     "isolated_scripts": [
       {
+        "experiment_percentage": 100,
         "isolate_name": "system_webview_wpt",
         "merge": {
           "args": [
@@ -4385,7 +5453,8 @@
         },
         "name": "system_webview_wpt",
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "results_handler": "layout tests",
         "swarming": {
@@ -4414,6 +5483,7 @@
         "test_id_prefix": "ninja://android_webview/test:system_webview_wpt/"
       },
       {
+        "experiment_percentage": 100,
         "isolate_name": "weblayer_shell_wpt",
         "merge": {
           "args": [
@@ -4423,7 +5493,8 @@
         },
         "name": "weblayer_shell_wpt",
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "results_handler": "layout tests",
         "swarming": {
@@ -4459,6 +5530,7 @@
         "args": [
           "--avd-config=../../tools/android/avd/proto/generic_android28.textpb"
         ],
+        "experiment_percentage": 100,
         "isolate_name": "chrome_public_wpt",
         "merge": {
           "args": [
@@ -4468,7 +5540,8 @@
         },
         "name": "chrome_public_wpt",
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "results_handler": "layout tests",
         "swarming": {
@@ -4485,7 +5558,7 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-8",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
@@ -4502,6 +5575,13 @@
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android28"
+              }
+            ]
+          },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com",
           "shards": 18
         },
@@ -4515,8 +5595,7 @@
         "args": [
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android29.textpb",
-          "--replace-system-package=org.chromium.weblayer.shell,apks/WebLayerShellSystemWebView.apk"
+          "--avd-config=../../tools/android/avd/proto/generic_android29.textpb"
         ],
         "merge": {
           "args": [
@@ -4529,7 +5608,8 @@
         },
         "name": "weblayer_instrumentation_test_apk_ToT_Tests",
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -4545,7 +5625,7 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "n1-standard-4|e2-standard-4",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
@@ -4560,6 +5640,13 @@
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android29"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -4577,164 +5664,7 @@
       },
       {
         "args": [
-          "--webview-apk-path=apks/SystemWebView.apk",
-          "--test-runner-outdir",
-          ".",
-          "--client-outdir",
-          "../../weblayer_instrumentation_test_M90/out/Release",
-          "--implementation-outdir",
-          ".",
-          "--test-expectations",
-          "../../weblayer/browser/android/javatests/skew/expectations.txt",
-          "--client-version=90",
-          "--gs-results-bucket=chromium-result-details",
-          "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android29.textpb"
-        ],
-        "merge": {
-          "args": [
-            "--bucket",
-            "chromium-result-details",
-            "--test-name",
-            "weblayer_skew_tests_with_client_from_90"
-          ],
-          "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
-        },
-        "name": "weblayer_skew_tests_with_client_from_90",
-        "resultdb": {
-          "enable": true
-        },
-        "swarming": {
-          "can_use_on_swarming_builders": true,
-          "cipd_packages": [
-            {
-              "cipd_package": "chromium/testing/weblayer-x86",
-              "location": "weblayer_instrumentation_test_M90",
-              "revision": "version:90.0.4430.225"
-            },
-            {
-              "cipd_package": "infra/tools/luci/logdog/butler/${platform}",
-              "location": "bin",
-              "revision": "git_revision:ff387eadf445b24c935f1cf7d6ddd279f8a6b04c"
-            }
-          ],
-          "dimension_sets": [
-            {
-              "cpu": "x86-64",
-              "device_os": null,
-              "device_type": null,
-              "machine_type": "n1-standard-4",
-              "os": "Ubuntu-16.04|Ubuntu-18.04",
-              "pool": "chromium.tests.avd"
-            }
-          ],
-          "named_caches": [
-            {
-              "name": "avd_generic_android29",
-              "path": ".android"
-            },
-            {
-              "name": "system_images_android_29_google_apis_x86",
-              "path": ".emulator_sdk"
-            }
-          ],
-          "output_links": [
-            {
-              "link": [
-                "https://luci-logdog.appspot.com/v/?s",
-                "=android%2Fswarming%2Flogcats%2F",
-                "${TASK_ID}%2F%2B%2Funified_logcats"
-              ],
-              "name": "shard #${SHARD_INDEX} logcats"
-            }
-          ],
-          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com",
-          "shards": 2
-        },
-        "test": "weblayer_skew_tests",
-        "test_id_prefix": "ninja://weblayer/browser/android/javatests:weblayer_skew_tests/"
-      },
-      {
-        "args": [
-          "--webview-apk-path=apks/SystemWebView.apk",
-          "--test-runner-outdir",
-          ".",
-          "--client-outdir",
-          "../../weblayer_instrumentation_test_M91/out/Release",
-          "--implementation-outdir",
-          ".",
-          "--test-expectations",
-          "../../weblayer/browser/android/javatests/skew/expectations.txt",
-          "--client-version=91",
-          "--gs-results-bucket=chromium-result-details",
-          "--recover-devices",
-          "--avd-config=../../tools/android/avd/proto/generic_android29.textpb"
-        ],
-        "merge": {
-          "args": [
-            "--bucket",
-            "chromium-result-details",
-            "--test-name",
-            "weblayer_skew_tests_with_client_from_91"
-          ],
-          "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
-        },
-        "name": "weblayer_skew_tests_with_client_from_91",
-        "resultdb": {
-          "enable": true
-        },
-        "swarming": {
-          "can_use_on_swarming_builders": true,
-          "cipd_packages": [
-            {
-              "cipd_package": "chromium/testing/weblayer-x86",
-              "location": "weblayer_instrumentation_test_M91",
-              "revision": "version:91.0.4472.97"
-            },
-            {
-              "cipd_package": "infra/tools/luci/logdog/butler/${platform}",
-              "location": "bin",
-              "revision": "git_revision:ff387eadf445b24c935f1cf7d6ddd279f8a6b04c"
-            }
-          ],
-          "dimension_sets": [
-            {
-              "cpu": "x86-64",
-              "device_os": null,
-              "device_type": null,
-              "machine_type": "n1-standard-4",
-              "os": "Ubuntu-16.04|Ubuntu-18.04",
-              "pool": "chromium.tests.avd"
-            }
-          ],
-          "named_caches": [
-            {
-              "name": "avd_generic_android29",
-              "path": ".android"
-            },
-            {
-              "name": "system_images_android_29_google_apis_x86",
-              "path": ".emulator_sdk"
-            }
-          ],
-          "output_links": [
-            {
-              "link": [
-                "https://luci-logdog.appspot.com/v/?s",
-                "=android%2Fswarming%2Flogcats%2F",
-                "${TASK_ID}%2F%2B%2Funified_logcats"
-              ],
-              "name": "shard #${SHARD_INDEX} logcats"
-            }
-          ],
-          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com",
-          "shards": 2
-        },
-        "test": "weblayer_skew_tests",
-        "test_id_prefix": "ninja://weblayer/browser/android/javatests:weblayer_skew_tests/"
-      },
-      {
-        "args": [
+          "--additional-apk=apks/WebLayerShellSystemWebView.apk",
           "--webview-apk-path=apks/SystemWebView.apk",
           "--test-runner-outdir",
           ".",
@@ -4760,7 +5690,8 @@
         },
         "name": "weblayer_skew_tests_with_client_from_92",
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -4768,7 +5699,7 @@
             {
               "cipd_package": "chromium/testing/weblayer-x86",
               "location": "weblayer_instrumentation_test_M92",
-              "revision": "version:92.0.4515.44"
+              "revision": "version:92.0.4515.166"
             },
             {
               "cipd_package": "infra/tools/luci/logdog/butler/${platform}",
@@ -4781,7 +5712,7 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "n1-standard-4|e2-standard-4",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
@@ -4796,6 +5727,13 @@
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android29"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -4814,16 +5752,17 @@
       },
       {
         "args": [
-          "--webview-apk-path=apks/AOSP_SystemWebView.apk",
+          "--additional-apk=apks/WebLayerShellSystemWebView.apk",
+          "--webview-apk-path=apks/SystemWebView.apk",
           "--test-runner-outdir",
           ".",
           "--client-outdir",
-          ".",
+          "../../weblayer_instrumentation_test_M96/out/Release",
           "--implementation-outdir",
-          "../../weblayer_instrumentation_test_M90/out/Release",
+          ".",
           "--test-expectations",
           "../../weblayer/browser/android/javatests/skew/expectations.txt",
-          "--impl-version=90",
+          "--client-version=96",
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
           "--avd-config=../../tools/android/avd/proto/generic_android29.textpb"
@@ -4833,21 +5772,22 @@
             "--bucket",
             "chromium-result-details",
             "--test-name",
-            "weblayer_skew_tests_with_impl_from_90"
+            "weblayer_skew_tests_with_client_from_96"
           ],
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
-        "name": "weblayer_skew_tests_with_impl_from_90",
+        "name": "weblayer_skew_tests_with_client_from_96",
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
           "cipd_packages": [
             {
               "cipd_package": "chromium/testing/weblayer-x86",
-              "location": "weblayer_instrumentation_test_M90",
-              "revision": "version:90.0.4430.225"
+              "location": "weblayer_instrumentation_test_M96",
+              "revision": "version:96.0.4664.45"
             },
             {
               "cipd_package": "infra/tools/luci/logdog/butler/${platform}",
@@ -4860,7 +5800,7 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "n1-standard-4|e2-standard-4",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
@@ -4875,6 +5815,13 @@
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android29"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -4893,16 +5840,17 @@
       },
       {
         "args": [
-          "--webview-apk-path=apks/AOSP_SystemWebView.apk",
+          "--additional-apk=apks/WebLayerShellSystemWebView.apk",
+          "--webview-apk-path=apks/SystemWebView.apk",
           "--test-runner-outdir",
           ".",
           "--client-outdir",
-          ".",
+          "../../weblayer_instrumentation_test_M97/out/Release",
           "--implementation-outdir",
-          "../../weblayer_instrumentation_test_M91/out/Release",
+          ".",
           "--test-expectations",
           "../../weblayer/browser/android/javatests/skew/expectations.txt",
-          "--impl-version=91",
+          "--client-version=97",
           "--gs-results-bucket=chromium-result-details",
           "--recover-devices",
           "--avd-config=../../tools/android/avd/proto/generic_android29.textpb"
@@ -4912,21 +5860,22 @@
             "--bucket",
             "chromium-result-details",
             "--test-name",
-            "weblayer_skew_tests_with_impl_from_91"
+            "weblayer_skew_tests_with_client_from_97"
           ],
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
-        "name": "weblayer_skew_tests_with_impl_from_91",
+        "name": "weblayer_skew_tests_with_client_from_97",
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
           "cipd_packages": [
             {
               "cipd_package": "chromium/testing/weblayer-x86",
-              "location": "weblayer_instrumentation_test_M91",
-              "revision": "version:91.0.4472.97"
+              "location": "weblayer_instrumentation_test_M97",
+              "revision": "version:97.0.4692.11"
             },
             {
               "cipd_package": "infra/tools/luci/logdog/butler/${platform}",
@@ -4939,7 +5888,7 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "n1-standard-4|e2-standard-4",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
@@ -4954,6 +5903,13 @@
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android29"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -4972,6 +5928,7 @@
       },
       {
         "args": [
+          "--additional-apk=apks/WebLayerShellSystemWebView.apk",
           "--webview-apk-path=apks/AOSP_SystemWebView.apk",
           "--test-runner-outdir",
           ".",
@@ -4997,7 +5954,8 @@
         },
         "name": "weblayer_skew_tests_with_impl_from_92",
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "swarming": {
           "can_use_on_swarming_builders": true,
@@ -5005,7 +5963,7 @@
             {
               "cipd_package": "chromium/testing/weblayer-x86",
               "location": "weblayer_instrumentation_test_M92",
-              "revision": "version:92.0.4515.44"
+              "revision": "version:92.0.4515.166"
             },
             {
               "cipd_package": "infra/tools/luci/logdog/butler/${platform}",
@@ -5018,7 +5976,7 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-4",
+              "machine_type": "n1-standard-4|e2-standard-4",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
@@ -5033,6 +5991,189 @@
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android29"
+              }
+            ]
+          },
+          "output_links": [
+            {
+              "link": [
+                "https://luci-logdog.appspot.com/v/?s",
+                "=android%2Fswarming%2Flogcats%2F",
+                "${TASK_ID}%2F%2B%2Funified_logcats"
+              ],
+              "name": "shard #${SHARD_INDEX} logcats"
+            }
+          ],
+          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com",
+          "shards": 2
+        },
+        "test": "weblayer_skew_tests",
+        "test_id_prefix": "ninja://weblayer/browser/android/javatests:weblayer_skew_tests/"
+      },
+      {
+        "args": [
+          "--additional-apk=apks/WebLayerShellSystemWebView.apk",
+          "--webview-apk-path=apks/AOSP_SystemWebView.apk",
+          "--test-runner-outdir",
+          ".",
+          "--client-outdir",
+          ".",
+          "--implementation-outdir",
+          "../../weblayer_instrumentation_test_M96/out/Release",
+          "--test-expectations",
+          "../../weblayer/browser/android/javatests/skew/expectations.txt",
+          "--impl-version=96",
+          "--gs-results-bucket=chromium-result-details",
+          "--recover-devices",
+          "--avd-config=../../tools/android/avd/proto/generic_android29.textpb"
+        ],
+        "merge": {
+          "args": [
+            "--bucket",
+            "chromium-result-details",
+            "--test-name",
+            "weblayer_skew_tests_with_impl_from_96"
+          ],
+          "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
+        },
+        "name": "weblayer_skew_tests_with_impl_from_96",
+        "resultdb": {
+          "enable": true,
+          "has_native_resultdb_integration": true
+        },
+        "swarming": {
+          "can_use_on_swarming_builders": true,
+          "cipd_packages": [
+            {
+              "cipd_package": "chromium/testing/weblayer-x86",
+              "location": "weblayer_instrumentation_test_M96",
+              "revision": "version:96.0.4664.45"
+            },
+            {
+              "cipd_package": "infra/tools/luci/logdog/butler/${platform}",
+              "location": "bin",
+              "revision": "git_revision:ff387eadf445b24c935f1cf7d6ddd279f8a6b04c"
+            }
+          ],
+          "dimension_sets": [
+            {
+              "cpu": "x86-64",
+              "device_os": null,
+              "device_type": null,
+              "machine_type": "n1-standard-4|e2-standard-4",
+              "os": "Ubuntu-16.04|Ubuntu-18.04",
+              "pool": "chromium.tests.avd"
+            }
+          ],
+          "named_caches": [
+            {
+              "name": "avd_generic_android29",
+              "path": ".android"
+            },
+            {
+              "name": "system_images_android_29_google_apis_x86",
+              "path": ".emulator_sdk"
+            }
+          ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android29"
+              }
+            ]
+          },
+          "output_links": [
+            {
+              "link": [
+                "https://luci-logdog.appspot.com/v/?s",
+                "=android%2Fswarming%2Flogcats%2F",
+                "${TASK_ID}%2F%2B%2Funified_logcats"
+              ],
+              "name": "shard #${SHARD_INDEX} logcats"
+            }
+          ],
+          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com",
+          "shards": 2
+        },
+        "test": "weblayer_skew_tests",
+        "test_id_prefix": "ninja://weblayer/browser/android/javatests:weblayer_skew_tests/"
+      },
+      {
+        "args": [
+          "--additional-apk=apks/WebLayerShellSystemWebView.apk",
+          "--webview-apk-path=apks/AOSP_SystemWebView.apk",
+          "--test-runner-outdir",
+          ".",
+          "--client-outdir",
+          ".",
+          "--implementation-outdir",
+          "../../weblayer_instrumentation_test_M97/out/Release",
+          "--test-expectations",
+          "../../weblayer/browser/android/javatests/skew/expectations.txt",
+          "--impl-version=97",
+          "--gs-results-bucket=chromium-result-details",
+          "--recover-devices",
+          "--avd-config=../../tools/android/avd/proto/generic_android29.textpb"
+        ],
+        "merge": {
+          "args": [
+            "--bucket",
+            "chromium-result-details",
+            "--test-name",
+            "weblayer_skew_tests_with_impl_from_97"
+          ],
+          "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
+        },
+        "name": "weblayer_skew_tests_with_impl_from_97",
+        "resultdb": {
+          "enable": true,
+          "has_native_resultdb_integration": true
+        },
+        "swarming": {
+          "can_use_on_swarming_builders": true,
+          "cipd_packages": [
+            {
+              "cipd_package": "chromium/testing/weblayer-x86",
+              "location": "weblayer_instrumentation_test_M97",
+              "revision": "version:97.0.4692.11"
+            },
+            {
+              "cipd_package": "infra/tools/luci/logdog/butler/${platform}",
+              "location": "bin",
+              "revision": "git_revision:ff387eadf445b24c935f1cf7d6ddd279f8a6b04c"
+            }
+          ],
+          "dimension_sets": [
+            {
+              "cpu": "x86-64",
+              "device_os": null,
+              "device_type": null,
+              "machine_type": "n1-standard-4|e2-standard-4",
+              "os": "Ubuntu-16.04|Ubuntu-18.04",
+              "pool": "chromium.tests.avd"
+            }
+          ],
+          "named_caches": [
+            {
+              "name": "avd_generic_android29",
+              "path": ".android"
+            },
+            {
+              "name": "system_images_android_29_google_apis_x86",
+              "path": ".emulator_sdk"
+            }
+          ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android29"
+              }
+            ]
+          },
           "output_links": [
             {
               "link": [
@@ -5057,6 +6198,7 @@
         "args": [
           "--avd-config=../../tools/android/avd/proto/generic_android28.textpb"
         ],
+        "experiment_percentage": 100,
         "isolate_name": "weblayer_shell_wpt",
         "merge": {
           "args": [
@@ -5066,7 +6208,8 @@
         },
         "name": "weblayer_shell_wpt",
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "results_handler": "layout tests",
         "swarming": {
@@ -5083,7 +6226,7 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-8",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
@@ -5100,6 +6243,13 @@
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android28"
+              }
+            ]
+          },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com",
           "shards": 18
         },
@@ -5115,6 +6265,7 @@
           "--default-exclude",
           "--include-file=../../third_party/blink/web_tests/android/WPTSmokeTestCases"
         ],
+        "experiment_percentage": 100,
         "isolate_name": "weblayer_shell_wpt",
         "merge": {
           "args": [
@@ -5124,7 +6275,8 @@
         },
         "name": "weblayer_shell_wpt",
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "results_handler": "layout tests",
         "swarming": {
@@ -5141,7 +6293,7 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-8",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
@@ -5158,6 +6310,13 @@
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android28"
+              }
+            ]
+          },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com",
           "shards": 3
         },
@@ -5169,8 +6328,10 @@
     "isolated_scripts": [
       {
         "args": [
-          "--avd-config=../../tools/android/avd/proto/generic_android28.textpb"
+          "--avd-config=../../tools/android/avd/proto/generic_android28.textpb",
+          "--log-wptreport"
         ],
+        "experiment_percentage": 100,
         "isolate_name": "system_webview_wpt",
         "merge": {
           "args": [
@@ -5180,7 +6341,8 @@
         },
         "name": "system_webview_wpt",
         "resultdb": {
-          "enable": true
+          "enable": true,
+          "has_native_resultdb_integration": true
         },
         "results_handler": "layout tests",
         "swarming": {
@@ -5197,7 +6359,7 @@
               "cpu": "x86-64",
               "device_os": null,
               "device_type": null,
-              "machine_type": "n1-standard-8",
+              "machine_type": "e2-standard-8",
               "os": "Ubuntu-16.04|Ubuntu-18.04",
               "pool": "chromium.tests.avd"
             }
@@ -5214,6 +6376,13 @@
               "path": ".emulator_sdk"
             }
           ],
+          "optional_dimensions": {
+            "60": [
+              {
+                "caches": "avd_generic_android28"
+              }
+            ]
+          },
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com",
           "shards": 18
         },

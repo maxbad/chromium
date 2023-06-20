@@ -18,6 +18,10 @@ class ShellWebMainParts;
 class ShellWebClient : public WebClient {
  public:
   ShellWebClient();
+
+  ShellWebClient(const ShellWebClient&) = delete;
+  ShellWebClient& operator=(const ShellWebClient&) = delete;
+
   ~ShellWebClient() override;
 
   // WebClient implementation.
@@ -25,18 +29,17 @@ class ShellWebClient : public WebClient {
   std::string GetUserAgent(UserAgentType type) const override;
   base::StringPiece GetDataResource(
       int resource_id,
-      ui::ScaleFactor scale_factor) const override;
+      ui::ResourceScaleFactor scale_factor) const override;
   base::RefCountedMemory* GetDataResourceBytes(int resource_id) const override;
   void BindInterfaceReceiverFromMainFrame(
       WebState* web_state,
       mojo::GenericPendingReceiver receiver) override;
+  bool EnableLongPressUIContextMenu() const override;
 
   ShellBrowserState* browser_state() const;
 
  private:
   ShellWebMainParts* web_main_parts_;
-
-  DISALLOW_COPY_AND_ASSIGN(ShellWebClient);
 };
 
 }  // namespace web

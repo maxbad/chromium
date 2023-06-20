@@ -9,6 +9,7 @@
 
 #include "components/viz/common/resources/resource_format.h"
 #include "gpu/config/gpu_preferences.h"
+#include "gpu/gpu_gles2_export.h"
 #include "gpu/ipc/common/surface_handle.h"
 #include "third_party/skia/include/core/SkImageInfo.h"
 #include "third_party/skia/include/gpu/GrTypes.h"
@@ -24,7 +25,7 @@ namespace gpu {
 class SharedImageBacking;
 struct Mailbox;
 
-class SharedImageBackingFactory {
+class GPU_GLES2_EXPORT SharedImageBackingFactory {
  public:
   virtual ~SharedImageBackingFactory() = default;
   virtual std::unique_ptr<SharedImageBacking> CreateSharedImage(
@@ -59,13 +60,22 @@ class SharedImageBackingFactory {
       SkAlphaType alpha_type,
       uint32_t usage) = 0;
 
+  // Only implemented in the D3D backing factory.
+  virtual std::vector<std::unique_ptr<SharedImageBacking>>
+  CreateSharedImageVideoPlanes(base::span<const Mailbox> mailboxes,
+                               gfx::GpuMemoryBufferHandle handle,
+                               gfx::BufferFormat format,
+                               const gfx::Size& size,
+                               uint32_t usage);
+
   // Returns true if the factory is supported
   virtual bool IsSupported(uint32_t usage,
                            viz::ResourceFormat format,
                            bool thread_safe,
                            gfx::GpuMemoryBufferType gmb_type,
                            GrContextType gr_context_type,
-                           bool* allow_legacy_mailbox) = 0;
+                           bool* allow_legacy_mailbox,
+                           bool is_pixel_used) = 0;
 };
 
 }  // namespace gpu

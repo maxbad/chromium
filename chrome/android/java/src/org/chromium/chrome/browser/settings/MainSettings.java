@@ -22,7 +22,9 @@ import org.chromium.chrome.R;
 import org.chromium.chrome.browser.datareduction.settings.DataReductionPreferenceFragment;
 import org.chromium.chrome.browser.homepage.HomepageManager;
 import org.chromium.chrome.browser.net.spdyproxy.DataReductionProxySettings;
+import org.chromium.chrome.browser.night_mode.NightModeMetrics.ThemeSettingsEntry;
 import org.chromium.chrome.browser.night_mode.NightModeUtils;
+import org.chromium.chrome.browser.night_mode.settings.ThemeSettingsFragment;
 import org.chromium.chrome.browser.password_check.PasswordCheck;
 import org.chromium.chrome.browser.password_check.PasswordCheckFactory;
 import org.chromium.chrome.browser.password_manager.ManagePasswordsReferrer;
@@ -32,13 +34,14 @@ import org.chromium.chrome.browser.search_engines.TemplateUrlServiceFactory;
 import org.chromium.chrome.browser.signin.SyncConsentActivityLauncherImpl;
 import org.chromium.chrome.browser.signin.services.IdentityServicesProvider;
 import org.chromium.chrome.browser.signin.services.SigninManager;
-import org.chromium.chrome.browser.sync.ProfileSyncService;
+import org.chromium.chrome.browser.sync.SyncService;
 import org.chromium.chrome.browser.sync.settings.ManageSyncSettings;
 import org.chromium.chrome.browser.sync.settings.SignInPreference;
 import org.chromium.chrome.browser.sync.settings.SyncPromoPreference;
 import org.chromium.chrome.browser.sync.settings.SyncPromoPreference.State;
 import org.chromium.chrome.browser.sync.settings.SyncSettingsUtils;
 import org.chromium.chrome.browser.toolbar.adaptive.AdaptiveToolbarFeatures;
+import org.chromium.chrome.browser.toolbar.adaptive.AdaptiveToolbarStatePredictor;
 import org.chromium.chrome.browser.tracing.settings.DeveloperSettings;
 import org.chromium.components.browser_ui.settings.ChromeBasePreference;
 import org.chromium.components.browser_ui.settings.ManagedPreferenceDelegate;
@@ -57,7 +60,7 @@ import java.util.Map;
  * The main settings screen, shown when the user first opens Settings.
  */
 public class MainSettings extends PreferenceFragmentCompat
-        implements TemplateUrlService.LoadListener, ProfileSyncService.SyncStateChangedListener,
+        implements TemplateUrlService.LoadListener, SyncService.SyncStateChangedListener,
                    SigninManager.SignInStateObserver {
     public static final String PREF_SYNC_PROMO = "sync_promo";
     public static final String PREF_ACCOUNT_AND_GOOGLE_SERVICES_SECTION =
@@ -131,7 +134,7 @@ public class MainSettings extends PreferenceFragmentCompat
         if (signinManager.isSigninSupported()) {
             signinManager.addSignInStateObserver(this);
         }
-        ProfileSyncService syncService = ProfileSyncService.get();
+        SyncService syncService = SyncService.get();
         if (syncService != null) {
             syncService.addSyncStateChangedListener(this);
         }
@@ -145,7 +148,7 @@ public class MainSettings extends PreferenceFragmentCompat
         if (signinManager.isSigninSupported()) {
             signinManager.removeSignInStateObserver(this);
         }
-        ProfileSyncService syncService = ProfileSyncService.get();
+        SyncService syncService = SyncService.get();
         if (syncService != null) {
             syncService.removeSyncStateChangedListener(this);
         }
@@ -193,9 +196,13 @@ public class MainSettings extends PreferenceFragmentCompat
             TemplateUrlServiceFactory.get().load();
         }
 
-        if (!AdaptiveToolbarFeatures.isCustomizationEnabled()) {
+        new AdaptiveToolbarStatePredictor(null).recomputeUiState(uiState -> {
+            // We don't show the toolbar shortcut settings page if disabled from finch.
+            // Note, we can still have the old data collection experiment running for which
+            // |canShowUi| might be true. In that case, just hide the settings page.
+            if (uiState.canShowUi && !AdaptiveToolbarFeatures.isSingleVariantModeEnabled()) return;
             getPreferenceScreen().removePreference(findPreference(PREF_TOOLBAR_SHORTCUT));
-        }
+        });
     }
 
     /**
@@ -234,7 +241,10 @@ public class MainSettings extends PreferenceFragmentCompat
         setOnOffSummary(homepagePref, HomepageManager.isHomepageEnabled());
 
         if (NightModeUtils.isNightModeSupported()) {
-            addPreferenceIfAbsent(PREF_UI_THEME);
+            addPreferenceIfAbsent(PREF_UI_THEME)
+                    .getExtras()
+                    .putInt(ThemeSettingsFragment.KEY_THEME_SETTINGS_ENTRY,
+                            ThemeSettingsEntry.SETTINGS);
         } else {
             removePreferenceIfPresent(PREF_UI_THEME);
         }
@@ -279,7 +289,7 @@ public class MainSettings extends PreferenceFragmentCompat
         mManageSync.setSummary(SyncSettingsUtils.getSyncStatusSummary(getActivity()));
         mManageSync.setOnPreferenceClickListener(pref -> {
             Context context = getContext();
-            if (ProfileSyncService.get().isSyncDisabledByEnterprisePolicy()) {
+            if (SyncService.get().isSyncDisabledByEnterprisePolicy()) {
                 SyncSettingsUtils.showSyncDisabledByAdministratorToast(context);
             } else if (isSyncConsentAvailable) {
                 SettingsLauncher settingsLauncher = new SettingsLauncherImpl();
@@ -342,7 +352,7 @@ public class MainSettings extends PreferenceFragmentCompat
                 mSyncPromoPreference.getState() == State.PERSONALIZED_SIGNIN_PROMO;
         findPreference(PREF_ACCOUNT_AND_GOOGLE_SERVICES_SECTION)
                 .setVisible(!isShowingPersonalizedSigninPromo);
-        mSignInPreference.setVisible(!isShowingPersonalizedSigninPromo);
+        mSignInPreference.setIsShowingPersonalizedSigninPromo(isShowingPersonalizedSigninPromo);
     }
 
     // TemplateUrlService.LoadListener implementation.

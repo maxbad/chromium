@@ -21,7 +21,8 @@
 
 #include "third_party/blink/renderer/core/style/fill_layer.h"
 
-#include "third_party/blink/renderer/core/layout/layout_object.h"
+#include "third_party/blink/renderer/core/css/css_value.h"
+#include "third_party/blink/renderer/core/style/computed_style.h"
 #include "third_party/blink/renderer/core/style/data_equivalency.h"
 #include "third_party/blink/renderer/platform/wtf/size_assertions.h"
 
@@ -394,7 +395,7 @@ bool FillLayer::ImageIsOpaque(const Document& document,
   // checking for IsEmpty.
   return image_->KnownToBeOpaque(document, style) &&
          !image_
-              ->ImageSize(document, style.EffectiveZoom(), FloatSize(),
+              ->ImageSize(style.EffectiveZoom(), FloatSize(),
                           kRespectImageOrientation)
               .IsEmpty();
 }

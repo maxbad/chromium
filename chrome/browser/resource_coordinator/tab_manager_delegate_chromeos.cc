@@ -16,6 +16,7 @@
 #include "ash/shell.h"
 #include "base/bind.h"
 #include "base/command_line.h"
+#include "base/containers/cxx20_erase.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/metrics/histogram_macros.h"
@@ -38,9 +39,9 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/memory/pressure/system_memory_pressure_evaluator.h"
-#include "components/arc/arc_service_manager.h"
 #include "components/arc/arc_util.h"
 #include "components/arc/session/arc_bridge_service.h"
+#include "components/arc/session/arc_service_manager.h"
 #include "components/device_event_log/device_event_log.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
@@ -52,7 +53,6 @@
 #include "ui/wm/public/activation_client.h"
 
 using base::ProcessHandle;
-using base::TimeDelta;
 using base::TimeTicks;
 using content::BrowserThread;
 
@@ -60,8 +60,7 @@ namespace resource_coordinator {
 namespace {
 
 // The default interval after which to adjust OOM scores.
-constexpr base::TimeDelta kAdjustmentInterval =
-    base::TimeDelta::FromSeconds(10);
+constexpr base::TimeDelta kAdjustmentInterval = base::Seconds(10);
 
 // When switching to a new tab the tab's renderer's OOM score needs to be
 // updated to reflect its front-most status and protect it from discard.
@@ -105,7 +104,6 @@ std::ostream& operator<<(std::ostream& os, const ProcessType& type) {
     default:
       return os << "NOT_IMPLEMENTED_ERROR";
   }
-  return os;
 }
 
 // TabManagerDelegate::Candidate implementation.
@@ -301,9 +299,8 @@ void TabManagerDelegate::OnWindowActivated(
     // If the timer is already running (possibly for a tab), it'll be reset
     // here.
     focus_process_score_adjust_timer_.Start(
-        FROM_HERE,
-        TimeDelta::FromMilliseconds(kFocusedProcessScoreAdjustIntervalMs), this,
-        &TabManagerDelegate::ScheduleEarlyOomPrioritiesAdjustment);
+        FROM_HERE, base::Milliseconds(kFocusedProcessScoreAdjustIntervalMs),
+        this, &TabManagerDelegate::ScheduleEarlyOomPrioritiesAdjustment);
   }
   if (ash::IsArcWindow(lost_active)) {
     // Do not bother adjusting OOM score if the ARC window is deactivated
@@ -402,9 +399,8 @@ void TabManagerDelegate::AdjustFocusedTabScore(base::ProcessHandle pid) {
     // If there's an existing running timer (could be for ARC app), it
     // would be replaced by a new task.
     focus_process_score_adjust_timer_.Start(
-        FROM_HERE,
-        TimeDelta::FromMilliseconds(kFocusedProcessScoreAdjustIntervalMs), this,
-        &TabManagerDelegate::OnFocusTabScoreAdjustmentTimeout);
+        FROM_HERE, base::Milliseconds(kFocusedProcessScoreAdjustIntervalMs),
+        this, &TabManagerDelegate::OnFocusTabScoreAdjustmentTimeout);
   }
 }
 
@@ -630,7 +626,7 @@ void TabManagerDelegate::LowMemoryKillImpl(
         << "Unable to kill enough candidates to meet target_memory_to_free_kb ";
   }
   if (!first_kill_time.is_null()) {
-    TimeDelta delta = first_kill_time - start_time;
+    base::TimeDelta delta = first_kill_time - start_time;
     MEMORY_LOG(ERROR) << "Time to first kill " << delta;
     UMA_HISTOGRAM_MEDIUM_TIMES("Memory.LowMemoryKiller.FirstKillLatency",
                                delta);

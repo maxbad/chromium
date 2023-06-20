@@ -13,6 +13,7 @@
 #include "components/viz/host/host_frame_sink_manager.h"
 #include "content/browser/compositor/surface_utils.h"
 #include "media/base/limits.h"
+#include "media/capture/mojom/video_capture_buffer.mojom.h"
 #include "media/capture/mojom/video_capture_types.mojom.h"
 #include "media/renderers/paint_canvas_video_renderer.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
@@ -21,8 +22,7 @@ namespace content {
 
 namespace {
 
-constexpr base::TimeDelta kDefaultMinCapturePeriod =
-    base::TimeDelta::FromMilliseconds(10);
+constexpr base::TimeDelta kDefaultMinCapturePeriod = base::Milliseconds(10);
 
 // Frame size can change every frame.
 constexpr base::TimeDelta kDefaultMinPeriod = base::TimeDelta();
@@ -90,7 +90,7 @@ void DevToolsVideoConsumer::SetFrameSinkId(
         frame_sink_id_.is_valid()
             ? absl::make_optional<viz::FrameSinkId>(frame_sink_id_)
             : absl::nullopt,
-        viz::SubtreeCaptureId());
+        nullptr);
   }
 }
 
@@ -132,7 +132,7 @@ void DevToolsVideoConsumer::InnerStartCapture(
                                       kDefaultUseFixedAspectRatio);
   capturer_->SetFormat(pixel_format_, color_space_);
   if (frame_sink_id_.is_valid())
-    capturer_->ChangeTarget(frame_sink_id_, viz::SubtreeCaptureId());
+    capturer_->ChangeTarget(frame_sink_id_, nullptr);
 
   capturer_->Start(this);
 }

@@ -151,10 +151,8 @@ zx_status_t UrlRequestRewriteRulesManager::OnRulesUpdated(
     return ZX_ERR_INVALID_ARGS;
   }
 
-  cached_rules_ =
-      base::MakeRefCounted<WebEngineURLLoaderThrottle::UrlRequestRewriteRules>(
-          mojo::ConvertTo<std::vector<mojom::UrlRequestRulePtr>>(
-              std::move(rules)));
+  cached_rules_ = base::MakeRefCounted<url_rewrite::UrlRequestRewriteRules>(
+      mojo::ConvertTo<mojom::UrlRequestRewriteRulesPtr>(std::move(rules)));
 
   // Send the updated rules to the receivers.
   for (const auto& receiver_pair : active_remotes_) {
@@ -167,7 +165,7 @@ zx_status_t UrlRequestRewriteRulesManager::OnRulesUpdated(
   return ZX_OK;
 }
 
-scoped_refptr<WebEngineURLLoaderThrottle::UrlRequestRewriteRules>&
+scoped_refptr<url_rewrite::UrlRequestRewriteRules>&
 UrlRequestRewriteRulesManager::GetCachedRules() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   return cached_rules_;
@@ -183,8 +181,8 @@ void UrlRequestRewriteRulesManager::RenderFrameCreated(
   mojo::AssociatedRemote<mojom::UrlRequestRulesReceiver> rules_receiver;
   render_frame_host->GetRemoteAssociatedInterfaces()->GetInterface(
       &rules_receiver);
-  auto iter = active_remotes_.emplace(
-      render_frame_host->GetGlobalFrameRoutingId(), std::move(rules_receiver));
+  auto iter = active_remotes_.emplace(render_frame_host->GetGlobalId(),
+                                      std::move(rules_receiver));
   DCHECK(iter.second);
 
   if (cached_rules_) {
@@ -197,7 +195,6 @@ void UrlRequestRewriteRulesManager::RenderFrameDeleted(
     content::RenderFrameHost* render_frame_host) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
-  size_t removed =
-      active_remotes_.erase(render_frame_host->GetGlobalFrameRoutingId());
+  size_t removed = active_remotes_.erase(render_frame_host->GetGlobalId());
   DCHECK_EQ(removed, 1u);
 }

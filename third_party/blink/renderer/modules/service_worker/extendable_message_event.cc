@@ -135,13 +135,19 @@ ExtendableMessageEvent::ExtendableMessageEvent(
     origin_ = initializer->origin();
   if (initializer->hasLastEventId())
     last_event_id_ = initializer->lastEventId();
-  if (initializer->hasSource()) {
-    if (initializer->source().IsClient())
-      source_as_client_ = initializer->source().GetAsClient();
-    else if (initializer->source().IsServiceWorker())
-      source_as_service_worker_ = initializer->source().GetAsServiceWorker();
-    else if (initializer->source().IsMessagePort())
-      source_as_message_port_ = initializer->source().GetAsMessagePort();
+  if (initializer->hasSource() and initializer->source()) {
+    switch (initializer->source()->GetContentType()) {
+      case V8UnionClientOrMessagePortOrServiceWorker::ContentType::kClient:
+        source_as_client_ = initializer->source()->GetAsClient();
+        break;
+      case V8UnionClientOrMessagePortOrServiceWorker::ContentType::kMessagePort:
+        source_as_message_port_ = initializer->source()->GetAsMessagePort();
+        break;
+      case V8UnionClientOrMessagePortOrServiceWorker::ContentType::
+          kServiceWorker:
+        source_as_service_worker_ = initializer->source()->GetAsServiceWorker();
+        break;
+    }
   }
   if (initializer->hasPorts())
     ports_ = MakeGarbageCollected<MessagePortArray>(initializer->ports());

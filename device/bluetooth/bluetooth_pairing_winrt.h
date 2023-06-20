@@ -11,6 +11,7 @@
 
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
+#include "base/sequence_checker.h"
 #include "base/strings/string_piece_forward.h"
 #include "device/bluetooth/bluetooth_device.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
@@ -23,9 +24,9 @@ class BluetoothDeviceWinrt;
 // Currently only pairing with a pin code is supported.
 class BluetoothPairingWinrt {
  public:
-  using Callback = base::OnceClosure;
-  using ErrorCallback =
-      base::OnceCallback<void(BluetoothDevice::ConnectErrorCode)>;
+  // On error |error_code| will have a value, otherwise successful.
+  using ConnectCallback = base::OnceCallback<void(
+      absl::optional<BluetoothDevice::ConnectErrorCode> error_code)>;
 
   BluetoothPairingWinrt(
       BluetoothDeviceWinrt* device,
@@ -33,8 +34,10 @@ class BluetoothPairingWinrt {
       Microsoft::WRL::ComPtr<
           ABI::Windows::Devices::Enumeration::IDeviceInformationCustomPairing>
           custom_pairing,
-      Callback callback,
-      ErrorCallback error_callback);
+      ConnectCallback callback);
+
+  BluetoothPairingWinrt(const BluetoothPairingWinrt&) = delete;
+  BluetoothPairingWinrt& operator=(const BluetoothPairingWinrt&) = delete;
 
   ~BluetoothPairingWinrt();
 
@@ -65,6 +68,10 @@ class BluetoothPairingWinrt {
               ABI::Windows::Devices::Enumeration::IDevicePairingResult>
                   pairing_result);
 
+  void OnSetPinCodeDeferralCompletion(HRESULT hr);
+  void OnRejectPairing(HRESULT hr);
+  void OnCancelPairing(HRESULT hr);
+
   // Weak. This is the device object that owns this pairing instance.
   BluetoothDeviceWinrt* device_;
 
@@ -80,8 +87,7 @@ class BluetoothPairingWinrt {
   Microsoft::WRL::ComPtr<
       ABI::Windows::Devices::Enumeration::IDeviceInformationCustomPairing>
       custom_pairing_;
-  Callback callback_;
-  ErrorCallback error_callback_;
+  ConnectCallback callback_;
 
   absl::optional<EventRegistrationToken> pairing_requested_token_;
 
@@ -90,9 +96,10 @@ class BluetoothPairingWinrt {
       ABI::Windows::Devices::Enumeration::IDevicePairingRequestedEventArgs>
       pairing_requested_;
 
-  base::WeakPtrFactory<BluetoothPairingWinrt> weak_ptr_factory_{this};
+  bool was_cancelled_ = false;
+  SEQUENCE_CHECKER(sequence_checker_);
 
-  DISALLOW_COPY_AND_ASSIGN(BluetoothPairingWinrt);
+  base::WeakPtrFactory<BluetoothPairingWinrt> weak_ptr_factory_{this};
 };
 
 }  // namespace device

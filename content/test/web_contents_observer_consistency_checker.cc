@@ -5,12 +5,15 @@
 #include "content/test/web_contents_observer_consistency_checker.h"
 
 #include "base/containers/contains.h"
+#include "base/containers/cxx20_erase.h"
 #include "base/memory/ptr_util.h"
-#include "base/stl_util.h"
+#include "base/pending_task.h"
 #include "base/strings/stringprintf.h"
+#include "base/task/common/task_annotator.h"
 #include "build/build_config.h"
 #include "content/browser/renderer_host/frame_tree_node.h"
 #include "content/browser/renderer_host/navigation_entry_impl.h"
+#include "content/browser/renderer_host/page_impl.h"
 #include "content/browser/renderer_host/render_frame_host_impl.h"
 #include "content/common/content_navigation_policy.h"
 #include "content/public/browser/navigation_handle.h"
@@ -22,6 +25,7 @@
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/test/test_utils.h"
 #include "net/base/net_errors.h"
+#include "third_party/blink/public/common/frame/frame_owner_element_type.h"
 
 namespace content {
 
@@ -154,10 +158,21 @@ void WebContentsObserverConsistencyChecker::RenderFrameHostChanged(
   if (new_host->GetParent()) {
     AssertRenderFrameExists(new_host->GetParent());
     // RenderFrameCreated should be called before RenderFrameHostChanged for all
-    // the subframes except for Portals which do not have a live RenderFrame in
-    // the renderer process.
-    if (new_host->GetFrameOwnerElementType() !=
-        blink::mojom::FrameOwnerElementType::kPortal) {
+    // the subframes except for those which are the outer delegates for:
+    //  - Portals
+    //  - Fenced frames based specifically on MPArch
+    // This is because those special-case frames do not have live RenderFrames
+    // in the renderer process.
+    bool is_render_frame_created_needed_for_child =
+        (new_host->GetFrameOwnerElementType() !=
+             blink::FrameOwnerElementType::kPortal &&
+         new_host->GetFrameOwnerElementType() !=
+             blink::FrameOwnerElementType::kFencedframe) ||
+        (new_host->GetFrameOwnerElementType() ==
+             blink::FrameOwnerElementType::kFencedframe &&
+         blink::features::kFencedFramesImplementationTypeParam.Get() ==
+             blink::features::FencedFramesImplementationType::kShadowDOM);
+    if (is_render_frame_created_needed_for_child) {
       AssertRenderFrameExists(new_host);
     }
     CHECK(current_hosts_.count(GetRoutingPair(new_host->GetParent())))
@@ -225,6 +240,11 @@ void WebContentsObserverConsistencyChecker::DidStartNavigation(
     NavigationHandle* navigation_handle) {
   CHECK(!NavigationIsOngoing(navigation_handle));
 
+  // Prerendered page activation should run subsequent navigation events in the
+  // same task.
+  if (navigation_handle->IsPrerenderedPageActivation())
+    task_checker_for_prerendered_page_activation_.BindCurrentTask();
+
   CHECK(!navigation_handle->HasCommitted());
   CHECK(!navigation_handle->IsErrorPage());
   CHECK_EQ(navigation_handle->GetWebContents(), web_contents());
@@ -236,6 +256,10 @@ void WebContentsObserverConsistencyChecker::DidRedirectNavigation(
     NavigationHandle* navigation_handle) {
   CHECK(NavigationIsOngoing(navigation_handle));
 
+  // DidRedirectionNavigation() should not be called for page activation.
+  CHECK(!navigation_handle->IsServedFromBackForwardCache());
+  CHECK(!navigation_handle->IsPrerenderedPageActivation());
+
   CHECK(navigation_handle->GetNetErrorCode() == net::OK);
   CHECK(!navigation_handle->HasCommitted());
   CHECK(!navigation_handle->IsErrorPage());
@@ -245,6 +269,11 @@ void WebContentsObserverConsistencyChecker::DidRedirectNavigation(
 void WebContentsObserverConsistencyChecker::ReadyToCommitNavigation(
     NavigationHandle* navigation_handle) {
   CHECK(NavigationIsOngoing(navigation_handle));
+
+  // Prerendered page activation should run navigation events in the same task.
+  if (navigation_handle->IsPrerenderedPageActivation()) {
+    CHECK(task_checker_for_prerendered_page_activation_.IsRunningInSameTask());
+  }
 
   CHECK(!navigation_handle->HasCommitted());
   CHECK_EQ(navigation_handle->GetWebContents(), web_contents());
@@ -256,9 +285,19 @@ void WebContentsObserverConsistencyChecker::ReadyToCommitNavigation(
                      navigation_handle->GetRenderFrameHost()));
 }
 
+void WebContentsObserverConsistencyChecker::PrimaryPageChanged(Page& page) {
+  CHECK_EQ(&web_contents()->GetPrimaryPage(), &page)
+      << "PrimaryPageChanged invoked on non-primary page.";
+}
+
 void WebContentsObserverConsistencyChecker::DidFinishNavigation(
     NavigationHandle* navigation_handle) {
   CHECK(NavigationIsOngoing(navigation_handle));
+
+  // Prerendered page activation should run navigation events in the same task.
+  if (navigation_handle->IsPrerenderedPageActivation()) {
+    CHECK(task_checker_for_prerendered_page_activation_.IsRunningInSameTask());
+  }
 
   CHECK(!(navigation_handle->HasCommitted() &&
           !navigation_handle->IsErrorPage()) ||
@@ -298,7 +337,8 @@ void WebContentsObserverConsistencyChecker::DocumentAvailableInMainFrame(
 
 void WebContentsObserverConsistencyChecker::DocumentOnLoadCompletedInMainFrame(
     RenderFrameHost* render_frame_host) {
-  CHECK(web_contents()->IsDocumentOnLoadCompletedInMainFrame());
+  CHECK(static_cast<PageImpl&>(render_frame_host->GetPage())
+            .is_on_load_completed_in_main_document());
   AssertMainFrameExists();
 }
 
@@ -490,15 +530,9 @@ class WebContentsObserverConsistencyChecker::TestInputEventObserver
     if (render_frame_host_wrapper_.IsDestroyed())
       return;
 
-    // TODO(crbug.com/1183639): Use RenderFrameHost::GetLifecycleState() if it
-    // is possible.
-    int frame_tree_node_id =
-        content::RenderFrameHost::GetFrameTreeNodeIdForRoutingId(
-            render_frame_host_wrapper_->GetProcess()->GetID(),
-            render_frame_host_wrapper_->GetRoutingID());
-    CHECK(!FrameTreeNode::GloballyFindByID(frame_tree_node_id)
-               ->frame_tree()
-               ->is_prerendering());
+    CHECK_NE(static_cast<RenderFrameHostImpl*>(render_frame_host_wrapper_.get())
+                 ->lifecycle_state(),
+             RenderFrameHostImpl::LifecycleStateImpl::kPrerendering);
   }
 
   RenderFrameHostWrapper render_frame_host_wrapper_;
@@ -518,6 +552,25 @@ void WebContentsObserverConsistencyChecker::RemoveInputEventObserver(
   auto it = input_observer_map_.find(render_frame_host);
   CHECK(it != input_observer_map_.end());
   input_observer_map_.erase(it);
+}
+
+WebContentsObserverConsistencyChecker::TaskChecker::TaskChecker()
+    : sequence_num_(GetSequenceNumberOfCurrentTask()) {}
+
+void WebContentsObserverConsistencyChecker::TaskChecker::BindCurrentTask() {
+  sequence_num_ = GetSequenceNumberOfCurrentTask();
+}
+
+bool WebContentsObserverConsistencyChecker::TaskChecker::IsRunningInSameTask() {
+  return sequence_num_ == GetSequenceNumberOfCurrentTask();
+}
+
+absl::optional<int> WebContentsObserverConsistencyChecker::TaskChecker::
+    GetSequenceNumberOfCurrentTask() {
+  return base::TaskAnnotator::CurrentTaskForThread()
+             ? absl::make_optional(
+                   base::TaskAnnotator::CurrentTaskForThread()->sequence_num)
+             : absl::nullopt;
 }
 
 }  // namespace content

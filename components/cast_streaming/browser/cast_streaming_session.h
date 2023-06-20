@@ -8,10 +8,11 @@
 #include <memory>
 
 #include "base/callback.h"
-#include "base/sequenced_task_runner.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/timer/timer.h"
 #include "components/cast/message_port/message_port.h"
 #include "components/cast_streaming/browser/cast_message_port_impl.h"
+#include "components/cast_streaming/browser/public/receiver_session.h"
 #include "components/openscreen_platform/network_util.h"
 #include "components/openscreen_platform/task_runner.h"
 #include "media/base/audio_decoder_config.h"
@@ -85,7 +86,11 @@ class CastStreamingSession {
   // * On failure, OnSessionEnded() will be called.
   // * When a new offer is sent by the Cast Streaming Sender,
   //   OnSessionReinitialization() will be called.
+  //
+  // |av_constraints| specifies the supported media codecs and limitations
+  // surrounding this support.
   void Start(Client* client,
+             std::unique_ptr<ReceiverSession::AVConstraints> av_constraints,
              std::unique_ptr<cast_api_bindings::MessagePort> message_port,
              scoped_refptr<base::SequencedTaskRunner> task_runner);
 
@@ -96,14 +101,15 @@ class CastStreamingSession {
  private:
   // Owns the Open Screen ReceiverSession. The Streaming Session is tied to the
   // lifespan of this object.
-  class ReceiverSessionClient
+  class ReceiverSessionClient final
       : public openscreen::cast::ReceiverSession::Client {
    public:
     ReceiverSessionClient(
         CastStreamingSession::Client* client,
+        std::unique_ptr<ReceiverSession::AVConstraints> av_constraints,
         std::unique_ptr<cast_api_bindings::MessagePort> message_port,
         scoped_refptr<base::SequencedTaskRunner> task_runner);
-    ~ReceiverSessionClient() final;
+    ~ReceiverSessionClient() override;
 
     ReceiverSessionClient(const ReceiverSessionClient&) = delete;
     ReceiverSessionClient& operator=(const ReceiverSessionClient&) = delete;
@@ -124,13 +130,13 @@ class CastStreamingSession {
         const openscreen::cast::VideoCaptureConfig& video_capture_config);
 
     // openscreen::cast::ReceiverSession::Client implementation.
-    void OnNegotiated(
-        const openscreen::cast::ReceiverSession* session,
-        openscreen::cast::ReceiverSession::ConfiguredReceivers receivers) final;
+    void OnNegotiated(const openscreen::cast::ReceiverSession* session,
+                      openscreen::cast::ReceiverSession::ConfiguredReceivers
+                          receivers) override;
     void OnReceiversDestroying(const openscreen::cast::ReceiverSession* session,
-                               ReceiversDestroyingReason reason) final;
+                               ReceiversDestroyingReason reason) override;
     void OnError(const openscreen::cast::ReceiverSession* session,
-                 openscreen::Error error) final;
+                 openscreen::Error error) override;
 
     void OnDataTimeout();
     void OnCastChannelClosed();

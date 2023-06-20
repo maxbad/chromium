@@ -31,7 +31,7 @@ class MockBluetoothDevice : public BluetoothDevice {
                       uint32_t bluetooth_class,
                       const char* name,
                       const std::string& address,
-                      bool paired,
+                      bool initially_paired,
                       bool connected);
   ~MockBluetoothDevice() override;
 
@@ -71,23 +71,19 @@ class MockBluetoothDevice : public BluetoothDevice {
                     base::OnceClosure& callback,
                     ErrorCallback& error_callback));
   void Connect(BluetoothDevice::PairingDelegate* pairing_delegate,
-               base::OnceClosure callback,
-               BluetoothDevice::ConnectErrorCallback error_callback) override {
-    Connect_(pairing_delegate, callback, error_callback);
+               ConnectCallback callback) override {
+    Connect_(pairing_delegate, callback);
   }
-  MOCK_METHOD3(Connect_,
+  MOCK_METHOD2(Connect_,
                void(BluetoothDevice::PairingDelegate* pairing_delegate,
-                    base::OnceClosure& callback,
-                    BluetoothDevice::ConnectErrorCallback& error_callback));
+                    ConnectCallback& callback));
   void Pair(BluetoothDevice::PairingDelegate* pairing_delegate,
-            base::OnceClosure callback,
-            BluetoothDevice::ConnectErrorCallback error_callback) override {
-    Pair_(pairing_delegate, callback, error_callback);
+            ConnectCallback callback) override {
+    Pair_(pairing_delegate, callback);
   }
-  MOCK_METHOD3(Pair_,
+  MOCK_METHOD2(Pair_,
                void(BluetoothDevice::PairingDelegate* pairing_delegate,
-                    base::OnceClosure& callback,
-                    BluetoothDevice::ConnectErrorCallback& error_callback));
+                    ConnectCallback& callback));
   MOCK_METHOD1(SetPinCode, void(const std::string&));
   MOCK_METHOD1(SetPasskey, void(uint32_t));
   MOCK_METHOD0(ConfirmPairing, void());
@@ -109,13 +105,10 @@ class MockBluetoothDevice : public BluetoothDevice {
                     ConnectToServiceErrorCallback error_callback));
   void CreateGattConnection(
       GattConnectionCallback callback,
-      ConnectErrorCallback error_callback,
       absl::optional<BluetoothUUID> service_uuid) override {
-    CreateGattConnection_(callback, error_callback);
+    CreateGattConnection_(callback);
   }
-  MOCK_METHOD2(CreateGattConnection_,
-               void(GattConnectionCallback& callback,
-                    ConnectErrorCallback& error_callback));
+  MOCK_METHOD1(CreateGattConnection_, void(GattConnectionCallback& callback));
 
   MOCK_METHOD1(SetGattServicesDiscoveryComplete, void(bool));
   MOCK_CONST_METHOD0(IsGattServicesDiscoveryComplete, bool());
@@ -144,12 +137,17 @@ class MockBluetoothDevice : public BluetoothDevice {
   // ON_CALL(*mock_device, GetGattServices))
   //   .WillByDefault(Invoke(*mock_device,
   //                         &MockBluetoothDevice::GetMockServices));
-  void AddMockService(std::unique_ptr<MockBluetoothGattService> mock_device);
+  void AddMockService(std::unique_ptr<MockBluetoothGattService> mock_service);
   std::vector<BluetoothRemoteGattService*> GetMockServices() const;
   BluetoothRemoteGattService* GetMockService(
       const std::string& identifier) const;
 
   void AddUUID(const BluetoothUUID& uuid) { uuids_.insert(uuid); }
+
+  void SetServiceDataForUUID(const BluetoothUUID& uuid,
+                             const std::vector<uint8_t>& service_data) {
+    service_data_[uuid] = service_data;
+  }
 
   // Updates the device's Manufacturer Data that are returned by
   // BluetoothDevice::GetManufacturerData().
@@ -167,12 +165,15 @@ class MockBluetoothDevice : public BluetoothDevice {
 
   void SetConnected(bool connected) { connected_ = connected; }
 
+  void SetPaired(bool paired) { paired_ = paired; }
+
  private:
   uint32_t bluetooth_class_;
   absl::optional<std::string> name_;
   std::string address_;
   BluetoothDevice::UUIDSet uuids_;
   bool connected_;
+  bool paired_;
 
   // Used by tests to save callbacks that will be run in the future.
   base::queue<base::OnceClosure> pending_callbacks_;

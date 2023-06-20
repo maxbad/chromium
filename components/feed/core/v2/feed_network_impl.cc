@@ -39,6 +39,7 @@
 #include "services/network/public/cpp/resource_request_body.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "services/network/public/cpp/simple_url_loader.h"
+#include "services/network/public/mojom/url_response_head.mojom.h"
 #include "third_party/protobuf/src/google/protobuf/io/coded_stream.h"
 #include "third_party/zlib/google/compression_utils.h"
 
@@ -48,7 +49,7 @@
 namespace feed {
 namespace {
 constexpr char kApplicationXProtobuf[] = "application/x-protobuf";
-constexpr base::TimeDelta kNetworkTimeout = base::TimeDelta::FromSeconds(30);
+constexpr base::TimeDelta kNetworkTimeout = base::Seconds(30);
 constexpr char kDiscoverHost[] = "https://discover-pa.googleapis.com/";
 
 signin::ScopeSet GetAuthScopes() {
@@ -92,10 +93,11 @@ void ParseAndForwardQueryResponse(
     NetworkRequestType request_type,
     base::OnceCallback<void(FeedNetwork::QueryRequestResult)> result_callback,
     RawResponse raw_response) {
-  MetricsReporter::NetworkRequestComplete(
-      request_type, raw_response.response_info.status_code);
+  MetricsReporter::NetworkRequestComplete(request_type,
+                                          raw_response.response_info);
   FeedNetwork::QueryRequestResult result;
   result.response_info = raw_response.response_info;
+  result.response_info.fetch_time_ticks = base::TimeTicks::Now();
   if (result.response_info.status_code == 200) {
     ::google::protobuf::io::CodedInputStream input_stream(
         reinterpret_cast<const uint8_t*>(raw_response.response_bytes.data()),
@@ -332,6 +334,11 @@ class FeedNetworkImpl::NetworkFetch {
   }
 
   void OnSimpleLoaderComplete(std::unique_ptr<std::string> response) {
+    const network::mojom::URLResponseHead* loader_response_info =
+        simple_loader_->ResponseInfo();
+    absl::optional<network::URLLoaderCompletionStatus> completion_status =
+        simple_loader_->CompletionStatus();
+
     NetworkResponseInfo response_info;
     response_info.status_code = simple_loader_->NetError();
     response_info.fetch_duration =
@@ -339,13 +346,16 @@ class FeedNetworkImpl::NetworkFetch {
     response_info.fetch_time = base::Time::Now();
     response_info.base_request_url = GetUrlWithoutQuery(url_);
     response_info.was_signed_in = !access_token_.empty();
+    response_info.loader_start_time_ticks = loader_only_start_ticks_;
+    response_info.encoded_size_bytes =
+        completion_status ? completion_status->encoded_data_length : 0;
 
     // If overriding the feed host, try to grab the Bless nonce. This is
     // strictly informational, and only displayed in snippets-internals.
-    if (allow_bless_auth_ && simple_loader_->ResponseInfo()) {
+    if (allow_bless_auth_ && loader_response_info) {
       size_t iter = 0;
       std::string value;
-      while (simple_loader_->ResponseInfo()->headers->EnumerateHeader(
+      while (loader_response_info->headers->EnumerateHeader(
           &iter, "www-authenticate", &value)) {
         size_t pos = value.find("nonce=\"");
         if (pos != std::string::npos) {
@@ -361,7 +371,7 @@ class FeedNetworkImpl::NetworkFetch {
     std::string response_body;
     if (response) {
       response_info.status_code =
-          simple_loader_->ResponseInfo()->headers->response_code();
+          loader_response_info->headers->response_code();
       response_info.response_body_bytes = response->size();
 
       response_body = std::move(*response);

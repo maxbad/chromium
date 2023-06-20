@@ -30,11 +30,12 @@ import org.junit.runner.RunWith;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
-import org.chromium.base.test.BaseActivityTestRule;
 import org.chromium.base.test.util.CommandLineFlags;
+import org.chromium.chrome.R;
 import org.chromium.chrome.browser.flags.ChromeSwitches;
 import org.chromium.chrome.browser.profiles.Profile;
 import org.chromium.chrome.browser.share.ChromeShareExtras;
+import org.chromium.chrome.browser.share.ChromeShareExtras.DetailedContentType;
 import org.chromium.chrome.browser.share.link_to_text.LinkToTextCoordinator.LinkGeneration;
 import org.chromium.chrome.browser.share.share_sheet.ShareSheetPropertyModelBuilder.ContentType;
 import org.chromium.chrome.test.ChromeBrowserTestRule;
@@ -43,6 +44,7 @@ import org.chromium.chrome.test.util.browser.Features;
 import org.chromium.components.browser_ui.share.ShareParams;
 import org.chromium.ui.modelutil.PropertyModel;
 import org.chromium.ui.test.util.DummyUiActivity;
+import org.chromium.ui.test.util.ThemedDummyUiActivityTestRule;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -57,8 +59,9 @@ public final class ShareSheetPropertyModelBuilderTest {
     public final ChromeBrowserTestRule mBrowserTestRule = new ChromeBrowserTestRule();
 
     @Rule
-    public BaseActivityTestRule<DummyUiActivity> mActivityTestRule =
-            new BaseActivityTestRule<>(DummyUiActivity.class);
+    public ThemedDummyUiActivityTestRule<DummyUiActivity> mActivityTestRule =
+            new ThemedDummyUiActivityTestRule<>(
+                    DummyUiActivity.class, R.style.ColorOverlay_ChromiumAndroid);
 
     @Rule
     public TestRule mFeatureProcessor = new Features.JUnitProcessor();
@@ -68,13 +71,9 @@ public final class ShareSheetPropertyModelBuilderTest {
     @Mock
     private Profile mProfile;
     @Mock
-    private ShareParams mParams;
-    @Mock
     private ResolveInfo mTextResolveInfo1;
     @Mock
     private ResolveInfo mTextResolveInfo2;
-    @Mock
-    private ResolveInfo mTextResolveInfo3;
     @Mock
     private ResolveInfo mImageResolveInfo1;
     @Mock
@@ -169,7 +168,9 @@ public final class ShareSheetPropertyModelBuilderTest {
     public void getContentTypes_UrlDifferentFromText_hasHighlightedTextContentType() {
         ShareParams shareParams = new ShareParams.Builder(null, "", "").setText("testText").build();
         ChromeShareExtras shareExtras =
-                new ChromeShareExtras.Builder().setIsUserHighlightedText(true).build();
+                new ChromeShareExtras.Builder()
+                        .setDetailedContentType(DetailedContentType.HIGHLIGHTED_TEXT)
+                        .build();
 
         assertEquals("Should contain HIGHLIGHTED_TEXT.",
                 ImmutableSet.of(ContentType.HIGHLIGHTED_TEXT),
@@ -217,6 +218,36 @@ public final class ShareSheetPropertyModelBuilderTest {
 
     @Test
     @MediumTest
+    public void getContentTypes_hasImageAndLink_AndPage() {
+        ShareParams shareParams =
+                new ShareParams.Builder(null, "", URL)
+                        .setFileUris(new ArrayList<>(ImmutableList.of(Uri.EMPTY, Uri.EMPTY)))
+                        .setFileContentType("image/png")
+                        .build();
+        ChromeShareExtras shareExtras = new ChromeShareExtras.Builder().build();
+
+        assertEquals("Should contain IMAGE_AND_LINK and LINK_PAGE_NOT_VISIBLE.",
+                ImmutableSet.of(ContentType.IMAGE_AND_LINK, ContentType.LINK_PAGE_NOT_VISIBLE),
+                ShareSheetPropertyModelBuilder.getContentTypes(shareParams, shareExtras));
+    }
+
+    @Test
+    @MediumTest
+    public void getContentTypes_hasImageAndLink_NoPage() {
+        ShareParams shareParams =
+                new ShareParams.Builder(null, "", URL)
+                        .setFileUris(new ArrayList<>(ImmutableList.of(Uri.EMPTY, Uri.EMPTY)))
+                        .setFileContentType("image/png")
+                        .build();
+        ChromeShareExtras shareExtras =
+                new ChromeShareExtras.Builder().setSkipPageSharingActions(true).build();
+
+        assertEquals("Should contain IMAGE_AND_LINK.", ImmutableSet.of(ContentType.IMAGE_AND_LINK),
+                ShareSheetPropertyModelBuilder.getContentTypes(shareParams, shareExtras));
+    }
+
+    @Test
+    @MediumTest
     public void getContentTypes_NoFiles_hasNoFileContentType() {
         ShareParams shareParams =
                 new ShareParams.Builder(null, "", "").setFileContentType("*/*").build();
@@ -250,8 +281,8 @@ public final class ShareSheetPropertyModelBuilderTest {
 
         List<PropertyModel> propertyModels = mPropertyModelBuilder.selectThirdPartyApps(null,
                 ImmutableSet.of(ContentType.LINK_PAGE_VISIBLE), shareParams, /*saveLastUsed=*/false,
-                /*WindowAndroid=*/null, /*shareStartTime=*/0,
-                /*linkGenerationStatusForMetrics=*/LinkGeneration.MAX);
+                /*shareStartTime=*/0, /*linkGenerationStatusForMetrics=*/LinkGeneration.MAX,
+                /*linkToggleMetricsDetails=*/null);
 
         assertEquals("Incorrect number of property models.", 2, propertyModels.size());
         assertModelsAreInTheRightOrder(
@@ -266,8 +297,8 @@ public final class ShareSheetPropertyModelBuilderTest {
 
         List<PropertyModel> propertyModels = mPropertyModelBuilder.selectThirdPartyApps(null,
                 ImmutableSet.of(ContentType.IMAGE), shareParams, /*saveLastUsed=*/false,
-                /*WindowAndroid=*/null, /*shareStartTime=*/0,
-                /*linkGenerationStatusForMetrics=*/LinkGeneration.MAX);
+                /*shareStartTime=*/0, /*linkGenerationStatusForMetrics=*/LinkGeneration.MAX,
+                /*linkToggleMetricsDetails=*/null);
 
         assertEquals("Incorrect number of property models.", 2, propertyModels.size());
         assertModelsAreInTheRightOrder(
@@ -282,8 +313,9 @@ public final class ShareSheetPropertyModelBuilderTest {
 
         List<PropertyModel> propertyModels = mPropertyModelBuilder.selectThirdPartyApps(null,
                 ImmutableSet.of(ContentType.LINK_PAGE_VISIBLE, ContentType.IMAGE), shareParams,
-                /*saveLastUsed=*/false, /*WindowAndroid=*/null, /*shareStartTime=*/0,
-                /*linkGenerationStatusForMetrics=*/LinkGeneration.MAX);
+                /*saveLastUsed=*/false, /*shareStartTime=*/0,
+                /*linkGenerationStatusForMetrics=*/LinkGeneration.MAX,
+                /*linkToggleMetricsDetails=*/null);
 
         assertEquals("Incorrect number of property models.", 4, propertyModels.size());
         assertModelsAreInTheRightOrder(propertyModels,

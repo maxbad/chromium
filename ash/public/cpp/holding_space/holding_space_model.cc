@@ -17,27 +17,70 @@ namespace ash {
 // HoldingSpaceModel::ScopedItemUpdate -----------------------------------------
 
 HoldingSpaceModel::ScopedItemUpdate::~ScopedItemUpdate() {
-  bool did_update = false;
+  uint32_t updated_fields = 0u;
+
+  // Cache computed fields.
+  const std::u16string accessible_name = item_->GetAccessibleName();
+
+  // Update accessible name.
+  if (accessible_name_) {
+    if (item_->SetAccessibleName(accessible_name_.value())) {
+      updated_fields |=
+          HoldingSpaceModelObserver::UpdatedField::kAccessibleName;
+    }
+  }
 
   // Update backing file.
   if (file_path_ && file_system_url_) {
-    did_update |=
-        item_->SetBackingFile(file_path_.value(), file_system_url_.value());
+    if (item_->SetBackingFile(file_path_.value(), file_system_url_.value()))
+      updated_fields |= HoldingSpaceModelObserver::UpdatedField::kBackingFile;
   }
 
   // Update pause.
-  if (paused_)
-    did_update |= item_->SetPaused(paused_.value());
+  if (paused_) {
+    if (item_->SetPaused(paused_.value()))
+      updated_fields |= HoldingSpaceModelObserver::UpdatedField::kPaused;
+  }
 
   // Update progress.
-  if (progress_)
-    did_update |= item_->SetProgress(progress_.value());
+  if (progress_) {
+    if (item_->SetProgress(progress_.value()))
+      updated_fields |= HoldingSpaceModelObserver::UpdatedField::kProgress;
+  }
+
+  // Update secondary text.
+  if (secondary_text_) {
+    if (item_->SetSecondaryText(secondary_text_.value()))
+      updated_fields |= HoldingSpaceModelObserver::UpdatedField::kSecondaryText;
+  }
+
+  // Update text.
+  if (text_) {
+    if (item_->SetText(text_.value()))
+      updated_fields |= HoldingSpaceModelObserver::UpdatedField::kText;
+  }
+
+  // Invalidate image if necessary. Note that this does not trigger an observer
+  // event as the image itself can be subscribed to independently for updates.
+  if (invalidate_image_)
+    item_->InvalidateImage();
+
+  // Calculate changes to computed fields.
+  if (accessible_name != item_->GetAccessibleName())
+    updated_fields |= HoldingSpaceModelObserver::UpdatedField::kAccessibleName;
 
   // Notify observers if and only if an update occurred.
-  if (did_update) {
+  if (updated_fields != 0u) {
     for (auto& observer : model_->observers_)
-      observer.OnHoldingSpaceItemUpdated(item_);
+      observer.OnHoldingSpaceItemUpdated(item_, updated_fields);
   }
+}
+
+HoldingSpaceModel::ScopedItemUpdate&
+HoldingSpaceModel::ScopedItemUpdate::SetAccessibleName(
+    const absl::optional<std::u16string>& accessible_name) {
+  accessible_name_ = accessible_name;
+  return *this;
 }
 
 HoldingSpaceModel::ScopedItemUpdate&
@@ -50,6 +93,12 @@ HoldingSpaceModel::ScopedItemUpdate::SetBackingFile(
 }
 
 HoldingSpaceModel::ScopedItemUpdate&
+HoldingSpaceModel::ScopedItemUpdate::SetInvalidateImage(bool invalidate_image) {
+  invalidate_image_ = invalidate_image;
+  return *this;
+}
+
+HoldingSpaceModel::ScopedItemUpdate&
 HoldingSpaceModel::ScopedItemUpdate::SetPaused(bool paused) {
   paused_ = paused;
   return *this;
@@ -57,8 +106,22 @@ HoldingSpaceModel::ScopedItemUpdate::SetPaused(bool paused) {
 
 HoldingSpaceModel::ScopedItemUpdate&
 HoldingSpaceModel::ScopedItemUpdate::SetProgress(
-    const absl::optional<float>& progress) {
+    const HoldingSpaceProgress& progress) {
   progress_ = progress;
+  return *this;
+}
+
+HoldingSpaceModel::ScopedItemUpdate&
+HoldingSpaceModel::ScopedItemUpdate::SetSecondaryText(
+    const absl::optional<std::u16string>& secondary_text) {
+  secondary_text_ = secondary_text;
+  return *this;
+}
+
+HoldingSpaceModel::ScopedItemUpdate&
+HoldingSpaceModel::ScopedItemUpdate::SetText(
+    const absl::optional<std::u16string>& text) {
+  text_ = text;
   return *this;
 }
 

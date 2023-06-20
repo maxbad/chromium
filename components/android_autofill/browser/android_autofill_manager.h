@@ -22,6 +22,9 @@ class AndroidAutofillManager : public AutofillManager {
       const std::string& app_locale,
       AutofillManager::AutofillDownloadManagerState enable_download_manager);
 
+  AndroidAutofillManager(const AndroidAutofillManager&) = delete;
+  AndroidAutofillManager& operator=(const AndroidAutofillManager&) = delete;
+
   ~AndroidAutofillManager() override;
 
   void OnFocusNoLongerOnForm(bool had_interacted_form) override;
@@ -42,6 +45,11 @@ class AndroidAutofillManager : public AutofillManager {
 
   bool has_server_prediction() const { return has_server_prediction_; }
 
+  // Send the |form| to the renderer for the specified |action|.
+  void FillOrPreviewForm(int query_id,
+                         mojom::RendererFormDataAction action,
+                         const FormData& form);
+
  protected:
   AndroidAutofillManager(
       AutofillDriver* driver,
@@ -61,11 +69,11 @@ class AndroidAutofillManager : public AutofillManager {
                                 const FormFieldData& field,
                                 const gfx::RectF& bounding_box) override;
 
-  void OnQueryFormFieldAutofillImpl(int query_id,
-                                    const FormData& form,
-                                    const FormFieldData& field,
-                                    const gfx::RectF& bounding_box,
-                                    bool autoselect_first_suggestion) override;
+  void OnAskForValuesToFillImpl(int query_id,
+                                const FormData& form,
+                                const FormFieldData& field,
+                                const gfx::RectF& bounding_box,
+                                bool autoselect_first_suggestion) override;
 
   void OnFocusOnFormFieldImpl(const FormData& form,
                               const FormFieldData& field,
@@ -107,8 +115,6 @@ class AndroidAutofillManager : public AutofillManager {
   bool has_server_prediction_ = false;
   AutofillProvider* autofill_provider_for_testing_ = nullptr;
   base::WeakPtrFactory<AndroidAutofillManager> weak_ptr_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(AndroidAutofillManager);
 };
 
 }  // namespace autofill

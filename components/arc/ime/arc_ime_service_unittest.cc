@@ -9,12 +9,10 @@
 #include <string>
 #include <utility>
 
-#include "ash/constants/ash_features.h"
 #include "ash/keyboard/ui/keyboard_ui_controller.h"
 #include "base/memory/ptr_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/bind.h"
-#include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
 #include "components/arc/mojom/ime.mojom.h"
 #include "components/arc/session/arc_bridge_service.h"
@@ -47,7 +45,8 @@ class FakeArcImeBridge : public ArcImeBridge {
   void SendSelectionRange(const gfx::Range& selection_range) override {
     selection_range_ = selection_range;
   }
-  void SendInsertText(const std::u16string& text) override {
+  void SendInsertText(const std::u16string& text,
+                      int new_cursor_position) override {
     count_send_insert_text_++;
   }
   void SendExtendSelectionAndDelete(size_t before, size_t after) override {
@@ -177,10 +176,6 @@ class FakeArcWindowDelegate : public ArcImeService::ArcWindowDelegate {
     return window ? test_input_method_ : nullptr;
   }
 
-  bool IsImeBlocked(aura::Window* window) const override {
-    return ime_blocked_;
-  }
-
   std::unique_ptr<aura::Window> CreateFakeArcWindow() {
     const int id = next_id_++;
     arc_window_id_.insert(id);
@@ -194,14 +189,11 @@ class FakeArcWindowDelegate : public ArcImeService::ArcWindowDelegate {
         &dummy_delegate_, id, gfx::Rect(), nullptr));
   }
 
-  void set_ime_blocked(bool ime_blocked) { ime_blocked_ = ime_blocked; }
-
  private:
   aura::test::TestWindowDelegate dummy_delegate_;
   int next_id_;
   std::set<int> arc_window_id_;
   ui::InputMethod* test_input_method_;
-  bool ime_blocked_ = false;
 };
 
 }  // namespace
@@ -351,11 +343,6 @@ TEST_F(ArcImeServiceTest, InsertChar) {
   // When the bridge is accepting text inputs, forward the event.
   instance_->OnTextInputTypeChanged(ui::TEXT_INPUT_TYPE_TEXT, true,
                                     mojom::TEXT_INPUT_FLAG_NONE);
-  instance_->InsertChar(ui::KeyEvent('a', ui::VKEY_A, ui::DomCode::NONE, 0));
-  EXPECT_EQ(1, fake_arc_ime_bridge_->count_send_insert_text());
-
-  // When IME is blocked, the event is not forwarded.
-  fake_window_delegate_->set_ime_blocked(true);
   instance_->InsertChar(ui::KeyEvent('a', ui::VKEY_A, ui::DomCode::NONE, 0));
   EXPECT_EQ(1, fake_arc_ime_bridge_->count_send_insert_text());
 }
@@ -567,10 +554,6 @@ TEST_F(ArcImeServiceTest, ExtendSelectionAndDeleteThenSetComposingRegion) {
 }
 
 TEST_F(ArcImeServiceTest, OnDispatchingKeyEventPostIME) {
-  base::test::ScopedFeatureList feature_list;
-  feature_list.InitAndEnableFeature(
-      chromeos::features::kArcPreImeKeyEventSupport);
-
   instance_->OnWindowFocused(arc_win_.get(), nullptr);
   instance_->OnTextInputTypeChanged(ui::TEXT_INPUT_TYPE_TEXT, true,
                                     mojom::TEXT_INPUT_FLAG_NONE);
@@ -622,9 +605,6 @@ TEST_F(ArcImeServiceTest, OnDispatchingKeyEventPostIME) {
 }
 
 TEST_F(ArcImeServiceTest, SendKeyEvent) {
-  base::test::ScopedFeatureList feature_list;
-  feature_list.InitAndEnableFeature(
-      chromeos::features::kArcPreImeKeyEventSupport);
   base::test::SingleThreadTaskEnvironment task_environment;
 
   instance_->OnWindowFocused(arc_win_.get(), nullptr);

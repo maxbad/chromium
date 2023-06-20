@@ -8,7 +8,6 @@
 #include <string>
 
 #include "base/callback.h"
-#include "base/macros.h"
 #include "ui/base/ime/text_input_type.h"
 #include "ui/events/event.h"
 
@@ -27,6 +26,9 @@ namespace arc {
 // Chromium and the ARC container.
 class ArcImeBridge {
  public:
+  ArcImeBridge(const ArcImeBridge&) = delete;
+  ArcImeBridge& operator=(const ArcImeBridge&) = delete;
+
   virtual ~ArcImeBridge() {}
 
   // Received IPCs are deserialized and passed to this delegate.
@@ -47,7 +49,6 @@ class ArcImeBridge {
         const std::u16string& text_in_range,
         const gfx::Range& selection_range,
         bool is_screen_coordinates) = 0;
-    virtual bool ShouldEnableKeyEventForwarding() = 0;
     virtual void SendKeyEvent(std::unique_ptr<ui::KeyEvent> key_event,
                               KeyEventDoneCallback callback) = 0;
   };
@@ -57,7 +58,8 @@ class ArcImeBridge {
       const ui::CompositionText& composition) = 0;
   virtual void SendConfirmCompositionText() = 0;
   virtual void SendSelectionRange(const gfx::Range& selection_range) = 0;
-  virtual void SendInsertText(const std::u16string& text) = 0;
+  virtual void SendInsertText(const std::u16string& text,
+                              int new_cursor_position) = 0;
   virtual void SendExtendSelectionAndDelete(size_t before, size_t after) = 0;
   virtual void SendOnKeyboardAppearanceChanging(const gfx::Rect& new_bounds,
                                                 bool is_available) = 0;
@@ -65,9 +67,6 @@ class ArcImeBridge {
 
  protected:
   ArcImeBridge() {}
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(ArcImeBridge);
 };
 
 }  // namespace arc

@@ -5,7 +5,14 @@
 #include "content/public/test/fake_local_frame.h"
 
 #include "services/network/public/mojom/content_security_policy.mojom.h"
+#include "third_party/blink/public/mojom/devtools/inspector_issue.mojom.h"
 #include "third_party/blink/public/mojom/frame/media_player_action.mojom.h"
+#include "third_party/blink/public/mojom/push_messaging/push_messaging.mojom.h"
+#include "third_party/blink/public/mojom/timing/resource_timing.mojom.h"
+
+#if defined(OS_MAC)
+#include "ui/base/mojom/attributed_string.mojom.h"
+#endif
 
 namespace content {
 
@@ -86,6 +93,9 @@ void FakeLocalFrame::MediaPlayerActionAt(
     const gfx::Point& location,
     blink::mojom::MediaPlayerActionPtr action) {}
 
+void FakeLocalFrame::PluginActionAt(const gfx::Point& location,
+                                    blink::mojom::PluginActionType action) {}
+
 void FakeLocalFrame::AdvanceFocusInFrame(
     blink::mojom::FocusType focus_type,
     const absl::optional<blink::RemoteFrameToken>& source_frame_token) {}
@@ -97,8 +107,6 @@ void FakeLocalFrame::ReportContentSecurityPolicyViolation(
 
 void FakeLocalFrame::DidUpdateFramePolicy(
     const blink::FramePolicy& frame_policy) {}
-
-void FakeLocalFrame::OnScreensChange() {}
 
 void FakeLocalFrame::PostMessageEvent(
     const absl::optional<blink::RemoteFrameToken>& source_frame_token,
@@ -158,9 +166,6 @@ void FakeLocalFrame::MixedContentFound(
     bool had_redirect,
     network::mojom::SourceLocationPtr source_location) {}
 
-void FakeLocalFrame::ActivateForPrerendering(base::TimeTicks activation_start) {
-}
-
 void FakeLocalFrame::BindDevToolsAgent(
     mojo::PendingAssociatedRemote<blink::mojom::DevToolsAgentHost> host,
     mojo::PendingAssociatedReceiver<blink::mojom::DevToolsAgent> receiver) {}
@@ -176,7 +181,7 @@ void FakeLocalFrame::ExtractSmartClipData(
 void FakeLocalFrame::HandleRendererDebugURL(const GURL& url) {}
 
 void FakeLocalFrame::GetCanonicalUrlForSharing(
-    GetCanonicalUrlForSharingCallback callback) {}
+    base::OnceCallback<void(const absl::optional<GURL>&)> callback) {}
 
 void FakeLocalFrame::BindFrameHostReceiver(
     mojo::ScopedInterfaceEndpointHandle handle) {

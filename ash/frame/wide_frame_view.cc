@@ -33,6 +33,10 @@ class WideFrameTargeter : public aura::WindowTargeter {
  public:
   explicit WideFrameTargeter(HeaderView* header_view)
       : header_view_(header_view) {}
+
+  WideFrameTargeter(const WideFrameTargeter&) = delete;
+  WideFrameTargeter& operator=(const WideFrameTargeter&) = delete;
+
   ~WideFrameTargeter() override = default;
 
   // aura::WindowTargeter:
@@ -55,7 +59,6 @@ class WideFrameTargeter : public aura::WindowTargeter {
 
  private:
   HeaderView* header_view_;
-  DISALLOW_COPY_AND_ASSIGN(WideFrameTargeter);
 };
 
 }  // namespace
@@ -92,7 +95,6 @@ WideFrameView::WideFrameView(views::Widget* target)
           std::make_unique<FrameContextMenuController>(target_, this)) {
   // WideFrameView is owned by its client, not by Views.
   SetOwnedByWidget(false);
-  display::Screen::GetScreen()->AddObserver(this);
 
   aura::Window* target_window = target->GetNativeWindow();
   target_window->AddObserver(this);
@@ -138,7 +140,6 @@ WideFrameView::WideFrameView(views::Widget* target)
 WideFrameView::~WideFrameView() {
   if (widget_)
     widget_->CloseNow();
-  display::Screen::GetScreen()->RemoveObserver(this);
   if (target_) {
     HeaderView* target_header_view = GetTargetHeaderView();
     target_header_view->SetShouldPaintHeader(true);

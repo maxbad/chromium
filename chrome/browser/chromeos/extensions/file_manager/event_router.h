@@ -12,22 +12,25 @@
 #include <string>
 #include <vector>
 
+#include "ash/components/settings/timezone_settings.h"
 #include "ash/public/cpp/tablet_mode_observer.h"
 #include "base/compiler_specific.h"
-#include "base/macros.h"
+#include "base/gtest_prod_util.h"
 #include "chrome/browser/ash/drive/drive_integration_service.h"
+#include "chrome/browser/ash/file_manager/file_watcher.h"
+#include "chrome/browser/ash/file_manager/fileapi_util.h"
+#include "chrome/browser/ash/file_manager/io_task_controller.h"
+#include "chrome/browser/ash/file_manager/volume_manager.h"
+#include "chrome/browser/ash/file_manager/volume_manager_observer.h"
 #include "chrome/browser/ash/guest_os/guest_os_share_path.h"
+#include "chrome/browser/ash/plugin_vm/plugin_vm_util.h"
 #include "chrome/browser/chromeos/extensions/file_manager/device_event_router.h"
 #include "chrome/browser/chromeos/extensions/file_manager/drivefs_event_router.h"
-#include "chrome/browser/chromeos/file_manager/file_watcher.h"
-#include "chrome/browser/chromeos/file_manager/fileapi_util.h"
-#include "chrome/browser/chromeos/file_manager/volume_manager.h"
-#include "chrome/browser/chromeos/file_manager/volume_manager_observer.h"
+#include "chrome/browser/chromeos/extensions/file_manager/system_notification_manager.h"
 #include "chrome/common/extensions/api/file_manager_private.h"
 #include "chromeos/disks/disk_mount_manager.h"
-#include "chromeos/settings/timezone_settings.h"
-#include "components/arc/arc_service_manager.h"
 #include "components/arc/intent_helper/arc_intent_helper_observer.h"
+#include "components/arc/session/arc_service_manager.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "extensions/browser/extension_registry_observer.h"
 #include "services/network/public/cpp/network_connection_tracker.h"
@@ -49,12 +52,13 @@ class EventRouter
     : public KeyedService,
       public network::NetworkConnectionTracker::NetworkConnectionObserver,
       public extensions::ExtensionRegistryObserver,
-      public chromeos::system::TimezoneSettings::Observer,
+      public ash::system::TimezoneSettings::Observer,
       public VolumeManagerObserver,
       public arc::ArcIntentHelperObserver,
       public drive::DriveIntegrationServiceObserver,
       public guest_os::GuestOsSharePath::Observer,
-      public ash::TabletModeObserver {
+      public ash::TabletModeObserver,
+      public file_manager::io_task::IOTaskController::Observer {
  public:
   using DispatchDirectoryChangeEventImplCallback =
       base::RepeatingCallback<void(const base::FilePath& virtual_path,
@@ -62,6 +66,10 @@ class EventRouter
                                    const std::vector<url::Origin>& listeners)>;
 
   explicit EventRouter(Profile* profile);
+
+  EventRouter(const EventRouter&) = delete;
+  EventRouter& operator=(const EventRouter&) = delete;
+
   ~EventRouter() override;
 
   // arc::ArcIntentHelperObserver overrides.
@@ -93,6 +101,12 @@ class EventRouter
   void RemoveFileWatch(const base::FilePath& local_path,
                        const url::Origin& listener_origin);
 
+  // Called when a copy task is started.
+  void OnCopyStarted(int copy_id,
+                     const GURL& source_url,
+                     const GURL& destination_url,
+                     int64_t space_needed);
+
   // Called when a copy task is completed.
   void OnCopyCompleted(
       int copy_id, const GURL& source_url, const GURL& destination_url,
@@ -121,7 +135,7 @@ class EventRouter
                            const extensions::Extension* extension,
                            extensions::UnloadedExtensionReason reason) override;
 
-  // chromeos::system::TimezoneSettings::Observer overrides.
+  // ash::system::TimezoneSettings::Observer overrides.
   void TimezoneChanged(const icu::TimeZone& timezone) override;
 
   // VolumeManagerObserver overrides.
@@ -178,6 +192,9 @@ class EventRouter
 
   // Returns a weak pointer for the event router.
   base::WeakPtr<EventRouter> GetWeakPtr();
+
+  // IOTaskController::Observer:
+  void OnIOTaskStatus(const io_task::ProgressStatus& status) override;
 
  private:
   FRIEND_TEST_ALL_PREFIXES(EventRouterTest, PopulateCrostiniEvent);
@@ -237,6 +254,9 @@ class EventRouter
       extensions::api::file_manager_private::CrostiniEventType pref_true,
       extensions::api::file_manager_private::CrostiniEventType pref_false);
 
+  // Called when Plugin VM enabled state may have changed.
+  void OnPluginVmChanged();
+
   void NotifyDriveConnectionStatusChanged();
 
   void DisplayDriveConfirmDialog(
@@ -246,9 +266,12 @@ class EventRouter
   base::Time last_copy_progress_event_;
 
   std::map<base::FilePath, std::unique_ptr<FileWatcher>> file_watchers_;
+  std::unique_ptr<plugin_vm::PluginVmPolicySubscription>
+      plugin_vm_subscription_;
   std::unique_ptr<PrefChangeRegistrar> pref_change_registrar_;
   Profile* profile_;
 
+  std::unique_ptr<SystemNotificationManager> notification_manager_;
   std::unique_ptr<DeviceEventRouter> device_event_router_;
   std::unique_ptr<DriveFsEventRouter> drivefs_event_router_;
 
@@ -258,8 +281,6 @@ class EventRouter
   // Note: This should remain the last member so it'll be destroyed and
   // invalidate the weak pointers before any other members are destroyed.
   base::WeakPtrFactory<EventRouter> weak_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(EventRouter);
 };
 
 }  // namespace file_manager

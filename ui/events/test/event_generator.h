@@ -9,7 +9,6 @@
 #include <vector>
 
 #include "base/callback.h"
-#include "base/macros.h"
 #include "base/time/time.h"
 #include "build/chromeos_buildflags.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
@@ -129,6 +128,9 @@ class EventGenerator {
   // |target_window|.
   EventGenerator(gfx::NativeWindow root_window,
                  gfx::NativeWindow target_window);
+
+  EventGenerator(const EventGenerator&) = delete;
+  EventGenerator& operator=(const EventGenerator&) = delete;
 
   virtual ~EventGenerator();
 
@@ -436,6 +438,11 @@ class EventGenerator {
                   int flags,
                   int source_device_id = ED_UNKNOWN_DEVICE);
 
+  // Calls PressKey() then ReleaseKey() to simulate typing one character.
+  void PressAndReleaseKey(KeyboardCode key_code,
+                          int flags = EF_NONE,
+                          int source_device_id = ED_UNKNOWN_DEVICE);
+
   // Dispatch the event to the WindowEventDispatcher.
   void Dispatch(Event* event);
 
@@ -475,8 +482,6 @@ class EventGenerator {
   Target target_ = Target::WIDGET;
 
   std::unique_ptr<TestTickClock> tick_clock_;
-
-  DISALLOW_COPY_AND_ASSIGN(EventGenerator);
 };
 
 }  // namespace test

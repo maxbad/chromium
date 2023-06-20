@@ -23,8 +23,7 @@
 #include "ui/views/widget/widget.h"
 
 namespace {
-constexpr base::TimeDelta kSetDefaultIconDelayMs =
-    base::TimeDelta::FromMilliseconds(1000);
+constexpr base::TimeDelta kSetDefaultIconDelayMs = base::Milliseconds(1000);
 
 constexpr int kArcAppWindowIconSize = extension_misc::EXTENSION_ICON_MEDIUM;
 }  // namespace
@@ -75,7 +74,10 @@ void ArcAppWindow::SetDescription(const std::string& title,
 
 bool ArcAppWindow::IsActive() const {
   return widget()->IsActive() &&
-         owner_->GetActiveTaskId() == arc::GetWindowTaskId(GetNativeWindow());
+         (owner_->GetActiveTaskId() ==
+              arc::GetWindowTaskId(GetNativeWindow()) ||
+          owner_->GetActiveSessionId() ==
+              arc::GetWindowSessionId(GetNativeWindow()));
 }
 
 void ArcAppWindow::Close() {

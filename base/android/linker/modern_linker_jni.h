@@ -23,7 +23,12 @@ enum class RelroSharingStatus {
   NOT_ATTEMPTED = 0,
   SHARED = 1,
   NOT_IDENTICAL = 2,
-  COUNT = 3,
+  EXTERNAL_RELRO_FD_NOT_PROVIDED = 3,
+  EXTERNAL_RELRO_NOT_FOUND = 4,
+  NO_SHMEM_FUNCTIONS = 5,
+  REMAP_FAILED = 6,
+  CORRUPTED_IN_JAVA = 7,
+  COUNT = 8,
 };
 
 struct SharedMemoryFunctions;
@@ -52,12 +57,6 @@ class NativeLibInfo {
   bool CopyFromJavaObject();
 
   void set_load_address(uintptr_t a) { load_address_ = a; }
-
-  // Whether to use memfd_create(2) when creating shared memory regions.
-  void set_use_memfd(bool use_memfd) {
-    use_memfd_initialized_ = true;
-    use_memfd_ = use_memfd;
-  }
 
   uintptr_t load_address() const { return load_address_; }
 
@@ -156,8 +155,6 @@ class NativeLibInfo {
   int relro_fd_ = kInvalidFd;
   JNIEnv* const env_;
   const jobject java_object_;
-  bool use_memfd_initialized_ = false;
-  bool use_memfd_;
 };
 
 // JNI_OnLoad() initialization hook for the modern linker.

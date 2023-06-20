@@ -8,7 +8,7 @@
 #include "base/containers/span.h"
 #include "base/memory/scoped_refptr.h"
 #include "mojo/public/cpp/system/data_pipe.h"
-#include "third_party/blink/public/mojom/frame/back_forward_cache_controller.mojom-blink-forward.h"
+#include "third_party/blink/public/mojom/navigation/renderer_eviction_reason.mojom-blink-forward.h"
 #include "third_party/blink/public/platform/web_back_forward_cache_loader_helper.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/heap/member.h"
@@ -121,13 +121,6 @@ class PLATFORM_EXPORT ResponseBodyLoader final
 
   void Trace(Visitor*) const override;
 
-  // The maximal number of bytes consumed in a task. When there are more bytes
-  // in the data pipe, they will be consumed in following tasks. Setting a too
-  // small number will generate ton of tasks but setting a too large number will
-  // lead to thread janks. Also, some clients cannot handle too large chunks
-  // (512k for example).
-  static constexpr size_t kMaxNumConsumedBytesInTask = 64 * 1024;
-
  private:
   class Buffer;
   class DelegatingBytesConsumer;
@@ -137,6 +130,7 @@ class PLATFORM_EXPORT ResponseBodyLoader final
   void DidFinishLoadingBody() override;
   void DidFailLoadingBody() override;
   void DidCancelLoadingBody() override;
+
   void EvictFromBackForwardCache(mojom::blink::RendererEvictionReason);
   void DidBufferLoadWhileInBackForwardCache(size_t num_bytes);
   bool CanContinueBufferingWhileInBackForwardCache();

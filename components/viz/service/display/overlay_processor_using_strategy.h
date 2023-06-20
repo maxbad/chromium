@@ -9,7 +9,6 @@
 #include <unordered_map>
 #include <vector>
 
-#include "base/macros.h"
 #include "build/build_config.h"
 #include "components/viz/common/display/overlay_strategy.h"
 #include "components/viz/common/quads/aggregated_render_pass.h"
@@ -63,7 +62,7 @@ class VIZ_SERVICE_EXPORT OverlayProcessorUsingStrategy
     // |render_pass_list|. Most strategies should look at the primary
     // RenderPass, the last element.
     virtual bool Attempt(
-        const SkMatrix44& output_color_matrix,
+        const skia::Matrix44& output_color_matrix,
         const FilterOperationsMap& render_pass_backdrop_filters,
         DisplayResourceProvider* resource_provider,
         AggregatedRenderPassList* render_pass_list,
@@ -77,7 +76,7 @@ class VIZ_SERVICE_EXPORT OverlayProcessorUsingStrategy
     // should not attempt a specific candidate it should merely identify them
     // and save the necessary data required to for a later attempt.
     virtual void ProposePrioritized(
-        const SkMatrix44& output_color_matrix,
+        const skia::Matrix44& output_color_matrix,
         const FilterOperationsMap& render_pass_backdrop_filters,
         DisplayResourceProvider* resource_provider,
         AggregatedRenderPassList* render_pass_list,
@@ -92,7 +91,7 @@ class VIZ_SERVICE_EXPORT OverlayProcessorUsingStrategy
     // represent overlays to |render_pass_list|. Most strategies should look at
     // the primary RenderPass, the last element.
     virtual bool AttemptPrioritized(
-        const SkMatrix44& output_color_matrix,
+        const skia::Matrix44& output_color_matrix,
         const FilterOperationsMap& render_pass_backdrop_filters,
         DisplayResourceProvider* resource_provider,
         AggregatedRenderPassList* render_pass_list,
@@ -121,6 +120,10 @@ class VIZ_SERVICE_EXPORT OverlayProcessorUsingStrategy
   };
   using StrategyList = std::vector<std::unique_ptr<Strategy>>;
 
+  OverlayProcessorUsingStrategy(const OverlayProcessorUsingStrategy&) = delete;
+  OverlayProcessorUsingStrategy& operator=(
+      const OverlayProcessorUsingStrategy&) = delete;
+
   ~OverlayProcessorUsingStrategy() override;
 
   gfx::Rect GetPreviousFrameOverlaysBoundingRect() const final;
@@ -135,14 +138,18 @@ class VIZ_SERVICE_EXPORT OverlayProcessorUsingStrategy
   void ProcessForOverlays(
       DisplayResourceProvider* resource_provider,
       AggregatedRenderPassList* render_passes,
-      const SkMatrix44& output_color_matrix,
+      const skia::Matrix44& output_color_matrix,
       const FilterOperationsMap& render_pass_filters,
       const FilterOperationsMap& render_pass_backdrop_filters,
       SurfaceDamageRectList surface_damage_rect_list,
       OutputSurfaceOverlayPlane* output_surface_plane,
       CandidateList* overlay_candidates,
       gfx::Rect* damage_rect,
-      std::vector<gfx::Rect>* content_bounds) final;
+      std::vector<gfx::Rect>* content_bounds)
+      // TODO(petermcneeley) : Restore to "final" once
+      // |OverlayProcessorDelegated| has been reintegrated into
+      // |OverlayProcessorOzone|.
+      override;
 
   // This function takes a pointer to the absl::optional instance so the
   // instance can be reset. When overlay strategy covers the entire output
@@ -206,7 +213,7 @@ class VIZ_SERVICE_EXPORT OverlayProcessorUsingStrategy
   // through as a const member because the underlay strategy changes the
   // |primary_plane|'s blending setting.
   bool AttemptWithStrategies(
-      const SkMatrix44& output_color_matrix,
+      const skia::Matrix44& output_color_matrix,
       const OverlayProcessorInterface::FilterOperationsMap&
           render_pass_backdrop_filters,
       DisplayResourceProvider* resource_provider,
@@ -224,7 +231,7 @@ class VIZ_SERVICE_EXPORT OverlayProcessorUsingStrategy
   // through as a const member because the underlay strategy changes the
   // |primary_plane|'s blending setting.
   bool AttemptWithStrategiesPrioritized(
-      const SkMatrix44& output_color_matrix,
+      const skia::Matrix44& output_color_matrix,
       const OverlayProcessorInterface::FilterOperationsMap&
           render_pass_backdrop_filters,
       DisplayResourceProvider* resource_provider,
@@ -287,8 +294,6 @@ class VIZ_SERVICE_EXPORT OverlayProcessorUsingStrategy
   // can downscale without failing.
   float min_working_scale_ = 1.0f;
   float max_failed_scale_ = 0.0f;
-
-  DISALLOW_COPY_AND_ASSIGN(OverlayProcessorUsingStrategy);
 };
 
 }  // namespace viz

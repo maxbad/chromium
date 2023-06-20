@@ -10,7 +10,6 @@
 #include "ash/system/power/battery_notification.h"
 #include "ash/test/ash_test_base.h"
 #include "base/command_line.h"
-#include "base/macros.h"
 #include "base/strings/utf_string_conversions.h"
 #include "ui/message_center/message_center.h"
 #include "ui/message_center/public/cpp/notification.h"
@@ -29,6 +28,12 @@ class SessionStateNotificationBlockerTest
       public message_center::NotificationBlocker::Observer {
  public:
   SessionStateNotificationBlockerTest() = default;
+
+  SessionStateNotificationBlockerTest(
+      const SessionStateNotificationBlockerTest&) = delete;
+  SessionStateNotificationBlockerTest& operator=(
+      const SessionStateNotificationBlockerTest&) = delete;
+
   ~SessionStateNotificationBlockerTest() override = default;
 
   // tests::AshTestBase overrides:
@@ -71,9 +76,9 @@ class SessionStateNotificationBlockerTest
   bool ShouldShowNotificationAsPopup(
       const message_center::NotifierId& notifier_id) {
     message_center::Notification notification(
-        message_center::NOTIFICATION_TYPE_SIMPLE, "chromeos-id",
-        u"chromeos-title", u"chromeos-message", gfx::Image(),
-        u"chromeos-source", GURL(), notifier_id,
+        message_center::NOTIFICATION_TYPE_SIMPLE,
+        GetNotificationId(notifier_id), u"chromeos-title", u"chromeos-message",
+        gfx::Image(), u"chromeos-source", GURL(), notifier_id,
         message_center::RichNotificationData(), nullptr);
     if (notifier_id.id == kNotifierSystemPriority)
       notification.set_priority(message_center::SYSTEM_PRIORITY);
@@ -94,8 +99,6 @@ class SessionStateNotificationBlockerTest
 
   int state_changed_count_ = 0;
   std::unique_ptr<message_center::NotificationBlocker> blocker_;
-
-  DISALLOW_COPY_AND_ASSIGN(SessionStateNotificationBlockerTest);
 };
 
 TEST_F(SessionStateNotificationBlockerTest, BaseTest) {
@@ -104,13 +107,13 @@ TEST_F(SessionStateNotificationBlockerTest, BaseTest) {
   EXPECT_EQ(0, GetStateChangedCountAndReset());
   message_center::NotifierId notifier_id(
       message_center::NotifierType::APPLICATION, "test-notifier");
-  EXPECT_TRUE(ShouldShowNotificationAsPopup(notifier_id));
+  EXPECT_FALSE(ShouldShowNotificationAsPopup(notifier_id));
   EXPECT_FALSE(ShouldShowNotification(notifier_id));
 
   // Login screen.
   GetSessionControllerClient()->SetSessionState(SessionState::LOGIN_PRIMARY);
   EXPECT_EQ(0, GetStateChangedCountAndReset());
-  EXPECT_TRUE(ShouldShowNotificationAsPopup(notifier_id));
+  EXPECT_FALSE(ShouldShowNotificationAsPopup(notifier_id));
   EXPECT_FALSE(ShouldShowNotification(notifier_id));
 
   // Logged in as a normal user.
@@ -174,12 +177,12 @@ TEST_F(SessionStateNotificationBlockerTest, BlockOnPrefService) {
   EXPECT_EQ(0, GetStateChangedCountAndReset());
   message_center::NotifierId notifier_id(
       message_center::NotifierType::APPLICATION, "test-notifier");
-  EXPECT_TRUE(ShouldShowNotificationAsPopup(notifier_id));
+  EXPECT_FALSE(ShouldShowNotificationAsPopup(notifier_id));
 
   // Login screen.
   GetSessionControllerClient()->SetSessionState(SessionState::LOGIN_PRIMARY);
   EXPECT_EQ(0, GetStateChangedCountAndReset());
-  EXPECT_TRUE(ShouldShowNotificationAsPopup(notifier_id));
+  EXPECT_FALSE(ShouldShowNotificationAsPopup(notifier_id));
 
   // Simulates login event sequence in production code:
   // - Add a user session;
@@ -193,11 +196,11 @@ TEST_F(SessionStateNotificationBlockerTest, BlockOnPrefService) {
                                             user_manager::USER_TYPE_REGULAR,
                                             false /* provide_pref_service */);
   EXPECT_EQ(0, GetStateChangedCountAndReset());
-  EXPECT_TRUE(ShouldShowNotificationAsPopup(notifier_id));
+  EXPECT_FALSE(ShouldShowNotificationAsPopup(notifier_id));
 
   session_controller_client->SwitchActiveUser(kUserAccountId);
   EXPECT_EQ(0, GetStateChangedCountAndReset());
-  EXPECT_TRUE(ShouldShowNotificationAsPopup(notifier_id));
+  EXPECT_FALSE(ShouldShowNotificationAsPopup(notifier_id));
 
   session_controller_client->SetSessionState(SessionState::ACTIVE);
   EXPECT_EQ(1, GetStateChangedCountAndReset());

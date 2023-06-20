@@ -10,6 +10,7 @@
 
 #include "base/strings/string_piece.h"
 #include "base/strings/string_split.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 
@@ -144,7 +145,11 @@ bool DictionaryValueUpdate::GetInteger(base::StringPiece path,
 
 bool DictionaryValueUpdate::GetDouble(base::StringPiece path,
                                       double* out_value) const {
-  return value_->GetDouble(path, out_value);
+  if (absl::optional<double> value = value_->FindDoubleKey(path)) {
+    *out_value = *value;
+    return true;
+  }
+  return false;
 }
 
 bool DictionaryValueUpdate::GetString(base::StringPiece path,
@@ -211,19 +216,34 @@ bool DictionaryValueUpdate::GetIntegerWithoutPathExpansion(
 bool DictionaryValueUpdate::GetDoubleWithoutPathExpansion(
     base::StringPiece key,
     double* out_value) const {
-  return value_->GetDoubleWithoutPathExpansion(key, out_value);
+  absl::optional<double> value = value_->FindDoubleKey(key);
+  if (!value)
+    return false;
+
+  *out_value = value.value();
+  return true;
 }
 
 bool DictionaryValueUpdate::GetStringWithoutPathExpansion(
     base::StringPiece key,
     std::string* out_value) const {
-  return value_->GetStringWithoutPathExpansion(key, out_value);
+  std::string* value = value_->FindStringKey(key);
+  if (!value)
+    return false;
+
+  *out_value = *value;
+  return true;
 }
 
 bool DictionaryValueUpdate::GetStringWithoutPathExpansion(
     base::StringPiece key,
     std::u16string* out_value) const {
-  return value_->GetStringWithoutPathExpansion(key, out_value);
+  std::string* value = value_->FindStringKey(key);
+  if (!value)
+    return false;
+
+  *out_value = base::UTF8ToUTF16(*value);
+  return true;
 }
 
 bool DictionaryValueUpdate::GetDictionaryWithoutPathExpansion(
@@ -259,9 +279,18 @@ bool DictionaryValueUpdate::GetListWithoutPathExpansion(
   return value_->GetListWithoutPathExpansion(key, out_value);
 }
 
-bool DictionaryValueUpdate::Remove(base::StringPiece path,
-                                   std::unique_ptr<base::Value>* out_value) {
-  if (!value_->Remove(path, out_value))
+bool DictionaryValueUpdate::Remove(base::StringPiece path) {
+  base::StringPiece current_path(path);
+  base::Value* current_dictionary = value_;
+  size_t delimiter_position = current_path.rfind('.');
+  if (delimiter_position != base::StringPiece::npos) {
+    current_dictionary =
+        value_->FindPath(current_path.substr(0, delimiter_position));
+    if (!current_dictionary)
+      return false;
+    current_path = current_path.substr(delimiter_position + 1);
+  }
+  if (!current_dictionary->RemoveKey(current_path))
     return false;
 
   RecordPath(path);
@@ -271,9 +300,12 @@ bool DictionaryValueUpdate::Remove(base::StringPiece path,
 bool DictionaryValueUpdate::RemoveWithoutPathExpansion(
     base::StringPiece key,
     std::unique_ptr<base::Value>* out_value) {
-  if (!value_->RemoveWithoutPathExpansion(key, out_value))
+  absl::optional<base::Value> value = value_->ExtractKey(key);
+  if (!value)
     return false;
 
+  if (out_value)
+    *out_value = base::Value::ToUniquePtrValue(std::move(*value));
   RecordKey(key);
   return true;
 }
@@ -281,9 +313,12 @@ bool DictionaryValueUpdate::RemoveWithoutPathExpansion(
 bool DictionaryValueUpdate::RemovePath(
     base::StringPiece path,
     std::unique_ptr<base::Value>* out_value) {
-  if (!value_->RemovePath(path, out_value))
+  absl::optional<base::Value> value = value_->ExtractPath(path);
+  if (!value)
     return false;
 
+  if (out_value)
+    *out_value = base::Value::ToUniquePtrValue(std::move(*value));
   std::vector<base::StringPiece> split_path = SplitPath(path);
   base::DictionaryValue* dict = value_;
   for (size_t i = 0; i < split_path.size() - 1; ++i) {

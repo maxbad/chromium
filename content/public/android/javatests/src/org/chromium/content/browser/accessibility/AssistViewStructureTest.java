@@ -18,6 +18,7 @@ import org.junit.runner.RunWith;
 
 import org.chromium.base.test.BaseJUnit4ClassRunner;
 import org.chromium.base.test.util.CriteriaHelper;
+import org.chromium.base.test.util.DisableIf;
 import org.chromium.base.test.util.MinAndroidSdkLevel;
 import org.chromium.base.test.util.UrlUtils;
 import org.chromium.content_public.browser.test.util.Coordinates;
@@ -26,6 +27,7 @@ import org.chromium.content_public.browser.test.util.TestThreadUtils;
 import org.chromium.content_public.common.UseZoomForDSFPolicy;
 import org.chromium.content_shell_apk.ContentShellActivityTestRule;
 
+import java.util.ArrayList;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
 
@@ -137,16 +139,13 @@ public class AssistViewStructureTest {
                         + "  android.webkit.WebView\n"
                         + "    android.widget.ListView\n"
                         + "      android.view.View\n"
-                        + "        android.view.View\n"
-                        + "          android.widget.TextView text='1. '\n"
+                        + "        android.view.View text='1. '\n"
                         + "        android.widget.TextView text='Kirk'\n"
                         + "      android.view.View\n"
-                        + "        android.view.View\n"
-                        + "          android.widget.TextView text='2. '\n"
+                        + "        android.view.View text='2. '\n"
                         + "        android.widget.TextView text='Picard'\n"
                         + "      android.view.View\n"
-                        + "        android.view.View\n"
-                        + "          android.widget.TextView text='3. '\n"
+                        + "        android.view.View text='3. '\n"
                         + "        android.widget.TextView text='Janeway'\n");
     }
 
@@ -256,6 +255,34 @@ public class AssistViewStructureTest {
     }
 
     /**
+     * Test that the snapshot contains HTML metadata.
+     */
+    @Test
+    @MediumTest
+    @MinAndroidSdkLevel(Build.VERSION_CODES.M)
+    @TargetApi(Build.VERSION_CODES.M)
+    public void testHtmlMetadata() throws Throwable {
+        TestViewStructureInterface root = getViewStructureFromHtml("<head>"
+                + "  <title>Hello World</title>"
+                + "  <script>console.log(\"Skip me!\");</script>"
+                + "  <meta charset=\"utf-8\">"
+                + "  <link ref=\"canonical\" href=\"https://abc.com\">"
+                + "  <script type=\"application/ld+json\">{}</script>"
+                + "</head>"
+                + "<body>Hello, world</body>")
+                                                  .getChild(0);
+        Bundle extras = root.getExtras();
+        ArrayList<String> metadata = extras.getStringArrayList("metadata");
+        Assert.assertNotNull(metadata);
+        Assert.assertEquals(4, metadata.size());
+        Assert.assertEquals("<title>Hello World</title>", metadata.get(0));
+        Assert.assertEquals("<meta charset=\"utf-8\"></meta>", metadata.get(1));
+        Assert.assertEquals(
+                "<link ref=\"canonical\" href=\"https://abc.com\"></link>", metadata.get(2));
+        Assert.assertEquals("<script type=\"application/ld+json\">{}</script>", metadata.get(3));
+    }
+
+    /**
      * Verifies that AX tree is returned.
      */
     @Test
@@ -305,6 +332,7 @@ public class AssistViewStructureTest {
     @MediumTest
     @MinAndroidSdkLevel(Build.VERSION_CODES.M)
     @TargetApi(Build.VERSION_CODES.M)
+    @DisableIf.Build(supported_abis_includes = "x86", message = "https://crbug.com/1224422")
     public void testFontSize() throws Throwable {
         final String data = "<html><head><style> "
                 + "    p { font-size:16px; transform: scale(2); }"

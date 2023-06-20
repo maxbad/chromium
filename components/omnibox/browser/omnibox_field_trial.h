@@ -13,12 +13,10 @@
 #include <utility>
 #include <vector>
 
-#include "base/macros.h"
 #include "base/metrics/field_trial_params.h"
 #include "components/omnibox/browser/autocomplete_input.h"
 #include "components/omnibox/browser/autocomplete_match_type.h"
 #include "components/omnibox/browser/autocomplete_provider.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/metrics_proto/omnibox_event.pb.h"
 
 namespace base {
@@ -358,15 +356,20 @@ int KeywordScoreForSufficientlyCompleteMatch();
 // Returns true if the tab switch suggestions flag is enabled.
 bool IsTabSwitchSuggestionsEnabled();
 
-// Returns true if the second batch of Pedals is enabled.
-bool IsPedalsBatch2Enabled();
-
 // Returns true if the second batch of Pedals is enabled for non-English
 // locales. This is only meaningful if batch 2 is enabled.
 bool IsPedalsBatch2NonEnglishEnabled();
 
-// Returns true if the default icon used for Pedal buttons should be colored.
-bool IsPedalsDefaultIconColored();
+// Returns true if the third batch of Pedals is enabled.
+bool IsPedalsBatch3Enabled();
+
+// Returns true if the third batch of Pedals is enabled for non-English
+// locales. This is only meaningful if batch 3 is enabled.
+bool IsPedalsBatch3NonEnglishEnabled();
+
+// Returns true if the Pedals synonyms should be loaded from the translation
+// console.
+bool IsPedalsTranslationConsoleEnabled();
 
 // Returns true if the keyword button and suggestion button row features are
 // enabled.
@@ -375,9 +378,6 @@ bool IsKeywordSearchButtonEnabled();
 // Simply a convenient wrapper for testing a flag. Used downstream for an
 // assortment of keyword mode experiments.
 bool IsExperimentalKeywordModeEnabled();
-
-// Returns true if the new focus UI is enabled.
-bool IsRefinedFocusStateEnabled();
 
 // On Device Head Suggestions feature and its helper functions.
 bool IsOnDeviceHeadSuggestEnabledForIncognito();
@@ -391,17 +391,13 @@ int OnDeviceHeadSuggestDelaySuggestRequestMs(bool is_incognito);
 // Function only works in non-incognito when server suggestions are available.
 std::string OnDeviceHeadSuggestDemoteMode();
 
-// Experiment to hide components of the URL in the steady state.
-bool ShouldRevealPathQueryRefOnHover();
-bool ShouldHidePathQueryRefOnInteraction();
-// If true, the above two features elide subdomains beyond the registrable
-// domain, as well as the path, query, and ref.
-bool ShouldMaybeElideToRegistrableDomain();
-int UnelideURLOnHoverThresholdMs();
-
 // Returns true if CGI parameter names should not be considered when scoring
 // suggestions.
 bool ShouldDisableCGIParamMatching();
+
+// If true, enables a third category on the manage search engines page for
+// active search engines.
+bool IsActiveSearchEnginesEnabled();
 
 // ---------------------------------------------------------
 // Clipboard URL suggestions:

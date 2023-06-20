@@ -28,6 +28,8 @@ media::SpeechRecognitionResult GetSpeechRecognitionResultFromFinalEvent(
   for (const auto& part : final_event->hypothesis_part.value())
     timing.hypothesis_parts->emplace_back(part->text, part->alignment);
 
+  result.timing_information = timing;
+
   return result;
 }
 
@@ -99,7 +101,7 @@ void CrosSodaClient::OnSpeechRecognizerEvent(
       const std::string partial_hyp = partial_result->partial_text.front();
       callback_.Run(media::SpeechRecognitionResult(partial_hyp, false));
     }
-  } else if (!event->is_endpointer_event() || !event->is_audio_event()) {
+  } else if (!event->is_endpointer_event() && !event->is_audio_event()) {
     LOG(ERROR) << "Some kind of other soda event, ignoring completely. Tag is '"
                << static_cast<uint32_t>(event->which()) << "'";
   }

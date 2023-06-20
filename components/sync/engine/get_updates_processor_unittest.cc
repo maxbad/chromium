@@ -18,6 +18,7 @@
 #include "components/sync/engine/cycle/status_controller.h"
 #include "components/sync/engine/get_updates_delegate.h"
 #include "components/sync/engine/update_handler.h"
+#include "components/sync/protocol/data_type_progress_marker.pb.h"
 #include "components/sync/test/engine/mock_update_handler.h"
 #include "components/sync/test/mock_invalidation.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -38,6 +39,9 @@ std::unique_ptr<InvalidationInterface> BuildInvalidation(
 class GetUpdatesProcessorTest : public ::testing::Test {
  protected:
   GetUpdatesProcessorTest() : kTestStartTime(base::TimeTicks::Now()) {}
+
+  GetUpdatesProcessorTest(const GetUpdatesProcessorTest&) = delete;
+  GetUpdatesProcessorTest& operator=(const GetUpdatesProcessorTest&) = delete;
 
   void SetUp() override {
     AddUpdateHandler(AUTOFILL);
@@ -90,8 +94,6 @@ class GetUpdatesProcessorTest : public ::testing::Test {
   std::set<std::unique_ptr<MockUpdateHandler>> update_handlers_;
   UpdateHandlerMap update_handler_map_;
   std::unique_ptr<GetUpdatesProcessor> get_updates_processor_;
-
-  DISALLOW_COPY_AND_ASSIGN(GetUpdatesProcessorTest);
 };
 
 // Basic test to make sure nudges are expressed properly in the request.
@@ -268,7 +270,7 @@ TEST_F(GetUpdatesProcessorTest, RetryTest) {
   nudge_tracker.SetNextRetryTime(t1);
 
   // Get the nudge tracker to think the retry is due.
-  nudge_tracker.SetSyncCycleStartTime(t1 + base::TimeDelta::FromSeconds(1));
+  nudge_tracker.SetSyncCycleStartTime(t1 + base::Seconds(1));
 
   sync_pb::ClientToServerMessage message;
   NormalGetUpdatesDelegate normal_delegate(nudge_tracker);
@@ -299,7 +301,7 @@ TEST_F(GetUpdatesProcessorTest, NudgeWithRetryTest) {
   nudge_tracker.SetNextRetryTime(t1);
 
   // Get the nudge tracker to think the retry is due.
-  nudge_tracker.SetSyncCycleStartTime(t1 + base::TimeDelta::FromSeconds(1));
+  nudge_tracker.SetSyncCycleStartTime(t1 + base::Seconds(1));
 
   // Record a local change, too.
   nudge_tracker.RecordLocalChange(BOOKMARKS);
@@ -375,8 +377,8 @@ TEST_F(GetUpdatesProcessorTest, NormalResponseTest) {
 // one of them.
 class GetUpdatesProcessorApplyUpdatesTest : public GetUpdatesProcessorTest {
  public:
-  GetUpdatesProcessorApplyUpdatesTest() {}
-  ~GetUpdatesProcessorApplyUpdatesTest() override {}
+  GetUpdatesProcessorApplyUpdatesTest() = default;
+  ~GetUpdatesProcessorApplyUpdatesTest() override = default;
 
   void SetUp() override {
     bookmarks_handler_ = AddUpdateHandler(BOOKMARKS);
@@ -452,8 +454,8 @@ TEST_F(GetUpdatesProcessorApplyUpdatesTest, Poll) {
 
 class DownloadUpdatesDebugInfoTest : public ::testing::Test {
  public:
-  DownloadUpdatesDebugInfoTest() {}
-  ~DownloadUpdatesDebugInfoTest() override {}
+  DownloadUpdatesDebugInfoTest() = default;
+  ~DownloadUpdatesDebugInfoTest() override = default;
 
   StatusController* status() { return &status_; }
 

@@ -33,6 +33,11 @@ class GL_IN_PROCESS_CONTEXT_EXPORT SharedImageInterfaceInProcess
       SingleTaskSequence* task_sequence,
       DisplayCompositorMemoryAndTaskControllerOnGpu* display_controller,
       std::unique_ptr<CommandBufferHelper> command_buffer_helper);
+
+  SharedImageInterfaceInProcess(const SharedImageInterfaceInProcess&) = delete;
+  SharedImageInterfaceInProcess& operator=(
+      const SharedImageInterfaceInProcess&) = delete;
+
   ~SharedImageInterfaceInProcess() override;
 
   // The |SharedImageInterface| keeps ownership of the image until
@@ -162,7 +167,7 @@ class GL_IN_PROCESS_CONTEXT_EXPORT SharedImageInterfaceInProcess
 
   // Only called on the gpu thread.
   bool MakeContextCurrent(bool needs_gl = false);
-  void LazyCreateSharedImageFactory();
+  bool LazyCreateSharedImageFactory();
   void CreateSharedImageOnGpuThread(const Mailbox& mailbox,
                                     viz::ResourceFormat format,
                                     gpu::SurfaceHandle surface_handle,
@@ -230,16 +235,11 @@ class GL_IN_PROCESS_CONTEXT_EXPORT SharedImageInterfaceInProcess
 
   // Accessed on GPU thread.
   MailboxManager* mailbox_manager_;
-  // Used to check if context is lost at destruction time.
-  // TODO(weiliangc): SharedImageInterface should become active observer of
-  // whether context is lost.
-  SharedContextState* context_state_;
+  scoped_refptr<SharedContextState> context_state_;
   // Created and only used by this SharedImageInterface.
   SyncPointManager* sync_point_manager_;
   scoped_refptr<SyncPointClientState> sync_point_client_state_;
   std::unique_ptr<SharedImageFactory> shared_image_factory_;
-
-  DISALLOW_COPY_AND_ASSIGN(SharedImageInterfaceInProcess);
 };
 
 }  // namespace gpu

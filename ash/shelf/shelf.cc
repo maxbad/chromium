@@ -8,8 +8,7 @@
 
 #include "ash/animation/animation_change_type.h"
 #include "ash/app_list/app_list_controller_impl.h"
-#include "ash/public/cpp/ash_features.h"
-#include "ash/public/cpp/ash_switches.h"
+#include "ash/constants/ash_switches.h"
 #include "ash/public/cpp/keyboard/keyboard_controller_observer.h"
 #include "ash/public/cpp/shelf_item_delegate.h"
 #include "ash/public/cpp/shelf_model.h"
@@ -206,6 +205,9 @@ class Shelf::AutoHideEventHandler : public ui::EventHandler {
     Shell::Get()->AddPreTargetHandler(this);
   }
 
+  AutoHideEventHandler(const AutoHideEventHandler&) = delete;
+  AutoHideEventHandler& operator=(const AutoHideEventHandler&) = delete;
+
   ~AutoHideEventHandler() override {
     Shell::Get()->RemovePreTargetHandler(this);
   }
@@ -243,7 +245,6 @@ class Shelf::AutoHideEventHandler : public ui::EventHandler {
 
  private:
   Shelf* shelf_;
-  DISALLOW_COPY_AND_ASSIGN(AutoHideEventHandler);
 };
 
 // Shelf::AutoDimEventHandler -----------------------------------------------
@@ -258,6 +259,9 @@ class Shelf::AutoDimEventHandler : public ui::EventHandler,
     shelf_observation_.Observe(shelf_);
     UndimShelf();
   }
+
+  AutoDimEventHandler(const AutoDimEventHandler&) = delete;
+  AutoDimEventHandler& operator=(const AutoDimEventHandler&) = delete;
 
   ~AutoDimEventHandler() override {
     Shell::Get()->RemovePreTargetHandler(this);
@@ -322,9 +326,7 @@ class Shelf::AutoDimEventHandler : public ui::EventHandler,
   base::ScopedObservation<Shelf, ShelfObserver> shelf_observation_{this};
 
   // Delay before dimming the shelf.
-  const base::TimeDelta kDimDelay = base::TimeDelta::FromSeconds(5);
-
-  DISALLOW_COPY_AND_ASSIGN(AutoDimEventHandler);
+  const base::TimeDelta kDimDelay = base::Seconds(5);
 };
 
 // Shelf ---------------------------------------------------------------------

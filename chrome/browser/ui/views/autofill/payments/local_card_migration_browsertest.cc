@@ -11,7 +11,6 @@
 #include "base/bind.h"
 #include "base/callback_list.h"
 #include "base/command_line.h"
-#include "base/macros.h"
 #include "base/run_loop.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
@@ -21,7 +20,7 @@
 #include "chrome/browser/autofill/personal_data_manager_factory.h"
 #include "chrome/browser/signin/identity_manager_factory.h"
 #include "chrome/browser/sync/sync_service_factory.h"
-#include "chrome/browser/sync/test/integration/profile_sync_service_harness.h"
+#include "chrome/browser/sync/test/integration/sync_service_impl_harness.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
 #include "chrome/browser/ui/autofill/chrome_autofill_client.h"
 #include "chrome/browser/ui/autofill/payments/local_card_migration_bubble_controller_impl.h"
@@ -146,6 +145,11 @@ class PersonalDataLoadedObserverMock : public PersonalDataManagerObserver {
 class LocalCardMigrationBrowserTest
     : public SyncTest,
       public LocalCardMigrationManager::ObserverForTest {
+ public:
+  LocalCardMigrationBrowserTest(const LocalCardMigrationBrowserTest&) = delete;
+  LocalCardMigrationBrowserTest& operator=(
+      const LocalCardMigrationBrowserTest&) = delete;
+
  protected:
   // Various events that can be waited on by the DialogEventWaiter.
   enum class DialogEvent : int {
@@ -184,9 +188,9 @@ class LocalCardMigrationBrowserTest
     if (username.empty())
       username = "user@gmail.com";
 
-    harness_ = ProfileSyncServiceHarness::Create(
+    harness_ = SyncServiceImplHarness::Create(
         browser()->profile(), username, "password",
-        ProfileSyncServiceHarness::SigninType::FAKE_SIGNIN);
+        SyncServiceImplHarness::SigninType::FAKE_SIGNIN);
 
     // Set up the URL loader factory for the payments client so we can intercept
     // those network requests too.
@@ -270,10 +274,10 @@ class LocalCardMigrationBrowserTest
   }
 
   void NavigateTo(const std::string& file_path) {
-    ui_test_utils::NavigateToURL(
+    ASSERT_TRUE(ui_test_utils::NavigateToURL(
         browser(), file_path.find("data:") == 0U
                        ? GURL(file_path)
-                       : embedded_test_server()->GetURL(file_path));
+                       : embedded_test_server()->GetURL(file_path)));
   }
 
   void OnDecideToRequestLocalCardMigration() override {
@@ -528,7 +532,7 @@ class LocalCardMigrationBrowserTest
   PersonalDataManager* personal_data_;
   PersonalDataLoadedObserverMock personal_data_observer_;
 
-  std::unique_ptr<ProfileSyncServiceHarness> harness_;
+  std::unique_ptr<SyncServiceImplHarness> harness_;
 
  private:
   std::unique_ptr<autofill::EventWaiter<DialogEvent>> event_waiter_;
@@ -536,8 +540,6 @@ class LocalCardMigrationBrowserTest
   network::TestURLLoaderFactory test_url_loader_factory_;
   scoped_refptr<network::SharedURLLoaderFactory> test_shared_loader_factory_;
   std::unique_ptr<device::ScopedGeolocationOverrider> geolocation_overrider_;
-
-  DISALLOW_COPY_AND_ASSIGN(LocalCardMigrationBrowserTest);
 };
 
 // TODO(crbug.com/932818): Remove this class after experiment flag is cleaned

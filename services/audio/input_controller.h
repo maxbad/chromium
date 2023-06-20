@@ -23,7 +23,6 @@
 #include "mojo/public/cpp/bindings/remote.h"
 #include "services/audio/snoopable.h"
 #include "services/audio/stream_monitor.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace media {
 class AudioBus;
@@ -63,6 +62,9 @@ class InputController final : public StreamMonitor {
 
     // Open failed due to lack of system permissions.
     STREAM_OPEN_SYSTEM_PERMISSIONS_ERROR,  // = 4
+
+    // Open failed due to device in use by another app.
+    STREAM_OPEN_DEVICE_IN_USE_ERROR,  // = 5
   };
 
 #if defined(AUDIO_POWER_MONITORING)
@@ -125,6 +127,9 @@ class InputController final : public StreamMonitor {
     LOW_LATENCY = 2,
     FAKE = 3,
   };
+
+  InputController(const InputController&) = delete;
+  InputController& operator=(const InputController&) = delete;
 
   ~InputController() final;
 
@@ -298,8 +303,6 @@ class InputController final : public StreamMonitor {
   // InputController that has already been closed.
   // All outstanding weak pointers, are invalidated at the end of DoClose.
   base::WeakPtrFactory<InputController> weak_ptr_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(InputController);
 };
 
 }  // namespace audio

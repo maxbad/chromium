@@ -4,7 +4,6 @@
 
 #include "components/autofill_assistant/browser/trigger_scripts/trigger_script_coordinator.h"
 
-#include <map>
 #include <string>
 
 #include "base/numerics/clamped_math.h"
@@ -92,12 +91,13 @@ void TriggerScriptCoordinator::OnGetTriggerScripts(
 
   trigger_scripts_.clear();
   additional_allowed_domains_.clear();
-  absl::optional<int> timeout_ms;
+  absl::optional<int> trigger_condition_timeout_ms;
   int check_interval_ms;
   absl::optional<std::unique_ptr<ScriptParameters>> script_parameters;
   if (!ProtocolUtils::ParseTriggerScripts(
           response, &trigger_scripts_, &additional_allowed_domains_,
-          &check_interval_ms, &timeout_ms, &script_parameters)) {
+          &check_interval_ms, &trigger_condition_timeout_ms,
+          &script_parameters)) {
     Stop(Metrics::TriggerScriptFinishedState::GET_ACTIONS_PARSE_ERROR);
     return;
   }
@@ -106,15 +106,18 @@ void TriggerScriptCoordinator::OnGetTriggerScripts(
     return;
   }
   if (script_parameters.has_value()) {
+    // Note that we need to merge the new script parameters with the old set
+    // (the new values have precedence). This is because not all parameters were
+    // sent to the backend in the first place due to privacy considerations.
+    (*script_parameters)->MergeWith(trigger_context_->GetScriptParameters());
     trigger_context_->SetScriptParameters(std::move(*script_parameters));
   }
-  trigger_condition_check_interval_ =
-      base::TimeDelta::FromMilliseconds(check_interval_ms);
-  if (timeout_ms.has_value()) {
+  trigger_condition_check_interval_ = base::Milliseconds(check_interval_ms);
+  if (trigger_condition_timeout_ms.has_value()) {
     // Note: add 1 for the initial, not-delayed check.
     initial_trigger_condition_evaluations_ =
         1 + base::ClampCeil<int64_t>(
-                base::TimeDelta::FromMilliseconds(*timeout_ms) /
+                base::Milliseconds(*trigger_condition_timeout_ms) /
                 trigger_condition_check_interval_);
   } else {
     initial_trigger_condition_evaluations_ = -1;
@@ -151,7 +154,8 @@ void TriggerScriptCoordinator::PerformTriggerScriptAction(
       Stop(Metrics::TriggerScriptFinishedState::PROMPT_FAILED_CANCEL_FOREVER);
       return;
     case TriggerScriptProto::SHOW_CANCEL_POPUP:
-      NOTREACHED();
+      // This action is currently performed in Java.
+      ui_timeout_timer_.Stop();
       return;
     case TriggerScriptProto::ACCEPT:
       if (visible_trigger_script_ == -1) {
@@ -159,6 +163,7 @@ void TriggerScriptCoordinator::PerformTriggerScriptAction(
         return;
       }
       waiting_for_onboarding_ = true;
+      ui_timeout_timer_.Stop();
       starter_delegate_->ShowOnboarding(
           IsDialogOnboardingEnabled(), *trigger_context_.get(),
           base::BindOnce(&TriggerScriptCoordinator::OnOnboardingFinished,
@@ -264,9 +269,38 @@ void TriggerScriptCoordinator::OnTriggerScriptShown(bool success) {
   // this particular update to avoid hiding the first-time trigger script
   // immediately after showing it.
   starter_delegate_->SetIsFirstTimeUser(false);
+  if (visible_trigger_script_ != -1 && trigger_scripts_[visible_trigger_script_]
+                                           ->AsProto()
+                                           .user_interface()
+                                           .has_ui_timeout_ms()) {
+    ui_timeout_timer_.Start(
+        FROM_HERE,
+        base::Milliseconds(trigger_scripts_[visible_trigger_script_]
+                               ->AsProto()
+                               .user_interface()
+                               .ui_timeout_ms()),
+        base::BindOnce(&TriggerScriptCoordinator::OnUiTimeoutReached,
+                       weak_ptr_factory_.GetWeakPtr()));
+  }
+}
+
+void TriggerScriptCoordinator::OnUiTimeoutReached() {
+  if (visible_trigger_script_ == -1) {
+    return;
+  }
+
+  Metrics::RecordTriggerScriptShownToUser(
+      ukm_recorder_, ukm_source_id_, GetTriggerUiTypeForVisibleScript(),
+      Metrics::TriggerScriptShownToUser::UI_TIMEOUT);
+  trigger_scripts_[visible_trigger_script_]
+      ->waiting_for_precondition_no_longer_true(true);
+  HideTriggerScript();
 }
 
 void TriggerScriptCoordinator::Stop(Metrics::TriggerScriptFinishedState state) {
+  if (!callback_ || !trigger_context_) {
+    return;
+  }
   VLOG(2) << "Stopping with status " << state;
   TriggerScriptProto::TriggerUIType trigger_ui_type =
       GetTriggerUiTypeForVisibleScript();
@@ -287,30 +321,30 @@ void TriggerScriptCoordinator::Stop(Metrics::TriggerScriptFinishedState state) {
   RunCallback(trigger_ui_type, state, /* trigger_script = */ absl::nullopt);
 }
 
-void TriggerScriptCoordinator::DidFinishNavigation(
-    content::NavigationHandle* navigation_handle) {
+void TriggerScriptCoordinator::PrimaryPageChanged(content::Page& page) {
   // Ignore navigation events if any of the following is true:
   // - not currently checking for preconditions (i.e., not yet started).
-  // - not in the main frame.
-  // - document does not change (e.g., same page history navigation).
-  // - WebContents stays at the existing URL (e.g., downloads).
-  if (!is_checking_trigger_conditions_ || !navigation_handle->IsInMainFrame() ||
-      navigation_handle->IsSameDocument() ||
-      !navigation_handle->HasCommitted()) {
+  if (!is_checking_trigger_conditions_)
     return;
+
+  // A navigation also serves as a boundary for NOT_NOW. This prevents possible
+  // race conditions where the UI remains on screen even after navigations.
+  for (auto& trigger_script : trigger_scripts_) {
+    trigger_script->waiting_for_precondition_no_longer_true(false);
   }
 
   // Chrome has encountered an error and is now displaying an error message
   // (e.g., network connection lost). This will cancel the current trigger
   // script session.
-  if (navigation_handle->IsErrorPage()) {
+  if (page.GetMainDocument().IsErrorDocument()) {
     Stop(Metrics::TriggerScriptFinishedState::NAVIGATION_ERROR);
     return;
   }
 
   // The user has navigated away from the target domain. This will cancel the
   // current trigger script session.
-  if (!url_utils::IsSamePublicSuffixDomain(GetCurrentURL(), deeplink_url_) &&
+  if (!(url_utils::IsSamePublicSuffixDomain(deeplink_url_, GetCurrentURL()) &&
+        url_utils::IsAllowedSchemaTransition(deeplink_url_, GetCurrentURL())) &&
       !url_utils::IsInDomainOrSubDomain(GetCurrentURL(),
                                         additional_allowed_domains_)) {
 #ifndef NDEBUG
@@ -325,7 +359,7 @@ void TriggerScriptCoordinator::DidFinishNavigation(
     return;
   }
 
-  ukm_source_id_ = ukm::GetSourceIdForWebContentsDocument(web_contents());
+  ukm_source_id_ = page.GetMainDocument().GetPageUkmSourceId();
   dynamic_trigger_conditions_->SetURL(GetCurrentURL());
   RunOutOfScheduleTriggerConditionCheck();
 }
@@ -395,9 +429,9 @@ void TriggerScriptCoordinator::WebContentsDestroyed() {
 
 void TriggerScriptCoordinator::StartCheckingTriggerConditions() {
   is_checking_trigger_conditions_ = true;
-  dynamic_trigger_conditions_->ClearSelectors();
+  dynamic_trigger_conditions_->ClearConditions();
   for (const auto& trigger_script : trigger_scripts_) {
-    dynamic_trigger_conditions_->AddSelectorsFromTriggerScript(
+    dynamic_trigger_conditions_->AddConditionsFromTriggerScript(
         trigger_script->AsProto());
   }
   static_trigger_conditions_->Update(
@@ -412,7 +446,8 @@ void TriggerScriptCoordinator::CheckDynamicTriggerConditions() {
       base::BindOnce(
           &TriggerScriptCoordinator::OnDynamicTriggerConditionsEvaluated,
           weak_ptr_factory_.GetWeakPtr(),
-          /* is_out_of_schedule = */ false));
+          /* is_out_of_schedule = */ false,
+          /* start_time = */ base::TimeTicks::Now()));
 }
 
 void TriggerScriptCoordinator::StopCheckingTriggerConditions() {
@@ -446,6 +481,7 @@ void TriggerScriptCoordinator::HideTriggerScript() {
       initial_trigger_condition_evaluations_;
   visible_trigger_script_ = -1;
   ui_delegate_->HideTriggerScript();
+  ui_timeout_timer_.Stop();
 
   // Now that the trigger script is hidden, we may need to update the
   // static trigger conditions. This is done specifically to account for
@@ -454,7 +490,8 @@ void TriggerScriptCoordinator::HideTriggerScript() {
 }
 
 void TriggerScriptCoordinator::OnDynamicTriggerConditionsEvaluated(
-    bool is_out_of_schedule) {
+    bool is_out_of_schedule,
+    absl::optional<base::TimeTicks> start_time) {
   if (!web_contents_visible_ || !is_checking_trigger_conditions_) {
     return;
   }
@@ -462,6 +499,11 @@ void TriggerScriptCoordinator::OnDynamicTriggerConditionsEvaluated(
       !dynamic_trigger_conditions_->HasResults()) {
     DCHECK(is_out_of_schedule);
     return;
+  }
+
+  if (start_time.has_value()) {
+    Metrics::RecordTriggerConditionEvaluationTime(
+        ukm_recorder_, ukm_source_id_, base::TimeTicks::Now() - *start_time);
   }
 
   VLOG(3) << "Evaluating trigger conditions...";
@@ -537,13 +579,16 @@ void TriggerScriptCoordinator::OnDynamicTriggerConditionsEvaluated(
 }
 
 void TriggerScriptCoordinator::RunOutOfScheduleTriggerConditionCheck() {
-  OnDynamicTriggerConditionsEvaluated(/* is_out_of_schedule = */ true);
+  OnDynamicTriggerConditionsEvaluated(/* is_out_of_schedule = */ true,
+                                      /* start_time = */ absl::nullopt);
 }
 
 void TriggerScriptCoordinator::RunCallback(
     TriggerScriptProto::TriggerUIType trigger_ui_type,
     Metrics::TriggerScriptFinishedState state,
     const absl::optional<TriggerScriptProto>& trigger_script) {
+  DCHECK(callback_);
+  DCHECK(trigger_context_);
   if (!finished_state_recorded_) {
     finished_state_recorded_ = true;
     Metrics::RecordTriggerScriptFinished(ukm_recorder_, ukm_source_id_,
@@ -563,7 +608,7 @@ TriggerScriptCoordinator::GetTriggerUiTypeForVisibleScript() const {
 }
 
 GURL TriggerScriptCoordinator::GetCurrentURL() const {
-  GURL current_url = web_contents()->GetLastCommittedURL();
+  GURL current_url = web_contents()->GetMainFrame()->GetLastCommittedURL();
   if (current_url.is_empty()) {
     return deeplink_url_;
   }

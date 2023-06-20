@@ -31,7 +31,7 @@
 #include <memory>
 
 #include "base/memory/weak_ptr.h"
-#include "base/single_thread_task_runner.h"
+#include "base/task/single_thread_task_runner.h"
 #include "third_party/blink/public/common/privacy_budget/identifiable_surface.h"
 #include "third_party/blink/public/common/privacy_budget/identifiable_token.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_value.h"
@@ -55,6 +55,7 @@
 #include "third_party/blink/renderer/platform/graphics/static_bitmap_image.h"
 #include "third_party/blink/renderer/platform/graphics/surface_layer_bridge.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
+#include "third_party/blink/renderer/platform/heap/prefinalizer.h"
 
 #define CanvasDefaultInterpolationQuality kInterpolationLow
 
@@ -70,10 +71,10 @@ class CanvasDrawListener;
 class CanvasRenderingContext;
 class CanvasRenderingContextFactory;
 class GraphicsContext;
-class HitTestCanvasResult;
 class HTMLCanvasElement;
 class ImageBitmapOptions;
 class IntSize;
+class StaticBitmapImageToVideoFrameCopier;
 
 class
     CanvasRenderingContext2DOrWebGLRenderingContextOrWebGL2RenderingContextOrImageBitmapRenderingContextOrGPUCanvasContext;
@@ -85,8 +86,6 @@ typedef CanvasRenderingContext2DOrWebGLRenderingContextOrWebGL2RenderingContextO
 // It can be a 3D Context (WebGL or WebGL2), 2D Context,
 // BitmapRenderingContext or it can have no context (Offscreen placeholder).
 // To check the no context case is good to check if there is a placeholder.
-// For 3D and 2D contexts there are Is3D or IsRenderingContext2D functions.
-// The remaining case is BitmaprenderingContext.
 //
 // TODO (juanmihd): Study if a refactor of context could help in simplifying
 // this class and without overcomplicating context.
@@ -108,8 +107,8 @@ class CORE_EXPORT HTMLCanvasElement final
   ~HTMLCanvasElement() override;
 
   // Attributes and functions exposed to script
-  unsigned width() const { return Size().Width(); }
-  unsigned height() const { return Size().Height(); }
+  unsigned width() const { return Size().width(); }
+  unsigned height() const { return Size().height(); }
 
   const IntSize& Size() const override { return size_; }
 
@@ -153,8 +152,8 @@ class CORE_EXPORT HTMLCanvasElement final
   bool HasCanvasCapture() const final { return !listeners_.IsEmpty(); }
 
   // Used for rendering
-  void DidDraw(const FloatRect&) override;
-  void DidDraw() override;
+  void DidDraw(const SkIRect&) override;
+  using CanvasRenderingContextHost::DidDraw;
 
   void Paint(GraphicsContext&,
              const PhysicalRect&,
@@ -183,6 +182,7 @@ class CORE_EXPORT HTMLCanvasElement final
   InsertionNotificationRequest InsertedInto(ContainerNode&) override;
 
   bool IsDirty() { return !dirty_rect_.IsEmpty(); }
+  bool IsVisible() const;
 
   void DoDeferredPaintInvalidation();
 
@@ -221,12 +221,13 @@ class CORE_EXPORT HTMLCanvasElement final
   void NotifyGpuContextLost() override;
   void SetNeedsCompositingUpdate() override;
   void UpdateMemoryUsage() override;
+  size_t GetMemoryUsage() const override;
   bool ShouldAccelerate2dContext() const override;
   bool LowLatencyEnabled() const override;
   CanvasResourceProvider* GetOrCreateCanvasResourceProvider(
       RasterModeHint hint) override;
   bool IsPrinting() const override;
-  void SetFilterQuality(SkFilterQuality filter_quality) override;
+  void SetFilterQuality(cc::PaintFlags::FilterQuality filter_quality) override;
 
   // CanvasRenderingContextHost implementation.
   UkmParameters GetUkmParameters() override;
@@ -260,11 +261,6 @@ class CORE_EXPORT HTMLCanvasElement final
   void LayoutObjectDestroyed();
 
   void NotifyListenersCanvasChanged();
-
-  // For Canvas HitRegions
-  bool IsSupportedInteractiveCanvasFallback(const Element&);
-  HitTestCanvasResult* GetControlAndIdIfHitRegionExists(const PhysicalOffset&);
-  String GetIdFromControl(const Element*);
 
   // For OffscreenCanvas that controls this html canvas element
   ::blink::SurfaceLayerBridge* SurfaceLayerBridge() const {
@@ -322,6 +318,8 @@ class CORE_EXPORT HTMLCanvasElement final
   RespectImageOrientationEnum RespectImageOrientation() const;
 
   bool IsCanvasClear() { return canvas_is_clear_; }
+
+  bool IsPlaceholder() const override { return IsOffscreenCanvasRegistered(); }
 
  protected:
   void DidMoveToNewDocument(Document& old_document) override;
@@ -381,8 +379,6 @@ class CORE_EXPORT HTMLCanvasElement final
       SourceImageStatus*,
       const AlphaDisposition alpha_disposition = kPremultiplyAlpha);
 
-  void OnContentsCcLayerChanged();
-
   HeapHashSet<WeakMember<CanvasDrawListener>> listeners_;
 
   IntSize size_;
@@ -417,6 +413,8 @@ class CORE_EXPORT HTMLCanvasElement final
   // Used for low latency mode.
   // TODO: rename to CanvasFrameDispatcher.
   std::unique_ptr<CanvasResourceDispatcher> frame_dispatcher_;
+
+  std::unique_ptr<StaticBitmapImageToVideoFrameCopier> copier_;
 
   bool did_notify_listeners_for_current_frame_ = false;
 

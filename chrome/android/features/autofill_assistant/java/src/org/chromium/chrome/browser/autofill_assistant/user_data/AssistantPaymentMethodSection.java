@@ -50,10 +50,8 @@ public class AssistantPaymentMethodSection
             return;
         }
 
-        PersonalDataManager personalDataManager = PersonalDataManager.getInstance();
         for (PaymentInstrumentModel item : getItems()) {
-            String guid = item.mOption.getCard().getBillingAddressId();
-            PersonalDataManager.AutofillProfile profile = personalDataManager.getProfile(guid);
+            AutofillProfile profile = item.mOption.getBillingProfile();
             if (profile != null) {
                 addAutocompleteInformationToEditor(new AutofillAddress(mContext, profile));
             }
@@ -112,8 +110,8 @@ public class AssistantPaymentMethodSection
         AutofillPaymentInstrument method = model.mOption;
         ImageView cardIssuerImageView = view.findViewById(R.id.credit_card_issuer_icon);
         try {
-            cardIssuerImageView.setImageDrawable(view.getContext().getResources().getDrawable(
-                    method.getCard().getIssuerIconDrawableId()));
+            cardIssuerImageView.setImageDrawable(
+                    view.getContext().getDrawable(method.getCard().getIssuerIconDrawableId()));
         } catch (Resources.NotFoundException e) {
             cardIssuerImageView.setImageDrawable(null);
         }

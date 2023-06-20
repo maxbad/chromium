@@ -13,7 +13,7 @@
 #include "services/metrics/public/cpp/ukm_builders.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace chromeos {
+namespace ash {
 namespace power {
 namespace ml {
 
@@ -68,6 +68,10 @@ class UserActivityUkmLoggerTest : public testing::Test {
 
     user_activity_logger_delegate_ukm_.ukm_recorder_ = &recorder_;
   }
+
+  UserActivityUkmLoggerTest(const UserActivityUkmLoggerTest&) = delete;
+  UserActivityUkmLoggerTest& operator=(const UserActivityUkmLoggerTest&) =
+      delete;
 
  protected:
   void LogActivity(const UserActivityEvent& event) {
@@ -146,7 +150,6 @@ class UserActivityUkmLoggerTest : public testing::Test {
 
  private:
   UserActivityUkmLoggerImpl user_activity_logger_delegate_ukm_;
-  DISALLOW_COPY_AND_ASSIGN(UserActivityUkmLoggerTest);
 };
 
 TEST_F(UserActivityUkmLoggerTest, BasicLogging) {
@@ -272,4 +275,4 @@ TEST_F(UserActivityUkmLoggerTest, TwoUserActivityEvents) {
 
 }  // namespace ml
 }  // namespace power
-}  // namespace chromeos
+}  // namespace ash

@@ -36,6 +36,7 @@
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "services/network/public/cpp/simple_url_loader.h"
+#include "services/network/public/mojom/url_response_head.mojom.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace {
@@ -58,25 +59,22 @@ ExtractOAuth2TokenPairResponse(const std::string& data) {
   base::DictionaryValue* dict =
         static_cast<base::DictionaryValue*>(value.get());
 
-  std::string refresh_token;
-  std::string access_token;
-  std::string id_token;
+  std::string* refresh_token = dict->FindStringKey("refresh_token");
+  std::string* access_token = dict->FindStringKey("access_token");
   absl::optional<int> expires_in_secs = dict->FindIntKey("expires_in");
-  if (!dict->GetStringWithoutPathExpansion("refresh_token", &refresh_token) ||
-      !dict->GetStringWithoutPathExpansion("access_token", &access_token) ||
-      !expires_in_secs.has_value()) {
+  if (!refresh_token || !access_token || !expires_in_secs.has_value())
     return nullptr;
-  }
 
   // Extract ID token when obtaining refresh token. Do not fail if absent,
   // but log to keep track.
-  if (!dict->GetStringWithoutPathExpansion("id_token", &id_token)) {
+  std::string* id_token = dict->FindStringKey("id_token");
+  if (!id_token)
     LOG(ERROR) << "Missing ID token on refresh token fetch response.";
-  }
-  gaia::TokenServiceFlags service_flags = gaia::ParseServiceFlags(id_token);
+  gaia::TokenServiceFlags service_flags =
+      gaia::ParseServiceFlags(id_token ? *id_token : std::string());
 
   return std::make_unique<const GaiaAuthConsumer::ClientOAuthResult>(
-      refresh_token, access_token, expires_in_secs.value(),
+      *refresh_token, *access_token, expires_in_secs.value(),
       service_flags.is_child_account,
       service_flags.is_under_advanced_protection);
 }
@@ -97,13 +95,13 @@ GetTokenRevocationStatusFromResponseData(const std::string& data,
 
   base::DictionaryValue* dict =
       static_cast<base::DictionaryValue*>(value.get());
-  std::string error;
-  if (!dict->GetStringWithoutPathExpansion("error", &error))
+  std::string* error = dict->FindStringKey("error");
+  if (!error)
     return GaiaAuthConsumer::TokenRevocationStatus::kUnknownError;
 
-  if (error == "invalid_token")
+  if (*error == "invalid_token")
     return GaiaAuthConsumer::TokenRevocationStatus::kInvalidToken;
-  if (error == "invalid_request")
+  if (*error == "invalid_request")
     return GaiaAuthConsumer::TokenRevocationStatus::kInvalidRequest;
 
   return GaiaAuthConsumer::TokenRevocationStatus::kUnknownError;
@@ -301,7 +299,8 @@ void GaiaAuthFetcher::CreateAndStartGaiaFetcher(
   original_url_ = gaia_gurl;
 
   if (credentials_mode != network::mojom::CredentialsMode::kOmit) {
-    DCHECK_EQ(GaiaUrls::GetInstance()->gaia_url(), gaia_gurl.GetOrigin())
+    DCHECK_EQ(GaiaUrls::GetInstance()->gaia_url(),
+              gaia_gurl.DeprecatedGetOriginAsURL())
         << gaia_gurl;
     url::Origin origin =
         url::Origin::Create(GaiaUrls::GetInstance()->gaia_url());

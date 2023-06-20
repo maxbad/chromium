@@ -9,7 +9,6 @@
 
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "base/macros.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "chrome/browser/translate/chrome_translate_client.h"
@@ -24,6 +23,7 @@
 #include "chrome/test/base/ui_test_utils.h"
 #include "components/translate/core/browser/translate_manager.h"
 #include "components/translate/core/common/translate_switches.h"
+#include "content/public/common/content_switches.h"
 #include "content/public/test/browser_test.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/ui_base_features.h"
@@ -36,6 +36,12 @@ namespace translate {
 class TranslateBubbleViewBrowserTest : public InProcessBrowserTest {
  public:
   TranslateBubbleViewBrowserTest() {}
+
+  TranslateBubbleViewBrowserTest(const TranslateBubbleViewBrowserTest&) =
+      delete;
+  TranslateBubbleViewBrowserTest& operator=(
+      const TranslateBubbleViewBrowserTest&) = delete;
+
   ~TranslateBubbleViewBrowserTest() override {}
 
   void SetUp() override {
@@ -49,6 +55,9 @@ class TranslateBubbleViewBrowserTest : public InProcessBrowserTest {
     command_line->AppendSwitchASCII(
         switches::kTranslateScriptURL,
         embedded_test_server()->GetURL("/mock_translate_script.js").spec());
+    // TODO(crbug.com/1258185): Migrate to better mechanism for testing around
+    // language detection.
+    command_line->AppendSwitch(::switches::kOverrideLanguageDetection);
   }
 
   void SetUpOnMainThread() override {
@@ -63,7 +72,7 @@ class TranslateBubbleViewBrowserTest : public InProcessBrowserTest {
  protected:
   void NavigateAndWaitForLanguageDetection(const GURL& url,
                                            const std::string& expected_lang) {
-    ui_test_utils::NavigateToURL(browser(), url);
+    ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), url));
 
     while (expected_lang !=
            ChromeTranslateClient::FromWebContents(
@@ -76,9 +85,6 @@ class TranslateBubbleViewBrowserTest : public InProcessBrowserTest {
           ->Wait();
     }
   }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(TranslateBubbleViewBrowserTest);
 };
 
 IN_PROC_BROWSER_TEST_F(TranslateBubbleViewBrowserTest,

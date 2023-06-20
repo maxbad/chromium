@@ -13,6 +13,12 @@ namespace updater {
 // The updater specific app ID.
 extern const char kUpdaterAppId[];
 
+// The app ID used to qualify the updater.
+extern const char kQualificationAppId[];
+
+// A suffix appended to the updater executable name before any file extension.
+extern const char kExecutableSuffix[];
+
 // "0.0.0.0". Historically, a null version has been used to indicate a
 // new install.
 extern const char kNullVersion[];
@@ -110,8 +116,10 @@ extern const char kInitDoneNotifierSwitch[];
 // Enables logging.
 extern const char kEnableLoggingSwitch[];
 
-// Specifies the logging module filter.
+// Specifies the logging module filter and its value. Note that some call sites
+// may still use different values for the logging module filter.
 extern const char kLoggingModuleSwitch[];
+extern const char kLoggingModuleSwitchValue[];
 
 // Specifies the application that the Updater needs to install.
 extern const char kAppIdSwitch[];

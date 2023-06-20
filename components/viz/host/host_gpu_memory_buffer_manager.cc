@@ -38,23 +38,16 @@ void OnGpuMemoryBufferDestroyed(
 
 bool WillGetGmbConfigFromGpu() {
 #if defined(USE_OZONE)
-  if (features::IsUsingOzonePlatform()) {
-    // Ozone/X11 (same as non-Ozone/X11) cannot get buffer formats in the
-    // browser process and requires gpu initialization to be done before it can
-    // determine what formats gmb can use. This limitation comes from the
-    // requirement to have GLX bindings initialized. The buffer formats will be
-    // passed through gpu extra info.
-    return ui::OzonePlatform::GetInstance()
-        ->GetPlatformProperties()
-        .fetch_buffer_formats_for_gmb_on_gpu;
-  }
-#endif
-#if defined(USE_X11)
-  // non-Ozone/X11 must always get native configs on gpu.
-  DCHECK(!features::IsUsingOzonePlatform());
-  return true;
-#endif
+  // Ozone/X11 cannot get buffer formats in the browser process and requires gpu
+  // initialization to be done before it can determine what formats gmb can use.
+  // This limitation comes from the requirement to have GLX bindings
+  // initialized. The buffer formats will be passed through gpu extra info.
+  return ui::OzonePlatform::GetInstance()
+      ->GetPlatformProperties()
+      .fetch_buffer_formats_for_gmb_on_gpu;
+#else
   return false;
+#endif
 }
 
 }  // namespace
@@ -421,7 +414,6 @@ void HostGpuMemoryBufferManager::OnGpuMemoryBufferAllocated(
     // callback is already called with null handle.
     if (!handle.is_null()) {
       auto* gpu_service = GetGpuService();
-      DCHECK(gpu_service);
       gpu_service->DestroyGpuMemoryBuffer(handle.id, client_id,
                                           gpu::SyncToken());
     }
@@ -429,7 +421,17 @@ void HostGpuMemoryBufferManager::OnGpuMemoryBufferAllocated(
   }
 
   auto buffer_iter = client_iter->second.find(id);
-  DCHECK(buffer_iter != client_iter->second.end());
+  if (buffer_iter == client_iter->second.end()) {
+    if (!handle.is_null()) {
+      // DestroyGpuMemoryBuffer for client_id was called followed by an
+      // AllocateGpuMemoryBuffer for a new id.
+      auto* gpu_service = GetGpuService();
+      gpu_service->DestroyGpuMemoryBuffer(handle.id, client_id,
+                                          gpu::SyncToken());
+    }
+    return;
+  }
+
   PendingBufferInfo pending_buffer = std::move(buffer_iter->second);
   client_iter->second.erase(buffer_iter);
 

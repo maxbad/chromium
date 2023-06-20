@@ -6,6 +6,8 @@ package org.chromium.components.messages;
 
 import static org.mockito.Mockito.never;
 
+import android.graphics.Bitmap;
+
 import androidx.test.filters.SmallTest;
 
 import org.junit.Assert;
@@ -47,7 +49,7 @@ public class MessageWrapperTest {
     @Test
     @SmallTest
     public void testMessageProperties() {
-        MessageWrapper message = MessageWrapper.create(1);
+        MessageWrapper message = MessageWrapper.create(1, MessageIdentifier.TEST_MESSAGE);
         PropertyModel messageProperties = message.getMessageProperties();
 
         message.setTitle("Title");
@@ -77,6 +79,12 @@ public class MessageWrapperTest {
         message.setSecondaryIconResourceId(2);
         Assert.assertEquals("Icon resource id doesn't match provided value", 2,
                 messageProperties.get(MessageBannerProperties.SECONDARY_ICON_RESOURCE_ID));
+
+        Assert.assertNull("Initially icon should not be set",
+                messageProperties.get(MessageBannerProperties.ICON));
+        message.setIcon(Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888));
+        Assert.assertNotNull("Call to setIcon() didn't update ICON property",
+                messageProperties.get(MessageBannerProperties.ICON));
     }
 
     /**
@@ -86,7 +94,7 @@ public class MessageWrapperTest {
     @SmallTest
     public void testCallbacks() {
         final long nativePtr = 1;
-        MessageWrapper message = MessageWrapper.create(nativePtr);
+        MessageWrapper message = MessageWrapper.create(nativePtr, MessageIdentifier.TEST_MESSAGE);
         PropertyModel messageProperties = message.getMessageProperties();
         messageProperties.get(MessageBannerProperties.ON_PRIMARY_ACTION).run();
         Mockito.verify(mNativeMock).handleActionClick(nativePtr);
@@ -104,7 +112,7 @@ public class MessageWrapperTest {
     @SmallTest
     public void testDestroyedMessageWrapperCallbacks() {
         final long nativePtr = 1;
-        MessageWrapper message = MessageWrapper.create(nativePtr);
+        MessageWrapper message = MessageWrapper.create(nativePtr, MessageIdentifier.TEST_MESSAGE);
         PropertyModel messageProperties = message.getMessageProperties();
 
         message.clearNativePtr();

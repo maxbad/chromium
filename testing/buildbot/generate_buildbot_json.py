@@ -17,10 +17,8 @@ import glob
 import itertools
 import json
 import os
-import re
 import string
 import sys
-import traceback
 
 import buildbot_json_magic_substitutions as magic_substitutions
 
@@ -938,6 +936,21 @@ class BBJSONGenerator(object):
     args = result.get('args', [])
     test_to_run = result.pop('telemetry_test_name', test_name)
 
+    # TODO(skbug.com/12149): Remove this once Gold-based tests no longer clobber
+    # earlier results on retry attempts.
+    is_gold_based_test = False
+    for a in args:
+      if '--git-revision' in a:
+        is_gold_based_test = True
+        break
+    if is_gold_based_test:
+      for a in args:
+        if '--test-filter' in a or '--isolated-script-test-filter' in a:
+          raise RuntimeError(
+              '--test-filter/--isolated-script-test-filter are currently not '
+              'supported for Gold-based GPU tests. See skbug.com/12100 and '
+              'skbug.com/12149 for more details.')
+
     # These tests upload and download results from cloud storage and therefore
     # aren't idempotent yet. https://crbug.com/549140.
     result['swarming']['idempotent'] = False
@@ -1197,6 +1210,9 @@ class BBJSONGenerator(object):
                                          mtx_test_suite_config['variants'],
                                          mixins)
           full_suite.update(result)
+        else:
+          suite = basic_suites[test_suite]
+          full_suite.update(suite)
       matrix_compound_suites[test_name] = full_suite
 
   def link_waterfalls_to_test_suites(self):
@@ -1464,7 +1480,7 @@ class BBJSONGenerator(object):
       self.write_file(self.pyl_file_path(filename + suffix), jsonstr)
 
   def get_valid_bot_names(self):
-    # Extract bot names from infra/config/generated/luci-milo.cfg.
+    # Extract bot names from infra/config/generated/luci/luci-milo.cfg.
     # NOTE: This reference can cause issues; if a file changes there, the
     # presubmit here won't be run by default. A manually maintained list there
     # tries to run presubmit here when luci-milo.cfg is changed. If any other
@@ -1485,7 +1501,8 @@ class BBJSONGenerator(object):
 
     bot_names = set()
     milo_configs = glob.glob(
-        os.path.join(self.args.infra_config_dir, 'generated', 'luci-milo*.cfg'))
+        os.path.join(self.args.infra_config_dir, 'generated', 'luci',
+                     'luci-milo*.cfg'))
     for c in milo_configs:
       for l in self.read_file(c).splitlines():
         if (not 'name: "buildbucket/luci.chromium.' in l and
@@ -1515,8 +1532,6 @@ class BBJSONGenerator(object):
         'Optional Mac Retina Release (NVIDIA)',
         'Optional Win10 x64 Release (Intel HD 630)',
         'Optional Win10 x64 Release (NVIDIA)',
-        # chromium.chromiumos
-        'linux-lacros-rel',
         # chromium.fyi
         'linux-blink-rel-dummy',
         'linux-blink-optional-highdpi-rel-dummy',
@@ -1525,8 +1540,9 @@ class BBJSONGenerator(object):
         'mac10.14-blink-rel-dummy',
         'mac10.15-blink-rel-dummy',
         'mac11.0-blink-rel-dummy',
+        'mac11.0.arm64-blink-rel-dummy',
         'win7-blink-rel-dummy',
-        'win10-blink-rel-dummy',
+        'win10.20h2-blink-rel-dummy',
         'WebKit Linux composite_after_paint Dummy Builder',
         'WebKit Linux layout_ng_disabled Builder',
         # chromium, due to https://crbug.com/878915
@@ -1534,21 +1550,6 @@ class BBJSONGenerator(object):
         'win32-dbg',
         'win-archive-dbg',
         'win32-archive-dbg',
-        # New LTC isn't created when LTC becomes LTS, so these builders can go
-        # away
-        "chromeos-arm-generic-ltc",
-        "chromeos-betty-pi-arc-chrome-ltc",
-        "chromeos-eve-chrome-ltc",
-        "chromeos-kevin-chrome-ltc",
-        "linux-chromeos-ltc",
-        "linux64-ltc",
-        # TODO(https://crbug.com/1127088): remove once LTS version has been set
-        "chromeos-arm-generic-lts",
-        "chromeos-betty-pi-arc-chrome-lts",
-        "chromeos-eve-chrome-lts",
-        "chromeos-kevin-chrome-lts",
-        "linux-chromeos-lts",
-        "linux64-lts",
         # TODO crbug.com/1143924: Remove once experimentation is complete
         'Linux Builder Robocrop',
         'Linux Tests Robocrop',
@@ -1557,7 +1558,10 @@ class BBJSONGenerator(object):
   def get_internal_waterfalls(self):
     # Similar to get_builders_that_do_not_actually_exist above, but for
     # waterfalls defined in internal configs.
-    return ['chrome', 'chrome.pgo', 'internal.chromeos.fyi', 'internal.soda']
+    return [
+        'chrome', 'chrome.pgo', 'internal.chrome.fyi', 'internal.chromeos.fyi',
+        'internal.soda'
+    ]
 
   def check_input_file_consistency(self, verbose=False):
     self.check_input_files_sorting(verbose)

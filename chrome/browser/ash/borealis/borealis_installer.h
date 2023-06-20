@@ -9,9 +9,8 @@
 #include <string>
 
 #include "base/callback.h"
-#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
-#include "base/observer_list.h"
+#include "base/observer_list_types.h"
 #include "chrome/browser/ash/borealis/borealis_metrics.h"
 #include "components/keyed_service/core/keyed_service.h"
 
@@ -27,6 +26,9 @@ class BorealisInstaller : public KeyedService {
   };
 
   // Observer class for the Borealis installation related events.
+  //
+  // TODO(b/189720611): It is not possible to have more than one observer, so
+  // refactor this to use callbacks rather than observers.
   class Observer : public base::CheckedObserver {
    public:
     virtual void OnProgressUpdated(double fraction_complete) = 0;

@@ -6,6 +6,7 @@
 
 #include "third_party/blink/renderer/core/editing/bidi_adjustment.h"
 #include "third_party/blink/renderer/core/editing/position_with_affinity.h"
+#include "third_party/blink/renderer/core/layout/ng/inline/layout_ng_text_combine.h"
 #include "third_party/blink/renderer/core/layout/ng/inline/ng_caret_position.h"
 #include "third_party/blink/renderer/core/layout/ng/inline/ng_fragment_items_builder.h"
 #include "third_party/blink/renderer/core/layout/ng/inline/ng_inline_cursor.h"
@@ -27,7 +28,7 @@ struct SameSizeAsNGFragmentItem {
   } type_data;
   PhysicalRect rect;
   NGInkOverflow ink_overflow;
-  void* pointer;
+  UntracedMember<void*> members[1];
   wtf_size_t sizes[2];
   unsigned flags;
 };
@@ -293,6 +294,14 @@ bool NGFragmentItem::IsAtomicInline() const {
   return false;
 }
 
+bool NGFragmentItem::IsBlockInInline() const {
+  if (Type() != kBox)
+    return false;
+  if (const NGPhysicalBoxFragment* box = BoxFragment())
+    return box->IsBlockInInline();
+  return false;
+}
+
 bool NGFragmentItem::IsFloating() const {
   if (const NGPhysicalBoxFragment* box = BoxFragment())
     return box->IsFloating();
@@ -313,8 +322,21 @@ bool NGFragmentItem::IsGeneratedText() const {
   return IsLayoutGeneratedText() || IsStyleGeneratedText();
 }
 
+bool NGFragmentItem::IsFormattingContextRoot() const {
+  const NGPhysicalBoxFragment* box = BoxFragment();
+  return box && box->IsFormattingContextRoot();
+}
+
 bool NGFragmentItem::IsListMarker() const {
   return layout_object_ && layout_object_->IsLayoutNGOutsideListMarker();
+}
+
+LayoutBlock& NGFragmentItem::BlockInInline() const {
+  DCHECK(IsBlockInInline());
+  auto* const block =
+      To<LayoutBlock>(To<LayoutNGBlockFlow>(GetLayoutObject())->FirstChild());
+  DCHECK(block) << this;
+  return *block;
 }
 
 void NGFragmentItem::ConvertToSvgText(std::unique_ptr<NGSvgFragmentData> data,
@@ -330,17 +352,71 @@ void NGFragmentItem::ConvertToSvgText(std::unique_ptr<NGSvgFragmentData> data,
   rect_ = unscaled_rect;
 }
 
-FloatRect NGFragmentItem::ObjectBoundingBox() const {
-  if (Type() != kSvgText)
-    return FloatRect(rect_);
-  const float scaling_factor =
-      To<LayoutSVGInlineText>(GetLayoutObject())->ScalingFactor();
-  DCHECK_GT(scaling_factor, 0.0f);
-  FloatRect item_rect = SvgFragmentData()->rect;
+void NGFragmentItem::SetSvgLineLocalRect(const PhysicalRect& unscaled_rect) {
+  DCHECK_EQ(Type(), kLine);
+  rect_ = unscaled_rect;
+}
+
+gfx::RectF NGFragmentItem::ObjectBoundingBox(
+    const NGFragmentItems& items) const {
+  DCHECK_EQ(Type(), kSvgText);
+  const Font scaled_font = ScaledFont();
+  gfx::RectF ink_bounds =
+      ToGfxRectF(scaled_font.TextInkBounds(TextPaintInfo(items)));
+  if (const auto* font_data = scaled_font.PrimaryFont())
+    ink_bounds.Offset(0.0f, font_data->GetFontMetrics().FloatAscent());
+  ink_bounds.Scale(SvgFragmentData()->length_adjust_scale, 1.0f);
+  const gfx::RectF& scaled_rect = SvgFragmentData()->rect;
+  if (!IsHorizontal()) {
+    ink_bounds =
+        gfx::RectF(scaled_rect.width() - ink_bounds.bottom(), ink_bounds.x(),
+                   ink_bounds.height(), ink_bounds.width());
+  }
+  ink_bounds.Offset(scaled_rect.OffsetFromOrigin());
+  ink_bounds.Union(scaled_rect);
   if (HasSvgTransformForBoundingBox())
-    item_rect = BuildSvgTransformForBoundingBox().MapRect(item_rect);
-  item_rect.Scale(1 / scaling_factor);
-  return item_rect;
+    ink_bounds = BuildSvgTransformForBoundingBox().MapRect(ink_bounds);
+  ink_bounds.Scale(1 / SvgScalingFactor());
+  return ink_bounds;
+}
+
+FloatQuad NGFragmentItem::SvgUnscaledQuad() const {
+  DCHECK_EQ(Type(), kSvgText);
+  FloatQuad quad = BuildSvgTransformForBoundingBox().MapQuad(
+      FloatRect(SvgFragmentData()->rect));
+  const float scaling_factor = SvgScalingFactor();
+  quad.Scale(1 / scaling_factor, 1 / scaling_factor);
+  return quad;
+}
+
+PhysicalOffset NGFragmentItem::MapPointInContainer(
+    const PhysicalOffset& point) const {
+  if (Type() != kSvgText || !HasSvgTransformForBoundingBox())
+    return point;
+  const float scaling_factor = SvgScalingFactor();
+  return PhysicalOffset::FromFloatPointRound(
+      BuildSvgTransformForBoundingBox()
+          .Inverse()
+          .MapPoint(FloatPoint(point).ScaledBy(scaling_factor))
+          .ScaledBy(1 / scaling_factor));
+}
+
+float NGFragmentItem::ScaleInlineOffset(LayoutUnit inline_offset) const {
+  if (Type() != kSvgText)
+    return inline_offset.ToFloat();
+  return inline_offset.ToFloat() * SvgScalingFactor() /
+         SvgFragmentData()->length_adjust_scale;
+}
+
+bool NGFragmentItem::InclusiveContains(const gfx::PointF& position) const {
+  DCHECK_EQ(Type(), kSvgText);
+  gfx::PointF scaled_position = gfx::ScalePoint(position, SvgScalingFactor());
+  const gfx::RectF& item_rect = SvgFragmentData()->rect;
+  if (!HasSvgTransformForBoundingBox())
+    return item_rect.InclusiveContains(scaled_position);
+  return BuildSvgTransformForBoundingBox()
+      .MapQuad(gfx::QuadF(item_rect))
+      .Contains(scaled_position);
 }
 
 bool NGFragmentItem::HasNonVisibleOverflow() const {
@@ -399,8 +475,10 @@ inline const LayoutBox* NGFragmentItem::InkOverflowOwnerBox() const {
 }
 
 inline LayoutBox* NGFragmentItem::MutableInkOverflowOwnerBox() {
-  if (Type() == kBox)
-    return DynamicTo<LayoutBox>(const_cast<LayoutObject*>(layout_object_));
+  if (Type() == kBox) {
+    return DynamicTo<LayoutBox>(
+        const_cast<LayoutObject*>(layout_object_.Get()));
+  }
   return nullptr;
 }
 
@@ -410,14 +488,6 @@ PhysicalRect NGFragmentItem::SelfInkOverflow() const {
   if (!HasInkOverflow())
     return LocalRect();
   return ink_overflow_.Self(InkOverflowType(), Size());
-}
-
-PhysicalRect NGFragmentItem::ContentsInkOverflow() const {
-  if (const NGPhysicalBoxFragment* box_fragment = BoxFragment())
-    return box_fragment->ContentsInkOverflow();
-  if (!HasInkOverflow())
-    return PhysicalRect();
-  return ink_overflow_.Contents(InkOverflowType(), Size());
 }
 
 PhysicalRect NGFragmentItem::InkOverflow() const {
@@ -560,11 +630,11 @@ AffineTransform NGFragmentItem::BuildSvgTransformForLengthAdjust() const {
         svg_data.in_text_path && svg_data.angle != 0.0f;
     // We'd like to scale only inline-size without moving inline position.
     if (is_horizontal) {
-      float x = svg_data.rect.X();
+      float x = svg_data.rect.x();
       scale_transform.SetMatrix(
           scale, 0, 0, 1, with_text_path_transform ? 0 : x - scale * x, 0);
     } else {
-      float y = svg_data.rect.Y();
+      float y = svg_data.rect.y();
       scale_transform.SetMatrix(1, 0, 0, scale, 0,
                                 with_text_path_transform ? 0 : y - scale * y);
     }
@@ -591,14 +661,14 @@ AffineTransform NGFragmentItem::BuildSvgTransformForTextPath(
   // |x| in the horizontal writing-mode and |y| in the vertical writing-mode
   // point the center of the baseline.  See |NGSvgTextLayoutAlgorithm::
   // PositionOnPath()|.
-  float x = svg_data.rect.X();
-  float y = svg_data.rect.Y();
+  float x = svg_data.rect.x();
+  float y = svg_data.rect.y();
   if (IsHorizontal()) {
     y += font_data->GetFontMetrics().FixedAscent(font_baseline);
-    transform.Translate(-svg_data.rect.Width() / 2, svg_data.baseline_shift);
+    transform.Translate(-svg_data.rect.width() / 2, svg_data.baseline_shift);
   } else {
     x += font_data->GetFontMetrics().FixedDescent(font_baseline);
-    transform.Translate(svg_data.baseline_shift, -svg_data.rect.Height() / 2);
+    transform.Translate(svg_data.baseline_shift, -svg_data.rect.height() / 2);
   }
   transform.Multiply(length_adjust);
   transform.SetE(transform.E() + x);
@@ -632,11 +702,28 @@ AffineTransform NGFragmentItem::BuildSvgTransformForBoundingBox() const {
   // However it doesn't look correct for RTL and vertical text.
   float ascent =
       font_data ? font_data->GetFontMetrics().FixedAscent().ToFloat() : 0.0f;
-  float y = svg_data.rect.Y() + ascent;
-  transform.SetE(transform.E() + svg_data.rect.X());
+  float y = svg_data.rect.y() + ascent;
+  transform.SetE(transform.E() + svg_data.rect.x());
   transform.SetF(transform.F() + y);
-  transform.Translate(-svg_data.rect.X(), -y);
+  transform.Translate(-svg_data.rect.x(), -y);
   return transform;
+}
+
+float NGFragmentItem::SvgScalingFactor() const {
+  const auto* svg_inline_text =
+      DynamicTo<LayoutSVGInlineText>(GetLayoutObject());
+  if (!svg_inline_text)
+    return 1.0f;
+  const float scaling_factor = svg_inline_text->ScalingFactor();
+  DCHECK_GT(scaling_factor, 0.0f);
+  return scaling_factor;
+}
+
+const Font& NGFragmentItem::ScaledFont() const {
+  if (const auto* svg_inline_text =
+          DynamicTo<LayoutSVGInlineText>(GetLayoutObject()))
+    return svg_inline_text->ScaledFont();
+  return Style().GetFont();
 }
 
 String NGFragmentItem::ToString() const {
@@ -749,6 +836,14 @@ void NGFragmentItem::RecalcInkOverflow(
 
     NGTextFragmentPaintInfo paint_info = TextPaintInfo(cursor.Items());
     if (paint_info.shape_result) {
+      if (Type() == kSvgText) {
+        ink_overflow_type_ = ink_overflow_.SetSvgTextInkOverflow(
+            InkOverflowType(), paint_info, Style(), ScaledFont(),
+            SvgFragmentData()->rect, SvgScalingFactor(),
+            SvgFragmentData()->length_adjust_scale,
+            BuildSvgTransformForBoundingBox(), self_and_contents_rect_out);
+        return;
+      }
       ink_overflow_type_ = ink_overflow_.SetTextInkOverflow(
           InkOverflowType(), paint_info, Style(), Size(),
           self_and_contents_rect_out);
@@ -787,6 +882,10 @@ void NGFragmentItem::RecalcInkOverflow(
   contents_rect.offset -= OffsetInContainerFragment();
 
   if (Type() == kLine) {
+    const auto* const text_combine =
+        DynamicTo<LayoutNGTextCombine>(GetLayoutObject());
+    if (UNLIKELY(text_combine))
+      contents_rect = text_combine->AdjustRectForBoundingBox(contents_rect);
     // Line boxes don't have self overflow. Compute content overflow only.
     *self_and_contents_rect_out = UnionRect(LocalRect(), contents_rect);
     ink_overflow_type_ =
@@ -837,11 +936,15 @@ LayoutUnit NGFragmentItem::InlinePositionForOffset(
   DCHECK_EQ(1u, text.length());
   if (!offset || UNLIKELY(IsRtl(Style().Direction())))
     return LayoutUnit();
+  if (Type() == kSvgText) {
+    return LayoutUnit(IsHorizontal() ? SvgFragmentData()->rect.width()
+                                     : SvgFragmentData()->rect.height());
+  }
   return IsHorizontal() ? Size().width : Size().height;
 }
 
-LayoutUnit NGFragmentItem::InlinePositionForOffset(StringView text,
-                                                   unsigned offset) const {
+LayoutUnit NGFragmentItem::CaretInlinePositionForOffset(StringView text,
+                                                        unsigned offset) const {
   return InlinePositionForOffset(text, offset, LayoutUnit::FromFloatRound,
                                  AdjustMidCluster::kToEnd);
 }
@@ -869,25 +972,57 @@ std::pair<LayoutUnit, LayoutUnit> NGFragmentItem::LineLeftAndRightForOffsets(
 PhysicalRect NGFragmentItem::LocalRect(StringView text,
                                        unsigned start_offset,
                                        unsigned end_offset) const {
-  if (start_offset == StartOffset() && end_offset == EndOffset())
-    return LocalRect();
+  LayoutUnit width = Size().width;
+  LayoutUnit height = Size().height;
+  if (Type() == kSvgText) {
+    const NGSvgFragmentData& data = *SvgFragmentData();
+    if (IsHorizontal()) {
+      width = LayoutUnit(data.rect.size().width() / data.length_adjust_scale);
+      height = LayoutUnit(data.rect.size().height());
+    } else {
+      width = LayoutUnit(data.rect.size().width());
+      height = LayoutUnit(data.rect.size().height() / data.length_adjust_scale);
+    }
+  }
+  if (start_offset == StartOffset() && end_offset == EndOffset()) {
+    return {LayoutUnit(), LayoutUnit(), width, height};
+  }
   LayoutUnit start_position, end_position;
   std::tie(start_position, end_position) =
       LineLeftAndRightForOffsets(text, start_offset, end_offset);
   const LayoutUnit inline_size = end_position - start_position;
   switch (GetWritingMode()) {
     case WritingMode::kHorizontalTb:
-      return {start_position, LayoutUnit(), inline_size, Size().height};
+      return {start_position, LayoutUnit(), inline_size, height};
     case WritingMode::kVerticalRl:
     case WritingMode::kVerticalLr:
     case WritingMode::kSidewaysRl:
-      return {LayoutUnit(), start_position, Size().width, inline_size};
+      return {LayoutUnit(), start_position, width, inline_size};
     case WritingMode::kSidewaysLr:
-      return {LayoutUnit(), Size().height - end_position, Size().width,
-              inline_size};
+      return {LayoutUnit(), height - end_position, width, inline_size};
   }
   NOTREACHED();
   return {};
+}
+
+PhysicalRect NGFragmentItem::ComputeTextBoundsRectForHitTest(
+    const PhysicalOffset& inline_root_offset,
+    bool is_occlusion_test) const {
+  DCHECK(IsText());
+  const PhysicalOffset offset =
+      inline_root_offset + OffsetInContainerFragment();
+  const PhysicalRect border_rect(offset, Size());
+  if (UNLIKELY(is_occlusion_test)) {
+    PhysicalRect ink_overflow = SelfInkOverflow();
+    ink_overflow.Move(border_rect.offset);
+    return ink_overflow;
+  }
+  // We should not ignore fractional parts of border_rect in SVG because this
+  // item might have much larger screen size than border_rect.
+  // See svg/hittest/text-small-font-size.html.
+  if (Type() == kSvgText)
+    return border_rect;
+  return PhysicalRect(PixelSnappedIntRect(border_rect));
 }
 
 PositionWithAffinity NGFragmentItem::PositionForPointInText(
@@ -926,10 +1061,11 @@ unsigned NGFragmentItem::TextOffsetForPoint(
   const LayoutUnit& point_in_line_direction =
       style.IsHorizontalWritingMode() ? point.left : point.top;
   if (const ShapeResultView* shape_result = TextShapeResult()) {
+    float scaled_offset = ScaleInlineOffset(point_in_line_direction);
     // TODO(layout-dev): Move caret logic out of ShapeResult into separate
     // support class for code health and to avoid this copy.
     return shape_result->CreateShapeResult()->CaretOffsetForHitTest(
-               point_in_line_direction.ToFloat(), Text(items), BreakGlyphs) +
+               scaled_offset, Text(items), BreakGlyphsOption(true)) +
            StartOffset();
   }
 

@@ -186,10 +186,7 @@ class Tab : public gfx::AnimationDelegate,
   friend class AlertIndicatorTest;
   friend class TabTest;
   friend class TabStripTestBase;
-  FRIEND_TEST_ALL_PREFIXES(TabStripTestWithScrollingDisabled,
-                           TabCloseButtonVisibilityWhenStacked);
-  FRIEND_TEST_ALL_PREFIXES(TabStripTest,
-                           TabCloseButtonVisibilityWhenNotStacked);
+  FRIEND_TEST_ALL_PREFIXES(TabStripTest, TabCloseButtonVisibility);
   FRIEND_TEST_ALL_PREFIXES(TabTest, TitleTextHasSufficientContrast);
   FRIEND_TEST_ALL_PREFIXES(TabHoverCardBubbleViewBrowserTest,
                            WidgetVisibleOnTabCloseButtonFocusAfterTabFocus);
@@ -286,9 +283,6 @@ class Tab : public gfx::AnimationDelegate,
   bool mouse_hovered_ = false;
 
   std::unique_ptr<TabCloseButtonObserver> tab_close_button_observer_;
-
-  // Focus ring for accessibility.
-  views::FocusRing* focus_ring_;
 
   // Freezing token held while the tab is collapsed.
   std::unique_ptr<performance_manager::freezing::FreezingVoteToken>

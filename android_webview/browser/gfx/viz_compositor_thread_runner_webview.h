@@ -11,7 +11,6 @@
 #include "base/no_destructor.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_checker.h"
-#include "components/ui_devtools/buildflags.h"
 #include "components/viz/service/main/viz_compositor_thread_runner.h"
 
 namespace base {
@@ -41,6 +40,11 @@ class VizCompositorThreadRunnerWebView : public viz::VizCompositorThreadRunner {
  public:
   static VizCompositorThreadRunnerWebView* GetInstance();
 
+  VizCompositorThreadRunnerWebView(const VizCompositorThreadRunnerWebView&) =
+      delete;
+  VizCompositorThreadRunnerWebView& operator=(
+      const VizCompositorThreadRunnerWebView&) = delete;
+
   viz::FrameSinkManagerImpl* GetFrameSinkManager();
 
   // Must be called from the TaskQueueWebView thread. |task| is allowed to call
@@ -63,10 +67,6 @@ class VizCompositorThreadRunnerWebView : public viz::VizCompositorThreadRunner {
                               gpu::CommandBufferTaskExecutor* task_executor,
                               viz::GpuServiceImpl* gpu_service,
                               gfx::RenderingPipeline* gpu_pipeline) override;
-#if BUILDFLAG(USE_VIZ_DEVTOOLS)
-  void CreateVizDevTools(viz::mojom::VizDevToolsParamsPtr params) override;
-#endif
-
  private:
   friend class base::NoDestructor<VizCompositorThreadRunnerWebView>;
 
@@ -85,8 +85,6 @@ class VizCompositorThreadRunnerWebView : public viz::VizCompositorThreadRunner {
   std::unique_ptr<viz::ServerSharedBitmapManager> server_shared_bitmap_manager_;
   std::unique_ptr<viz::FrameSinkManagerImpl> frame_sink_manager_;
   viz::GpuServiceImpl* gpu_service_impl_ = nullptr;
-
-  DISALLOW_COPY_AND_ASSIGN(VizCompositorThreadRunnerWebView);
 };
 
 }  // namespace android_webview

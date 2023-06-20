@@ -7,6 +7,7 @@
 #include <memory>
 
 #include "base/rand_util.h"
+#include "third_party/blink/public/mojom/frame/user_activation_notification_type.mojom-blink.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_source_code.h"
 #include "third_party/blink/renderer/bindings/core/v8/source_location.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
@@ -251,10 +252,6 @@ ThreadDebugger::descriptionForValueSubtype(v8::Local<v8::Context> context,
   return nullptr;
 }
 
-bool ThreadDebugger::formatAccessorsAsProperties(v8::Local<v8::Value> value) {
-  return V8DOMWrapper::IsWrapper(isolate_, value);
-}
-
 double ThreadDebugger::currentTimeMS() {
   return base::Time::Now().ToDoubleT() * 1000.0;
 }
@@ -486,6 +483,8 @@ void ThreadDebugger::GetAccessibleNameCallback(
   v8::Local<v8::Value> value = info[0];
 
   Node* node = V8Node::ToImplWithTypeCheck(isolate, value);
+  if (node && !node->GetLayoutObject())
+    return;
   if (auto* element = DynamicTo<Element>(node)) {
     V8SetReturnValueString(info, element->computedName(), isolate);
   }
@@ -501,6 +500,8 @@ void ThreadDebugger::GetAccessibleRoleCallback(
   v8::Local<v8::Value> value = info[0];
 
   Node* node = V8Node::ToImplWithTypeCheck(isolate, value);
+  if (node && !node->GetLayoutObject())
+    return;
   if (auto* element = DynamicTo<Element>(node)) {
     V8SetReturnValueString(info, element->computedRole(), isolate);
   }
@@ -600,7 +601,7 @@ void ThreadDebugger::startRepeatingTimer(
           &ThreadDebugger::OnTimer);
   TaskRunnerTimer<ThreadDebugger>* timer_ptr = timer.get();
   timers_.push_back(std::move(timer));
-  timer_ptr->StartRepeating(base::TimeDelta::FromSecondsD(interval), FROM_HERE);
+  timer_ptr->StartRepeating(base::Seconds(interval), FROM_HERE);
 }
 
 void ThreadDebugger::cancelTimer(void* data) {

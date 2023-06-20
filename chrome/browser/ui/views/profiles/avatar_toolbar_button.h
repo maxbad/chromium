@@ -6,6 +6,7 @@
 #define CHROME_BROWSER_UI_VIEWS_PROFILES_AVATAR_TOOLBAR_BUTTON_H_
 
 #include "base/feature_list.h"
+#include "base/gtest_prod_util.h"
 #include "base/memory/weak_ptr.h"
 #include "base/scoped_observation.h"
 #include "chrome/browser/ui/views/toolbar/toolbar_button.h"
@@ -29,8 +30,8 @@ class AvatarToolbarButton : public ToolbarButton,
     kGuestSession,
     kAnimatedUserIdentity,
     kSyncPaused,
+    // An error in sync-the-feature or sync-the-transport.
     kSyncError,
-    kPasswordsOnlySyncError,
     kNormal
   };
 
@@ -74,16 +75,14 @@ class AvatarToolbarButton : public ToolbarButton,
   // Can be used in tests to reduce or remove the delay before showing the IPH.
   static void SetIPHMinDelayAfterCreationForTesting(base::TimeDelta delay);
 
- protected:
-  // ToolbarButton:
-  void NotifyClick(const ui::Event& event) override;
-
  private:
   FRIEND_TEST_ALL_PREFIXES(AvatarToolbarButtonTest,
                            HighlightMeetsMinimumContrast);
 
   // ui::PropertyHandler:
   void AfterPropertyChange(const void* key, int64_t old_value) override;
+
+  void ButtonPressed();
 
   std::u16string GetAvatarTooltipText() const;
   ui::ImageModel GetAvatarIcon(ButtonState state,

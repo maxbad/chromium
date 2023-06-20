@@ -8,7 +8,6 @@
 #include <memory>
 #include <string>
 
-#include "base/macros.h"
 #include "chrome/browser/ash/login/ui/login_display_host.h"
 #include "components/user_manager/user_type.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
@@ -22,6 +21,10 @@ namespace ash {
 class FakeLoginDisplayHost : public LoginDisplayHost {
  public:
   FakeLoginDisplayHost();
+
+  FakeLoginDisplayHost(const FakeLoginDisplayHost&) = delete;
+  FakeLoginDisplayHost& operator=(const FakeLoginDisplayHost&) = delete;
+
   ~FakeLoginDisplayHost() override;
 
   // LoginDisplayHost:
@@ -35,7 +38,7 @@ class FakeLoginDisplayHost : public LoginDisplayHost {
   void Finalize(base::OnceClosure) override;
   void FinalizeImmediately() override;
   void SetStatusAreaVisible(bool visible) override;
-  void StartWizard(chromeos::OobeScreenId first_screen) override;
+  void StartWizard(OobeScreenId first_screen) override;
   WizardController* GetWizardController() override;
   KioskLaunchController* GetKioskLaunchController() override;
   void StartUserAdding(base::OnceClosure completion_callback) override;
@@ -55,6 +58,8 @@ class FakeLoginDisplayHost : public LoginDisplayHost {
       const AccountId& account_id,
       const absl::optional<user_manager::UserType>& user_type) override;
   void ShowGaiaDialog(const AccountId& prefilled_account) override;
+  void ShowOsInstallScreen() override;
+  void ShowGuestTosScreen() override;
   void HideOobeDialog() override;
   void SetShelfButtonsEnabled(bool enabled) override;
   void UpdateOobeDialogState(OobeDialogState state) override;
@@ -69,7 +74,14 @@ class FakeLoginDisplayHost : public LoginDisplayHost {
   void VerifyOwnerForKiosk(base::OnceClosure on_success) override;
   void AddObserver(LoginDisplayHost::Observer* observer) override;
   void RemoveObserver(LoginDisplayHost::Observer* observer) override;
+  WizardContext* GetWizardContext() override;
   SigninUI* GetSigninUI() override;
+  bool GetKeyboardRemappedPrefValue(const std::string& pref_name,
+                                    int* value) const final;
+  void AddWizardCreatedObserverForTests(
+      base::RepeatingClosure on_created) final;
+  bool IsWizardControllerCreated() const final;
+  WizardContext* GetWizardContextForTesting() final;
 
  private:
   class FakeBaseScreen;
@@ -77,17 +89,10 @@ class FakeLoginDisplayHost : public LoginDisplayHost {
   // SessionManager is required by the constructor of WizardController.
   std::unique_ptr<session_manager::SessionManager> session_manager_;
   std::unique_ptr<FakeBaseScreen> fake_screen_;
+  std::unique_ptr<WizardContext> wizard_context_;
   std::unique_ptr<WizardController> wizard_controller_;
-
-  DISALLOW_COPY_AND_ASSIGN(FakeLoginDisplayHost);
 };
 
 }  // namespace ash
-
-// TODO(https://crbug.com/1164001): remove after the //chrome/browser/chromeos
-// source migration is finished.
-namespace chromeos {
-using ::ash::FakeLoginDisplayHost;
-}
 
 #endif  // CHROME_BROWSER_ASH_LOGIN_UI_FAKE_LOGIN_DISPLAY_HOST_H_

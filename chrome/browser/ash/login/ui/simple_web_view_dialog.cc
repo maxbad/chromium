@@ -6,7 +6,6 @@
 
 #include <memory>
 
-#include "base/macros.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/ash/login/helper.h"
@@ -44,10 +43,11 @@
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_delegate.h"
 
-using content::WebContents;
-using views::GridLayout;
-
+namespace ash {
 namespace {
+
+using ::content::WebContents;
+using ::views::GridLayout;
 
 const int kLocationBarHeight = 35;
 
@@ -110,8 +110,6 @@ BEGIN_METADATA(ToolbarRowView, views::View)
 END_METADATA
 
 }  // namespace
-
-namespace chromeos {
 
 // Stub implementation of ContentSettingBubbleModelDelegate.
 class StubBubbleModelDelegate : public ContentSettingBubbleModelDelegate {
@@ -422,4 +420,4 @@ void SimpleWebViewDialog::RemoveObserver(
 BEGIN_METADATA(SimpleWebViewDialog, views::View)
 END_METADATA
 
-}  // namespace chromeos
+}  // namespace ash

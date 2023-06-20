@@ -18,7 +18,6 @@
 #include "chrome/browser/ash/login/error_screens_histogram_helper.h"
 #include "chrome/browser/ash/login/screens/network_error.h"
 #include "chrome/browser/ash/login/wizard_context.h"
-#include "chrome/browser/chromeos/policy/enrollment_requisition_manager.h"
 #include "chrome/browser/ui/webui/chromeos/login/update_screen_handler.h"
 #include "chrome/grit/chromium_strings.h"
 #include "chrome/grit/generated_resources.h"
@@ -37,17 +36,14 @@ constexpr const char kUserActionRejectUpdateOverCellular[] =
 constexpr const char kUserActionCancelUpdateShortcut[] = "cancel-update";
 
 // Time in seconds after which we initiate reboot.
-constexpr const base::TimeDelta kWaitBeforeRebootTime =
-    base::TimeDelta::FromSeconds(2);
+constexpr const base::TimeDelta kWaitBeforeRebootTime = base::Seconds(2);
 
 // Delay before showing error message if captive portal is detected.
 // We wait for this delay to let captive portal to perform redirect and show
 // its login page before error message appears.
-constexpr const base::TimeDelta kDelayErrorMessage =
-    base::TimeDelta::FromSeconds(10);
+constexpr const base::TimeDelta kDelayErrorMessage = base::Seconds(10);
 
-constexpr const base::TimeDelta kShowDelay =
-    base::TimeDelta::FromMicroseconds(400);
+constexpr const base::TimeDelta kShowDelay = base::Microseconds(400);
 
 // When battery percent is lower and DISCHARGING warn user about it.
 const double kInsufficientBatteryPercent = 50;
@@ -126,12 +122,6 @@ void UpdateScreen::OnViewDestroyed(UpdateView* view) {
 bool UpdateScreen::MaybeSkip(WizardContext* context) {
   if (context->enrollment_triggered_early) {
     LOG(WARNING) << "Skip OOBE Update because of enrollment request.";
-    exit_callback_.Run(VersionUpdater::Result::UPDATE_SKIPPED);
-    return true;
-  }
-
-  if (policy::EnrollmentRequisitionManager::IsRemoraRequisition()) {
-    LOG(WARNING) << "Skip OOBE Update for remora devices.";
     exit_callback_.Run(VersionUpdater::Result::UPDATE_SKIPPED);
     return true;
   }

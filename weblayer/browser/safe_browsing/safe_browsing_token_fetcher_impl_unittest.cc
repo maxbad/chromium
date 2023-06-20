@@ -5,6 +5,7 @@
 #include "weblayer/browser/safe_browsing/safe_browsing_token_fetcher_impl.h"
 
 #include "content/public/test/browser_task_environment.h"
+#include "google_apis/gaia/gaia_constants.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "weblayer/public/google_account_access_token_fetch_delegate.h"
 
@@ -38,7 +39,8 @@ class TestAccessTokenFetchDelegate
 
     // All access token requests made by SafeBrowsingTokenFetcherImpl should be
     // for the safe browsing scope.
-    std::set<std::string> expected_scopes = {safe_browsing::kAPIScope};
+    std::set<std::string> expected_scopes = {
+        GaiaConstants::kChromeSafeBrowsingOAuth2Scope};
     EXPECT_EQ(expected_scopes, scopes);
 
     outstanding_callbacks_[most_recent_request_id_] = std::move(callback);
@@ -48,7 +50,8 @@ class TestAccessTokenFetchDelegate
                                         const std::string& token) override {
     // All invalid token notifications originating from
     // SafeBrowsingTokenFetcherImpl should be for the safe browsing scope.
-    std::set<std::string> expected_scopes = {safe_browsing::kAPIScope};
+    std::set<std::string> expected_scopes = {
+        GaiaConstants::kChromeSafeBrowsingOAuth2Scope};
     EXPECT_EQ(expected_scopes, scopes);
 
     invalid_token_ = token;
@@ -200,7 +203,7 @@ TEST_F(SafeBrowsingTokenFetcherImplTest, TokenFetchTimeout) {
   EXPECT_EQ("dummy", access_token);
 
   // Fast-forward to trigger the token fetch timeout.
-  task_environment()->FastForwardBy(base::TimeDelta::FromMilliseconds(
+  task_environment()->FastForwardBy(base::Milliseconds(
       safe_browsing::kTokenFetchTimeoutDelayFromMilliseconds));
 
   // Even though the delegate has not yet responded,
@@ -277,7 +280,7 @@ TEST_F(SafeBrowsingTokenFetcherImplTest, ConcurrentRequestsAtDifferentTimes) {
   EXPECT_EQ("dummy", access_token2);
 
   task_environment()->FastForwardBy(
-      base::TimeDelta::FromMilliseconds(delay_before_second_request_from_ms));
+      base::Milliseconds(delay_before_second_request_from_ms));
   fetcher.Start(base::BindOnce(&OnAccessTokenFetched, run_loop2.QuitClosure(),
                                &access_token2));
   EXPECT_EQ(2, delegate.get_num_outstanding_requests());
@@ -292,7 +295,7 @@ TEST_F(SafeBrowsingTokenFetcherImplTest, ConcurrentRequestsAtDifferentTimes) {
       safe_browsing::kTokenFetchTimeoutDelayFromMilliseconds -
       delay_before_second_request_from_ms;
   task_environment()->FastForwardBy(
-      base::TimeDelta::FromMilliseconds(time_to_trigger_first_timeout_from_ms));
+      base::Milliseconds(time_to_trigger_first_timeout_from_ms));
 
   // Verify that the first request's timeout was handled by
   // SafeBrowsingTokenFetcherImpl.

@@ -10,7 +10,6 @@
 #include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/files/file_path.h"
-#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "base/run_loop.h"
 #include "base/test/bind.h"
@@ -21,14 +20,14 @@
 #include "chrome/browser/ash/crostini/crostini_manager_factory.h"
 #include "chrome/browser/ash/crostini/crostini_test_helper.h"
 #include "chrome/browser/ash/crostini/crostini_util.h"
-#include "chrome/browser/chromeos/file_manager/fake_disk_mount_manager.h"
-#include "chrome/browser/chromeos/file_manager/volume_manager.h"
-#include "chrome/browser/chromeos/file_manager/volume_manager_factory.h"
+#include "chrome/browser/ash/file_manager/fake_disk_mount_manager.h"
+#include "chrome/browser/ash/file_manager/volume_manager.h"
+#include "chrome/browser/ash/file_manager/volume_manager_factory.h"
 #include "chrome/test/base/testing_profile.h"
 #include "chromeos/dbus/cicerone/cicerone_client.h"
 #include "chromeos/dbus/concierge/concierge_client.h"
 #include "chromeos/dbus/concierge/fake_concierge_client.h"
-#include "chromeos/dbus/cros_disks_client.h"
+#include "chromeos/dbus/cros_disks/cros_disks_client.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/seneschal/seneschal_client.h"
 #include "chromeos/dbus/vm_applications/apps.pb.h"
@@ -96,6 +95,9 @@ class CrostiniSshfsHelperTest : public testing::Test {
     fake_concierge_client_ = chromeos::FakeConciergeClient::Get();
   }
 
+  CrostiniSshfsHelperTest(const CrostiniSshfsHelperTest&) = delete;
+  CrostiniSshfsHelperTest& operator=(const CrostiniSshfsHelperTest&) = delete;
+
   ~CrostiniSshfsHelperTest() override {
     storage::ExternalMountPoints::GetSystemInstance()->RevokeFileSystem(
         kMountName);
@@ -149,8 +151,6 @@ class CrostiniSshfsHelperTest : public testing::Test {
   std::unique_ptr<CrostiniSshfs> crostini_sshfs_;
   CrostiniManager* crostini_manager_;
   base::HistogramTester histogram_tester{};
-
-  DISALLOW_COPY_AND_ASSIGN(CrostiniSshfsHelperTest);
 };
 
 TEST_F(CrostiniSshfsHelperTest, MountDiskMountsDisk) {

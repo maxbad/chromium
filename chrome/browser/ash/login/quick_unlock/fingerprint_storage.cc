@@ -4,21 +4,21 @@
 
 #include "chrome/browser/ash/login/quick_unlock/fingerprint_storage.h"
 
+#include "ash/constants/ash_pref_names.h"
 #include "base/metrics/histogram_functions.h"
 #include "chrome/browser/ash/login/quick_unlock/quick_unlock_utils.h"
 #include "chrome/browser/ash/profiles/profile_helper.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/pref_names.h"
 #include "chromeos/components/feature_usage/feature_usage_metrics.h"
 #include "chromeos/dbus/biod/biod_client.h"
 #include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/pref_service.h"
 #include "content/public/browser/device_service.h"
 #include "services/device/public/mojom/fingerprint.mojom.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 
-namespace chromeos {
+namespace ash {
 namespace quick_unlock {
-
 namespace {
 
 constexpr char kFingerprintUMAFeatureName[] = "Fingerprint";
@@ -77,10 +77,14 @@ FingerprintStorage::FingerprintStorage(Profile* profile) : profile_(profile) {
           kFingerprintUMAFeatureName, this);
 }
 
-FingerprintStorage::~FingerprintStorage() {}
+FingerprintStorage::~FingerprintStorage() = default;
 
 bool FingerprintStorage::IsEligible() const {
   return IsFingerprintSupported();
+}
+
+absl::optional<bool> FingerprintStorage::IsAccessible() const {
+  return IsFingerprintEnabled(profile_);
 }
 
 bool FingerprintStorage::IsEnabled() const {
@@ -143,4 +147,4 @@ void FingerprintStorage::OnGetRecords(
 }
 
 }  // namespace quick_unlock
-}  // namespace chromeos
+}  // namespace ash

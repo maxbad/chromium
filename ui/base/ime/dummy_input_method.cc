@@ -24,7 +24,7 @@ void DummyInputMethod::OnBlur() {
 }
 
 #if defined(OS_WIN)
-bool DummyInputMethod::OnUntranslatedIMEMessage(const MSG event,
+bool DummyInputMethod::OnUntranslatedIMEMessage(const CHROME_MSG event,
                                                 NativeEventResult* result) {
   return false;
 }
@@ -69,6 +69,9 @@ bool DummyInputMethod::IsCandidatePopupOpen() const {
 }
 
 void DummyInputMethod::ShowVirtualKeyboardIfEnabled() {}
+
+void DummyInputMethod::SetVirtualKeyboardVisibilityIfEnabled(bool should_show) {
+}
 
 void DummyInputMethod::AddObserver(InputMethodObserver* observer) {
 }

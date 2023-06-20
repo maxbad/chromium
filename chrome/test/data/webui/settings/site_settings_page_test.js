@@ -6,11 +6,11 @@
 import {webUIListenerCallback} from 'chrome://resources/js/cr.m.js';
 import {loadTimeData} from 'chrome://resources/js/load_time_data.m.js';
 import {flush} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
-import {ContentSetting, defaultSettingLabel, NotificationSetting, SiteSettingsPrefsBrowserProxyImpl} from 'chrome://settings/lazy_load.js';
+import {ContentSetting, defaultSettingLabel, NotificationSetting, SettingsSiteSettingsPageElement, SiteSettingsPrefsBrowserProxyImpl} from 'chrome://settings/lazy_load.js';
 import {CrLinkRowElement} from 'chrome://settings/settings.js';
 
-import {assertEquals, assertTrue} from '../chai_assert.js';
-import {eventToPromise,flushTasks, isChildVisible} from '../test_util.m.js';
+import {assertEquals, assertTrue} from 'chrome://webui-test/chai_assert.js';
+import {eventToPromise,flushTasks, isChildVisible} from 'chrome://webui-test/test_util.js';
 
 import {TestSiteSettingsPrefsBrowserProxy} from './test_site_settings_prefs_browser_proxy.js';
 
@@ -28,7 +28,7 @@ suite('SiteSettingsPage', function() {
 
   function setupPage() {
     siteSettingsBrowserProxy = new TestSiteSettingsPrefsBrowserProxy();
-    SiteSettingsPrefsBrowserProxyImpl.instance_ = siteSettingsBrowserProxy;
+    SiteSettingsPrefsBrowserProxyImpl.setInstance(siteSettingsBrowserProxy);
     siteSettingsBrowserProxy.setCookieSettingDescription(testLabels[0]);
     document.body.innerHTML = '';
     page = /** @type {!SettingsSiteSettingsPageElement} */ (
@@ -73,49 +73,18 @@ suite('SiteSettingsPage', function() {
     await siteSettingsBrowserProxy.whenCalled('getCookieSettingDescription');
     flush();
     const cookiesLinkRow = /** @type {!CrLinkRowElement} */ (
-        page.$$('#basicContentList').$$('#cookies'));
+        page.shadowRoot.querySelector('#basicContentList')
+            .shadowRoot.querySelector('#cookies'));
     assertEquals(testLabels[0], cookiesLinkRow.subLabel);
 
     webUIListenerCallback('cookieSettingDescriptionChanged', testLabels[1]);
     assertEquals(testLabels[1], cookiesLinkRow.subLabel);
   });
 
-  test('NotificationsLinkRowSublabel_RedesignDisabled', async function() {
-    loadTimeData.overrideValues({
-      enableContentSettingsRedesign: false,
-    });
-
+  test('NotificationsLinkRowSublabel', async function() {
     const notificationsLinkRow = /** @type {!CrLinkRowElement} */ (
-        page.$$('#basicPermissionsList').$$('#notifications'));
-
-    page.set('prefs.generated.notification.value', NotificationSetting.BLOCK);
-    await flushTasks();
-    assertEquals(
-        loadTimeData.getString('siteSettingsBlocked'),
-        notificationsLinkRow.subLabel);
-
-    page.set(
-        'prefs.generated.notification.value',
-        NotificationSetting.QUIETER_MESSAGING);
-    await flushTasks();
-    assertEquals(
-        loadTimeData.getString('siteSettingsAskBeforeSending'),
-        notificationsLinkRow.subLabel);
-
-    page.set('prefs.generated.notification.value', NotificationSetting.ASK);
-    await flushTasks();
-    assertEquals(
-        loadTimeData.getString('siteSettingsAskBeforeSending'),
-        notificationsLinkRow.subLabel);
-  });
-
-  test('NotificationsLinkRowSublabel_RedesignEnabled', async function() {
-    loadTimeData.overrideValues({
-      enableContentSettingsRedesign: true,
-    });
-
-    const notificationsLinkRow = /** @type {!CrLinkRowElement} */ (
-        page.$$('#basicPermissionsList').$$('#notifications'));
+        page.shadowRoot.querySelector('#basicPermissionsList')
+            .shadowRoot.querySelector('#notifications'));
 
     page.set('prefs.generated.notification.value', NotificationSetting.BLOCK);
     await flushTasks();
@@ -140,10 +109,11 @@ suite('SiteSettingsPage', function() {
 
   test('ProtectedContentRow', function() {
     setupPage();
-    page.$$('#expandContent').click();
+    page.shadowRoot.querySelector('#expandContent').click();
     flush();
     assertTrue(isChildVisible(
-        /** @type {!HTMLElement} */ (page.$$('#advancedContentList')),
+        /** @type {!HTMLElement} */ (
+            page.shadowRoot.querySelector('#advancedContentList')),
         '#protected-content'));
   });
 });

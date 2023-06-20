@@ -7,12 +7,14 @@
 
 #include <map>
 #include <string>
+#include <utility>
 #include <vector>
 
-#include "base/macros.h"
+#include "base/strings/string_split.h"
 #include "build/build_config.h"
 #include "ui/accessibility/ax_enums.mojom-forward.h"
 #include "ui/accessibility/ax_node.h"
+#include "ui/accessibility/ax_text_attributes.h"
 #include "ui/accessibility/platform/ax_platform_node.h"
 #include "ui/accessibility/platform/ax_platform_node_delegate.h"
 #include "ui/accessibility/platform/ax_platform_text_boundary.h"
@@ -57,10 +59,9 @@ struct AX_EXPORT AXLegacyHypertext {
 
 class AX_EXPORT AXPlatformNodeBase : public AXPlatformNode {
  public:
-  AXPlatformNodeBase();
   ~AXPlatformNodeBase() override;
-
-  virtual void Init(AXPlatformNodeDelegate* delegate);
+  AXPlatformNodeBase(const AXPlatformNodeBase&) = delete;
+  AXPlatformNodeBase& operator=(const AXPlatformNodeBase&) = delete;
 
   // These are simple wrappers to our delegate.
   const AXNodeData& GetData() const;
@@ -115,43 +116,73 @@ class AX_EXPORT AXPlatformNodeBase : public AXPlatformNode {
   AXPlatformNodeChildIterator AXPlatformNodeChildrenBegin() const;
   AXPlatformNodeChildIterator AXPlatformNodeChildrenEnd() const;
 
-  bool HasBoolAttribute(ax::mojom::BoolAttribute attr) const;
-  bool GetBoolAttribute(ax::mojom::BoolAttribute attr) const;
-  bool GetBoolAttribute(ax::mojom::BoolAttribute attr, bool* value) const;
+  ax::mojom::Role GetRole() const;
+  bool HasBoolAttribute(ax::mojom::BoolAttribute attribute) const;
+  bool GetBoolAttribute(ax::mojom::BoolAttribute attribute) const;
+  bool GetBoolAttribute(ax::mojom::BoolAttribute attribute, bool* value) const;
 
-  bool HasFloatAttribute(ax::mojom::FloatAttribute attr) const;
-  float GetFloatAttribute(ax::mojom::FloatAttribute attr) const;
-  bool GetFloatAttribute(ax::mojom::FloatAttribute attr, float* value) const;
+  bool HasFloatAttribute(ax::mojom::FloatAttribute attribute) const;
+  float GetFloatAttribute(ax::mojom::FloatAttribute attribute) const;
+  bool GetFloatAttribute(ax::mojom::FloatAttribute attribute,
+                         float* value) const;
 
+  const std::vector<std::pair<ax::mojom::IntAttribute, int32_t>>&
+  GetIntAttributes() const;
   bool HasIntAttribute(ax::mojom::IntAttribute attribute) const;
   int GetIntAttribute(ax::mojom::IntAttribute attribute) const;
   bool GetIntAttribute(ax::mojom::IntAttribute attribute, int* value) const;
 
+  const std::vector<std::pair<ax::mojom::StringAttribute, std::string>>&
+  GetStringAttributes() const;
   bool HasStringAttribute(ax::mojom::StringAttribute attribute) const;
   const std::string& GetStringAttribute(
       ax::mojom::StringAttribute attribute) const;
   bool GetStringAttribute(ax::mojom::StringAttribute attribute,
                           std::string* value) const;
-  bool GetString16Attribute(ax::mojom::StringAttribute attribute,
-                            std::u16string* value) const;
   std::u16string GetString16Attribute(
       ax::mojom::StringAttribute attribute) const;
+  bool GetString16Attribute(ax::mojom::StringAttribute attribute,
+                            std::u16string* value) const;
+
   bool HasInheritedStringAttribute(ax::mojom::StringAttribute attribute) const;
   const std::string& GetInheritedStringAttribute(
       ax::mojom::StringAttribute attribute) const;
-  std::u16string GetInheritedString16Attribute(
-      ax::mojom::StringAttribute attribute) const;
   bool GetInheritedStringAttribute(ax::mojom::StringAttribute attribute,
                                    std::string* value) const;
+  std::u16string GetInheritedString16Attribute(
+      ax::mojom::StringAttribute attribute) const;
   bool GetInheritedString16Attribute(ax::mojom::StringAttribute attribute,
                                      std::u16string* value) const;
 
+  const std::vector<
+      std::pair<ax::mojom::IntListAttribute, std::vector<int32_t>>>&
+  GetIntListAttributes() const;
   bool HasIntListAttribute(ax::mojom::IntListAttribute attribute) const;
   const std::vector<int32_t>& GetIntListAttribute(
       ax::mojom::IntListAttribute attribute) const;
-
   bool GetIntListAttribute(ax::mojom::IntListAttribute attribute,
                            std::vector<int32_t>* value) const;
+
+  bool HasStringListAttribute(ax::mojom::StringListAttribute attribute) const;
+  const std::vector<std::string>& GetStringListAttribute(
+      ax::mojom::StringListAttribute attribute) const;
+  bool GetStringListAttribute(ax::mojom::StringListAttribute attribute,
+                              std::vector<std::string>* value) const;
+
+  const base::StringPairs& GetHtmlAttributes() const;
+  bool GetHtmlAttribute(const char* attribute, std::string* value) const;
+  bool GetHtmlAttribute(const char* attribute, std::u16string* value) const;
+
+  AXTextAttributes GetTextAttributes() const;
+
+  bool HasState(ax::mojom::State state) const;
+  ax::mojom::State GetState() const;
+
+  bool HasAction(ax::mojom::Action action) const;
+
+  bool HasTextStyle(ax::mojom::TextStyle text_style) const;
+
+  ax::mojom::NameFrom GetNameFrom() const;
 
   // Returns the selection container if inside one.
   AXPlatformNodeBase* GetSelectionContainer() const;
@@ -382,6 +413,11 @@ class AX_EXPORT AXPlatformNodeBase : public AXPlatformNode {
   bool IsPlatformDocument() const;
 
  protected:
+  AXPlatformNodeBase();
+
+  // AXPlatformNode overrides.
+  void Init(AXPlatformNodeDelegate* delegate) override;
+
   bool IsStructuredAnnotation() const;
   bool IsSelectionItemSupported() const;
 
@@ -536,7 +572,8 @@ class AX_EXPORT AXPlatformNodeBase : public AXPlatformNode {
   // Is there an aria-describedby that points to a role="tooltip".
   bool IsDescribedByTooltip() const;
 
-  DISALLOW_COPY_AND_ASSIGN(AXPlatformNodeBase);
+  friend AXPlatformNode* AXPlatformNode::Create(
+      AXPlatformNodeDelegate* delegate);
 };
 
 }  // namespace ui

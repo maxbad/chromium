@@ -8,7 +8,7 @@
 
 #include "base/command_line.h"
 #include "base/feature_list.h"
-#include "base/sequenced_task_runner.h"
+#include "base/task/sequenced_task_runner.h"
 #include "build/build_config.h"
 #include "build/buildflag.h"
 #include "components/viz/common/gpu/raster_context_provider.h"
@@ -23,9 +23,6 @@
 #endif
 
 #if defined(OS_FUCHSIA)
-// TODO(crbug.com/1117629): Remove this dependency and update include_rules
-// that allow it.
-#include "fuchsia/engine/switches.h"
 #include "media/filters/fuchsia/fuchsia_video_decoder.h"
 #endif
 
@@ -176,7 +173,7 @@ void DefaultDecoderFactory::CreateVideoDecoders(
     //
     // TODO(crbug.com/580386): Handle context loss properly.
     if (context_provider) {
-      video_decoders->push_back(CreateFuchsiaVideoDecoder(context_provider));
+      video_decoders->push_back(FuchsiaVideoDecoder::Create(context_provider));
     } else {
       DLOG(ERROR)
           << "Can't create FuchsiaVideoDecoder due to GPU context loss.";

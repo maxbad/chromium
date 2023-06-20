@@ -228,7 +228,7 @@ TEST(RenderPassIOTest, QuadList) {
           render_pass0->CreateAndAppendDrawQuad<VideoHoleDrawQuad>();
       quad->SetAll(render_pass0->shared_quad_state_list.ElementAt(sqs_index),
                    gfx::Rect(5, 5, 305, 405), gfx::Rect(15, 15, 205, 305),
-                   false, base::UnguessableToken::Deserialize(2001, 2019));
+                   false, base::UnguessableToken::Create());
       ++quad_count;
     }
     {
@@ -363,15 +363,15 @@ TEST(RenderPassIOTest, CompositorRenderPassList) {
 }
 
 TEST(RenderPassIOTest, CompositorFrameData) {
-  // Validate recorded multi-surface compositor frame data from
-  // https://www.youtube.com/
+  // Validate recorded multi-surface compositor frame data from a tab with
+  // https://www.youtube.com/ focused, and 4 other tabs in the background.
   base::FilePath test_data_dir;
   ASSERT_TRUE(base::PathService::Get(Paths::DIR_TEST_DATA, &test_data_dir));
   base::FilePath json_path =
       test_data_dir.Append(FILE_PATH_LITERAL("render_pass_data"))
           .Append(FILE_PATH_LITERAL("multi_surface_test"))
-          .Append(FILE_PATH_LITERAL("youtube"))
-          .Append(FILE_PATH_LITERAL("0358.json"));
+          .Append(FILE_PATH_LITERAL("youtube_tab_focused"))
+          .Append(FILE_PATH_LITERAL("1641.json"));
   ASSERT_TRUE(base::PathExists(json_path));
   std::string json_text;
   ASSERT_TRUE(base::ReadFileToString(json_path, &json_text));

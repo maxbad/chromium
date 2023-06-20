@@ -43,10 +43,23 @@ const debug_suites_list = [
   'OnboardingChooseDestinationPageTest',
   'OnboardingChooseWpDisableMethodPageTest',
   'OnboardingEnterRsuWpDisableCodePageTest',
+  'OnboardingLandingPageTest',
+  'OnboardingNetworkPageTest',
   'OnboardingSelectComponentsPageTest',
   'OnboardingUpdatePageTest',
   'OnboardingWaitForManualWpDisablePageTest',
+  'OnboardingWpDisableCompletePageTest',
+  'ReimagingCalibrationPageTest',
+  'ReimagingCalibrationRunPageTest',
+  'ReimagingCalibrationSetupPageTest',
+  'ReimagingFirmwareUpdatePageTest',
+  'ReimagingDeviceInformationPageTest',
+  'ReimagingProvisioningPageTest',
   'ShimlessRMAAppTest',
+  'WrapupFinalizePageTest',
+  'WrapupRepairCompletePageTest',
+  'WrapupRestockPageTest',
+  'WrapupWaitForManualWpEnablePageTest',
 ];
 
 TEST_F('ShimlessRMABrowserTest', 'All', function() {

@@ -222,7 +222,7 @@ bool GetTimeDeltaForConnectionTypeFromFieldTrial(
   int64_t ms;
   if (!base::StringToInt64(group_parts[type_size], &ms))
     return false;
-  *out = base::TimeDelta::FromMilliseconds(ms);
+  *out = base::Milliseconds(ms);
   return true;
 }
 
@@ -304,6 +304,7 @@ uint16_t DnsQueryTypeToQtype(DnsQueryType dns_query_type) {
     case DnsQueryType::INTEGRITY:
       return dns_protocol::kExperimentalTypeIntegrity;
     case DnsQueryType::HTTPS:
+    case DnsQueryType::HTTPS_EXPERIMENTAL:
       return dns_protocol::kTypeHttps;
   }
 }

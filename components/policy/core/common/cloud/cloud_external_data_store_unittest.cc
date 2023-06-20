@@ -10,7 +10,6 @@
 
 #include "base/compiler_specific.h"
 #include "base/files/scoped_temp_dir.h"
-#include "base/macros.h"
 #include "base/test/test_simple_task_runner.h"
 #include "components/policy/core/common/cloud/resource_cache.h"
 #include "crypto/sha2.h"
@@ -25,9 +24,12 @@ const char kKey1[] = "Key 1";
 const char kKey2[] = "Key 2";
 const char kPolicy1[] = "Test policy 1";
 const char kPolicy2[] = "Test policy 2";
+std::string kPolicy1Key =
+    CloudExternalDataManager::MetadataKey(kPolicy1).ToString();
+std::string kPolicy2Key =
+    CloudExternalDataManager::MetadataKey(kPolicy2).ToString();
 const char kData1[] = "Testing data 1";
 const char kData2[] = "Testing data 2";
-const char kURL[] = "http://localhost";
 const size_t kMaxSize = 100;
 
 }  // namespace
@@ -35,6 +37,9 @@ const size_t kMaxSize = 100;
 class CloudExternalDataStoreTest : public testing::Test {
  public:
   CloudExternalDataStoreTest();
+  CloudExternalDataStoreTest(const CloudExternalDataStoreTest&) = delete;
+  CloudExternalDataStoreTest& operator=(const CloudExternalDataStoreTest&) =
+      delete;
 
   void SetUp() override;
 
@@ -45,9 +50,6 @@ class CloudExternalDataStoreTest : public testing::Test {
   scoped_refptr<base::TestSimpleTaskRunner> task_runner_;
   base::ScopedTempDir temp_dir_;
   std::unique_ptr<ResourceCache> resource_cache_;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(CloudExternalDataStoreTest);
 };
 
 CloudExternalDataStoreTest::CloudExternalDataStoreTest()
@@ -136,10 +138,9 @@ TEST_F(CloudExternalDataStoreTest, Prune) {
 
   // Prune the store, allowing only an entry for the first policy with its
   // current hash to be kept.
-  CloudExternalDataManager::Metadata metadata;
-  metadata[kPolicy1] =
-      CloudExternalDataManager::MetadataEntry(kURL, kData1Hash);
-  store.Prune(metadata);
+  std::vector<std::pair<std::string, std::string>> prune_data;
+  prune_data.emplace_back(kPolicy1, kData1Hash);
+  store.Prune(prune_data);
 
   // Check that the entry for the second policy has been removed from the
   // resource cache backing the store.
@@ -150,9 +151,9 @@ TEST_F(CloudExternalDataStoreTest, Prune) {
 
   // Prune the store, allowing only an entry for the first policy with a
   // different hash to be kept.
-  metadata[kPolicy1] =
-      CloudExternalDataManager::MetadataEntry(kURL, kData2Hash);
-  store.Prune(metadata);
+  prune_data.clear();
+  prune_data.emplace_back(kPolicy1, kData2Hash);
+  store.Prune(prune_data);
 
   // Check that the entry for the first policy has been removed from the
   // resource cache.
@@ -188,8 +189,8 @@ TEST_F(CloudExternalDataStoreTest, SharedCache) {
   EXPECT_EQ(kData2, data);
 
   // Prune the first store, allowing no entries to be kept.
-  CloudExternalDataManager::Metadata metadata;
-  store1.Prune(metadata);
+  std::vector<std::pair<std::string, std::string>> prune_data;
+  store1.Prune(prune_data);
 
   // Check that the part of the resource cache backing the first store is empty.
   resource_cache_->LoadAllSubkeys(kKey1, &contents);

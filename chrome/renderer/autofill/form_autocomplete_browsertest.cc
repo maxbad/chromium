@@ -70,7 +70,8 @@ class FakeContentAutofillDriver : public mojom::AutofillDriver {
   void SetFormToBeProbablySubmitted(
       const absl::optional<FormData>& form) override {}
 
-  void FormsSeen(const std::vector<FormData>& forms) override {}
+  void FormsSeen(const std::vector<FormData>& updated_forms,
+                 const std::vector<FormRendererId>& removed_forms) override {}
 
   void FormSubmitted(const FormData& form,
                      bool known_success,
@@ -95,11 +96,11 @@ class FakeContentAutofillDriver : public mojom::AutofillDriver {
     select_control_changed_ = std::make_unique<FormFieldData>(field);
   }
 
-  void QueryFormFieldAutofill(int32_t id,
-                              const FormData& form,
-                              const FormFieldData& field,
-                              const gfx::RectF& bounding_box,
-                              bool autoselect_first_field) override {}
+  void AskForValuesToFill(int32_t id,
+                          const FormData& form,
+                          const FormFieldData& field,
+                          const gfx::RectF& bounding_box,
+                          bool autoselect_first_field) override {}
 
   void HidePopup() override {}
 
@@ -233,10 +234,11 @@ void SimulateFillForm(const FormData& form_data,
   ASSERT_FALSE(fname_element.IsNull());
   // This call is necessary to setup the autofill agent appropriate for the
   // user selection; simulates the menu actually popping up.
-  autofill_agent->FormControlElementClicked(fname_element.To<WebInputElement>(),
-                                            false);
+  autofill_agent->FormControlElementClicked(
+      fname_element.To<WebInputElement>());
 
-  autofill_agent->FillForm(0, form_data);
+  autofill_agent->FillOrPreviewForm(0, form_data,
+                                    mojom::RendererFormDataAction::kFill);
 }
 
 // Simulates receiving a message from the browser to fill a form.
@@ -296,10 +298,11 @@ void SimulateFillFormWithNonFillableFields(
 
   // This call is necessary to setup the autofill agent appropriate for the
   // user selection; simulates the menu actually popping up.
-  autofill_agent->FormControlElementClicked(fname_element.To<WebInputElement>(),
-                                            false);
+  autofill_agent->FormControlElementClicked(
+      fname_element.To<WebInputElement>());
 
-  autofill_agent->FillForm(0, data);
+  autofill_agent->FillOrPreviewForm(0, data,
+                                    mojom::RendererFormDataAction::kFill);
 }
 
 }  // end namespace
@@ -307,6 +310,10 @@ void SimulateFillFormWithNonFillableFields(
 class FormAutocompleteTest : public ChromeRenderViewTest {
  public:
   FormAutocompleteTest() {}
+
+  FormAutocompleteTest(const FormAutocompleteTest&) = delete;
+  FormAutocompleteTest& operator=(const FormAutocompleteTest&) = delete;
+
   ~FormAutocompleteTest() override {}
 
  protected:
@@ -347,9 +354,6 @@ class FormAutocompleteTest : public ChromeRenderViewTest {
 
   FakeContentAutofillDriver fake_driver_;
   std::unique_ptr<test::FocusTestUtils> focus_test_utils_;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(FormAutocompleteTest);
 };
 
 // Tests that submitting a form generates FormSubmitted message with the form
@@ -872,8 +876,7 @@ TEST_F(FormAutocompleteTest, AcceptDataListSuggestion) {
     ASSERT_TRUE(input_element);
     FieldRendererId field_id(input_element->UniqueRendererFormControlId());
     // Select this element in |autofill_agent_|.
-    autofill_agent_->FormControlElementClicked(element.To<WebInputElement>(),
-                                               false);
+    autofill_agent_->FormControlElementClicked(element.To<WebInputElement>());
 
     autofill_agent_->AcceptDataListSuggestion(field_id, kSuggestion);
     EXPECT_EQ(c.expected, input_element->Value().Utf8()) << "Case id: " << c.id;

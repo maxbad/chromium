@@ -8,14 +8,19 @@
 #include <map>
 #include <memory>
 
-#include "base/macros.h"
 #include "components/page_load_metrics/browser/layout_shift_normalization.h"
 #include "components/page_load_metrics/browser/page_load_metrics_observer.h"
+#include "components/page_load_metrics/browser/responsiveness_metrics_normalization.h"
 #include "services/metrics/public/cpp/ukm_source.h"
 
 namespace content {
 class NavigationHandle;
 }
+namespace ukm {
+namespace builders {
+class AmpPageLoad;
+}  // namespace builders
+}  // namespace ukm
 
 // Observer responsible for recording metrics for AMP documents. This includes
 // both AMP documents loaded in the main frame, and AMP documents loaded in a
@@ -46,6 +51,11 @@ class AMPPageLoadMetricsObserver
     : public page_load_metrics::PageLoadMetricsObserver {
  public:
   AMPPageLoadMetricsObserver();
+
+  AMPPageLoadMetricsObserver(const AMPPageLoadMetricsObserver&) = delete;
+  AMPPageLoadMetricsObserver& operator=(const AMPPageLoadMetricsObserver&) =
+      delete;
+
   ~AMPPageLoadMetricsObserver() override;
 
   // page_load_metrics::PageLoadMetricsObserver:
@@ -59,6 +69,11 @@ class AMPPageLoadMetricsObserver
   void OnTimingUpdate(
       content::RenderFrameHost* subframe_rfh,
       const page_load_metrics::mojom::PageLoadTiming& timing) override;
+  void OnInputTimingUpdate(
+      content::RenderFrameHost* subframe_rfh,
+      const page_load_metrics::mojom::InputTiming& input_timing_delta) override;
+  void OnMobileFriendlinessUpdate(
+      const blink::MobileFriendliness& mobile_friendliness) override;
   void OnSubFrameRenderDataUpdate(
       content::RenderFrameHost* subframe_rfh,
       const page_load_metrics::mojom::FrameRenderDataUpdate& render_data)
@@ -105,6 +120,11 @@ class AMPPageLoadMetricsObserver
     page_load_metrics::mojom::PageLoadTimingPtr timing;
     page_load_metrics::PageRenderData render_data;
     page_load_metrics::LayoutShiftNormalization layout_shift_normalization;
+    page_load_metrics::ResponsivenessMetricsNormalization
+        responsiveness_metrics_normalization;
+
+    // MobileFriendliness metrics observed in the AMP iframe.
+    blink::MobileFriendliness mobile_friendliness;
 
     // Whether an AMP document was loaded, based on observed
     // LoadingBehaviorFlags for this frame.
@@ -112,9 +132,13 @@ class AMPPageLoadMetricsObserver
   };
 
   void RecordLoadingBehaviorObserved();
-
+  void RecordNormalizedResponsivenessMetrics(
+      const page_load_metrics::NormalizedResponsivenessMetrics&
+          normalized_responsiveness_metrics,
+      ukm::builders::AmpPageLoad& builder);
   void ProcessMainFrameNavigation(content::NavigationHandle* navigation_handle);
   void MaybeRecordAmpDocumentMetrics();
+  void RecordMobileFriendliness(ukm::builders::AmpPageLoad& builder);
 
   // Information about the currently active AMP navigation in the main
   // frame. Will be null if there isn't an active AMP navigation in the main
@@ -128,8 +152,6 @@ class AMPPageLoadMetricsObserver
 
   bool observed_amp_main_frame_ = false;
   bool observed_amp_sub_frame_ = false;
-
-  DISALLOW_COPY_AND_ASSIGN(AMPPageLoadMetricsObserver);
 };
 
 #endif  // CHROME_BROWSER_PAGE_LOAD_METRICS_OBSERVERS_CORE_AMP_PAGE_LOAD_METRICS_OBSERVER_H_

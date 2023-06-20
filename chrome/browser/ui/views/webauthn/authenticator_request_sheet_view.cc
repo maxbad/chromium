@@ -19,6 +19,7 @@
 #include "ui/gfx/color_utils.h"
 #include "ui/gfx/paint_vector_icon.h"
 #include "ui/native_theme/native_theme.h"
+#include "ui/views/border.h"
 #include "ui/views/controls/button/image_button.h"
 #include "ui/views/controls/button/image_button_factory.h"
 #include "ui/views/controls/label.h"
@@ -48,7 +49,7 @@ AuthenticatorRequestSheetView::AuthenticatorRequestSheetView(
 AuthenticatorRequestSheetView::~AuthenticatorRequestSheetView() = default;
 
 void AuthenticatorRequestSheetView::ReInitChildViews() {
-  RemoveAllChildViews(true /* delete_children */);
+  RemoveAllChildViews();
 
   // No need to add further spacing between the upper and lower half. The image
   // is designed to fill the dialog's top half without any border/margins, and

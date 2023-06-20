@@ -21,8 +21,7 @@
 #include "components/user_manager/user_names.h"
 #include "content/public/test/browser_task_environment.h"
 
-namespace chromeos {
-
+namespace ash {
 namespace {
 
 const char kSAMLUserId1[] = "12345";
@@ -31,8 +30,7 @@ const char kSAMLUserEmail1[] = "alice@corp.example.com";
 const char kSAMLUserId2[] = "67891";
 const char kSAMLUserEmail2[] = "bob@corp.example.com";
 
-constexpr base::TimeDelta kSamlOnlineShortDelay =
-    base::TimeDelta::FromSeconds(10);
+constexpr base::TimeDelta kSamlOnlineShortDelay = base::Seconds(10);
 
 const char kFakeToken[] = "fake-token";
 
@@ -311,4 +309,4 @@ TEST_F(InSessionPasswordSyncManagerTest, PolicyNotSet) {
   EXPECT_FALSE(manager_->IsLockReauthEnabled());
 }
 
-}  // namespace chromeos
+}  // namespace ash

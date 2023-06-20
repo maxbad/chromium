@@ -3,13 +3,15 @@
 # Removes ./wpt/ directory containing the reduced web-platform-tests tree and
 # starts a new checkout. Only files in WPTIncludeList are retained. The
 # revisions getting checked out are defined in WPTHeads.
+# TODO(weizhong): consider updating WPTIncludeList if there is new file added at
+# upstream
 
 DIR=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
 cd $DIR
 
 TARGET_DIR=$DIR/wpt
 REMOTE_REPO="https://github.com/web-platform-tests/wpt.git"
-WPT_HEAD=95eeb247a0820c5b253d32f5e1888c27afe4d9fd
+WPT_HEAD=bbae74f5cb18f350ad934fdd91c1d9c9ae97cdce
 
 function clone {
   # Remove existing repo if already exists.

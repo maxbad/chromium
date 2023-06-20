@@ -7,6 +7,7 @@
 #include "base/metrics/field_trial_params.h"
 #include "base/metrics/histogram_functions.h"
 #include "chrome/browser/cart/cart_db_content.pb.h"
+#include "chrome/browser/cart/cart_features.h"
 #include "chrome/browser/cart/cart_service.h"
 #include "chrome/browser/cart/cart_service_factory.h"
 #include "components/search/ntp_features.h"
@@ -69,14 +70,25 @@ void CartHandler::GetCartDataCallback(GetMerchantCartsCallback callback,
   for (CartDB::KeyAndValue proto_pair : res) {
     auto cart = chrome_cart::mojom::MerchantCart::New();
     cart->merchant = std::move(proto_pair.second.merchant());
-    cart->cart_url = GURL(std::move(proto_pair.second.merchant_cart_url()));
+
+    if (cart_features::IsRuleDiscountPartnerMerchant(
+            GURL(proto_pair.second.merchant_cart_url()))) {
+      cart->cart_url = CartService::AppendUTM(
+          GURL(std::move(proto_pair.second.merchant_cart_url())),
+          show_discount);
+    } else {
+      cart->cart_url = GURL(std::move(proto_pair.second.merchant_cart_url()));
+    }
+
     std::vector<std::string> image_urls;
     // Not show product images when showing welcome surface.
     if (!cart_service_->ShouldShowWelcomeSurface()) {
       for (std::string image_url : proto_pair.second.product_image_urls()) {
         cart->product_image_urls.emplace_back(std::move(image_url));
       }
-      if (show_discount) {
+      if (show_discount &&
+          (proto_pair.second.discount_info().rule_discount_info_size() > 0 ||
+           proto_pair.second.discount_info().has_coupons())) {
         cart->discount_text =
             std::move(proto_pair.second.discount_info().discount_text());
       }
@@ -114,4 +126,9 @@ void CartHandler::GetDiscountEnabled(GetDiscountEnabledCallback callback) {
 
 void CartHandler::SetDiscountEnabled(bool enabled) {
   cart_service_->SetCartDiscountEnabled(enabled);
+}
+
+void CartHandler::PrepareForNavigation(const GURL& cart_url,
+                                       bool is_navigating) {
+  cart_service_->PrepareForNavigation(cart_url, is_navigating);
 }

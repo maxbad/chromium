@@ -145,7 +145,6 @@ static_library("protocol") {
     "port_allocator_factory.h",
     "port_range.cc",
     "port_range.h",
-    "process_stats_stub.h",
     "pseudotcp_adapter.cc",
     "pseudotcp_adapter.h",
     "pseudotcp_channel_factory.cc",
@@ -205,8 +204,6 @@ static_library("protocol") {
     "webrtc_connection_to_host.h",
     "webrtc_data_stream_adapter.cc",
     "webrtc_data_stream_adapter.h",
-    "webrtc_dummy_video_encoder.cc",
-    "webrtc_dummy_video_encoder.h",
     "webrtc_event_log_data.cc",
     "webrtc_event_log_data.h",
     "webrtc_transport.cc",
@@ -217,7 +214,6 @@ static_library("protocol") {
 
   configs += [
     "//build/config:precompiled_headers",
-    "//build/config/compiler:no_size_t_to_int_warning",
     "//build/config/compiler:wexit_time_destructors",
   ]
 
@@ -236,6 +232,7 @@ static_library("protocol") {
     "//jingle:webrtc_glue",
     "//net",
     "//remoting/base",
+    "//remoting/base:authorization",
     "//remoting/codec:decoder",
     "//remoting/proto/remoting/v1:network_traversal_proto",
     "//remoting/signaling",
@@ -278,6 +275,8 @@ static_library("protocol") {
       "webrtc_frame_scheduler.h",
       "webrtc_frame_scheduler_simple.cc",
       "webrtc_frame_scheduler_simple.h",
+      "webrtc_video_encoder_factory.cc",
+      "webrtc_video_encoder_factory.h",
       "webrtc_video_encoder_wrapper.cc",
       "webrtc_video_encoder_wrapper.h",
       "webrtc_video_frame_adapter.cc",
@@ -288,7 +287,11 @@ static_library("protocol") {
       "webrtc_video_track_source.h",
     ]
 
-    deps += [ "//remoting/codec:encoder" ]
+    deps += [
+      "//media:media",
+      "//media:shared_memory_support",
+      "//remoting/codec:encoder",
+    ]
   }
 }
 
@@ -385,7 +388,6 @@ source_set("unit_tests") {
     "negotiating_authenticator_unittest.cc",
     "pairing_registry_unittest.cc",
     "port_range_unittest.cc",
-    "ppapi_module_stub.cc",
     "pseudotcp_adapter_unittest.cc",
     "remoting_ice_config_request_unittest.cc",
     "sdp_message_unittest.cc",
@@ -396,7 +398,6 @@ source_set("unit_tests") {
     "v2_authenticator_unittest.cc",
     "validating_authenticator_unittest.cc",
     "webrtc_event_log_data_unittest.cc",
-    "webrtc_transport_unittest.cc",
   ]
 
   if (enable_remoting_host) {
@@ -407,6 +408,7 @@ source_set("unit_tests") {
       "video_frame_pump_unittest.cc",
       "webrtc_audio_source_adapter_unittest.cc",
       "webrtc_frame_scheduler_unittest.cc",
+      "webrtc_transport_unittest.cc",
       "webrtc_video_encoder_wrapper_unittest.cc",
       "webrtc_video_frame_adapter_unittest.cc",
       "webrtc_video_track_source_unittest.cc",

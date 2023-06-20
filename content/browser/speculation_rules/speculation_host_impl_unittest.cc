@@ -20,10 +20,21 @@
 namespace content {
 namespace {
 
+class PrerenderWebContentsDelegate : public WebContentsDelegate {
+ public:
+  PrerenderWebContentsDelegate() = default;
+
+  bool IsPrerender2Supported() override { return true; }
+};
+
 class SpeculationHostImplTest : public RenderViewHostImplTestHarness {
  public:
   SpeculationHostImplTest() {
-    scoped_feature_list_.InitAndEnableFeature(blink::features::kPrerender2);
+    scoped_feature_list_.InitWithFeatures(
+        {blink::features::kPrerender2},
+        // Disable the memory requirement of Prerender2 so the test can run on
+        // any bot.
+        {blink::features::kPrerender2MemoryControls});
   }
 
   void SetUp() override {
@@ -33,6 +44,7 @@ class SpeculationHostImplTest : public RenderViewHostImplTestHarness {
     web_contents_ = TestWebContents::Create(
         browser_context_.get(),
         SiteInstanceImpl::Create(browser_context_.get()));
+    web_contents_->SetDelegate(&web_contents_delegate_);
     web_contents_->NavigateAndCommit(GURL("https://example.com"));
   }
 
@@ -63,6 +75,7 @@ class SpeculationHostImplTest : public RenderViewHostImplTestHarness {
     auto candidate = blink::mojom::SpeculationCandidate::New();
     candidate->action = blink::mojom::SpeculationAction::kPrerender;
     candidate->url = url;
+    candidate->referrer = blink::mojom::Referrer::New();
     return candidate;
   }
 
@@ -71,6 +84,7 @@ class SpeculationHostImplTest : public RenderViewHostImplTestHarness {
 
   std::unique_ptr<TestBrowserContext> browser_context_;
   std::unique_ptr<TestWebContents> web_contents_;
+  PrerenderWebContentsDelegate web_contents_delegate_;
 };
 
 // Tests that SpeculationHostImpl starts prerendering when it receives prerender
@@ -91,51 +105,8 @@ TEST_F(SpeculationHostImplTest, StartPrerender) {
   EXPECT_TRUE(registry->FindHostByUrlForTesting(kPrerenderingUrl));
 }
 
-// Tests that SpeculationHostImpl starts only one prerender when it receives
-// more than one prerender candidates.
-// TODO(crbug.com/1197133): Prerender the candidate with the highest score.
-TEST_F(SpeculationHostImplTest, StartOnePrerenderOnMultipleCandidates) {
-  RenderFrameHostImpl* render_frame_host = GetRenderFrameHost();
-  PrerenderHostRegistry* registry = GetPrerenderHostRegistry();
-  mojo::Remote<blink::mojom::SpeculationHost> remote;
-  SpeculationHostImpl::Bind(render_frame_host,
-                            remote.BindNewPipeAndPassReceiver());
-
-  const std::vector<GURL> prerender_urls{GetSameOriginUrl("/empty.html?1"),
-                                         GetSameOriginUrl("/empty.html?2")};
-  std::vector<blink::mojom::SpeculationCandidatePtr> candidates;
-  for (const auto& url : prerender_urls) {
-    candidates.push_back(CreatePrerenderCandidate(url));
-  }
-
-  remote->UpdateSpeculationCandidates(std::move(candidates));
-  remote.FlushForTesting();
-  EXPECT_TRUE(registry->FindHostByUrlForTesting(prerender_urls[0]));
-  EXPECT_FALSE(registry->FindHostByUrlForTesting(prerender_urls[1]));
-}
-
-// Tests that SpeculationHostImpl will skip the prerender candidate if it is a
-// cross-origin url.
-TEST_F(SpeculationHostImplTest, SkipCrossOriginPrerenderCandidates) {
-  RenderFrameHostImpl* render_frame_host = GetRenderFrameHost();
-  PrerenderHostRegistry* registry = GetPrerenderHostRegistry();
-  mojo::Remote<blink::mojom::SpeculationHost> remote;
-  SpeculationHostImpl::Bind(render_frame_host,
-                            remote.BindNewPipeAndPassReceiver());
-
-  const GURL kPrerenderingUrl = GetCrossOriginUrl("/empty.html");
-  std::vector<blink::mojom::SpeculationCandidatePtr> candidates;
-  candidates.push_back(CreatePrerenderCandidate(kPrerenderingUrl));
-
-  remote->UpdateSpeculationCandidates(std::move(candidates));
-  remote.FlushForTesting();
-  EXPECT_FALSE(registry->FindHostByUrlForTesting(kPrerenderingUrl));
-}
-
 // Tests that SpeculationHostImpl will skip a cross-origin candidate even if it
 // is the first prerender candidate in the candidate list.
-// TODO(crbug.com/1197133): After supporting selection by scores, test this case
-// by assigning the cross-origin candidate the highest score.
 TEST_F(SpeculationHostImplTest, ProcessFirstSameOriginPrerenderCandidate) {
   RenderFrameHostImpl* render_frame_host = GetRenderFrameHost();
   PrerenderHostRegistry* registry = GetPrerenderHostRegistry();
@@ -164,36 +135,6 @@ TEST_F(SpeculationHostImplTest, ProcessFirstSameOriginPrerenderCandidate) {
   // candidate, so SpeculationHostImpl should prerender this candidate.
   EXPECT_TRUE(
       registry->FindHostByUrlForTesting(kSecondPrerenderingUrlSameOrigin));
-}
-
-// Tests that SpeculationHostImpl will ignore prerender candidates if it has
-// started prerendering.
-// TODO(crbug.com/1197133): Cancel the started prerender and start a new
-// one if the score of the new candidate is higher than the started one's.
-TEST_F(SpeculationHostImplTest, PrerenderOnlyOnce) {
-  RenderFrameHostImpl* render_frame_host = GetRenderFrameHost();
-  PrerenderHostRegistry* registry = GetPrerenderHostRegistry();
-  mojo::Remote<blink::mojom::SpeculationHost> remote;
-  SpeculationHostImpl::Bind(render_frame_host,
-                            remote.BindNewPipeAndPassReceiver());
-
-  const auto update_prerender_candidate = [&](const GURL& url) {
-    std::vector<blink::mojom::SpeculationCandidatePtr> candidates;
-    candidates.push_back(CreatePrerenderCandidate(url));
-    remote->UpdateSpeculationCandidates(std::move(candidates));
-    remote.FlushForTesting();
-  };
-
-  const GURL kFirstPrerenderingUrl = GetSameOriginUrl("/empty.html?1");
-  update_prerender_candidate(kFirstPrerenderingUrl);
-  EXPECT_TRUE(registry->FindHostByUrlForTesting(kFirstPrerenderingUrl));
-
-  // If there is a started prerender, new prerender candidates should be
-  // ignored.
-  const GURL kSecondPrerenderingUrl = GetSameOriginUrl("/empty.html?2");
-  update_prerender_candidate(kSecondPrerenderingUrl);
-  EXPECT_FALSE(registry->FindHostByUrlForTesting(kSecondPrerenderingUrl));
-  EXPECT_TRUE(registry->FindHostByUrlForTesting(kFirstPrerenderingUrl));
 }
 
 // Tests that SpeculationHostImpl crash the renderer process if it receives

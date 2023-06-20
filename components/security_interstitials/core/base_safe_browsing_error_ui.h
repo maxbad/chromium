@@ -5,7 +5,6 @@
 #ifndef COMPONENTS_SECURITY_INTERSTITIALS_CORE_BASE_SAFE_BROWSING_ERROR_UI_H_
 #define COMPONENTS_SECURITY_INTERSTITIALS_CORE_BASE_SAFE_BROWSING_ERROR_UI_H_
 
-#include "base/macros.h"
 #include "base/time/time.h"
 #include "base/values.h"
 #include "components/security_interstitials/core/controller_client.h"
@@ -93,6 +92,10 @@ class BaseSafeBrowsingErrorUI {
       const std::string& app_locale,
       const base::Time& time_triggered,
       ControllerClient* controller);
+
+  BaseSafeBrowsingErrorUI(const BaseSafeBrowsingErrorUI&) = delete;
+  BaseSafeBrowsingErrorUI& operator=(const BaseSafeBrowsingErrorUI&) = delete;
+
   virtual ~BaseSafeBrowsingErrorUI();
 
   bool is_main_frame_load_blocked() const {
@@ -184,8 +187,7 @@ class BaseSafeBrowsingErrorUI {
   GURL request_url() const { return request_url_; }
   GURL main_frame_url() const { return main_frame_url_; }
 
-  virtual void PopulateStringsForHtml(
-      base::DictionaryValue* load_time_data) = 0;
+  virtual void PopulateStringsForHtml(base::Value* load_time_data) = 0;
   virtual void HandleCommand(SecurityInterstitialCommand command) = 0;
 
   virtual int GetHTMLTemplateId() const = 0;
@@ -199,8 +201,6 @@ class BaseSafeBrowsingErrorUI {
   const base::Time time_triggered_;
 
   ControllerClient* controller_;
-
-  DISALLOW_COPY_AND_ASSIGN(BaseSafeBrowsingErrorUI);
 };
 
 }  // security_interstitials

@@ -26,6 +26,7 @@
 #include "content/public/browser/browser_thread.h"
 #include "third_party/blink/public/common/service_worker/service_worker_status_code.h"
 #include "third_party/blink/public/common/storage_key/storage_key.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker_registration_options.mojom.h"
 #include "url/gurl.h"
 
 namespace content {
@@ -80,8 +81,9 @@ BackgroundFetchTestBase::BackgroundFetchTestBase()
     : task_environment_(BrowserTaskEnvironment::IO_MAINLOOP),
       delegate_(browser_context_.GetBackgroundFetchDelegate()),
       embedded_worker_test_helper_(base::FilePath()),
-      origin_(url::Origin::Create(GURL(kTestOrigin))),
-      storage_partition_(browser_context()->GetDefaultStoragePartition()) {}
+      storage_key_(blink::StorageKey(url::Origin::Create(GURL(kTestOrigin)))),
+      storage_partition_factory_(static_cast<StoragePartitionImpl*>(
+          browser_context()->GetDefaultStoragePartition())) {}
 
 BackgroundFetchTestBase::~BackgroundFetchTestBase() {
   DCHECK(set_up_called_);
@@ -98,7 +100,7 @@ void BackgroundFetchTestBase::TearDown() {
 }
 
 int64_t BackgroundFetchTestBase::RegisterServiceWorker() {
-  return RegisterServiceWorkerForOrigin(origin_);
+  return RegisterServiceWorkerForOrigin(storage_key_.origin());
 }
 
 int64_t BackgroundFetchTestBase::RegisterServiceWorkerForOrigin(
@@ -118,7 +120,7 @@ int64_t BackgroundFetchTestBase::RegisterServiceWorkerForOrigin(
         blink::mojom::FetchClientSettingsObject::New(),
         base::BindOnce(&DidRegisterServiceWorker,
                        &service_worker_registration_id, run_loop.QuitClosure()),
-        /*requesting_frame_id=*/GlobalFrameRoutingId());
+        /*requesting_frame_id=*/GlobalRenderFrameHostId());
 
     run_loop.Run();
   }
@@ -198,10 +200,8 @@ BackgroundFetchTestBase::CreateBackgroundFetchRegistrationData(
 }
 
 scoped_refptr<DevToolsBackgroundServicesContextImpl>
-BackgroundFetchTestBase::devtools_context() const {
-  DCHECK(storage_partition_);
-  return static_cast<StoragePartitionImpl*>(storage_partition_)
-      ->GetDevToolsBackgroundServicesContext();
+BackgroundFetchTestBase::devtools_context() {
+  return storage_partition()->GetDevToolsBackgroundServicesContext();
 }
 
 }  // namespace content

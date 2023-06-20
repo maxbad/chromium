@@ -12,6 +12,7 @@
 
 #include "base/callback.h"
 #include "base/threading/thread_checker.h"
+#include "media/base/media_export.h"
 
 namespace media {
 
@@ -23,7 +24,7 @@ class VmoBuffer;
 //  set and shared tokens are passed to other participants.
 //  2. Provides AcquireBuffers() that allows to acquire buffers and handle
 //  possible errors.
-class SysmemCollectionClient {
+class MEDIA_EXPORT SysmemCollectionClient {
  public:
   static constexpr uint32_t kDefaultNamePriority = 100;
 
@@ -81,7 +82,7 @@ class SysmemCollectionClient {
 };
 
 // Helper fuchsia.sysmem.Allocator .
-class SysmemAllocatorClient {
+class MEDIA_EXPORT SysmemAllocatorClient {
  public:
   explicit SysmemAllocatorClient(base::StringPiece client_name);
   ~SysmemAllocatorClient();
@@ -97,10 +98,6 @@ class SysmemAllocatorClient {
   // Binds the specified token to a SysmemCollectionClient.
   std::unique_ptr<SysmemCollectionClient> BindSharedCollection(
       fuchsia::sysmem::BufferCollectionTokenPtr token);
-
-  // TODO(crbug.com/1131183): Update FuchsiaVideoDecoder to use
-  // SysmemCollectionClient and remove this function.
-  fuchsia::sysmem::Allocator* raw() { return allocator_.get(); }
 
  private:
   friend SysmemCollectionClient;

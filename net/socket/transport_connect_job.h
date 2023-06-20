@@ -22,6 +22,8 @@
 #include "net/socket/connect_job.h"
 #include "net/socket/connection_attempts.h"
 #include "net/socket/socket_tag.h"
+#include "third_party/abseil-cpp/absl/types/variant.h"
+#include "url/scheme_host_port.h"
 
 namespace net {
 
@@ -31,17 +33,25 @@ class SocketTag;
 class NET_EXPORT_PRIVATE TransportSocketParams
     : public base::RefCounted<TransportSocketParams> {
  public:
+  // Representation of the destination endpoint of the transport
+  // socket/connection. Unlike ConnectJobFactory::Endpoint, this does not have a
+  // `using_ssl` field for schemeless endpoints because that has no meaning for
+  // transport parameters.
+  using Endpoint = absl::variant<url::SchemeHostPort, HostPortPair>;
+
   // |host_resolution_callback| will be invoked after the the hostname is
   // resolved. |network_isolation_key| is passed to the HostResolver to prevent
   // cross-NIK leaks. If |host_resolution_callback| does not return OK, then the
   // connection will be aborted with that value.
-  TransportSocketParams(
-      const HostPortPair& host_port_pair,
-      const NetworkIsolationKey& network_isolation_key,
-      SecureDnsPolicy secure_dns_policy,
-      const OnHostResolutionCallback& host_resolution_callback);
+  TransportSocketParams(Endpoint destination,
+                        NetworkIsolationKey network_isolation_key,
+                        SecureDnsPolicy secure_dns_policy,
+                        OnHostResolutionCallback host_resolution_callback);
 
-  const HostPortPair& destination() const { return destination_; }
+  TransportSocketParams(const TransportSocketParams&) = delete;
+  TransportSocketParams& operator=(const TransportSocketParams&) = delete;
+
+  const Endpoint& destination() const { return destination_; }
   const NetworkIsolationKey& network_isolation_key() const {
     return network_isolation_key_;
   }
@@ -54,12 +64,10 @@ class NET_EXPORT_PRIVATE TransportSocketParams
   friend class base::RefCounted<TransportSocketParams>;
   ~TransportSocketParams();
 
-  const HostPortPair destination_;
+  const Endpoint destination_;
   const NetworkIsolationKey network_isolation_key_;
   const SecureDnsPolicy secure_dns_policy_;
   const OnHostResolutionCallback host_resolution_callback_;
-
-  DISALLOW_COPY_AND_ASSIGN(TransportSocketParams);
 };
 
 // TransportConnectJob handles the host resolution necessary for socket creation
@@ -79,6 +87,20 @@ class NET_EXPORT_PRIVATE TransportConnectJob : public ConnectJob {
     RACE_IPV4_SOLO,
     RACE_IPV6_WINS,
     RACE_IPV6_SOLO,
+  };
+
+  class NET_EXPORT_PRIVATE Factory {
+   public:
+    Factory() = default;
+    virtual ~Factory() = default;
+
+    virtual std::unique_ptr<TransportConnectJob> Create(
+        RequestPriority priority,
+        const SocketTag& socket_tag,
+        const CommonConnectJobParams* common_connect_job_params,
+        const scoped_refptr<TransportSocketParams>& params,
+        Delegate* delegate,
+        const NetLogWithSource* net_log);
   };
 
   // TransportConnectJobs will time out after this many seconds.  Note this is
@@ -108,6 +130,10 @@ class NET_EXPORT_PRIVATE TransportConnectJob : public ConnectJob {
                       const scoped_refptr<TransportSocketParams>& params,
                       Delegate* delegate,
                       const NetLogWithSource* net_log);
+
+  TransportConnectJob(const TransportConnectJob&) = delete;
+  TransportConnectJob& operator=(const TransportConnectJob&) = delete;
+
   ~TransportConnectJob() override;
 
   // ConnectJob methods.
@@ -184,8 +210,6 @@ class NET_EXPORT_PRIVATE TransportConnectJob : public ConnectJob {
   ConnectionAttempts fallback_connection_attempts_;
 
   base::WeakPtrFactory<TransportConnectJob> weak_ptr_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(TransportConnectJob);
 };
 
 }  // namespace net

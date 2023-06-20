@@ -13,8 +13,7 @@
 #include "base/memory/weak_ptr.h"
 #include "build/build_config.h"
 #include "chrome/browser/ui/browser_list_observer.h"
-#include "chrome/browser/web_applications/components/web_app_ui_manager.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
+#include "chrome/browser/web_applications/web_app_ui_manager.h"
 
 class Profile;
 class Browser;
@@ -29,14 +28,14 @@ class WebAppDialogManager;
 // this class serves a wide range of Web Applications <-> Browser purposes.
 class WebAppUiManagerImpl : public BrowserListObserver, public WebAppUiManager {
  public:
-  static WebAppUiManagerImpl* Get(Profile* profile);
+  static WebAppUiManagerImpl* Get(WebAppProvider* provider);
 
   explicit WebAppUiManagerImpl(Profile* profile);
   WebAppUiManagerImpl(const WebAppUiManagerImpl&) = delete;
   WebAppUiManagerImpl& operator=(const WebAppUiManagerImpl&) = delete;
   ~WebAppUiManagerImpl() override;
 
-  void SetSubsystems(AppRegistryController* app_registry_controller,
+  void SetSubsystems(WebAppSyncBridge* sync_bridge,
                      OsIntegrationManager* os_integration_manager) override;
   void Start() override;
   void Shutdown() override;
@@ -64,6 +63,16 @@ class WebAppUiManagerImpl : public BrowserListObserver, public WebAppUiManager {
                               bool shortcut_created) override;
   content::WebContents* NavigateExistingWindow(const AppId& app_id,
                                                const GURL& url) override;
+  void ShowWebAppIdentityUpdateDialog(
+      const std::string& app_id,
+      bool title_change,
+      bool icon_change,
+      const std::u16string& old_title,
+      const std::u16string& new_title,
+      const SkBitmap& old_icon,
+      const SkBitmap& new_icon,
+      content::WebContents* web_contents,
+      web_app::AppIdentityDialogCallback callback) override;
 
   // BrowserListObserver:
   void OnBrowserAdded(Browser* browser) override;
@@ -93,12 +102,14 @@ class WebAppUiManagerImpl : public BrowserListObserver, public WebAppUiManager {
   void OnShortcutLocationGathered(const AppId& from_app,
                                   const AppId& app_id,
                                   ShortcutLocations locations);
+  void InstallOsHooksForReplacementApp(const AppId& app_id,
+                                       ShortcutLocations locations);
 
   std::unique_ptr<WebAppDialogManager> dialog_manager_;
 
   Profile* const profile_;
 
-  AppRegistryController* app_registry_controller_ = nullptr;
+  WebAppSyncBridge* sync_bridge_ = nullptr;
   OsIntegrationManager* os_integration_manager_ = nullptr;
 
   std::map<AppId, std::vector<base::OnceClosure>> windows_closed_requests_map_;

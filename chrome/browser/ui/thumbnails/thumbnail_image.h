@@ -13,7 +13,6 @@
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
-#include "base/observer_list.h"
 #include "base/sequence_checker.h"
 #include "base/token.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
@@ -120,6 +119,9 @@ class ThumbnailImage : public base::RefCounted<ThumbnailImage> {
 
   explicit ThumbnailImage(Delegate* delegate);
 
+  ThumbnailImage(const ThumbnailImage&) = delete;
+  ThumbnailImage& operator=(const ThumbnailImage&) = delete;
+
   bool has_data() const { return data_.get(); }
 
   // Gets the capture readiness of the backing tab.
@@ -218,8 +220,6 @@ class ThumbnailImage : public base::RefCounted<ThumbnailImage> {
   SEQUENCE_CHECKER(sequence_checker_);
 
   base::WeakPtrFactory<ThumbnailImage> weak_ptr_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(ThumbnailImage);
 };
 
 #endif  // CHROME_BROWSER_UI_THUMBNAILS_THUMBNAIL_IMAGE_H_

@@ -8,9 +8,9 @@
 
 #include "base/auto_reset.h"
 #include "base/test/scoped_feature_list.h"
+#include "base/unguessable_token.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/common/features.h"
-#include "third_party/blink/public/mojom/frame/frame_owner_element_type.mojom-blink.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/web_string.h"
 #include "third_party/blink/public/platform/web_url_loader_client.h"
@@ -24,6 +24,7 @@
 #include "third_party/blink/renderer/core/testing/sim/sim_request.h"
 #include "third_party/blink/renderer/core/testing/sim/sim_test.h"
 #include "third_party/blink/renderer/platform/loader/static_data_navigation_body_loader.h"
+#include "third_party/blink/renderer/platform/storage/blink_storage_key.h"
 #include "third_party/blink/renderer/platform/testing/histogram_tester.h"
 #include "third_party/blink/renderer/platform/testing/unit_test_helpers.h"
 #include "third_party/blink/renderer/platform/testing/url_test_helpers.h"
@@ -431,6 +432,26 @@ TEST_F(DocumentLoaderTest,
   EXPECT_FALSE(local_frame->GetDocument()->DeferredCompositorCommitIsAllowed());
 }
 
+TEST_F(DocumentLoaderTest, NavigationToAboutBlank) {
+  const KURL& requestor_url =
+      KURL(NullURL(), "https://subdomain.example.com/foo.html");
+  WebViewImpl* web_view_impl =
+      web_view_helper_.InitializeAndLoad("https://example.com/foo.html");
+
+  const KURL& about_blank_url = KURL(NullURL(), "about:blank");
+  std::unique_ptr<WebNavigationParams> params =
+      std::make_unique<WebNavigationParams>();
+  params->url = about_blank_url;
+  params->sandbox_flags = network::mojom::WebSandboxFlags::kNone;
+  params->requestor_origin = WebSecurityOrigin::Create(WebURL(requestor_url));
+  LocalFrame* local_frame =
+      To<LocalFrame>(web_view_impl->GetPage()->MainFrame());
+  local_frame->Loader().CommitNavigation(std::move(params), nullptr);
+
+  EXPECT_EQ(BlinkStorageKey(SecurityOrigin::Create(requestor_url)),
+            local_frame->DomWindow()->GetStorageKey());
+}
+
 TEST_F(DocumentLoaderTest, SameOriginNavigation) {
   const KURL& requestor_url =
       KURL(NullURL(), "https://www.example.com/foo.html");
@@ -447,6 +468,8 @@ TEST_F(DocumentLoaderTest, SameOriginNavigation) {
       To<LocalFrame>(web_view_impl->GetPage()->MainFrame());
   local_frame->Loader().CommitNavigation(std::move(params), nullptr);
 
+  EXPECT_EQ(BlinkStorageKey(SecurityOrigin::Create(same_origin_url)),
+            local_frame->DomWindow()->GetStorageKey());
   EXPECT_TRUE(local_frame->Loader()
                   .GetDocumentLoader()
                   ->LastNavigationHadTrustedInitiator());
@@ -468,9 +491,58 @@ TEST_F(DocumentLoaderTest, CrossOriginNavigation) {
       To<LocalFrame>(web_view_impl->GetPage()->MainFrame());
   local_frame->Loader().CommitNavigation(std::move(params), nullptr);
 
+  EXPECT_EQ(BlinkStorageKey(SecurityOrigin::Create(other_origin_url)),
+            local_frame->DomWindow()->GetStorageKey());
   EXPECT_FALSE(local_frame->Loader()
                    .GetDocumentLoader()
                    ->LastNavigationHadTrustedInitiator());
+}
+
+TEST_F(DocumentLoaderTest, StorageKeyFromNavigationParams) {
+  const KURL& requestor_url =
+      KURL(NullURL(), "https://www.example.com/foo.html");
+  WebViewImpl* web_view_impl =
+      web_view_helper_.InitializeAndLoad("https://example.com/foo.html");
+
+  const KURL& other_origin_url =
+      KURL(NullURL(), "https://www.another.com/bar.html");
+  std::unique_ptr<WebNavigationParams> params =
+      WebNavigationParams::CreateWithHTMLBufferForTesting(
+          SharedBuffer::Create(), other_origin_url);
+  params->requestor_origin = WebSecurityOrigin::Create(WebURL(requestor_url));
+
+  blink::StorageKey storage_key_to_commit = blink::StorageKey::CreateWithNonce(
+      url::Origin(), base::UnguessableToken::Create());
+  params->storage_key = storage_key_to_commit;
+
+  LocalFrame* local_frame =
+      To<LocalFrame>(web_view_impl->GetPage()->MainFrame());
+  local_frame->Loader().CommitNavigation(std::move(params), nullptr);
+
+  EXPECT_EQ(
+      BlinkStorageKey::CreateWithNonce(SecurityOrigin::Create(other_origin_url),
+                                       storage_key_to_commit.nonce().value()),
+      local_frame->DomWindow()->GetStorageKey());
+}
+
+// Tests that committing a Javascript URL keeps the storage key's nonce of the
+// previous document, ensuring that
+// `DocumentLoader::CreateWebNavigationParamsToCloneDocument` works correctly
+// w.r.t. storage key.
+TEST_F(DocumentLoaderTest, JavascriptURLKeepsStorageKeyNonce) {
+  WebViewImpl* web_view_impl = web_view_helper_.Initialize();
+
+  BlinkStorageKey storage_key = BlinkStorageKey::CreateWithNonce(
+      SecurityOrigin::CreateUniqueOpaque(), base::UnguessableToken::Create());
+
+  LocalFrame* frame = To<LocalFrame>(web_view_impl->GetPage()->MainFrame());
+  frame->DomWindow()->SetStorageKey(storage_key);
+
+  frame->LoadJavaScriptURL(
+      url_test_helpers::ToKURL("javascript:'<p>hello world</p>'"));
+
+  EXPECT_EQ(storage_key.GetNonce(),
+            frame->DomWindow()->GetStorageKey().GetNonce());
 }
 
 TEST_F(DocumentLoaderTest, PublicSecureNotCounted) {

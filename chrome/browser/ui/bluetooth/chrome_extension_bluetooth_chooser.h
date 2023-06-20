@@ -7,14 +7,16 @@
 
 #include <memory>
 
-#include "base/macros.h"
 #include "content/public/browser/bluetooth_chooser.h"
 
-class BluetoothChooserController;
 class ChromeExtensionChooserDialog;
 
 namespace content {
 class RenderFrameHost;
+}
+
+namespace permissions {
+class BluetoothChooserController;
 }
 
 // Represents a Bluetooth chooser to ask the user to select a Bluetooth
@@ -24,6 +26,12 @@ class ChromeExtensionBluetoothChooser : public content::BluetoothChooser {
   ChromeExtensionBluetoothChooser(
       content::RenderFrameHost* frame,
       const content::BluetoothChooser::EventHandler& event_handler);
+
+  ChromeExtensionBluetoothChooser(const ChromeExtensionBluetoothChooser&) =
+      delete;
+  ChromeExtensionBluetoothChooser& operator=(
+      const ChromeExtensionBluetoothChooser&) = delete;
+
   ~ChromeExtensionBluetoothChooser() override;
 
   // content::BluetoothChooser:
@@ -38,10 +46,8 @@ class ChromeExtensionBluetoothChooser : public content::BluetoothChooser {
 
  private:
   // Weak. DeviceChooserContentView[Cocoa] owns it.
-  BluetoothChooserController* bluetooth_chooser_controller_;
+  permissions::BluetoothChooserController* bluetooth_chooser_controller_;
   std::unique_ptr<ChromeExtensionChooserDialog> chooser_dialog_;
-
-  DISALLOW_COPY_AND_ASSIGN(ChromeExtensionBluetoothChooser);
 };
 
 #endif  // CHROME_BROWSER_UI_BLUETOOTH_CHROME_EXTENSION_BLUETOOTH_CHOOSER_H_

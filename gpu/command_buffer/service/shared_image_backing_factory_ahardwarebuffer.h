@@ -29,6 +29,11 @@ class GPU_GLES2_EXPORT SharedImageBackingFactoryAHB
  public:
   SharedImageBackingFactoryAHB(const GpuDriverBugWorkarounds& workarounds,
                                const GpuFeatureInfo& gpu_feature_info);
+
+  SharedImageBackingFactoryAHB(const SharedImageBackingFactoryAHB&) = delete;
+  SharedImageBackingFactoryAHB& operator=(const SharedImageBackingFactoryAHB&) =
+      delete;
+
   ~SharedImageBackingFactoryAHB() override;
 
   // SharedImageBackingFactory implementation.
@@ -68,7 +73,8 @@ class GPU_GLES2_EXPORT SharedImageBackingFactoryAHB
                    bool thread_safe,
                    gfx::GpuMemoryBufferType gmb_type,
                    GrContextType gr_context_type,
-                   bool* allow_legacy_mailbox) override;
+                   bool* allow_legacy_mailbox,
+                   bool is_pixel_used) override;
   bool IsFormatSupported(viz::ResourceFormat format);
 
  private:
@@ -110,8 +116,6 @@ class GPU_GLES2_EXPORT SharedImageBackingFactoryAHB
 
   // Used to limit the max size of AHardwareBuffer.
   int32_t max_gl_texture_size_ = 0;
-
-  DISALLOW_COPY_AND_ASSIGN(SharedImageBackingFactoryAHB);
 };
 
 }  // namespace gpu

@@ -16,7 +16,6 @@
 #include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
-#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/process/kill.h"
 #include "base/time/time.h"
@@ -56,6 +55,7 @@ namespace content {
 
 class AgentSchedulingGroupHost;
 class RenderProcessHost;
+class SiteInfo;
 class TimeoutMonitor;
 
 // A callback which will be called immediately before EnterBackForwardCache
@@ -97,6 +97,8 @@ class CONTENT_EXPORT RenderViewHostImpl
       public IPC::Listener,
       public base::RefCounted<RenderViewHostImpl> {
  public:
+  static constexpr int kUnloadTimeoutInMSec = 500;
+
   // Convenience function, just like RenderViewHost::FromID.
   static RenderViewHostImpl* FromID(int process_id, int routing_id);
 
@@ -122,16 +124,14 @@ class CONTENT_EXPORT RenderViewHostImpl
                      bool swapped_out,
                      bool has_initialized_audio_host);
 
+  RenderViewHostImpl(const RenderViewHostImpl&) = delete;
+  RenderViewHostImpl& operator=(const RenderViewHostImpl&) = delete;
+
   // RenderViewHost implementation.
   RenderWidgetHostImpl* GetWidget() override;
   RenderProcessHost* GetProcess() override;
   int GetRoutingID() override;
-  RenderFrameHost* GetMainFrame() override;
   void EnablePreferredSizeMode() override;
-  void ExecutePluginActionAtLocation(
-      const gfx::Point& location,
-      blink::mojom::PluginActionType action) override;
-  RenderViewHostDelegate* GetDelegate() override;
   bool IsRenderViewLive() override;
   void WriteIntoTrace(perfetto::TracedValue context) override;
 
@@ -150,14 +150,18 @@ class CONTENT_EXPORT RenderViewHostImpl
   // TestRenderViewHost.
   // |opener_route_id| parameter indicates which RenderView created this
   //   (MSG_ROUTING_NONE if none).
-  // |window_was_created_with_opener| is true if this top-level frame was
-  //   created with an opener. (The opener may have been closed since.)
+  // |window_was_opened_by_another_window| is true if this top-level frame was
+  // created by another window, as opposed to independently created (through
+  // the browser UI, etc). This is true even when the window is opened with
+  // "noopener", and even if the opener has been closed since.
   // |proxy_route_id| is only used when creating a RenderView in an inactive
   //   state.
   virtual bool CreateRenderView(
       const absl::optional<blink::FrameToken>& opener_frame_token,
       int proxy_route_id,
-      bool window_was_created_with_opener);
+      bool window_was_opened_by_another_window);
+
+  RenderViewHostDelegate* GetDelegate();
 
   // Tracks whether this RenderViewHost is in an active state (rather than
   // pending unload or unloaded), according to its main frame
@@ -173,6 +177,12 @@ class CONTENT_EXPORT RenderViewHostImpl
   // which point IsRenderViewLive() becomes true, and the mojo connections to
   // the renderer process for this view now exist.
   void RenderViewCreated(RenderFrameHostImpl* local_main_frame);
+
+  // Returns the main RenderFrameHostImpl associated with this RenderViewHost or
+  // null if it doesn't exist. It's null if the main frame is represented in
+  // this RenderViewHost by RenderFrameProxyHost (from Blink perspective,
+  // blink::Page's main blink::Frame is remote).
+  RenderFrameHostImpl* GetMainRenderFrameHost();
 
   // Returns the `AgentSchedulingGroupHost` this view is associated with (via
   // the widget).
@@ -233,10 +243,16 @@ class CONTENT_EXPORT RenderViewHostImpl
   // length) and the timestamp corresponding to the start of the back-forward
   // cached navigation, which would be communicated to the page to allow it to
   // record the latency of this navigation.
+  // TODO(https://crbug.com/1234634): Remove
+  // restoring_main_frame_from_back_forward_cache.
   void LeaveBackForwardCache(
-      blink::mojom::PageRestoreParamsPtr page_restore_params);
+      blink::mojom::PageRestoreParamsPtr page_restore_params,
+      bool restoring_main_frame_from_back_forward_cache);
 
   bool is_in_back_forward_cache() const { return is_in_back_forward_cache_; }
+
+  void ActivatePrerenderedPage(base::TimeTicks activation_start,
+                               base::OnceClosure callback);
 
   void SetFrameTreeVisibility(blink::mojom::PageVisibilityState visibility);
 
@@ -252,39 +268,6 @@ class CONTENT_EXPORT RenderViewHostImpl
   // Called during frame eviction to return all SurfaceIds in the frame tree.
   // Marks all views in the frame tree as evicted.
   std::vector<viz::SurfaceId> CollectSurfaceIdsForEviction();
-
-  // Resets any per page state. This should be called when a main frame
-  // associated with this RVH commits a navigation to a new document. Note that
-  // this means it should NOT be called for same document navigations or when
-  // restoring a page from the back-forward cache.
-  void ResetPerPageState();
-
-  bool did_first_visually_non_empty_paint() const {
-    return did_first_visually_non_empty_paint_;
-  }
-
-  void OnThemeColorChanged(RenderFrameHostImpl* rfh,
-                           const absl::optional<SkColor>& theme_color);
-
-  void DidChangeBackgroundColor(RenderFrameHostImpl* rfh,
-                                const SkColor& background_color,
-                                bool color_adjust);
-
-  absl::optional<SkColor> theme_color() const {
-    return main_frame_theme_color_;
-  }
-
-  absl::optional<SkColor> background_color() const {
-    return main_frame_background_color_;
-  }
-
-  void SetContentsMimeType(std::string mime_type);
-  const std::string& contents_mime_type() { return contents_mime_type_; }
-
-  // Notifies that / returns whether main document's onload() handler was
-  // completed.
-  void DocumentOnLoadCompletedInMainFrame();
-  bool IsDocumentOnLoadCompletedInMainFrame();
 
   // Manual RTTI to ensure safe downcasts in tests.
   virtual bool IsTestRenderViewHost() const;
@@ -321,17 +304,20 @@ class CONTENT_EXPORT RenderViewHostImpl
   FrameTree* frame_tree() const { return frame_tree_; }
   void SetFrameTree(FrameTree& frame_tree);
 
+  // Write a representation of this object into a trace.
+  void WriteIntoTrace(
+      perfetto::TracedProto<perfetto::protos::pbzero::RenderViewHost> proto);
+
   // NOTE: Do not add functions that just send an IPC message that are called in
   // one or two places. Have the caller send the IPC message directly (unless
   // the caller places are in different platforms, in which case it's better
   // to keep them consistent).
 
  protected:
-  friend class RefCounted<RenderViewHostImpl>;
+  friend class base::RefCounted<RenderViewHostImpl>;
   ~RenderViewHostImpl() override;
 
   // RenderWidgetHostOwnerDelegate overrides.
-  void RenderWidgetDidFirstVisuallyNonEmptyPaint() override;
   void RenderWidgetGotFocus() override;
   void RenderWidgetLostFocus() override;
   void RenderWidgetDidForwardMouseEvent(
@@ -350,7 +336,6 @@ class CONTENT_EXPORT RenderViewHostImpl
                   const gfx::Rect& initial_rect,
                   bool user_gesture);
   void OnShowWidget(int widget_route_id, const gfx::Rect& initial_rect);
-  void OnDidContentsPreferredSizeChange(const gfx::Size& new_size);
   void OnPasteFromSelectionClipboard();
   void OnTakeFocus(bool reverse);
   void OnFocus();
@@ -381,7 +366,7 @@ class CONTENT_EXPORT RenderViewHostImpl
   // Delay to wait on closing the WebContents for a beforeunload/unload handler
   // to fire.
   static constexpr base::TimeDelta kUnloadTimeout =
-      base::TimeDelta::FromMilliseconds(500);
+      base::Milliseconds(kUnloadTimeoutInMSec);
 
   // The RenderWidgetHost.
   const std::unique_ptr<RenderWidgetHostImpl> render_widget_host_;
@@ -438,31 +423,8 @@ class CONTENT_EXPORT RenderViewHostImpl
 
   bool updating_web_preferences_ = false;
 
-  // ---------- Per page state START ------------------------------------------
-  // The following members will get reset when this RVH commits a navigation to
-  // a new document. See ResetPerPageState()
-
-  // Whether the first visually non-empty paint has occurred.
-  bool did_first_visually_non_empty_paint_ = false;
-
-  // The theme color for the underlying document as specified
-  // by theme-color meta tag.
-  absl::optional<SkColor> main_frame_theme_color_;
-
-  // The background color for the underlying document as computed by CSS.
-  absl::optional<SkColor> main_frame_background_color_;
-
-  // Contents MIME type for the main document. It can be used to check whether
-  // we can do something for special contents.
-  std::string contents_mime_type_;
-
-  // ---------- Per page state END --------------------------------------------
-
   // BackForwardCache:
   bool is_in_back_forward_cache_ = false;
-
-  // True if the current main document finished executing onload() handler.
-  bool is_document_on_load_completed_in_main_frame_ = false;
 
   WillEnterBackForwardCacheCallbackForTesting
       will_enter_back_forward_cache_callback_for_testing_;
@@ -475,8 +437,6 @@ class CONTENT_EXPORT RenderViewHostImpl
   FrameTree* frame_tree_;
 
   base::WeakPtrFactory<RenderViewHostImpl> weak_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(RenderViewHostImpl);
 };
 
 }  // namespace content

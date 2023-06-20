@@ -543,11 +543,6 @@ This dictionary appears in Java-related targets (e.g. `java_library`,
 `android_apk` and others), and contains information related to the compilation
 of Java sources, class files, and jars.
 
-* `javac['resource_packages']`
-For `java_library` targets, this is the list of package names for all resource
-dependencies for the current target. Order must match the one from
-`javac['srcjars']`. For other target types, this key does not exist.
-
 * `javac['classpath']`
 The classpath used to compile this target when annotation processors are
 present.
@@ -966,7 +961,10 @@ def main(argv):
   parser.add_option('--resources-zip', help='Path to target\'s resources zip.')
   parser.add_option('--package-name',
       help='Java package name for these resources.')
-  parser.add_option('--android-manifest', help='Path to android manifest.')
+  parser.add_option('--android-manifest',
+                    help='Path to the root android manifest.')
+  parser.add_option('--merged-android-manifest',
+                    help='Path to the merged android manifest.')
   parser.add_option('--resource-dirs', action='append', default=[],
                     help='GYP-list of resource dirs')
   parser.add_option(
@@ -1155,6 +1153,18 @@ def main(argv):
       '--module-build-configs',
       help='For bundles, the paths of all non-async module .build_configs '
       'for modules that are part of the bundle.')
+
+  parser.add_option(
+      '--add-view-trace-events',
+      action='store_true',
+      help=
+      'Specifies that trace events will be added with an additional bytecode '
+      'rewriting step.')
+  parser.add_option(
+      '--base-module-gen-dir',
+      help=
+      'Path to base module\'s target_gen_dir. Needed for bundles and modules '
+      'when --add-view-trace-events is set.')
 
   parser.add_option('--version-name', help='Version name for this APK.')
   parser.add_option('--version-code', help='Version code for this APK.')
@@ -1347,6 +1357,9 @@ def main(argv):
   if options.android_manifest:
     deps_info['android_manifest'] = options.android_manifest
 
+  if options.merged_android_manifest:
+    deps_info['merged_android_manifest'] = options.merged_android_manifest
+
   if options.bundled_srcjars:
     deps_info['bundled_srcjars'] = build_utils.ParseGnList(
         options.bundled_srcjars)
@@ -1488,10 +1501,6 @@ def main(argv):
       deps_info['res_sources_path'] = options.res_sources_path
 
   if options.requires_android and options.type == 'java_library':
-    # Used to strip out R.class for android_prebuilt()s.
-    config['javac']['resource_packages'] = [
-        c['package_name'] for c in all_resources_deps if 'package_name' in c
-    ]
     if options.package_name:
       deps_info['package_name'] = options.package_name
 
@@ -1766,7 +1775,6 @@ def main(argv):
   if is_static_library_dex_provider_target:
     # Map classpath entries to configs that include them in their classpath.
     configs_by_classpath_entry = collections.defaultdict(list)
-    static_lib_jar_paths = {}
     for config_path, dep_config in (sorted(
         static_library_dependent_configs_by_path.items())):
       # For bundles, only the jar path and jni sources of the base module
@@ -1776,7 +1784,6 @@ def main(argv):
       if dep_config['type'] == 'android_app_bundle':
         base_config = GetDepConfig(dep_config['base_module_config'])
       extra_main_r_text_files.append(base_config['r_text_path'])
-      static_lib_jar_paths[config_path] = base_config['device_jar_path']
       proguard_configs.extend(dep_config['proguard_all_configs'])
       extra_proguard_classpath_jars.extend(
           dep_config['proguard_classpath_jars'])
@@ -1964,6 +1971,20 @@ def main(argv):
   if options.type in ('android_apk', 'dist_jar', 'android_app_bundle_module',
                       'android_app_bundle'):
     deps_info['device_classpath'] = device_classpath
+    if options.add_view_trace_events:
+      trace_event_rewritten_device_classpath = []
+      for jar_path in device_classpath:
+        file_path = jar_path.replace('../', '')
+        file_path = file_path.replace('obj/', '')
+        file_path = file_path.replace('gen/', '')
+        file_path = file_path.replace('.jar', '.tracing_rewritten.jar')
+        rewritten_jar_path = os.path.join(options.base_module_gen_dir,
+                                          file_path)
+        trace_event_rewritten_device_classpath.append(rewritten_jar_path)
+
+      deps_info['trace_event_rewritten_device_classpath'] = (
+          trace_event_rewritten_device_classpath)
+
     if options.tested_apk_config:
       deps_info['device_classpath_extended'] = device_classpath_extended
 
@@ -2066,6 +2087,9 @@ def main(argv):
     RemoveObjDups(config, base, 'deps_info', 'jni', 'all_source')
     RemoveObjDups(config, base, 'final_dex', 'all_dex_files')
     RemoveObjDups(config, base, 'extra_android_manifests')
+    if options.add_view_trace_events:
+      RemoveObjDups(config, base, 'deps_info',
+                    'trace_event_rewritten_device_classpath')
 
   if is_java_target:
     jar_to_target = {}

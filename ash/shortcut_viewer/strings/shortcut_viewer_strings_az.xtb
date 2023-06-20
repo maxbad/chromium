@@ -52,7 +52,6 @@
 <translation id="2530339807289914946">Veb səhifədə aşağı sürüşdürün</translation>
 <translation id="2530896289327917474">Klaviatura ilə baxışı aktiv və ya deaktiv edin</translation>
 <translation id="2574014812750545982">Səhifənin miqyas səviyyəsini sıfırlayın</translation>
-<translation id="2596078834055697711">Pəncərənin skrinşotunu çəkin</translation>
 <translation id="2685170433750953446"><ph name="SHIFT" /><ph name="SEPARATOR1" /><ph name="ALT" /><ph name="SEPARATOR2" /><ph name="L" />, sonra <ph name="TAB" /> və ya <ph name="RIGHT" /></translation>
 <translation id="2750942583782703988">Hazırkı səhifəni yenidən yükləyin</translation>
 <translation id="2764005613199379871">Fokusu axtarış ünvan panelinə yerləşdirin</translation>
@@ -67,11 +66,11 @@
 <translation id="3020183492814296499">Qısayollar</translation>
 <translation id="3084301071537457911">Növbəti elementi rəfdə vurğulayın</translation>
 <translation id="309173601632226815">Başlatma düyməsini rəfdə vurğulayın</translation>
-<translation id="3105917916468784889">Skrinşot çəkin</translation>
 <translation id="3126026824346185272">Ctrl</translation>
 <translation id="3140353188828248647">Ünvan panelinə fokuslanın</translation>
 <translation id="3256109297135787951">Rəfdəki elementdən vurğulamanı silin</translation>
 <translation id="3288816184963444640">Hazırkı pəncərəni bağlayın</translation>
+<translation id="3350805006883559974">Yuxarıda aktiv pəncərəni hərəkət etdirin</translation>
 <translation id="3407560819924487926">Tapşırıq menecerini təkmilləşdirin</translation>
 <translation id="3417835166382867856">Tabları axtarın</translation>
 <translation id="3422679037938588196">Axtarışınız üçün əvvəlki uyğunluğa keçin</translation>
@@ -109,7 +108,6 @@
 <translation id="4556221320735744018">Klaviatura Qısayol Köməkçisinə baxın</translation>
 <translation id="4609344656788228519"><ph name="CTRL1" /><ph name="SEPARATOR1" /><ph name="BACK1" /> və ya <ph name="CTRL2" /><ph name="SEPARATOR2" /><ph name="SHIFT" /><ph name="SEPARATOR3" /><ph name="BACK2" /></translation>
 <translation id="4628718545549558538">Status sahəsini açın (hesab şəklinin göründüyü yer)</translation>
-<translation id="4642092649622328492">Natamam skrinşot çəkin</translation>
 <translation id="4698850295812410683">Fırça alətlərinə baxın</translation>
 <translation id="4801989101741319327">Növbəti sözün sonuna keçin</translation>
 <translation id="4866066940972151697">Sağda masanı aktiv edin</translation>
@@ -125,6 +123,7 @@
 <translation id="526651782186312376">Sətrin əvvəlindəki mətni seçin</translation>
 <translation id="5316716239522500219">Güzgü monitorlar</translation>
 <translation id="539072479502328326">Daxili böyüdücünü aktiv/deaktiv edin</translation>
+<translation id="5466615362193675484">Yenidən ölçüləndirməni kilidləmə rejimi üçün menyunu keçirin</translation>
 <translation id="5541719484267030947">Tabı çəkərkən <ph name="ESC" /> düyməsinə basın</translation>
 <translation id="5554139136362089836">Hazırkı səhifədə axtarın</translation>
 <translation id="5563050856984839829"><ph name="CTRL" /><ph name="SEPARATOR" /><ph name="SHIFT" /> düyməsinə basın və linkə klikləyin</translation>
@@ -148,6 +147,7 @@
 <translation id="6276708887952587684">Səhifə qaynağına baxın</translation>
 <translation id="6321940490215594447">Tarixçə səhifəsini açın</translation>
 <translation id="6340769215862220182">Ekranı Böyüdün</translation>
+<translation id="634687982629734605">Fokusu burada dəyişdirin: Status sahəsi (hesab şəklinin göründüyü yer) Başlatma, Ünvan paneli, Əlfəcin paneli, (əgər görünürsə) Endirilənlər panelini açan veb səhifə (əgər görünürsə) Fokuslana bilən dialoq göstərilirsə, fokusu oraya keçirin.</translation>
 <translation id="6359811074279051077"><ph name="MODIFIER" /><ph name="SEPARATOR" /><ph name="KEY" /></translation>
 <translation id="6395172954772765143">Sətrin sonundakı mətni seçin</translation>
 <translation id="6425378783626925378">Rəfdə 1-8 işarələrinə klikləyin</translation>
@@ -191,7 +191,6 @@
 <translation id="8026334261755873520">Brauzinq datasını təmizləyin</translation>
 <translation id="8130528849632411619">Sənədin əvvəlinə keçin</translation>
 <translation id="8147954207400281792"><ph name="CTRL" /><ph name="SEPARATOR" /><ph name="K" /> və ya <ph name="E" /></translation>
-<translation id="8232835244134740473">Fokusu burada dəyişdirin: Status ərazisi (hesab şəklinin göründüyü yer) Başlatma, Ünvan paneli, Əlfəcin paneli, (əgər görünürsə) Endirilənlər panelini açan veb səhifə (əgər görünürsə)</translation>
 <translation id="8234414138295101081">Ekranı 90 dərəcə fırladın</translation>
 <translation id="8241665785394195545">sol mötərizə</translation>
 <translation id="8264941229485248811">Developer Alətlər inspektorunu göstərin və ya gizlədin</translation>
@@ -209,6 +208,7 @@
 <translation id="8881584919399569791">Aktiv pəncərəni soldakı masaya köçürün</translation>
 <translation id="88986195241502842">Aşağı səhifə</translation>
 <translation id="8924883688469390268">Əvvəlki istifadəçiyə keçin</translation>
+<translation id="8941626538514548667">Brauzerdə veb məzmununa fokuslanın</translation>
 <translation id="8977648847395357314">Ünvan panelində kontenti seçin</translation>
 <translation id="8982190978301344584">Əlçatan IME siyahısını göstərən menyuya baxın</translation>
 <translation id="8990356943438003669"><ph name="ALT" /><ph name="SEPARATOR" /> 1 - 8</translation>

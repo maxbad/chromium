@@ -9,7 +9,6 @@
 #include <vector>
 
 #include "base/callback.h"
-#include "base/macros.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/run_loop.h"
 #include "base/strings/string_number_conversions.h"
@@ -17,6 +16,7 @@
 #include "base/test/task_environment.h"
 #include "components/optimization_guide/core/optimization_guide_features.h"
 #include "components/optimization_guide/proto/models.pb.h"
+#include "components/variations/scoped_variations_ids_provider.h"
 #include "net/base/url_util.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "services/network/public/cpp/weak_wrapper_shared_url_loader_factory.h"
@@ -42,6 +42,10 @@ class PredictionModelFetcherTest : public testing::Test {
         shared_url_loader_factory_, GURL(optimization_guide_service_url),
         network_tracker_);
   }
+
+  PredictionModelFetcherTest(const PredictionModelFetcherTest&) = delete;
+  PredictionModelFetcherTest& operator=(const PredictionModelFetcherTest&) =
+      delete;
 
   ~PredictionModelFetcherTest() override {}
 
@@ -104,14 +108,14 @@ class PredictionModelFetcherTest : public testing::Test {
 
   bool models_fetched_ = false;
   base::test::TaskEnvironment task_environment_;
+  variations::ScopedVariationsIdsProvider scoped_variations_ids_provider_{
+      variations::VariationsIdsProvider::Mode::kUseSignedInState};
 
   std::unique_ptr<PredictionModelFetcher> prediction_model_fetcher_;
 
   scoped_refptr<network::SharedURLLoaderFactory> shared_url_loader_factory_;
   network::TestURLLoaderFactory test_url_loader_factory_;
   network::TestNetworkConnectionTracker* network_tracker_;
-
-  DISALLOW_COPY_AND_ASSIGN(PredictionModelFetcherTest);
 };
 
 TEST_F(PredictionModelFetcherTest, FetchOptimizationGuideServiceModels) {
@@ -120,7 +124,7 @@ TEST_F(PredictionModelFetcherTest, FetchOptimizationGuideServiceModels) {
   model_info.set_optimization_target(
       proto::OptimizationTarget::OPTIMIZATION_TARGET_PAINFUL_PAGE_LOAD);
   EXPECT_TRUE(FetchModels({model_info}, /*active_field_trials=*/{},
-                          proto::RequestContext::CONTEXT_BATCH_UPDATE,
+                          proto::RequestContext::CONTEXT_BATCH_UPDATE_MODELS,
                           "en-US"));
   VerifyHasPendingFetchRequests();
 
@@ -137,7 +141,7 @@ TEST_F(PredictionModelFetcherTest, FetchReturned404) {
   model_info.set_optimization_target(
       proto::OptimizationTarget::OPTIMIZATION_TARGET_PAINFUL_PAGE_LOAD);
   EXPECT_TRUE(FetchModels({model_info}, /*active_field_trials=*/{},
-                          proto::RequestContext::CONTEXT_BATCH_UPDATE,
+                          proto::RequestContext::CONTEXT_BATCH_UPDATE_MODELS,
                           "en-US"));
   // Send a 404 to HintsFetcher.
   SimulateResponse(response_content, net::HTTP_NOT_FOUND);
@@ -159,7 +163,7 @@ TEST_F(PredictionModelFetcherTest, FetchReturnBadResponse) {
   model_info.set_optimization_target(
       proto::OptimizationTarget::OPTIMIZATION_TARGET_PAINFUL_PAGE_LOAD);
   EXPECT_TRUE(FetchModels({model_info}, /*active_field_trials=*/{},
-                          proto::RequestContext::CONTEXT_BATCH_UPDATE,
+                          proto::RequestContext::CONTEXT_BATCH_UPDATE_MODELS,
                           "en-US"));
   VerifyHasPendingFetchRequests();
   EXPECT_TRUE(SimulateResponse(response_content, net::HTTP_OK));
@@ -173,13 +177,13 @@ TEST_F(PredictionModelFetcherTest, FetchAttemptWhenNetworkOffline) {
   model_info.set_optimization_target(
       proto::OptimizationTarget::OPTIMIZATION_TARGET_PAINFUL_PAGE_LOAD);
   EXPECT_FALSE(FetchModels({model_info}, /*active_field_trials=*/{},
-                           proto::RequestContext::CONTEXT_BATCH_UPDATE,
+                           proto::RequestContext::CONTEXT_BATCH_UPDATE_MODELS,
                            "en-US"));
   EXPECT_FALSE(models_fetched());
 
   SetConnectionOnline();
   EXPECT_TRUE(FetchModels({model_info}, /*active_field_trials=*/{},
-                          proto::RequestContext::CONTEXT_BATCH_UPDATE,
+                          proto::RequestContext::CONTEXT_BATCH_UPDATE_MODELS,
                           "en-US"));
   VerifyHasPendingFetchRequests();
   EXPECT_TRUE(SimulateResponse(response_content, net::HTTP_OK));
@@ -191,8 +195,8 @@ TEST_F(PredictionModelFetcherTest, EmptyModelInfo) {
   std::string response_content;
   proto::FieldTrial field_trial;
   field_trial.set_name_hash(123);
-  EXPECT_FALSE(FetchModels(/*model_request_info=*/{}, {field_trial},
-                           proto::RequestContext::CONTEXT_BATCH_UPDATE,
+  EXPECT_FALSE(FetchModels(/*models_request_info=*/{}, {field_trial},
+                           proto::RequestContext::CONTEXT_BATCH_UPDATE_MODELS,
                            "en-US"));
 
   EXPECT_FALSE(models_fetched());

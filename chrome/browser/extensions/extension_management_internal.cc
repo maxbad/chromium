@@ -24,6 +24,15 @@ const char kMalformedPreferenceWarning[] =
 
 // Maximum number of characters for a 'blocked_install_message' value.
 const int kBlockedInstallMessageMaxLength = 1000;
+
+bool GetString(const base::Value& dict, const char* key, std::string* result) {
+  DCHECK(dict.is_dict());
+  const std::string* value = dict.FindStringKey(key);
+  if (!value)
+    return false;
+  *result = *value;
+  return true;
+}
 }  // namespace
 
 IndividualSettings::IndividualSettings() {
@@ -50,8 +59,8 @@ IndividualSettings::~IndividualSettings() {
 bool IndividualSettings::Parse(const base::DictionaryValue* dict,
                                ParsingScope scope) {
   std::string installation_mode_str;
-  if (dict->GetStringWithoutPathExpansion(schema_constants::kInstallationMode,
-                                          &installation_mode_str)) {
+  if (GetString(*dict, schema_constants::kInstallationMode,
+                &installation_mode_str)) {
     if (installation_mode_str == schema_constants::kAllowed) {
       installation_mode = ExtensionManagement::INSTALLATION_ALLOWED;
     } else if (installation_mode_str == schema_constants::kBlocked) {
@@ -79,8 +88,7 @@ bool IndividualSettings::Parse(const base::DictionaryValue* dict,
         return false;
       }
       std::string update_url_str;
-      if (dict->GetStringWithoutPathExpansion(schema_constants::kUpdateUrl,
-                                              &update_url_str) &&
+      if (GetString(*dict, schema_constants::kUpdateUrl, &update_url_str) &&
           GURL(update_url_str).is_valid()) {
         update_url = update_url_str;
       } else {
@@ -150,7 +158,7 @@ bool IndividualSettings::Parse(const base::DictionaryValue* dict,
     // Get the list of URLPatterns.
     if (dict->GetListWithoutPathExpansion(key,
                                           &host_list_value)) {
-      if (host_list_value->GetSize() >
+      if (host_list_value->GetList().size() >
           schema_constants::kMaxItemsURLPatternSet) {
         LOG(WARNING) << "Exceeded maximum number of URL match patterns ("
                      << schema_constants::kMaxItemsURLPatternSet
@@ -160,7 +168,7 @@ bool IndividualSettings::Parse(const base::DictionaryValue* dict,
       out_value->ClearPatterns();
       const int extension_scheme_mask =
           URLPattern::GetValidSchemeMaskForExtensions();
-      auto numItems = std::min(host_list_value->GetSize(),
+      auto numItems = std::min(host_list_value->GetList().size(),
                                schema_constants::kMaxItemsURLPatternSet);
       for (size_t i = 0; i < numItems; ++i) {
         std::string unparsed_str;
@@ -192,9 +200,8 @@ bool IndividualSettings::Parse(const base::DictionaryValue* dict,
   // Parses the minimum version settings.
   std::string minimum_version_required_str;
   if (scope == SCOPE_INDIVIDUAL &&
-      dict->GetStringWithoutPathExpansion(
-          schema_constants::kMinimumVersionRequired,
-          &minimum_version_required_str)) {
+      GetString(*dict, schema_constants::kMinimumVersionRequired,
+                &minimum_version_required_str)) {
     std::unique_ptr<base::Version> version(
         new base::Version(minimum_version_required_str));
     // We accept a general version string here. Note that count of components in
@@ -205,8 +212,8 @@ bool IndividualSettings::Parse(const base::DictionaryValue* dict,
       minimum_version_required = std::move(version);
   }
 
-  if (dict->GetStringWithoutPathExpansion(
-          schema_constants::kBlockedInstallMessage, &blocked_install_message)) {
+  if (GetString(*dict, schema_constants::kBlockedInstallMessage,
+                &blocked_install_message)) {
     if (blocked_install_message.length() > kBlockedInstallMessageMaxLength) {
       LOG(WARNING) << "Truncated blocked install message to 1000 characters";
       blocked_install_message.erase(kBlockedInstallMessageMaxLength,
@@ -215,8 +222,7 @@ bool IndividualSettings::Parse(const base::DictionaryValue* dict,
   }
 
   std::string toolbar_pin_str;
-  if (dict->GetStringWithoutPathExpansion(schema_constants::kToolbarPin,
-                                          &toolbar_pin_str)) {
+  if (GetString(*dict, schema_constants::kToolbarPin, &toolbar_pin_str)) {
     if (toolbar_pin_str == schema_constants::kDefaultUnpinned) {
       toolbar_pin = ExtensionManagement::ToolbarPinMode::kDefaultUnpinned;
     } else if (toolbar_pin_str == schema_constants::kForcePinned) {

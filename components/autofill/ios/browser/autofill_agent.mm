@@ -23,11 +23,11 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "components/autofill/core/browser/autofill_field.h"
-#include "components/autofill/core/browser/autofill_metrics.h"
 #include "components/autofill/core/browser/browser_autofill_manager.h"
 #include "components/autofill/core/browser/data_model/autofill_profile.h"
 #include "components/autofill/core/browser/data_model/credit_card.h"
 #include "components/autofill/core/browser/keyboard_accessory_metrics_logger.h"
+#include "components/autofill/core/browser/metrics/autofill_metrics.h"
 #include "components/autofill/core/browser/ui/popup_item_ids.h"
 #include "components/autofill/core/common/autofill_constants.h"
 #include "components/autofill/core/common/autofill_features.h"
@@ -72,6 +72,7 @@ using base::NumberToString;
 using base::SysNSStringToUTF8;
 using base::SysNSStringToUTF16;
 using base::SysUTF16ToNSString;
+using autofill::FormGlobalId;
 using autofill::FormRendererId;
 using autofill::FieldDataManager;
 using autofill::FieldRendererId;
@@ -237,10 +238,13 @@ void GetFormField(autofill::FormFieldData* field,
 // Notifies the autofill manager when forms are detected on a page.
 - (void)notifyBrowserAutofillManager:
             (autofill::BrowserAutofillManager*)autofillManager
-                         ofFormsSeen:(const FormDataVector&)forms {
+                         ofFormsSeen:(const FormDataVector&)updated_forms {
   DCHECK(autofillManager);
-  DCHECK(!forms.empty());
-  autofillManager->OnFormsSeen(forms);
+  DCHECK(!updated_forms.empty());
+  // TODO(crbug.com/1215337): Notify |autofillManager| about deleted fields.
+  std::vector<FormGlobalId> removed_forms;
+  autofillManager->OnFormsSeen(/*updated_forms=*/updated_forms,
+                               /*removed_forms=*/removed_forms);
 }
 
 // Notifies the autofill manager when forms are submitted.
@@ -278,7 +282,8 @@ void GetFormField(autofill::FormFieldData* field,
   // Necessary so the values can be used inside a block.
   std::u16string formNameCopy = formName;
   GURL pageURL = _webState->GetLastCommittedURL();
-  GURL frameOrigin = frame ? frame->GetSecurityOrigin() : pageURL.GetOrigin();
+  GURL frameOrigin =
+      frame ? frame->GetSecurityOrigin() : pageURL.DeprecatedGetOriginAsURL();
   autofill::AutofillJavaScriptFeature::GetInstance()->FetchForms(
       frame, requiredFieldsCount, base::BindOnce(^(NSString* formJSON) {
         std::vector<autofill::FormData> formData;
@@ -327,9 +332,9 @@ void GetFormField(autofill::FormFieldData* field,
 
   // Query the BrowserAutofillManager for suggestions. Results will arrive in
   // -showAutofillPopup:popupDelegate:.
-  autofillManager->OnQueryFormFieldAutofill(
-      ++_lastQueryID, form, field, gfx::RectF(),
-      /*autoselect_first_suggestion=*/false);
+  autofillManager->OnAskForValuesToFill(++_lastQueryID, form, field,
+                                        gfx::RectF(),
+                                        /*autoselect_first_suggestion=*/false);
 }
 
 - (void)checkIfSuggestionsAvailableForForm:
@@ -394,11 +399,10 @@ void GetFormField(autofill::FormFieldData* field,
 }
 
 - (void)updateFieldManagerForClearedIDs:(NSString*)jsonString {
-  std::vector<uint32_t> clearingResults;
+  std::vector<FieldRendererId> clearingResults;
   if (autofill::ExtractIDs(jsonString, &clearingResults)) {
     for (auto uniqueID : clearingResults) {
-      _fieldDataManager->UpdateFieldDataMap(FieldRendererId(uniqueID),
-                                            std::u16string(),
+      _fieldDataManager->UpdateFieldDataMap(uniqueID, std::u16string(),
                                             kAutofilledOnUserTrigger);
     }
   }
@@ -424,10 +428,23 @@ void GetFormField(autofill::FormFieldData* field,
                                           suggestion.identifier, std::string(),
                                           0);
     }
-  } else if (suggestion.identifier ==
-             autofill::POPUP_ITEM_ID_AUTOCOMPLETE_ENTRY) {
-    web::WebFrame* frame =
-        web::GetWebFrameWithId(_webState, SysNSStringToUTF8(frameID));
+    return;
+  }
+
+  web::WebFrame* frame =
+      web::GetWebFrameWithId(_webState, SysNSStringToUTF8(frameID));
+  if (!frame) {
+    // The frame no longer exists, so the field can not be filled.
+    if (_suggestionHandledCompletion) {
+      SuggestionHandledCompletion suggestionHandledCompletionCopy =
+          [_suggestionHandledCompletion copy];
+      _suggestionHandledCompletion = nil;
+      suggestionHandledCompletionCopy();
+    }
+    return;
+  }
+
+  if (suggestion.identifier == autofill::POPUP_ITEM_ID_AUTOCOMPLETE_ENTRY) {
     // FormSuggestion is a simple, single value that can be filled out now.
     [self fillField:SysNSStringToUTF8(fieldIdentifier)
         uniqueFieldID:uniqueFieldID
@@ -435,8 +452,6 @@ void GetFormField(autofill::FormFieldData* field,
                 value:SysNSStringToUTF16(suggestion.value)
               inFrame:frame];
   } else if (suggestion.identifier == autofill::POPUP_ITEM_ID_CLEAR_FORM) {
-    web::WebFrame* frame =
-        web::GetWebFrameWithId(_webState, SysNSStringToUTF8(frameID));
     __weak AutofillAgent* weakSelf = self;
     SuggestionHandledCompletion suggestionHandledCompletionCopy =
         [_suggestionHandledCompletion copy];
@@ -454,8 +469,6 @@ void GetFormField(autofill::FormFieldData* field,
 
   } else if (suggestion.identifier ==
              autofill::POPUP_ITEM_ID_SHOW_ACCOUNT_CARDS) {
-    web::WebFrame* frame =
-        GetWebFrameWithId(_webState, SysNSStringToUTF8(frameID));
     autofill::BrowserAutofillManager* autofillManager =
         [self autofillManagerFromWebState:_webState webFrame:frame];
     if (autofillManager) {

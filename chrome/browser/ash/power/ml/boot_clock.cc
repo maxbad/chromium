@@ -9,14 +9,13 @@
 #include "base/check_op.h"
 #include "base/time/time_override.h"
 
-namespace chromeos {
+namespace ash {
 namespace power {
 namespace ml {
 
 BootClock::BootClock()
     : mock_boot_time_(base::subtle::ScopedTimeClockOverrides::overrides_active()
-                          ? base::TimeTicks::Now() -
-                                base::TimeDelta::FromMinutes(5)
+                          ? base::TimeTicks::Now() - base::Minutes(5)
                           : base::TimeTicks()) {}
 
 BootClock::~BootClock() = default;
@@ -36,4 +35,4 @@ base::TimeDelta BootClock::GetTimeSinceBoot() const {
 
 }  // namespace ml
 }  // namespace power
-}  // namespace chromeos
+}  // namespace ash

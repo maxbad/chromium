@@ -22,7 +22,7 @@
 #include "services/data_decoder/public/cpp/test_support/in_process_data_decoder.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace chromeos {
+namespace ash {
 namespace power {
 namespace ml {
 namespace {
@@ -130,11 +130,14 @@ class SmartDimMlAgentTest : public testing::Test {
             base::test::TaskEnvironment::MainThreadType::IO,
             base::test::TaskEnvironment::ThreadPoolExecutionMode::QUEUED) {}
 
+  SmartDimMlAgentTest(const SmartDimMlAgentTest&) = delete;
+  SmartDimMlAgentTest& operator=(const SmartDimMlAgentTest&) = delete;
+
   void SetUp() override {
     MachineLearningClient::InitializeFake();
-    machine_learning::ServiceConnection::UseFakeServiceConnectionForTesting(
-        &fake_service_connection_);
-    machine_learning::ServiceConnection::GetInstance()->Initialize();
+    chromeos::machine_learning::ServiceConnection::
+        UseFakeServiceConnectionForTesting(&fake_service_connection_);
+    chromeos::machine_learning::ServiceConnection::GetInstance()->Initialize();
     fake_service_connection_.SetOutputValue(
         std::vector<int64_t>{1L}, std::vector<double>{kTestInactivityScore});
   }
@@ -142,7 +145,8 @@ class SmartDimMlAgentTest : public testing::Test {
   void TearDown() override { MachineLearningClient::Shutdown(); }
 
  protected:
-  machine_learning::FakeServiceConnectionImpl fake_service_connection_;
+  chromeos::machine_learning::FakeServiceConnectionImpl
+      fake_service_connection_;
   // DownloadWorker::InitializeFromComponent posts task to BrowserThread::UI,
   // while content::BrowserTaskEnvironment provides BrowserThread support in
   // unittest.
@@ -150,7 +154,6 @@ class SmartDimMlAgentTest : public testing::Test {
 
  private:
   data_decoder::test::InProcessDataDecoder in_process_data_decoder_;
-  DISALLOW_COPY_AND_ASSIGN(SmartDimMlAgentTest);
 };
 
 // This test covers two things:
@@ -288,4 +291,4 @@ TEST_F(SmartDimMlAgentTest, LoadModelFailure) {
 
 }  // namespace ml
 }  // namespace power
-}  // namespace chromeos
+}  // namespace ash

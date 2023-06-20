@@ -37,6 +37,9 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothDeviceAndroid final
       const base::android::JavaRef<jobject>&
           bluetooth_device_wrapper);  // Java Type: bluetoothDeviceWrapper
 
+  BluetoothDeviceAndroid(const BluetoothDeviceAndroid&) = delete;
+  BluetoothDeviceAndroid& operator=(const BluetoothDeviceAndroid&) = delete;
+
   ~BluetoothDeviceAndroid() override;
 
   // Returns the associated ChromeBluetoothDevice Java object.
@@ -69,9 +72,8 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothDeviceAndroid final
   void SetConnectionLatency(ConnectionLatency connection_latency,
                             base::OnceClosure callback,
                             ErrorCallback error_callback) override;
-  void Connect(device::BluetoothDevice::PairingDelegate* pairing_delegate,
-               base::OnceClosure callback,
-               ConnectErrorCallback error_callback) override;
+  void Connect(PairingDelegate* pairing_delegate,
+               ConnectCallback callback) override;
   void SetPinCode(const std::string& pincode) override;
   void SetPasskey(uint32_t passkey) override;
   void ConfirmPairing() override;
@@ -124,8 +126,6 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothDeviceAndroid final
   base::android::ScopedJavaGlobalRef<jobject> j_device_;
 
   bool gatt_connected_ = false;
-
-  DISALLOW_COPY_AND_ASSIGN(BluetoothDeviceAndroid);
 };
 
 }  // namespace device

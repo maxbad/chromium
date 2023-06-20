@@ -59,8 +59,15 @@ class WebrtcVideoEncoder {
     FrameStats& operator=(const FrameStats&) = default;
     virtual ~FrameStats() = default;
 
+    // TODO(crbug.com/1192865): Consolidate all the per-frame statistics
+    // into a single struct in remoting/protocol.
+    base::TimeTicks capture_started_time;
+    base::TimeTicks capture_ended_time;
     base::TimeTicks encode_started_time;
     base::TimeTicks encode_ended_time;
+    base::TimeDelta send_pending_delay{base::TimeDelta::Max()};
+    base::TimeDelta rtt_estimate{base::TimeDelta::Max()};
+    int bandwidth_estimate_kbps = -1;
   };
 
   struct EncodedFrame {
@@ -78,14 +85,6 @@ class WebrtcVideoEncoder {
     webrtc::VideoCodecType codec;
 
     std::unique_ptr<FrameStats> stats;
-
-    // These fields are needed by
-    // WebrtcDummyVideoEncoderFactory::SendEncodedFrame().
-    // TODO(crbug.com/1192865): Remove them when standard encoding pipeline is
-    // implemented.
-    base::TimeTicks capture_time;
-    base::TimeTicks encode_start;
-    base::TimeTicks encode_finish;
   };
 
   enum class EncodeResult {

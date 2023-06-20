@@ -88,12 +88,12 @@ ExtensionUninstallDialogViews::~ExtensionUninstallDialogViews() {
 void ExtensionUninstallDialogViews::Show() {
   // TODO(pbos): Consider separating dialog model from views code.
   ui::DialogModel::Builder dialog_builder;
-  dialog_builder
+  dialog_builder.SetInternalName("ExtensionUninstallDialog")
       .SetTitle(
           l10n_util::GetStringFUTF16(IDS_EXTENSION_PROMPT_UNINSTALL_TITLE,
                                      base::UTF8ToUTF16(extension()->name())))
       .OverrideShowCloseButton(false)
-      .SetWindowClosingCallback(
+      .SetDialogDestroyingCallback(
           base::BindOnce(&ExtensionUninstallDialogViews::DialogClosing,
                          weak_ptr_factory_.GetWeakPtr()))
       .SetIcon(ui::ImageModel::FromImageSkia(
@@ -142,18 +142,11 @@ void ExtensionUninstallDialogViews::Show() {
     auto bubble = std::make_unique<views::BubbleDialogModelHost>(
         std::move(dialog_model), anchor_view, views::BubbleBorder::TOP_RIGHT);
 
-      container->ShowWidgetForExtension(
-          views::BubbleDialogDelegateView::CreateBubble(std::move(bubble)),
-          extension()->id());
+    container->ShowWidgetForExtension(
+        views::BubbleDialogDelegate::CreateBubble(std::move(bubble)),
+        extension()->id());
   } else {
-    // TODO(pbos): Add unique_ptr version of CreateBrowserModalDialogViews and
-    // remove .release().
-    constrained_window::CreateBrowserModalDialogViews(
-        views::BubbleDialogModelHost::CreateModal(std::move(dialog_model),
-                                                  ui::MODAL_TYPE_WINDOW)
-            .release(),
-        parent())
-        ->Show();
+    constrained_window::ShowBrowserModal(std::move(dialog_model), parent());
   }
   chrome::RecordDialogCreation(chrome::DialogIdentifier::EXTENSION_UNINSTALL);
 }
@@ -161,7 +154,6 @@ void ExtensionUninstallDialogViews::Show() {
 void ExtensionUninstallDialogViews::Close() {
   DCHECK(dialog_model_);
   dialog_model_->host()->Close();
-  DCHECK(!dialog_model_);
 }
 
 void ExtensionUninstallDialogViews::DialogAccepted() {

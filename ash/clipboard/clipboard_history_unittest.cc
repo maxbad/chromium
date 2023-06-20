@@ -26,6 +26,7 @@
 #include "ui/base/clipboard/scoped_clipboard_writer.h"
 #include "ui/events/event_constants.h"
 #include "ui/events/test/event_generator.h"
+#include "ui/gfx/skia_util.h"
 
 namespace ash {
 
@@ -53,12 +54,6 @@ class ClipboardHistoryTest : public AshTestBase {
 
   ui::test::EventGenerator* GetEventGenerator() {
     return event_generator_.get();
-  }
-
-  // Simulates pressing and releasing `key_code`.
-  void PressAndRelease(ui::KeyboardCode key_code, int flags) {
-    event_generator_->PressKey(key_code, flags);
-    event_generator_->ReleaseKey(key_code, flags);
   }
 
   // Writes |input_strings| to the clipboard buffer and ensures that
@@ -126,7 +121,7 @@ class ClipboardHistoryTest : public AshTestBase {
     {
       ui::ScopedClipboardWriter scw(ui::ClipboardBuffer::kCopyPaste);
       scw.WritePickledData(input_data_pickle,
-                           ui::ClipboardFormatType::GetWebCustomDataType());
+                           ui::ClipboardFormatType::WebCustomDataType());
     }
     base::RunLoop().RunUntilIdle();
 
@@ -354,12 +349,12 @@ TEST_F(ClipboardHistoryTest, RecordControlV) {
 
   // Press Ctrl + V, a histogram should be emitted.
   event_generator->PressKey(ui::VKEY_CONTROL, ui::EF_NONE);
-  PressAndRelease(ui::VKEY_V, ui::EF_CONTROL_DOWN);
+  PressAndReleaseKey(ui::VKEY_V, ui::EF_CONTROL_DOWN);
 
   histogram_tester.ExpectTotalCount("Ash.ClipboardHistory.ControlToVDelay", 1u);
 
   // Press and release V again, no additional histograms should be emitted.
-  PressAndRelease(ui::VKEY_V, ui::EF_CONTROL_DOWN);
+  PressAndReleaseKey(ui::VKEY_V, ui::EF_CONTROL_DOWN);
 
   histogram_tester.ExpectTotalCount("Ash.ClipboardHistory.ControlToVDelay", 1u);
 
@@ -370,7 +365,7 @@ TEST_F(ClipboardHistoryTest, RecordControlV) {
   // Hold shift while pressing ctrl + V, no histogram should be recorded.
   event_generator->PressKey(ui::VKEY_SHIFT, ui::EF_NONE);
   event_generator->PressKey(ui::VKEY_CONTROL, ui::EF_SHIFT_DOWN);
-  PressAndRelease(ui::VKEY_V, ui::EF_CONTROL_DOWN | ui::EF_SHIFT_DOWN);
+  PressAndReleaseKey(ui::VKEY_V, ui::EF_CONTROL_DOWN | ui::EF_SHIFT_DOWN);
 
   event_generator->ReleaseKey(ui::VKEY_CONTROL, ui::EF_SHIFT_DOWN);
   event_generator->ReleaseKey(ui::VKEY_SHIFT, ui::EF_NONE);
@@ -380,8 +375,8 @@ TEST_F(ClipboardHistoryTest, RecordControlV) {
   // Press Ctrl, then press and release a random key, then press V. A histogram
   // should be recorded.
   event_generator->PressKey(ui::VKEY_CONTROL, ui::EF_NONE);
-  PressAndRelease(ui::VKEY_X, ui::EF_CONTROL_DOWN);
-  PressAndRelease(ui::VKEY_V, ui::EF_CONTROL_DOWN);
+  PressAndReleaseKey(ui::VKEY_X, ui::EF_CONTROL_DOWN);
+  PressAndReleaseKey(ui::VKEY_V, ui::EF_CONTROL_DOWN);
 
   histogram_tester.ExpectTotalCount("Ash.ClipboardHistory.ControlToVDelay", 2u);
 }

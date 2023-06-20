@@ -7,9 +7,9 @@
 
 #include <memory>
 
-#include "base/macros.h"
 #include "base/timer/elapsed_timer.h"
 #include "build/chromeos_buildflags.h"
+#include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/ui/tabs/tab_strip_model_observer.h"
 #include "components/prefs/pref_change_registrar.h"
 #include "content/public/browser/host_zoom_map.h"
@@ -78,8 +78,8 @@ enum AppMenuAction {
   MENU_ACTION_APP_INFO = 50,
   // Only used by WebAppMenuModel:
   MENU_ACTION_UNINSTALL_APP = 51,
-  MENU_ACTION_SHOW_KALEIDOSCOPE = 52,
   MENU_ACTION_CHROME_TIPS = 53,
+  MENU_ACTION_CHROME_WHATS_NEW = 54,
   LIMIT_MENU_ACTION
 };
 
@@ -90,23 +90,27 @@ void LogWrenchMenuAction(AppMenuAction action_id);
 class ZoomMenuModel : public ui::SimpleMenuModel {
  public:
   explicit ZoomMenuModel(ui::SimpleMenuModel::Delegate* delegate);
+
+  ZoomMenuModel(const ZoomMenuModel&) = delete;
+  ZoomMenuModel& operator=(const ZoomMenuModel&) = delete;
+
   ~ZoomMenuModel() override;
 
  private:
   void Build();
-
-  DISALLOW_COPY_AND_ASSIGN(ZoomMenuModel);
 };
 
 class ToolsMenuModel : public ui::SimpleMenuModel {
  public:
   ToolsMenuModel(ui::SimpleMenuModel::Delegate* delegate, Browser* browser);
+
+  ToolsMenuModel(const ToolsMenuModel&) = delete;
+  ToolsMenuModel& operator=(const ToolsMenuModel&) = delete;
+
   ~ToolsMenuModel() override;
 
  private:
   void Build(Browser* browser);
-
-  DISALLOW_COPY_AND_ASSIGN(ToolsMenuModel);
 };
 
 // A menu model that builds the contents of the app menu.
@@ -118,9 +122,15 @@ class AppMenuModel : public ui::SimpleMenuModel,
  public:
   DECLARE_CLASS_ELEMENT_IDENTIFIER_VALUE(AppMenuModel, kHistoryMenuItem);
 
-  // Range of command IDs to use for the items in the recent tabs submenu.
-  static const int kMinRecentTabsCommandId = 1001;
-  static const int kMaxRecentTabsCommandId = 1200;
+  // First command ID to use for the recent tabs menu. This is one higher than
+  // the first command id used for the bookmarks menus, as the command ids for
+  // these menus should be offset to avoid conflicts.
+  static const int kMinRecentTabsCommandId = IDC_FIRST_UNBOUNDED_MENU + 1;
+  // Number of menus within the app menu with an arbitrarily high (variable)
+  // number of menu items. For example, the number of bookmarks menu items
+  // varies depending upon the underlying model. Currently, this accounts for
+  // the bookmarks and recent tabs menus.
+  static const int kNumUnboundedMenuTypes = 2;
 
   // Creates an app menu model for the given browser. Init() must be called
   // before passing this to an AppMenu. |app_menu_icon_controller|, if provided,
@@ -129,6 +139,10 @@ class AppMenuModel : public ui::SimpleMenuModel,
   AppMenuModel(ui::AcceleratorProvider* provider,
                Browser* browser,
                AppMenuIconController* app_menu_icon_controller = nullptr);
+
+  AppMenuModel(const AppMenuModel&) = delete;
+  AppMenuModel& operator=(const AppMenuModel&) = delete;
+
   ~AppMenuModel() override;
 
   // Runs Build() and registers observers.
@@ -234,8 +248,6 @@ class AppMenuModel : public ui::SimpleMenuModel,
   base::CallbackListSubscription browser_zoom_subscription_;
 
   PrefChangeRegistrar local_state_pref_change_registrar_;
-
-  DISALLOW_COPY_AND_ASSIGN(AppMenuModel);
 };
 
 #endif  // CHROME_BROWSER_UI_TOOLBAR_APP_MENU_MODEL_H_

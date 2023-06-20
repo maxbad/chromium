@@ -101,6 +101,7 @@ class AudioWorkletThreadTestBase : public PageTestBase,
             window->GetFrame()->Loader().UserAgentMetadata(),
             nullptr /* web_worker_fetch_context */,
             Vector<network::mojom::blink::ContentSecurityPolicyPtr>(),
+            Vector<network::mojom::blink::ContentSecurityPolicyPtr>(),
             window->GetReferrerPolicy(), window->GetSecurityOrigin(),
             window->IsSecureContext(), window->GetHttpsState(),
             nullptr /* worker_clients */, nullptr /* content_settings_client */,
@@ -109,6 +110,7 @@ class AudioWorkletThreadTestBase : public PageTestBase,
             mojom::blink::V8CacheOptions::kDefault,
             MakeGarbageCollected<WorkletModuleResponsesMap>(),
             mojo::NullRemote() /* browser_interface_broker */,
+            window->GetFrame()->Loader().CreateWorkerCodeCacheHost(),
             BeginFrameProviderParams(), nullptr /* parent_permissions_policy */,
             window->GetAgentClusterID(), ukm::kInvalidSourceId,
             window->GetExecutionContextToken()),
@@ -123,7 +125,7 @@ class AudioWorkletThreadTestBase : public PageTestBase,
     ScriptState::Scope scope(script_state);
     KURL js_url("https://example.com/worklet.js");
     v8::Local<v8::Module> module = ModuleTestBase::CompileModule(
-        script_state->GetIsolate(), "var counter = 0; ++counter;", js_url);
+        script_state, "var counter = 0; ++counter;", js_url);
     EXPECT_FALSE(module.IsEmpty());
     ScriptValue exception =
         ModuleRecord::Instantiate(script_state, module, js_url);
@@ -417,10 +419,6 @@ class AudioWorkletThreadPriorityTest
     } else {
       EXPECT_EQ(actual_priority, expected_priority);
     }
-#elif defined(OS_FUCHSIA)
-    // The thread priority is no-op on Fuchsia. It's always NORMAL priority.
-    // See crbug.com/1090245.
-    EXPECT_EQ(actual_priority, base::ThreadPriority::NORMAL);
 #else
     EXPECT_EQ(actual_priority, expected_priority);
 #endif

@@ -46,9 +46,18 @@ TEST_F(CrostiniStartupStatusTest, TestNotVerbose) {
   startup_status->OnCrostiniRestarted(crostini::CrostiniResult::SUCCESS);
   startup_status->OnCrostiniConnected(crostini::CrostiniResult::SUCCESS);
 
-  ASSERT_EQ(output_.size(), 1u);
+  ASSERT_EQ(output_.size(), 4u);
+  // Hide cursor, init progress.
+  EXPECT_EQ(output_[0], "\x1b[?25l\x1b[35m[          ] ");
+
+  // CR, purple, forward 12, yellow, empty-stage.
+  EXPECT_EQ(output_[1], "\r\x1b[35m[\x1b[12C\x1b[K\x1b[33m ");
+
+  // CR, purple, progress, forward 11, erase, yellow, empty-stage.
+  EXPECT_EQ(output_[2], "\r\x1b[35m[=\x1b[11C\x1b[K\x1b[33m ");
+
   // CR, delete line, default color, show cursor.
-  EXPECT_EQ(output_[0], "\r\x1b[K\x1b[0m\x1b[?25h");
+  EXPECT_EQ(output_[3], "\r\x1b[K\x1b[0m\x1b[?25h");
 
   histogram_tester_.ExpectBucketCount("Crostini.AppLaunchResult",
                                       crostini::CrostiniResult::SUCCESS, 1);
@@ -90,6 +99,15 @@ TEST_F(CrostiniStartupStatusTest, TestVerbose) {
                                       crostini::CrostiniResult::SUCCESS, 1);
   histogram_tester_.ExpectBucketCount("Crostini.AppLaunchResult.Terminal",
                                       crostini::CrostiniResult::SUCCESS, 1);
+}
+
+TEST_F(CrostiniStartupStatusTest,
+       TestNoOutOfBoundsAccessWhenRestartBeforeStageStart) {
+  // Repro case for crbug/1214039.
+  auto* startup_status = NewStartupStatus(true);
+  startup_status->OnCrostiniRestarted(crostini::CrostiniResult::SUCCESS);
+
+  ASSERT_EQ(output_.size(), 2u);
 }
 
 }  // namespace extensions

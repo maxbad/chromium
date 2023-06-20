@@ -4,10 +4,9 @@
 
 #include "chrome/browser/renderer_context_menu/link_to_text_menu_observer.h"
 
-#include "base/macros.h"
-
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/metrics/histogram_tester.h"
+#include "build/build_config.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/extensions/extension_browsertest.h"
 #include "chrome/browser/renderer_context_menu/mock_render_view_context_menu.h"
@@ -18,6 +17,7 @@
 #include "components/shared_highlighting/core/common/shared_highlighting_features.h"
 #include "components/shared_highlighting/core/common/shared_highlighting_metrics.h"
 #include "content/public/browser/context_menu_params.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/test/browser_test.h"
 #include "net/dns/mock_host_resolver.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -68,7 +68,8 @@ class LinkToTextMenuObserverTest : public extensions::ExtensionBrowserTest,
 
   void Reset(bool incognito) {
     menu_ = std::make_unique<MockRenderViewContextMenu>(incognito);
-    observer_ = LinkToTextMenuObserver::Create(menu_.get());
+    observer_ =
+        LinkToTextMenuObserver::Create(menu_.get(), getRenderFrameHost());
     menu_->SetObserver(observer_.get());
   }
 
@@ -78,14 +79,22 @@ class LinkToTextMenuObserverTest : public extensions::ExtensionBrowserTest,
 
   bool ShouldPreemptivelyGenerateLink() { return GetParam(); }
 
+  LinkToTextMenuObserverTest(const LinkToTextMenuObserverTest&) = delete;
+  LinkToTextMenuObserverTest& operator=(const LinkToTextMenuObserverTest&) =
+      delete;
+
   ~LinkToTextMenuObserverTest() override;
   MockRenderViewContextMenu* menu() { return menu_.get(); }
   LinkToTextMenuObserver* observer() { return observer_.get(); }
 
+  content::RenderFrameHost* getRenderFrameHost() {
+    auto* web_contents = browser()->tab_strip_model()->GetActiveWebContents();
+    return web_contents->GetMainFrame();
+  }
+
  private:
   std::unique_ptr<LinkToTextMenuObserver> observer_;
   std::unique_ptr<MockRenderViewContextMenu> menu_;
-  DISALLOW_COPY_AND_ASSIGN(LinkToTextMenuObserverTest);
 };
 
 LinkToTextMenuObserverTest::LinkToTextMenuObserverTest() = default;
@@ -187,11 +196,18 @@ IN_PROC_BROWSER_TEST_P(LinkToTextMenuObserverTest, ReplacesRefInURL) {
 }
 
 // crbug.com/1139864
-IN_PROC_BROWSER_TEST_P(LinkToTextMenuObserverTest, InvalidSelectorForIframe) {
+// TODO(crbug.com/1227242): Test is flaky on Mac and Windows.
+#if defined(OS_MAC) || defined(OS_WIN)
+#define MAYBE_InvalidSelectorForIframe DISABLED_InvalidSelectorForIframe
+#else
+#define MAYBE_InvalidSelectorForIframe InvalidSelectorForIframe
+#endif
+IN_PROC_BROWSER_TEST_P(LinkToTextMenuObserverTest,
+                       MAYBE_InvalidSelectorForIframe) {
   GURL main_url(
       embedded_test_server()->GetURL("a.com", "/page_with_iframe.html"));
 
-  ui_test_utils::NavigateToURL(browser(), main_url);
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), main_url));
 
   content::WebContents* web_contents =
       browser()->tab_strip_model()->GetActiveWebContents();
@@ -223,14 +239,14 @@ IN_PROC_BROWSER_TEST_P(LinkToTextMenuObserverTest, InvalidSelectorForIframe) {
 IN_PROC_BROWSER_TEST_P(LinkToTextMenuObserverTest, HiddenForExtensions) {
   const extensions::Extension* extension =
       LoadExtension(test_data_dir_.AppendASCII("simple_with_file"));
-  ui_test_utils::NavigateToURL(browser(),
-                               extension->GetResourceURL("file.html"));
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(
+      browser(), extension->GetResourceURL("file.html")));
   content::WebContents* web_contents =
       browser()->tab_strip_model()->GetActiveWebContents();
   menu()->set_web_contents(web_contents);
 
   std::unique_ptr<LinkToTextMenuObserver> observer =
-      LinkToTextMenuObserver::Create(menu());
+      LinkToTextMenuObserver::Create(menu(), getRenderFrameHost());
   EXPECT_EQ(nullptr, observer);
 }
 

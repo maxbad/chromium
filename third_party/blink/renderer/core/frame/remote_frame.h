@@ -33,13 +33,14 @@ class FrameSinkId;
 namespace blink {
 
 class AssociatedInterfaceProvider;
+class ChildFrameCompositingHelper;
 class InterfaceRegistry;
 class LocalFrame;
-class MessageEvent;
 class RemoteFrameClient;
-struct FrameLoadRequest;
-class ChildFrameCompositingHelper;
 class WebFrameWidget;
+
+struct BlinkTransferableMessage;
+struct FrameLoadRequest;
 
 // A RemoteFrame is a frame that is possibly hosted outside this process.
 class CORE_EXPORT RemoteFrame final : public Frame,
@@ -96,10 +97,10 @@ class CORE_EXPORT RemoteFrame final : public Frame,
   void CreateView();
 
   void ForwardPostMessage(
-      MessageEvent* message_event,
-      absl::optional<base::UnguessableToken> cluster_id,
-      scoped_refptr<const SecurityOrigin> target_security_origin,
-      LocalFrame* source_frame);
+      BlinkTransferableMessage,
+      LocalFrame* source_frame,
+      scoped_refptr<const SecurityOrigin> source_security_origin,
+      scoped_refptr<const SecurityOrigin> target_security_origin);
 
   mojom::blink::RemoteFrameHost& GetRemoteFrameHostRemote();
 
@@ -126,8 +127,8 @@ class CORE_EXPORT RemoteFrame final : public Frame,
   void ResendVisualProperties();
   void SetViewportIntersection(const mojom::blink::ViewportIntersectionState&);
 
-  // Called when the local root's screen info changes.
-  void DidChangeScreenInfo(const ScreenInfo& screen_info);
+  // Called when the local root's screen infos change.
+  void DidChangeScreenInfos(const display::ScreenInfos& screen_info);
   // Called when the main frame's zoom level is changed and should be propagated
   // to the remote's associated view.
   void ZoomLevelChanged(double zoom_level);
@@ -206,7 +207,7 @@ class CORE_EXPORT RemoteFrame final : public Frame,
 
   // Called only when this frame has a local frame owner.
   IntSize GetMainFrameViewportSize() const override;
-  IntPoint GetMainFrameScrollOffset() const override;
+  gfx::Point GetMainFrameScrollOffset() const override;
 
   void SetOpener(Frame* opener) override;
 
@@ -231,6 +232,10 @@ class CORE_EXPORT RemoteFrame final : public Frame,
   viz::FrameSinkId GetFrameSinkId();
 
   void SetCcLayerForTesting(scoped_refptr<cc::Layer>, bool is_surface_layer);
+
+  // Whether a navigation should replace the current history entry or not.
+  bool NavigationShouldReplaceCurrentHistoryEntry(
+      WebFrameLoadType frame_load_type) const;
 
  private:
   // Frame protected overrides:

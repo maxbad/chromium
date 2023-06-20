@@ -15,9 +15,9 @@
 #include "base/files/file_path.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_refptr.h"
+#include "base/task/updateable_sequenced_task_runner.h"
 #include "base/time/clock.h"
 #include "base/time/time.h"
-#include "base/updateable_sequenced_task_runner.h"
 #include "chrome/browser/media/webrtc/webrtc_event_log_manager_common.h"
 #include "chrome/browser/media/webrtc/webrtc_event_log_manager_local.h"
 #include "chrome/browser/media/webrtc/webrtc_event_log_manager_remote.h"
@@ -93,6 +93,9 @@ class WebRtcEventLogManager final
   static base::FilePath GetRemoteBoundWebRtcEventLogsDir(
       content::BrowserContext* browser_context);
 
+  WebRtcEventLogManager(const WebRtcEventLogManager&) = delete;
+  WebRtcEventLogManager& operator=(const WebRtcEventLogManager&) = delete;
+
   ~WebRtcEventLogManager() override;
 
   void EnableForBrowserContext(content::BrowserContext* browser_context,
@@ -102,22 +105,22 @@ class WebRtcEventLogManager final
                                 base::OnceClosure reply);
 
   // content::PeerConnectionTrackerHostObserver implementation.
-  void OnPeerConnectionAdded(content::GlobalFrameRoutingId frame_id,
+  void OnPeerConnectionAdded(content::GlobalRenderFrameHostId frame_id,
                              int lid,
                              base::ProcessId pid,
                              const std::string& url,
                              const std::string& rtc_configuration,
                              const std::string& constraints) override;
-  void OnPeerConnectionRemoved(content::GlobalFrameRoutingId frame_id,
+  void OnPeerConnectionRemoved(content::GlobalRenderFrameHostId frame_id,
                                int lid) override;
-  void OnPeerConnectionUpdated(content::GlobalFrameRoutingId frame_id,
+  void OnPeerConnectionUpdated(content::GlobalRenderFrameHostId frame_id,
                                int lid,
                                const std::string& type,
                                const std::string& value) override;
-  void OnPeerConnectionSessionIdSet(content::GlobalFrameRoutingId frame_id,
+  void OnPeerConnectionSessionIdSet(content::GlobalRenderFrameHostId frame_id,
                                     int lid,
                                     const std::string& session_id) override;
-  void OnWebRtcEventLogWrite(content::GlobalFrameRoutingId frame_id,
+  void OnWebRtcEventLogWrite(content::GlobalRenderFrameHostId frame_id,
                              int lid,
                              const std::string& message) override;
 
@@ -227,7 +230,7 @@ class WebRtcEventLogManager final
   // operation was successful. A failure can happen if a peer connection with
   // this exact key was previously added, but not removed. Another failure mode
   // is if the RPH of the frame was destroyed.
-  void OnPeerConnectionAdded(content::GlobalFrameRoutingId frame_id,
+  void OnPeerConnectionAdded(content::GlobalRenderFrameHostId frame_id,
                              int lid,
                              base::OnceCallback<void(bool)> reply);
 
@@ -235,19 +238,19 @@ class WebRtcEventLogManager final
   // the operation was successful. A failure can happen is a peer connection
   // with this key was not previously added or if it has since already been
   // removed. Another failure mode is if the RPH of the frame was destroyed.
-  void OnPeerConnectionRemoved(content::GlobalFrameRoutingId frame_id,
+  void OnPeerConnectionRemoved(content::GlobalRenderFrameHostId frame_id,
                                int lid,
                                base::OnceCallback<void(bool)> reply);
 
   // Handles a "stop" peer connection update. Replies true if and only if the
   // operation was successful. Same failure mode as OnPeerConnectionRemoved().
-  void OnPeerConnectionStopped(content::GlobalFrameRoutingId frame_id,
+  void OnPeerConnectionStopped(content::GlobalRenderFrameHostId frame_id,
                                int lid,
                                base::OnceCallback<void(bool)> reply);
 
   // An overload of OnPeerConnectionSessionIdSet() that replies true if and only
   // if the operation was successful.
-  void OnPeerConnectionSessionIdSet(content::GlobalFrameRoutingId frame_id,
+  void OnPeerConnectionSessionIdSet(content::GlobalRenderFrameHostId frame_id,
                                     int lid,
                                     const std::string& session_id,
                                     base::OnceCallback<void(bool)> reply);
@@ -258,7 +261,7 @@ class WebRtcEventLogManager final
   // and only if the message was written in its entirety into a
   // local/remote-bound log file.
   void OnWebRtcEventLogWrite(
-      content::GlobalFrameRoutingId frame_id,
+      content::GlobalRenderFrameHostId frame_id,
       int lid,
       const std::string& message,
       base::OnceCallback<void(std::pair<bool, bool>)> reply);
@@ -484,8 +487,6 @@ class WebRtcEventLogManager final
   // |remote_logs_manager_| when (and if) produced.
   std::unique_ptr<LogFileWriter::Factory>
       remote_log_file_writer_factory_for_testing_;
-
-  DISALLOW_COPY_AND_ASSIGN(WebRtcEventLogManager);
 };
 
 }  // namespace webrtc_event_logging

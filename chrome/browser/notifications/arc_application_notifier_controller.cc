@@ -8,35 +8,17 @@
 
 #include "ash/public/cpp/notifier_metadata.h"
 #include "base/bind.h"
-#include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/apps/app_service/app_service_proxy_chromeos.h"
+#include "chrome/browser/apps/app_service/app_service_proxy.h"
 #include "chrome/browser/apps/app_service/app_service_proxy_factory.h"
+#include "chrome/browser/notifications/notifier_dataset.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/app_list/arc/arc_app_list_prefs_factory.h"
-#include "chrome/browser/ui/webui/app_management/app_management.mojom.h"
-#include "chrome/common/chrome_features.h"
-#include "components/keyed_service/content/browser_context_keyed_service_shutdown_notifier_factory.h"
 #include "components/services/app_service/public/cpp/app_update.h"
-#include "ui/base/layout.h"
-#include "ui/display/display.h"
-#include "ui/display/screen.h"
+#include "components/services/app_service/public/cpp/permission_utils.h"
+#include "components/services/app_service/public/mojom/types.mojom.h"
+#include "ui/message_center/public/cpp/message_center_constants.h"
 #include "ui/message_center/public/cpp/notifier_id.h"
 
 namespace arc {
-
-namespace {
-
-constexpr int kArcAppIconSizeInDp = 48;
-
-struct NotifierDataset {
-  std::string app_id;
-  std::string app_name;
-  std::string package_name;
-  bool enabled;
-  bool is_system_app;
-};
-
-}  // namespace
 
 ArcApplicationNotifierController::ArcApplicationNotifierController(
     NotifierController::Observer* observer)
@@ -65,27 +47,28 @@ ArcApplicationNotifierController::GetNotifierList(Profile* profile) {
                                              const apps::AppUpdate& update) {
     if (update.AppType() != apps::mojom::AppType::kArc)
       return;
+
     for (const auto& permission : update.Permissions()) {
-      if (static_cast<app_management::mojom::ArcPermissionType>(
-              permission->permission_id) !=
-          app_management::mojom::ArcPermissionType::NOTIFICATIONS) {
+      if (permission->permission_type !=
+          apps::mojom::PermissionType::kNotifications) {
         continue;
       }
-      DCHECK(permission->value_type == apps::mojom::PermissionValueType::kBool);
-      notifier_dataset.push_back(
-          {update.AppId() /*app_id*/, update.Name() /*app_name*/,
-           update.PublisherId() /*package name*/, permission->value /*enabled*/,
-           update.InstallSource() ==
-               apps::mojom::InstallSource::kSystem /*is_system_app*/});
+      DCHECK(permission->value->is_bool_value());
+      // Do not include notifier metadata for system apps.
+      if (update.InstallReason() == apps::mojom::InstallReason::kSystem) {
+        return;
+      }
+      notifier_dataset.push_back(NotifierDataset{
+          update.AppId() /*app_id*/, update.ShortName() /*app_name*/,
+          update.PublisherId() /*publisher_id*/,
+          permission->value->get_bool_value() /*enabled*/});
     }
   });
 
   std::vector<ash::NotifierMetadata> notifiers;
   for (auto& app_data : notifier_dataset) {
-    // Handle packages having multiple launcher activities. Do not include
-    // notifier metadata for system apps.
-    if (package_to_app_ids_.count(app_data.package_name) ||
-        app_data.is_system_app)
+    // Handle packages having multiple launcher activities.
+    if (package_to_app_ids_.count(app_data.publisher_id))
       continue;
 
     message_center::NotifierId notifier_id(
@@ -94,8 +77,8 @@ ArcApplicationNotifierController::GetNotifierList(Profile* profile) {
                            app_data.enabled, false /* enforced */,
                            gfx::ImageSkia());
     package_to_app_ids_.insert(
-        std::make_pair(app_data.package_name, app_data.app_id));
-    CallLoadIcon(/*allow_placeholder_icon*/ true, app_data.app_id);
+        std::make_pair(app_data.publisher_id, app_data.app_id));
+    CallLoadIcon(app_data.app_id, /*allow_placeholder_icon*/ true);
   }
   return notifiers;
 }
@@ -109,49 +92,44 @@ void ArcApplicationNotifierController::SetNotifierEnabled(
 
   last_used_profile_ = profile;
   auto permission = apps::mojom::Permission::New();
-  permission->permission_id =
-      static_cast<int>(app_management::mojom::ArcPermissionType::NOTIFICATIONS);
-  permission->value_type = apps::mojom::PermissionValueType::kBool;
-  permission->value = enabled;
+  permission->permission_type = apps::mojom::PermissionType::kNotifications;
+  permission->value = apps::mojom::PermissionValue::New();
+  permission->value->set_bool_value(enabled);
   permission->is_managed = false;
   apps::AppServiceProxy* service =
       apps::AppServiceProxyFactory::GetForProfile(profile);
   service->SetPermission(notifier_id.id, std::move(permission));
 }
 
-void ArcApplicationNotifierController::CallLoadIcon(bool allow_placeholder_icon,
-                                                    std::string app_id) {
+void ArcApplicationNotifierController::CallLoadIcon(
+    const std::string& app_id,
+    bool allow_placeholder_icon) {
   DCHECK(apps::AppServiceProxyFactory::IsAppServiceAvailableForProfile(
       last_used_profile_));
 
-  auto icon_type =
-      (base::FeatureList::IsEnabled(features::kAppServiceAdaptiveIcon))
-          ? apps::mojom::IconType::kStandard
-          : apps::mojom::IconType::kUncompressed;
+  auto icon_type = apps::mojom::IconType::kStandard;
 
   apps::AppServiceProxyFactory::GetForProfile(last_used_profile_)
       ->LoadIcon(apps::mojom::AppType::kArc, app_id, icon_type,
-                 kArcAppIconSizeInDp, allow_placeholder_icon,
+                 message_center::kQuickSettingIconSizeInDp,
+                 allow_placeholder_icon,
                  base::BindOnce(&ArcApplicationNotifierController::OnLoadIcon,
                                 weak_ptr_factory_.GetWeakPtr(), app_id));
 }
 
 void ArcApplicationNotifierController::OnLoadIcon(
-    std::string app_id,
+    const std::string& app_id,
     apps::mojom::IconValuePtr icon_value) {
-  auto icon_type =
-      (base::FeatureList::IsEnabled(features::kAppServiceAdaptiveIcon))
-          ? apps::mojom::IconType::kStandard
-          : apps::mojom::IconType::kUncompressed;
-  if (icon_value->icon_type != icon_type)
+  auto expected_icon_type = apps::mojom::IconType::kStandard;
+  if (icon_value->icon_type != expected_icon_type)
     return;
 
   SetIcon(app_id, icon_value->uncompressed);
   if (icon_value->is_placeholder_icon)
-    CallLoadIcon(/*allow_placeholder_icon*/ false, app_id);
+    CallLoadIcon(app_id, /*allow_placeholder_icon*/ false);
 }
 
-void ArcApplicationNotifierController::SetIcon(std::string app_id,
+void ArcApplicationNotifierController::SetIcon(const std::string& app_id,
                                                gfx::ImageSkia image) {
   observer_->OnIconImageUpdated(
       message_center::NotifierId(message_center::NotifierType::ARC_APPLICATION,
@@ -166,19 +144,18 @@ void ArcApplicationNotifierController::OnAppUpdate(
 
   if (update.PermissionsChanged()) {
     for (const auto& permission : update.Permissions()) {
-      if (static_cast<app_management::mojom::ArcPermissionType>(
-              permission->permission_id) ==
-          app_management::mojom::ArcPermissionType::NOTIFICATIONS) {
+      if (permission->permission_type ==
+          apps::mojom::PermissionType::kNotifications) {
         message_center::NotifierId notifier_id(
             message_center::NotifierType::ARC_APPLICATION, update.AppId());
-        observer_->OnNotifierEnabledChanged(notifier_id, permission->value);
+        observer_->OnNotifierEnabledChanged(
+            notifier_id, apps_util::IsPermissionEnabled(permission->value));
       }
     }
   }
 
-  if (update.IconKeyChanged()) {
-    CallLoadIcon(/*allow_placeholder_icon*/ true, update.AppId());
-  }
+  if (update.IconKeyChanged())
+    CallLoadIcon(update.AppId(), /*allow_placeholder_icon*/ true);
 }
 
 void ArcApplicationNotifierController::OnAppRegistryCacheWillBeDestroyed(

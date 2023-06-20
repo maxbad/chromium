@@ -5,10 +5,9 @@
 #ifndef CHROME_BROWSER_ASH_POWER_ML_BOOT_CLOCK_H_
 #define CHROME_BROWSER_ASH_POWER_ML_BOOT_CLOCK_H_
 
-#include "base/macros.h"
 #include "base/time/time.h"
 
-namespace chromeos {
+namespace ash {
 namespace power {
 namespace ml {
 
@@ -21,6 +20,10 @@ namespace ml {
 class BootClock {
  public:
   BootClock();
+
+  BootClock(const BootClock&) = delete;
+  BootClock& operator=(const BootClock&) = delete;
+
   ~BootClock();
 
   base::TimeDelta GetTimeSinceBoot() const;
@@ -29,10 +32,17 @@ class BootClock {
   // Null unless time is mocked. When time is mocked, this pretends boot
   // happened 5 minutes before the creation of this BootClock.
   const base::TimeTicks mock_boot_time_;
-
-  DISALLOW_COPY_AND_ASSIGN(BootClock);
 };
 
+}  // namespace ml
+}  // namespace power
+}  // namespace ash
+
+// TODO(https://crbug.com/1164001): remove when ChromeOS code migration is done.
+namespace chromeos {
+namespace power {
+namespace ml {
+using ::ash::power::ml::BootClock;
 }  // namespace ml
 }  // namespace power
 }  // namespace chromeos

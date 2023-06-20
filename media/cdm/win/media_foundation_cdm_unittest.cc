@@ -25,6 +25,7 @@ using ::testing::IsEmpty;
 using ::testing::NotNull;
 using ::testing::Return;
 using ::testing::SetArgPointee;
+using ::testing::SetArgReferee;
 using ::testing::StrEq;
 using ::testing::StrictMock;
 using ::testing::WithoutArgs;
@@ -36,9 +37,19 @@ namespace {
 const char kSessionId[] = "session_id";
 const double kExpirationMs = 123456789.0;
 const auto kExpirationTime = base::Time::FromJsTime(kExpirationMs);
+const char kTestUmaPrefix[] = "Media.EME.TestUmaPrefix.";
 
 std::vector<uint8_t> StringToVector(const std::string& str) {
   return std::vector<uint8_t>(str.begin(), str.end());
+}
+
+// testing::InvokeArgument<N> does not work with base::OnceCallback. Use this
+// gmock action template to invoke base::OnceCallback. `k` is the k-th argument
+// and `T` is the callback's type.
+ACTION_TEMPLATE(InvokeCallbackArgument,
+                HAS_2_TEMPLATE_PARAMS(int, k, typename, T),
+                AND_1_VALUE_PARAMS(p0)) {
+  std::move(const_cast<T&>(std::get<k>(args))).Run(p0);
 }
 
 }  // namespace
@@ -51,8 +62,11 @@ class MediaFoundationCdmTest : public testing::Test {
       : mf_cdm_(MakeComPtr<MockMFCdm>()),
         mf_cdm_session_(MakeComPtr<MockMFCdmSession>()),
         cdm_(base::MakeRefCounted<MediaFoundationCdm>(
+            kTestUmaPrefix,
             base::BindRepeating(&MediaFoundationCdmTest::CreateMFCdm,
                                 base::Unretained(this)),
+            is_type_supported_cb_.Get(),
+            store_client_token_cb_.Get(),
             base::BindRepeating(&MockCdmClient::OnSessionMessage,
                                 base::Unretained(&cdm_client_)),
             base::BindRepeating(&MockCdmClient::OnSessionClosed,
@@ -143,6 +157,10 @@ class MediaFoundationCdmTest : public testing::Test {
   base::test::TaskEnvironment task_environment_;
 
   StrictMock<MockCdmClient> cdm_client_;
+  StrictMock<base::MockCallback<MediaFoundationCdm::IsTypeSupportedCB>>
+      is_type_supported_cb_;
+  base::MockCallback<MediaFoundationCdm::StoreClientTokenCB>
+      store_client_token_cb_;
   ComPtr<MockMFCdm> mf_cdm_;
   ComPtr<MockMFCdmSession> mf_cdm_session_;
   ComPtr<IMFContentDecryptionModuleSessionCallbacks> mf_cdm_session_callbacks_;
@@ -174,6 +192,48 @@ TEST_F(MediaFoundationCdmTest, SetServerCertificate_Failure) {
 
   cdm_->SetServerCertificate(
       certificate, std::make_unique<MockCdmPromise>(/*expect_success=*/false));
+}
+
+TEST_F(MediaFoundationCdmTest, GetStatusForPolicy_HdcpNone_KeyStatusUsable) {
+  Initialize();
+  CdmKeyInformation::KeyStatus key_status;
+  cdm_->GetStatusForPolicy(HdcpVersion::kHdcpVersionNone,
+                           std::make_unique<MockCdmKeyStatusPromise>(
+                               /*expect_success=*/true, &key_status));
+  EXPECT_EQ(CdmKeyInformation::KeyStatus::USABLE, key_status);
+}
+
+TEST_F(MediaFoundationCdmTest, GetStatusForPolicy_HdcpV1_1_KeyStatusUsable) {
+  Initialize();
+  EXPECT_CALL(is_type_supported_cb_,
+              Run("video/mp4;codecs=\"avc1\";features=\"hdcp=1\"", _))
+      .WillOnce(
+          InvokeCallbackArgument<1,
+                                 MediaFoundationCdm::IsTypeSupportedResultCB>(
+              /*is_supported=*/true));
+
+  CdmKeyInformation::KeyStatus key_status;
+  cdm_->GetStatusForPolicy(HdcpVersion::kHdcpVersion1_1,
+                           std::make_unique<MockCdmKeyStatusPromise>(
+                               /*expect_success=*/true, &key_status));
+  EXPECT_EQ(CdmKeyInformation::KeyStatus::USABLE, key_status);
+}
+
+TEST_F(MediaFoundationCdmTest,
+       GetStatusForPolicy_HdcpV2_3_KeyStatusOutputRestricted) {
+  Initialize();
+  EXPECT_CALL(is_type_supported_cb_,
+              Run("video/mp4;codecs=\"avc1\";features=\"hdcp=2\"", _))
+      .WillOnce(
+          InvokeCallbackArgument<1,
+                                 MediaFoundationCdm::IsTypeSupportedResultCB>(
+              /*is_supported=*/false));
+
+  CdmKeyInformation::KeyStatus key_status;
+  cdm_->GetStatusForPolicy(HdcpVersion::kHdcpVersion2_3,
+                           std::make_unique<MockCdmKeyStatusPromise>(
+                               /*expect_success=*/true, &key_status));
+  EXPECT_EQ(CdmKeyInformation::KeyStatus::OUTPUT_RESTRICTED, key_status);
 }
 
 TEST_F(MediaFoundationCdmTest, CreateSessionAndGenerateRequest) {

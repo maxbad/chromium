@@ -47,7 +47,7 @@ constexpr char kMailPattern[] = "mail.google.com";
 class MockDlpRulesManager : public DlpRulesManagerImpl {
  public:
   explicit MockDlpRulesManager(PrefService* local_state)
-      : DlpRulesManagerImpl(local_state) {}
+      : DlpRulesManagerImpl(local_state, /* dm_token_value= */ "") {}
 };
 
 }  // namespace
@@ -148,6 +148,9 @@ TEST_F(DlpRulesManagerImplTest, BlockPriority) {
   EXPECT_EQ(DlpRulesManager::Level::kBlock,
             dlp_rules_manager_.IsRestricted(
                 GURL(kExampleUrl), DlpRulesManager::Restriction::kScreenshot));
+  EXPECT_EQ(DlpRulesManager::Level::kBlock,
+            dlp_rules_manager_.IsRestrictedByAnyRule(
+                GURL(kExampleUrl), DlpRulesManager::Restriction::kClipboard));
   histogram_tester_.ExpectUniqueSample(
       GetDlpHistogramPrefix() + dlp::kDlpPolicyPresentUMA, true, 1);
   histogram_tester_.ExpectBucketCount("Enterprise.Dlp.RestrictionConfigured",
@@ -521,7 +524,7 @@ TEST_F(DlpRulesManagerImplTest, DisabledByFeature) {
   rules_2.Append(dlp_test_util::CreateRule(
       "rule #1", "Block", std::move(src_urls_2), std::move(dst_urls_2),
       /*dst_components=*/base::Value(base::Value::Type::LIST),
-      std::move(restrictions_1)));
+      std::move(restrictions_2)));
 
   UpdatePolicyPref(std::move(rules_2));
 
@@ -629,6 +632,9 @@ TEST_F(DlpRulesManagerImplTest, WarnPriority) {
 }
 
 TEST_F(DlpRulesManagerImplTest, FilesRestriction_DlpClientNotified) {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitAndEnableFeature(
+      features::kDataLeakPreventionFilesRestriction);
   content::BrowserTaskEnvironment task_environment;
   chromeos::DlpClient::InitializeFake();
 
@@ -657,6 +663,39 @@ TEST_F(DlpRulesManagerImplTest, FilesRestriction_DlpClientNotified) {
   EXPECT_EQ(1, chromeos::DlpClient::Get()
                    ->GetTestInterface()
                    ->GetSetDlpFilesPolicyCount());
+  chromeos::DlpClient::Shutdown();
+}
+
+TEST_F(DlpRulesManagerImplTest, FilesRestriction_FeatureNotEnabled) {
+  content::BrowserTaskEnvironment task_environment;
+  chromeos::DlpClient::InitializeFake();
+
+  EXPECT_EQ(0, chromeos::DlpClient::Get()
+                   ->GetTestInterface()
+                   ->GetSetDlpFilesPolicyCount());
+
+  base::Value rules(base::Value::Type::LIST);
+
+  base::Value src_urls(base::Value::Type::LIST);
+  src_urls.Append(kExampleUrl);
+
+  base::Value dst_urls(base::Value::Type::LIST);
+  dst_urls.Append(kExampleUrl);
+
+  base::Value restrictions(base::Value::Type::LIST);
+  restrictions.Append(dlp_test_util::CreateRestrictionWithLevel(
+      dlp::kFilesRestriction, dlp::kBlockLevel));
+
+  rules.Append(dlp_test_util::CreateRule(
+      "rule #1", "Block Files", std::move(src_urls), std::move(dst_urls),
+      /*dst_components=*/base::Value(base::Value::Type::LIST),
+      std::move(restrictions)));
+  UpdatePolicyPref(std::move(rules));
+
+  EXPECT_EQ(0, chromeos::DlpClient::Get()
+                   ->GetTestInterface()
+                   ->GetSetDlpFilesPolicyCount());
+  chromeos::DlpClient::Shutdown();
 }
 
 TEST_F(DlpRulesManagerImplTest, GetSourceUrlPattern) {

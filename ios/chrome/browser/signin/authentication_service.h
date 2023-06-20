@@ -13,8 +13,10 @@
 #include "base/scoped_observation.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "components/pref_registry/pref_registry_syncable.h"
+#include "components/signin/public/base/consent_level.h"
 #include "components/signin/public/base/signin_metrics.h"
 #include "components/signin/public/identity_manager/identity_manager.h"
+#import "ios/chrome/browser/signin/chrome_account_manager_service.h"
 #import "ios/chrome/browser/signin/user_approved_account_list_manager.h"
 #include "ios/public/provider/chrome/browser/signin/chrome_identity_service.h"
 
@@ -24,6 +26,7 @@ class SyncService;
 
 class AuthenticationServiceDelegate;
 class AuthenticationServiceFake;
+class AuthenticationServiceObserver;
 @class ChromeIdentity;
 class PrefService;
 class SyncSetupService;
@@ -32,12 +35,20 @@ class SyncSetupService;
 // authentication library.
 class AuthenticationService : public KeyedService,
                               public signin::IdentityManager::Observer,
-                              public ios::ChromeIdentityService::Observer {
+                              public ios::ChromeBrowserProvider::Observer,
+                              public ios::ChromeIdentityService::Observer,
+                              public ChromeAccountManagerService::Observer {
  public:
+  // Initializes the service.
   AuthenticationService(PrefService* pref_service,
                         SyncSetupService* sync_setup_service,
+                        ChromeAccountManagerService* account_manager_service,
                         signin::IdentityManager* identity_manager,
                         syncer::SyncService* sync_service);
+
+  AuthenticationService(const AuthenticationService&) = delete;
+  AuthenticationService& operator=(const AuthenticationService&) = delete;
+
   ~AuthenticationService() override;
 
   // Registers the preferences used by AuthenticationService;
@@ -54,14 +65,18 @@ class AuthenticationService : public KeyedService,
   // KeyedService
   void Shutdown() override;
 
-  // Reminds user to Sign in to Chrome when a new tab is opened.
-  void SetPromptForSignIn();
+  // Adds and removes observers.
+  void AddObserver(AuthenticationServiceObserver* observer);
+  void RemoveObserver(AuthenticationServiceObserver* observer);
 
-  // Clears the reminder to Sign in to Chrome when a new tab is opened.
-  void ResetPromptForSignIn();
+  // Reminds user to Sign in and sync to Chrome when a new tab is opened.
+  void SetReauthPromptForSignInAndSync();
 
-  // Returns whether user should be prompted to Sign in to Chrome.
-  bool ShouldPromptForSignIn() const;
+  // Clears the reminder to Sign in and sync to Chrome when a new tab is opened.
+  void ResetReauthPromptForSignInAndSync();
+
+  // Returns whether user should be prompted to Sign in and sync to Chrome.
+  bool ShouldReauthPromptForSignInAndSync() const;
 
   // Returns whether the current account list has been approved by the user.
   // This method should only be called when there is a primary account.
@@ -81,17 +96,20 @@ class AuthenticationService : public KeyedService,
   // Returns true if the user is signed in.
   // While the AuthenticationService is in background, this will reload the
   // credentials to ensure the value is up to date.
-  virtual bool IsAuthenticated() const;
+  bool HasPrimaryIdentity(signin::ConsentLevel consent_level) const;
 
   // Returns true if the user is signed in and the identity is considered
   // managed.
-  virtual bool IsAuthenticatedIdentityManaged() const;
+  // Virtual for testing.
+  virtual bool HasPrimaryIdentityManaged(
+      signin::ConsentLevel consent_level) const;
 
   // Retrieves the identity of the currently authenticated user or |nil| if
   // either the user is not authenticated, or is authenticated through
   // ClientLogin.
   // Virtual for testing.
-  virtual ChromeIdentity* GetAuthenticatedIdentity() const;
+  virtual ChromeIdentity* GetPrimaryIdentity(
+      signin::ConsentLevel consent_level) const;
 
   // Grants signin::ConsentLevel::kSignin to |identity|.
   // This method does not set up Sync-the-feature for the identity.
@@ -120,11 +138,6 @@ class AuthenticationService : public KeyedService,
   // error. Returns true if |identity| had an associated error, false otherwise.
   bool ShowMDMErrorDialogForIdentity(ChromeIdentity* identity);
 
-  // Resets the ChromeIdentityService observer to the one available in the
-  // ChromeBrowserProvider. Used for testing when changing the
-  // ChromeIdentityService to or from a fake one.
-  void ResetChromeIdentityServiceObserverForTesting();
-
   // Returns a weak pointer of this.
   base::WeakPtr<AuthenticationService> GetWeakPtr();
 
@@ -132,9 +145,14 @@ class AuthenticationService : public KeyedService,
   // sync the accounts between the IdentityManager and the SSO library.
   void OnApplicationWillEnterForeground();
 
+  // ChromeBrowserProvider implementation.
+  void OnChromeIdentityServiceDidChange(
+      ios::ChromeIdentityService* new_service) override;
+  void OnChromeBrowserProviderWillBeDestroyed() override;
+
  private:
-  friend class AuthenticationServiceTest;
   friend class AuthenticationServiceFake;
+  friend class AuthenticationServiceTest;
 
   // Migrates the token service accounts stored in prefs from emails to account
   // ids.
@@ -175,10 +193,15 @@ class AuthenticationService : public KeyedService,
       const signin::PrimaryAccountChangeEvent& event_details) override;
 
   // ChromeIdentityServiceObserver implementation.
-  void OnIdentityListChanged(bool keychainReload) override;
   void OnAccessTokenRefreshFailed(ChromeIdentity* identity,
                                   NSDictionary* user_info) override;
   void OnChromeIdentityServiceWillBeDestroyed() override;
+
+  // ChromeAccountManagerServiceObserver implementation.
+  void OnIdentityListChanged(bool need_user_approval) override;
+
+  // Fires |OnPrimaryAccountRestricted| on all observers.
+  void FirePrimaryAccountRestricted();
 
   // The delegate for this AuthenticationService. It is invalid to call any
   // method on this object except Initialize() or Shutdown() if this pointer
@@ -188,9 +211,10 @@ class AuthenticationService : public KeyedService,
   // Pointer to the KeyedServices used by AuthenticationService.
   PrefService* pref_service_ = nullptr;
   SyncSetupService* sync_setup_service_ = nullptr;
+  ChromeAccountManagerService* account_manager_service_ = nullptr;
   signin::IdentityManager* identity_manager_ = nullptr;
   syncer::SyncService* sync_service_ = nullptr;
-
+  base::ObserverList<AuthenticationServiceObserver, true> observer_list_;
   // Whether Initialized has been called.
   bool initialized_ = false;
 
@@ -200,6 +224,10 @@ class AuthenticationService : public KeyedService,
   // Whether the AuthenticationService is currently reloading credentials, used
   // to avoid an infinite reloading loop.
   bool is_reloading_credentials_ = false;
+
+  // Whether the primary account was logged out because it became restricted.
+  // It is used to respond to late observers.
+  bool primary_account_was_restricted_ = false;
 
   // Map between account IDs and their associated MDM error.
   mutable std::map<CoreAccountId, NSDictionary*> cached_mdm_infos_;
@@ -212,9 +240,11 @@ class AuthenticationService : public KeyedService,
                           signin::IdentityManager::Observer>
       identity_manager_observation_{this};
 
-  base::WeakPtrFactory<AuthenticationService> weak_pointer_factory_;
+  base::ScopedObservation<ChromeAccountManagerService,
+                          ChromeAccountManagerService::Observer>
+      account_manager_service_observation_{this};
 
-  DISALLOW_COPY_AND_ASSIGN(AuthenticationService);
+  base::WeakPtrFactory<AuthenticationService> weak_pointer_factory_;
 };
 
 #endif  // IOS_CHROME_BROWSER_SIGNIN_AUTHENTICATION_SERVICE_H_

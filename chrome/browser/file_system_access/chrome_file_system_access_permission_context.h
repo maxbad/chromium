@@ -53,6 +53,10 @@ class ChromeFileSystemAccessPermissionContext
   explicit ChromeFileSystemAccessPermissionContext(
       content::BrowserContext* context,
       const base::Clock* clock = base::DefaultClock::GetInstance());
+  ChromeFileSystemAccessPermissionContext(
+      const ChromeFileSystemAccessPermissionContext&) = delete;
+  ChromeFileSystemAccessPermissionContext& operator=(
+      const ChromeFileSystemAccessPermissionContext&) = delete;
   ~ChromeFileSystemAccessPermissionContext() override;
 
   // permissions::ObjectPermissionContextBase
@@ -79,11 +83,11 @@ class ChromeFileSystemAccessPermissionContext
       PathType path_type,
       const base::FilePath& path,
       HandleType handle_type,
-      content::GlobalFrameRoutingId frame_id,
+      content::GlobalRenderFrameHostId frame_id,
       base::OnceCallback<void(SensitiveDirectoryResult)> callback) override;
   void PerformAfterWriteChecks(
       std::unique_ptr<content::FileSystemAccessWriteItem> item,
-      content::GlobalFrameRoutingId frame_id,
+      content::GlobalRenderFrameHostId frame_id,
       base::OnceCallback<void(AfterWriteCheckResult)> callback) override;
   bool CanObtainReadPermission(const url::Origin& origin) override;
   bool CanObtainWritePermission(const url::Origin& origin) override;
@@ -134,8 +138,8 @@ class ChromeFileSystemAccessPermissionContext
   bool OriginHasWriteAccess(const url::Origin& origin);
 
   // Called by FileSystemAccessTabHelper when a top-level frame was navigated
-  // away from |origin| to some other origin.
-  void NavigatedAwayFromOrigin(const url::Origin& origin);
+  // away from |origin| to some other origin. Is virtual for testing purposes.
+  virtual void NavigatedAwayFromOrigin(const url::Origin& origin);
 
   content::BrowserContext* profile() const { return profile_; }
 
@@ -155,14 +159,13 @@ class ChromeFileSystemAccessPermissionContext
   // This long after the handle has last been used, revoke the persisted
   // permission.
   static constexpr base::TimeDelta
-      kPersistentPermissionExpirationTimeoutNonPWA =
-          base::TimeDelta::FromHours(5);
+      kPersistentPermissionExpirationTimeoutNonPWA = base::Hours(5);
   static constexpr base::TimeDelta kPersistentPermissionExpirationTimeoutPWA =
-      base::TimeDelta::FromDays(30);
+      base::Days(30);
   // Amount of time a persisted permission will remain persisted after its
   // expiry. Used for metrics.
   static constexpr base::TimeDelta kPersistentPermissionGracePeriod =
-      base::TimeDelta::FromDays(1);
+      base::Days(1);
 
  protected:
   SEQUENCE_CHECKER(sequence_checker_);
@@ -185,7 +188,7 @@ class ChromeFileSystemAccessPermissionContext
       const url::Origin& origin,
       const base::FilePath& path,
       HandleType handle_type,
-      content::GlobalFrameRoutingId frame_id,
+      content::GlobalRenderFrameHostId frame_id,
       base::OnceCallback<void(SensitiveDirectoryResult)> callback,
       bool should_block);
 
@@ -255,8 +258,6 @@ class ChromeFileSystemAccessPermissionContext
 
   base::WeakPtrFactory<ChromeFileSystemAccessPermissionContext> weak_factory_{
       this};
-
-  DISALLOW_COPY_AND_ASSIGN(ChromeFileSystemAccessPermissionContext);
 };
 
 #endif  // CHROME_BROWSER_FILE_SYSTEM_ACCESS_CHROME_FILE_SYSTEM_ACCESS_PERMISSION_CONTEXT_H_

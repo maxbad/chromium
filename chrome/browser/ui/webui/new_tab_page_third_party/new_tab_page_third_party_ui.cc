@@ -136,8 +136,9 @@ NewTabPageThirdPartyUI::~NewTabPageThirdPartyUI() = default;
 
 // static
 bool NewTabPageThirdPartyUI::IsNewTabPageOrigin(const GURL& url) {
-  return url.GetOrigin() ==
-         GURL(chrome::kChromeUINewTabPageThirdPartyURL).GetOrigin();
+  return url.DeprecatedGetOriginAsURL() ==
+         GURL(chrome::kChromeUINewTabPageThirdPartyURL)
+             .DeprecatedGetOriginAsURL();
 }
 
 void NewTabPageThirdPartyUI::BindInterface(
@@ -181,4 +182,5 @@ void NewTabPageThirdPartyUI::CreatePageHandler(
       std::move(pending_page_handler), std::move(pending_page), profile_,
       web_contents_, GURL(chrome::kChromeUINewTabPageThirdPartyURL),
       navigation_start_time_);
+  most_visited_page_handler_->EnableCustomLinks(false);
 }

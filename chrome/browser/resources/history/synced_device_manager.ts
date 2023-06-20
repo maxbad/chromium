@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 import 'chrome://resources/polymer/v3_0/iron-list/iron-list.js';
-import 'chrome://resources/cr_elements/cr_action_menu/cr_action_menu.m.js';
+import 'chrome://resources/cr_elements/cr_action_menu/cr_action_menu.js';
 import 'chrome://resources/cr_elements/cr_button/cr_button.m.js';
 import 'chrome://resources/cr_elements/cr_lazy_render/cr_lazy_render.m.js';
 import 'chrome://resources/cr_elements/shared_style_css.m.js';
@@ -12,10 +12,10 @@ import './shared_style.js';
 import './synced_device_card.js';
 import './strings.m.js';
 
-import {CrActionMenuElement} from 'chrome://resources/cr_elements/cr_action_menu/cr_action_menu.m.js';
+import {CrActionMenuElement} from 'chrome://resources/cr_elements/cr_action_menu/cr_action_menu.js';
 import {CrLazyRenderElement} from 'chrome://resources/cr_elements/cr_lazy_render/cr_lazy_render.m.js';
 import {assert} from 'chrome://resources/js/assert.m.js';
-import {FocusGrid} from 'chrome://resources/js/cr/ui/focus_grid.m.js';
+import {FocusGrid} from 'chrome://resources/js/cr/ui/focus_grid.js';
 import {FocusRow} from 'chrome://resources/js/cr/ui/focus_row.m.js';
 import {loadTimeData} from 'chrome://resources/js/load_time_data.m.js';
 import {Debouncer, html, microTask, PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
@@ -44,7 +44,7 @@ declare global {
 
 export interface HistorySyncedDeviceManagerElement {
   $: {
-    'menu': CrLazyRenderElement,
+    'menu': CrLazyRenderElement<CrActionMenuElement>,
   };
 }
 
@@ -76,6 +76,7 @@ export class HistorySyncedDeviceManagerElement extends PolymerElement {
       },
 
       guestSession_: Boolean,
+      signInAllowed_: Boolean,
       fetchingSyncedTabs_: Boolean,
       hasSeenForeignData_: Boolean,
 
@@ -92,6 +93,7 @@ export class HistorySyncedDeviceManagerElement extends PolymerElement {
   private fetchingSyncedTabs_: boolean = false;
   private actionMenuModel_: string|null = null;
   private guestSession_: boolean = loadTimeData.getBoolean('isGuestSession');
+  private signInAllowed_: boolean = loadTimeData.getBoolean('isSignInAllowed');
   private debouncer_: Debouncer|null = null;
   private signInState: boolean;
 
@@ -177,16 +179,15 @@ export class HistorySyncedDeviceManagerElement extends PolymerElement {
   }
 
   private onOpenMenu_(e: CustomEvent<{tag: string, target: HTMLElement}>) {
-    const menu = this.$['menu'].get() as CrActionMenuElement;
     this.actionMenuModel_ = e.detail.tag;
-    menu.showAt(e.detail.target);
+    this.$['menu'].get().showAt(e.detail.target);
     BrowserService.getInstance().recordHistogram(
         SYNCED_TABS_HISTOGRAM_NAME, SyncedTabsHistogram.SHOW_SESSION_MENU,
         SyncedTabsHistogram.LIMIT);
   }
 
   private onOpenAllTap_() {
-    const menu = assert(this.$['menu'].getIfExists()) as CrActionMenuElement;
+    const menu = assert(this.$['menu'].getIfExists());
     const browserService = BrowserService.getInstance();
     browserService.recordHistogram(
         SYNCED_TABS_HISTOGRAM_NAME, SyncedTabsHistogram.OPEN_ALL,
@@ -249,11 +250,13 @@ export class HistorySyncedDeviceManagerElement extends PolymerElement {
   }
 
   /**
-   * Shows the signin guide when the user is not signed in and not in a guest
-   * session.
+   * Shows the signin guide when the user is not signed in, signin is allowed
+   * and not in a guest session.
    */
-  showSignInGuide(signInState: boolean, guestSession: boolean): boolean {
-    const show = !signInState && !guestSession;
+  showSignInGuide(
+      signInState: boolean, guestSession: boolean,
+      signInAllowed: boolean): boolean {
+    const show = !signInState && !guestSession && signInAllowed;
     if (show) {
       BrowserService.getInstance().recordAction(
           'Signin_Impression_FromRecentTabs');

@@ -8,7 +8,6 @@
 #include <vector>
 
 #include "base/callback.h"
-#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "base/timer/timer.h"
 #include "components/autofill_assistant/browser/client_settings.h"
@@ -25,6 +24,10 @@ class ElementArea {
   // |delegate| and |settings| must remain valid for the lifetime of this
   // instance.
   explicit ElementArea(ScriptExecutorDelegate* delegate);
+
+  ElementArea(const ElementArea&) = delete;
+  ElementArea& operator=(const ElementArea&) = delete;
+
   ~ElementArea();
 
   // Clears the area. Stops scheduled updates.
@@ -103,7 +106,7 @@ class ElementArea {
     bool IsPending() const;
 
     // Fills the given rectangle from the current state, if possible.
-    void FillRect(RectF* rect, const RectF& visual_viewport) const;
+    void FillRect(RectF* rect) const;
 
     bool operator==(const Rectangle& another) const;
   };
@@ -129,10 +132,10 @@ class ElementArea {
   ScriptExecutorDelegate* const delegate_;
   std::vector<Rectangle> rectangles_;
 
-  // If true, update for the visual viewport position is currently scheduled.
+  // If true, u pdate for the visual viewport position is currently scheduled.
   bool visual_viewport_pending_update_ = false;
 
-  // Visual viewport coordinates, in CSS pixels, relative to the layout
+  // Visual viewport coordinates, in CSS pixels. Relative to the layout
   // viewport.
   RectF visual_viewport_;
 
@@ -150,8 +153,6 @@ class ElementArea {
       on_update_;
 
   base::WeakPtrFactory<ElementArea> weak_ptr_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(ElementArea);
 };
 
 }  // namespace autofill_assistant

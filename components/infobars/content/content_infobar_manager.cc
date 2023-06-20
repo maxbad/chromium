@@ -61,13 +61,14 @@ int ContentInfoBarManager::GetActiveEntryID() {
   return active_entry ? active_entry->GetUniqueID() : 0;
 }
 
-void ContentInfoBarManager::RenderProcessGone(base::TerminationStatus status) {
+void ContentInfoBarManager::PrimaryMainFrameRenderProcessGone(
+    base::TerminationStatus status) {
   RemoveAllInfoBars(true);
 }
 
 void ContentInfoBarManager::DidStartNavigation(
     content::NavigationHandle* navigation_handle) {
-  if (!navigation_handle->IsInMainFrame() ||
+  if (!navigation_handle->IsInPrimaryMainFrame() ||
       navigation_handle->IsSameDocument()) {
     return;
   }
@@ -112,6 +113,6 @@ void ContentInfoBarManager::OpenURL(const GURL& url,
                              ui::PAGE_TRANSITION_LINK, false));
 }
 
-WEB_CONTENTS_USER_DATA_KEY_IMPL(ContentInfoBarManager)
+WEB_CONTENTS_USER_DATA_KEY_IMPL(ContentInfoBarManager);
 
 }  // namespace infobars

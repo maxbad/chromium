@@ -4,6 +4,8 @@
 
 #include "chrome/browser/ui/startup/credential_provider_signin_dialog_win.h"
 
+#include <windows.h>
+
 #include <memory>
 #include <string>
 #include <utility>
@@ -32,6 +34,9 @@
 #include "ui/web_dialogs/web_dialog_delegate.h"
 
 namespace {
+
+// The OAuth token consumer name.
+const char kOAuthConsumerName[] = "credential_provider_signin_dialog";
 
 #if BUILDFLAG(CAN_TEST_GCPW_SIGNIN_STARTUP)
 bool g_enable_gcpw_signin_during_tests = false;
@@ -125,7 +130,7 @@ void HandleSigninCompleteForGcpwLogin(
     // Create the fetcher and pass it to the callback so that it can be
     // deleted once it is finished.
     auto fetcher = std::make_unique<CredentialProviderSigninInfoFetcher>(
-        refresh_token, url_loader_factory);
+        refresh_token, kOAuthConsumerName, url_loader_factory);
     auto* const fetcher_ptr = fetcher.get();
     fetcher_ptr->SetCompletionCallbackAndStart(
         access_token, additional_mdm_oauth_scopes,
@@ -155,7 +160,7 @@ class CredentialProviderWebUIMessageHandler
 
   // content::WebUIMessageHandler:
   void RegisterMessages() override {
-    web_ui()->RegisterMessageCallback(
+    web_ui()->RegisterDeprecatedMessageCallback(
         kLSTFetchResultsMessage,
         base::BindRepeating(
             &CredentialProviderWebUIMessageHandler::OnSigninComplete,
@@ -164,7 +169,7 @@ class CredentialProviderWebUIMessageHandler
     // This message is always sent as part of the SAML flow but we don't really
     // need to process it. We do however have to handle the message or else
     // there will be a DCHECK failure in web_ui about an unhandled message.
-    web_ui()->RegisterMessageCallback(
+    web_ui()->RegisterDeprecatedMessageCallback(
         "updatePasswordAttributes",
         base::BindRepeating([](const base::ListValue* args) {}));
   }
@@ -190,7 +195,7 @@ class CredentialProviderWebUIMessageHandler
     DCHECK(out_exit_code);
 
     const base::Value* dict_result = nullptr;
-    if (!args || args->empty() || !args->Get(0, &dict_result) ||
+    if (!args || args->GetList().empty() || !args->Get(0, &dict_result) ||
         !dict_result->is_dict()) {
       *out_exit_code = credential_provider::kUiecMissingSigninData;
       return base::Value(base::Value::Type::DICTIONARY);
@@ -378,7 +383,7 @@ class CredentialProviderWebDialogDelegate : public ui::WebDialogDelegate {
   void OnCloseContents(content::WebContents* source,
                        bool* out_close_dialog) override {}
 
-  bool HandleContextMenu(content::RenderFrameHost* render_frame_host,
+  bool HandleContextMenu(content::RenderFrameHost& render_frame_host,
                          const content::ContextMenuParams& params) override {
     return true;
   }

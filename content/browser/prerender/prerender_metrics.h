@@ -7,6 +7,8 @@
 
 #include <string>
 
+#include "services/metrics/public/cpp/ukm_source_id.h"
+
 namespace content {
 
 // These values are persisted to logs. Entries should not be renumbered and
@@ -22,6 +24,8 @@ enum class PrerenderCancelledInterface {
 };
 
 void RecordPrerenderCancelledInterface(const std::string& interface_name);
+
+void RecordPrerenderTriggered(ukm::SourceId ukm_id);
 
 }  // namespace content
 

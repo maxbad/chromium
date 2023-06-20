@@ -10,6 +10,7 @@
 
 #include "base/gtest_prod_util.h"
 #include "base/time/time.h"
+#include "base/version.h"
 #include "components/user_manager/user_manager_export.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 
@@ -134,11 +135,6 @@ class USER_MANAGER_EXPORT KnownUser final {
   // to find known account_id on Chrome restart.
   void SaveKnownUser(const AccountId& account_id);
 
-  // Updates |gaia_id| for user with |account_id|.
-  // TODO(alemate): Update this once AccountId contains GAIA ID
-  // (crbug.com/548926).
-  void UpdateGaiaID(const AccountId& account_id, const std::string& gaia_id);
-
   // Updates |account_id.account_type_| and |account_id.GetGaiaId()| or
   // |account_id.GetObjGuid()| for user with |account_id|.
   void UpdateId(const AccountId& account_id);
@@ -223,11 +219,11 @@ class USER_MANAGER_EXPORT KnownUser final {
   void SetAccountManager(const AccountId& account_id,
                          const std::string& manager);
   bool GetAccountManager(const AccountId& account_id, std::string* manager);
-  void SetUserLastLoginInputMethod(const AccountId& account_id,
-                                   const std::string& input_method);
+  void SetUserLastLoginInputMethodId(const AccountId& account_id,
+                                     const std::string& input_method_id);
 
-  bool GetUserLastInputMethod(const AccountId& account_id,
-                              std::string* input_method);
+  bool GetUserLastInputMethodId(const AccountId& account_id,
+                                std::string* input_method_id);
 
   // Exposes the user's PIN length in local state for PIN auto submit.
   void SetUserPinLength(const AccountId& account_id, int pin_length);
@@ -250,6 +246,24 @@ class USER_MANAGER_EXPORT KnownUser final {
 
   std::string GetPasswordSyncToken(const AccountId& account_id);
 
+  // Saves the current major version as the version in which the user completed
+  // the onboarding flow.
+  void SetOnboardingCompletedVersion(
+      const AccountId& account_id,
+      const absl::optional<base::Version> version);
+  absl::optional<base::Version> GetOnboardingCompletedVersion(
+      const AccountId& account_id);
+  void RemoveOnboardingCompletedVersionForTests(const AccountId& account_id);
+
+  // Setter and getter for the last screen shown in the onboarding flow. This
+  // is used to resume the onboarding flow if it's not completed yet.
+  void SetPendingOnboardingScreen(const AccountId& account_id,
+                                  const std::string& screen);
+
+  void RemovePendingOnboardingScreen(const AccountId& account_id);
+
+  std::string GetPendingOnboardingScreen(const AccountId& account_id);
+
   // Register known user prefs.
   static void RegisterPrefs(PrefRegistrySimple* registry);
 
@@ -259,6 +273,7 @@ class USER_MANAGER_EXPORT KnownUser final {
   FRIEND_TEST_ALL_PREFIXES(KnownUserTest,
                            CleanEphemeralUsersRemovesEphemeralAdOnly);
   FRIEND_TEST_ALL_PREFIXES(KnownUserTest, CleanObsoletePrefs);
+  FRIEND_TEST_ALL_PREFIXES(KnownUserTest, MigrateOfflineSigninLimit);
 
   // Removes |path| from account_id's known user dictionary.
   void ClearPref(const AccountId& account_id, const std::string& path);
@@ -398,14 +413,6 @@ SetGaiaIdMigrationStatusDone(const AccountId& account_id,
 // TODO(https://crbug.com/1150434): Deprecated, use KnownUser::SaveKnownUser
 // instead.
 void USER_MANAGER_EXPORT SaveKnownUser(const AccountId& account_id);
-
-// Updates |gaia_id| for user with |account_id|.
-// TODO(alemate): Update this once AccountId contains GAIA ID
-// (crbug.com/548926).
-// TODO(https://crbug.com/1150434): Deprecated, use KnownUser::UpdateGaiaID
-// instead.
-void USER_MANAGER_EXPORT UpdateGaiaID(const AccountId& account_id,
-                                      const std::string& gaia_id);
 
 // Updates |account_id.account_type_| and |account_id.GetGaiaId()| or
 // |account_id.GetObjGuid()| for user with |account_id|.
@@ -557,15 +564,15 @@ void USER_MANAGER_EXPORT SetAccountManager(const AccountId& account_id,
 bool USER_MANAGER_EXPORT GetAccountManager(const AccountId& account_id,
                                            std::string* manager);
 // TODO(https://crbug.com/1150434): Deprecated, use
-// KnownUser::SetUserLastLoginInputMethod instead.
+// KnownUser::SetUserLastLoginInputMethodId instead.
 void USER_MANAGER_EXPORT
-SetUserLastLoginInputMethod(const AccountId& account_id,
-                            const std::string& input_method);
+SetUserLastLoginInputMethodId(const AccountId& account_id,
+                              const std::string& input_method_id);
 
 // TODO(https://crbug.com/1150434): Deprecated, use
-// KnownUser::GetUserLastInputMethod instead.
-bool USER_MANAGER_EXPORT GetUserLastInputMethod(const AccountId& account_id,
-                                                std::string* input_method);
+// KnownUser::GetUserLastInputMethodId instead.
+bool USER_MANAGER_EXPORT GetUserLastInputMethodId(const AccountId& account_id,
+                                                  std::string* input_method_id);
 
 // Exposes the user's PIN length in local state for PIN auto submit.
 // TODO(https://crbug.com/1150434): Deprecated, use KnownUser::SetUserPinLength

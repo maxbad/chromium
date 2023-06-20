@@ -95,7 +95,10 @@ struct HandwritingHints {
   // previously recognized, or were given as the writing context (e.g.
   // "Write your name here:"). This is the linguistic context to help
   // disambiguate the handwriting (e.g. “Hello world” vs. “Hello word”).
-  string text_context;
+  // This could be null if the application doesn't or can't provide context. It
+  // could be the empty string if a text field is empty, e.g. the beginning of
+  // input.
+  string? text_context;
   // The maximum number of alternative predictions to generate.
   uint32 alternatives;
 };
@@ -133,7 +136,34 @@ struct HandwritingFeatureQueryResult {
   HandwritingFeatureStatus segmentation_result = kNotQueried;
 };
 
-// Used in creating recognizer.
+enum HandwritingRecognitionType {
+  kText,
+};
+
+enum HandwritingInputType {
+  kMouse,
+  kStylus,
+  kTouch,
+};
+
+// The description of supported hints.
+// Corresponds to handwriting_recognizer_query_result.idl
+struct HandwritingHintsQueryResult {
+  array<HandwritingRecognitionType> recognition_type;
+  array<HandwritingInputType> input_type;
+  bool text_context;
+  bool alternatives;
+};
+
+// The recognizer query result.
+// Corresponds to handwriting_recognizer_query_result.idl
+struct QueryHandwritingRecognizerResult {
+  bool text_alternatives;
+  bool text_segmentation;
+  HandwritingHintsQueryResult hints;
+};
+
+// Used in querying and creating recognizer.
 // Corresponds to handwriting_model_constraint.idl.
 struct HandwritingModelConstraint {
   // Languages are IETF BCP 47 language tags, e.g., "en", "zh-CN", "zh-Hans".
@@ -170,6 +200,11 @@ interface HandwritingRecognitionService {
   // `blink::HandwritingRecognitionService::queryHandwritingRecognizerSupport`.
   QueryHandwritingRecognizerSupport(HandwritingFeatureQuery query)
     => (HandwritingFeatureQueryResult? result);
+
+  // Queries the features of the best recognizer satisfying `constraint`.
+  // `blink::HandwritingRecognitionService::queryHandwritingRecognizer`.
+  QueryHandwritingRecognizer(HandwritingModelConstraint? constraint)
+    => (QueryHandwritingRecognizerResult? result);
 };
 
 enum CreateHandwritingRecognizerResult {

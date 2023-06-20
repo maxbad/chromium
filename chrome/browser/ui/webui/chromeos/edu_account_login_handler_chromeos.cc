@@ -6,7 +6,6 @@
 
 #include <utility>
 
-#include "ash/components/account_manager/account_manager.h"
 #include "ash/components/account_manager/account_manager_factory.h"
 #include "base/bind.h"
 #include "base/callback.h"
@@ -20,6 +19,7 @@
 #include "chrome/browser/profiles/profile_key.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/signin/identity_manager_factory.h"
+#include "components/account_manager_core/chromeos/account_manager.h"
 #include "components/image_fetcher/core/image_fetcher_service.h"
 #include "components/image_fetcher/core/request_metadata.h"
 #include "components/signin/public/base/avatar_icon_util.h"
@@ -119,15 +119,15 @@ void EduAccountLoginHandler::ProfileImageFetcher::OnImageFetched(
 }
 
 void EduAccountLoginHandler::RegisterMessages() {
-  web_ui()->RegisterMessageCallback(
+  web_ui()->RegisterDeprecatedMessageCallback(
       "isNetworkReady",
       base::BindRepeating(&EduAccountLoginHandler::HandleIsNetworkReady,
                           base::Unretained(this)));
-  web_ui()->RegisterMessageCallback(
+  web_ui()->RegisterDeprecatedMessageCallback(
       "getParents",
       base::BindRepeating(&EduAccountLoginHandler::HandleGetParents,
                           base::Unretained(this)));
-  web_ui()->RegisterMessageCallback(
+  web_ui()->RegisterDeprecatedMessageCallback(
       "parentSignin",
       base::BindRepeating(&EduAccountLoginHandler::HandleParentSignin,
                           base::Unretained(this)));
@@ -185,10 +185,8 @@ void EduAccountLoginHandler::HandleParentSignin(const base::ListValue* args) {
   DCHECK(obfuscated_gaia_id_value);
   std::string obfuscated_gaia_id = obfuscated_gaia_id_value->GetString();
 
-  std::string password;
-  args_list[2].GetAsString(&password);
-
-  FetchAccessToken(obfuscated_gaia_id, password);
+  const std::string* password = args_list[2].GetIfString();
+  FetchAccessToken(obfuscated_gaia_id, password ? *password : std::string());
 }
 
 void EduAccountLoginHandler::FetchFamilyMembers() {

@@ -21,6 +21,8 @@ namespace headless {
 class HeadlessClipboard : public ui::Clipboard {
  public:
   HeadlessClipboard();
+  HeadlessClipboard(const HeadlessClipboard&) = delete;
+  HeadlessClipboard& operator=(const HeadlessClipboard&) = delete;
   ~HeadlessClipboard() override;
 
  private:
@@ -28,7 +30,11 @@ class HeadlessClipboard : public ui::Clipboard {
   void OnPreShutdown() override;
   ui::DataTransferEndpoint* GetSource(
       ui::ClipboardBuffer buffer) const override;
-  uint64_t GetSequenceNumber(ui::ClipboardBuffer buffer) const override;
+  const ui::ClipboardSequenceNumberToken& GetSequenceNumber(
+      ui::ClipboardBuffer buffer) const override;
+  std::vector<std::u16string> GetStandardFormats(
+      ui::ClipboardBuffer buffer,
+      const ui::DataTransferEndpoint* data_dst) const override;
   bool IsFormatAvailable(
       const ui::ClipboardFormatType& format,
       ui::ClipboardBuffer buffer,
@@ -37,9 +43,6 @@ class HeadlessClipboard : public ui::Clipboard {
   void ReadAvailableTypes(ui::ClipboardBuffer buffer,
                           const ui::DataTransferEndpoint* data_dst,
                           std::vector<std::u16string>* types) const override;
-  std::vector<std::u16string> ReadAvailablePlatformSpecificFormatNames(
-      ui::ClipboardBuffer buffer,
-      const ui::DataTransferEndpoint* data_dst) const override;
   void ReadText(ui::ClipboardBuffer buffer,
                 const ui::DataTransferEndpoint* data_dst,
                 std::u16string* result) const override;
@@ -61,9 +64,6 @@ class HeadlessClipboard : public ui::Clipboard {
   void ReadPng(ui::ClipboardBuffer buffer,
                const ui::DataTransferEndpoint* data_dst,
                ReadPngCallback callback) const override;
-  void ReadImage(ui::ClipboardBuffer buffer,
-                 const ui::DataTransferEndpoint* data_dst,
-                 ReadImageCallback callback) const override;
   void ReadCustomData(ui::ClipboardBuffer clipboard_buffer,
                       const std::u16string& type,
                       const ui::DataTransferEndpoint* data_dst,
@@ -80,12 +80,9 @@ class HeadlessClipboard : public ui::Clipboard {
 #if defined(USE_OZONE)
   bool IsSelectionBufferAvailable() const override;
 #endif  // defined(USE_OZONE)
-  void WritePortableRepresentations(
+  void WritePortableAndPlatformRepresentations(
       ui::ClipboardBuffer buffer,
       const ObjectMap& objects,
-      std::unique_ptr<ui::DataTransferEndpoint> data_src) override;
-  void WritePlatformRepresentations(
-      ui::ClipboardBuffer buffer,
       std::vector<Clipboard::PlatformRepresentation> platform_representations,
       std::unique_ptr<ui::DataTransferEndpoint> data_src) override;
   void WriteText(const char* text_data, size_t text_len) override;
@@ -111,7 +108,7 @@ class HeadlessClipboard : public ui::Clipboard {
     DataStore(const DataStore& other);
     ~DataStore();
     void Clear();
-    uint64_t sequence_number;
+    ui::ClipboardSequenceNumberToken sequence_number;
     std::map<ui::ClipboardFormatType, std::string> data;
     std::string url_title;
     std::string html_src_url;
@@ -127,8 +124,6 @@ class HeadlessClipboard : public ui::Clipboard {
 
   ui::ClipboardBuffer default_store_buffer_;
   mutable std::map<ui::ClipboardBuffer, DataStore> stores_;
-
-  DISALLOW_COPY_AND_ASSIGN(HeadlessClipboard);
 };
 
 }  // namespace headless

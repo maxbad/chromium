@@ -35,15 +35,13 @@ mojom::ParsedHeadersPtr PopulateParsedHeaders(
 
   parsed_headers->cross_origin_embedder_policy =
       ParseCrossOriginEmbedderPolicy(*headers);
-  parsed_headers->cross_origin_opener_policy = ParseCrossOriginOpenerPolicy(
-      *headers, parsed_headers->cross_origin_embedder_policy);
+  parsed_headers->cross_origin_opener_policy =
+      ParseCrossOriginOpenerPolicy(*headers);
 
   std::string origin_agent_cluster;
-  if (headers->GetNormalizedHeader("Origin-Agent-Cluster",
-                                   &origin_agent_cluster)) {
-    parsed_headers->origin_agent_cluster =
-        ParseOriginAgentCluster(origin_agent_cluster);
-  }
+  headers->GetNormalizedHeader("Origin-Agent-Cluster", &origin_agent_cluster);
+  parsed_headers->origin_agent_cluster =
+      ParseOriginAgentCluster(origin_agent_cluster);
 
   std::string accept_ch;
   if (headers->GetNormalizedHeader("Accept-CH", &accept_ch))
@@ -77,10 +75,14 @@ mojom::ParsedHeadersPtr PopulateParsedHeaders(
   }
 
 #if BUILDFLAG(ENABLE_REPORTING)
-  std::string reporting_endpoints;
-  if (headers->GetNormalizedHeader("Reporting-Endpoints", &reporting_endpoints))
-    parsed_headers->reporting_endpoints =
-        net::ParseReportingEndpoints(reporting_endpoints);
+  if (base::FeatureList::IsEnabled(net::features::kDocumentReporting)) {
+    std::string reporting_endpoints;
+    if (headers->GetNormalizedHeader("Reporting-Endpoints",
+                                     &reporting_endpoints)) {
+      parsed_headers->reporting_endpoints =
+          net::ParseReportingEndpoints(reporting_endpoints);
+    }
+  }
 #endif
 
   return parsed_headers;

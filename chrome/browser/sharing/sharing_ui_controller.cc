@@ -8,6 +8,7 @@
 
 #include "base/time/time.h"
 #include "chrome/browser/sharing/features.h"
+#include "chrome/browser/sharing/sharing_constants.h"
 #include "chrome/browser/sharing/sharing_dialog.h"
 #include "chrome/browser/sharing/sharing_dialog_data.h"
 #include "chrome/browser/sharing/sharing_service_factory.h"
@@ -22,13 +23,6 @@
 #include "ui/strings/grit/ui_strings.h"
 
 namespace {
-
-// In some cases (e.g. SmsRemoteFetcher), we show a success icon after the
-// message is received instead of after sending it out. The icon will be removed
-// be removed after |kShowSuccessIconDuration| seconds.
-// Note that the success icon should be able to persist across navigations.
-static constexpr base::TimeDelta kShowSuccessIconDuration =
-    base::TimeDelta::FromSeconds(8);
 
 BrowserWindow* GetWindowFromWebContents(content::WebContents* web_contents) {
   Browser* browser = chrome::FindBrowserWithWebContents(web_contents);
@@ -148,7 +142,8 @@ SharingUiController::GetDevices() const {
 }
 
 bool SharingUiController::HasSendFailed() const {
-  return send_result_ != SharingSendMessageResult::kSuccessful;
+  return send_result_ != SharingSendMessageResult::kSuccessful &&
+         send_result_ != SharingSendMessageResult::kCancelled;
 }
 
 void SharingUiController::MaybeShowErrorDialog() {
@@ -179,23 +174,6 @@ bool SharingUiController::ShouldShowLoadingIcon() const {
   return true;
 }
 
-int SharingUiController::GetIconLabelId() const {
-  return ShouldShowLoadingIcon() ? IDS_BROWSER_SHARING_OMNIBOX_SENDING_LABEL
-                                 : IDS_BROWSER_SHARING_OMNIBOX_SENT_LABEL;
-}
-
-void SharingUiController::ShowSuccessIcon() {
-  last_dialog_id_++;
-  is_loading_ = true;
-  UpdateIcon();
-  // For newly added dialog in |OnResponse|, we remove it with a post task.
-  base::SequencedTaskRunnerHandle::Get()->PostDelayedTask(
-      FROM_HERE,
-      base::BindOnce(&SharingUiController::HideSuccessIcon,
-                     weak_ptr_factory_.GetWeakPtr(), last_dialog_id_),
-      kShowSuccessIconDuration);
-}
-
 base::OnceClosure SharingUiController::SendMessageToDevice(
     const syncer::DeviceInfo& device,
     absl::optional<base::TimeDelta> response_timeout,
@@ -213,9 +191,7 @@ base::OnceClosure SharingUiController::SendMessageToDevice(
       &SharingUiController::OnResponse, weak_ptr_factory_.GetWeakPtr(),
       last_dialog_id_, std::move(custom_callback));
   return sharing_service_->SendMessageToDevice(
-      device,
-      response_timeout.value_or(
-          base::TimeDelta::FromSeconds(kSharingMessageTTLSeconds.Get())),
+      device, response_timeout.value_or(kSharingMessageTTL),
       std::move(sharing_message), std::move(response_callback));
 }
 
@@ -273,14 +249,6 @@ void SharingUiController::OnResponse(
     is_loading_ = false;
     UpdateIcon();
   }
-}
-
-void SharingUiController::HideSuccessIcon(int dialog_id) {
-  if (dialog_id != last_dialog_id_)
-    return;
-
-  is_loading_ = false;
-  UpdateIcon();
 }
 
 void SharingUiController::OnAppsReceived(

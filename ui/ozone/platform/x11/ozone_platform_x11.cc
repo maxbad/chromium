@@ -19,7 +19,6 @@
 #include "build/chromeos_buildflags.h"
 #include "ui/base/buildflags.h"
 #include "ui/base/cursor/cursor_factory.h"
-#include "ui/base/dragdrop/os_exchange_data_provider_factory.h"
 #include "ui/base/dragdrop/os_exchange_data_provider_factory_ozone.h"
 #include "ui/base/ime/linux/linux_input_method_context_factory.h"
 #include "ui/base/linux/linux_ui_delegate.h"
@@ -53,10 +52,10 @@
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
 #include "ui/base/dragdrop/os_exchange_data_provider_non_backed.h"
-#include "ui/base/ime/chromeos/input_method_chromeos.h"
+#include "ui/base/ime/ash/input_method_ash.h"
 #else
 #include "ui/base/ime/linux/input_method_auralinux.h"
-#include "ui/ozone/platform/x11/x11_os_exchange_data_provider_ozone.h"
+#include "ui/platform_window/x11/os_exchange_data_provider_x11.h"
 #endif
 
 namespace ui {
@@ -73,9 +72,12 @@ class LinuxUiDelegateX11 : public LinuxUiDelegate {
 
 // Singleton OzonePlatform implementation for X11 platform.
 class OzonePlatformX11 : public OzonePlatform,
-                         public ui::OSExchangeDataProviderFactoryOzone {
+                         public OSExchangeDataProviderFactoryOzone {
  public:
   OzonePlatformX11() { SetInstance(this); }
+
+  OzonePlatformX11(const OzonePlatformX11&) = delete;
+  OzonePlatformX11& operator=(const OzonePlatformX11&) = delete;
 
   ~OzonePlatformX11() override = default;
 
@@ -117,9 +119,13 @@ class OzonePlatformX11 : public OzonePlatform,
   }
 
   std::unique_ptr<PlatformScreen> CreateScreen() override {
-    auto screen = std::make_unique<X11ScreenOzone>();
-    screen->Init();
-    return screen;
+    return std::make_unique<X11ScreenOzone>();
+  }
+
+  void InitScreen(PlatformScreen* screen) override {
+    // InitScreen is always called with the same screen that CreateScreen
+    // hands back, so it is safe to cast here.
+    static_cast<X11ScreenOzone*>(screen)->Init();
   }
 
   PlatformClipboard* GetPlatformClipboard() override {
@@ -136,7 +142,7 @@ class OzonePlatformX11 : public OzonePlatform,
       internal::InputMethodDelegate* delegate,
       gfx::AcceleratedWidget) override {
 #if BUILDFLAG(IS_CHROMEOS_ASH)
-    return std::make_unique<InputMethodChromeOS>(delegate);
+    return std::make_unique<InputMethodAsh>(delegate);
 #else
     // This method is used by upper layer components (e.g: GtkUi) to determine
     // if the LinuxInputMethodContextFactory instance is provided by the Ozone
@@ -181,7 +187,7 @@ class OzonePlatformX11 : public OzonePlatform,
 #if BUILDFLAG(IS_CHROMEOS_ASH)
     return std::make_unique<OSExchangeDataProviderNonBacked>();
 #else
-    return std::make_unique<X11OSExchangeDataProviderOzone>();
+    return std::make_unique<OSExchangeDataProviderX11>();
 #endif
   }
 
@@ -190,7 +196,6 @@ class OzonePlatformX11 : public OzonePlatform,
     static bool initialised = false;
     if (!initialised) {
       properties->custom_frame_pref_default = ui::GetCustomFramePrefDefault();
-      properties->use_system_title_bar = true;
 
       // When the Ozone X11 backend is running, use a UI loop to grab Expose
       // events. See GLSurfaceGLX and https://crbug.com/326995.
@@ -206,6 +211,9 @@ class OzonePlatformX11 : public OzonePlatform,
       properties->supports_global_application_menus = true;
       properties->app_modal_dialogs_use_event_blocker = true;
       properties->fetch_buffer_formats_for_gmb_on_gpu = true;
+#if defined(OS_LINUX)
+      properties->supports_vaapi = true;
+#endif
 
       initialised = true;
     }
@@ -331,8 +339,6 @@ class OzonePlatformX11 : public OzonePlatform,
 #if BUILDFLAG(USE_GTK)
   std::unique_ptr<LinuxUiDelegate> linux_ui_delegate_;
 #endif
-
-  DISALLOW_COPY_AND_ASSIGN(OzonePlatformX11);
 };
 
 }  // namespace

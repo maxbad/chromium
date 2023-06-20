@@ -18,6 +18,7 @@
 #include "services/device/geolocation/geolocation_provider_impl.h"
 #include "services/device/geolocation/public_ip_address_geolocation_provider.h"
 #include "services/device/public/mojom/battery_monitor.mojom.h"
+#include "services/device/public/mojom/device_posture_provider.mojom.h"
 #include "services/device/public/mojom/device_service.mojom.h"
 #include "services/device/public/mojom/fingerprint.mojom.h"
 #include "services/device/public/mojom/geolocation.mojom.h"
@@ -71,6 +72,10 @@ class HidManagerImpl;
 class SerialPortManagerImpl;
 #endif
 
+#if defined(OS_ANDROID) || defined(OS_WIN)
+class DevicePostureProviderImpl;
+#endif
+
 class DeviceService;
 class GeolocationManager;
 class PlatformSensorProvider;
@@ -109,6 +114,10 @@ class DeviceService : public mojom::DeviceService {
  public:
   DeviceService(std::unique_ptr<DeviceServiceParams> params,
                 mojo::PendingReceiver<mojom::DeviceService> receiver);
+
+  DeviceService(const DeviceService&) = delete;
+  DeviceService& operator=(const DeviceService&) = delete;
+
   ~DeviceService() override;
 
   void AddReceiver(mojo::PendingReceiver<mojom::DeviceService> receiver);
@@ -175,6 +184,11 @@ class DeviceService : public mojom::DeviceService {
   void BindSensorProvider(
       mojo::PendingReceiver<mojom::SensorProvider> receiver) override;
 
+#if defined(OS_ANDROID) || defined(OS_WIN)
+  void BindDevicePostureProvider(
+      mojo::PendingReceiver<mojom::DevicePostureProvider> receiver) override;
+#endif
+
   void BindSerialPortManager(
       mojo::PendingReceiver<mojom::SerialPortManager> receiver) override;
 
@@ -233,11 +247,13 @@ class DeviceService : public mojom::DeviceService {
   scoped_refptr<base::SequencedTaskRunner> serial_port_manager_task_runner_;
 #endif
 
+#if defined(OS_ANDROID) || defined(OS_WIN)
+  std::unique_ptr<DevicePostureProviderImpl> device_posture_provider_;
+#endif
+
 #if BUILDFLAG(IS_CHROMEOS_ASH)
   std::unique_ptr<MtpDeviceManager> mtp_device_manager_;
 #endif
-
-  DISALLOW_COPY_AND_ASSIGN(DeviceService);
 };
 
 }  // namespace device

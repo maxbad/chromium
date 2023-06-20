@@ -24,7 +24,6 @@
 #include "mojo/public/cpp/system/data_pipe.h"
 #include "services/device/public/mojom/wake_lock_provider.mojom.h"
 #include "services/network/public/mojom/url_response_head.mojom-forward.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "url/gurl.h"
 
 namespace network {
@@ -91,6 +90,11 @@ class COMPONENTS_DOWNLOAD_EXPORT InProgressDownloadManager
                             const IsOriginSecureCallback& is_origin_secure_cb,
                             const URLSecurityPolicy& url_security_policy,
                             WakeLockProviderBinder wake_lock_provider_binder);
+
+  InProgressDownloadManager(const InProgressDownloadManager&) = delete;
+  InProgressDownloadManager& operator=(const InProgressDownloadManager&) =
+      delete;
+
   ~InProgressDownloadManager() override;
 
   // SimpleDownloadManager implementation.
@@ -299,8 +303,6 @@ class COMPONENTS_DOWNLOAD_EXPORT InProgressDownloadManager
   const WakeLockProviderBinder wake_lock_provider_binder_;
 
   base::WeakPtrFactory<InProgressDownloadManager> weak_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(InProgressDownloadManager);
 };
 
 }  // namespace download

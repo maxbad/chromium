@@ -84,9 +84,11 @@ public class OfflineMeasurementsBackgroundTask implements BackgroundTask {
 
     // The result of the HTTP probing. Defined in tools/metrics/histograms/enums.xml.
     // These values are persisted to logs. Entries should not be renumbered and
-    // numeric values should never be reused.
+    // numeric values should never be reused. These values are also defined in
+    // chrome/browser/offline_pages/measurements/proto/system_state.proto.
     @IntDef({ProbeResult.INVALID, ProbeResult.NO_INTERNET, ProbeResult.SERVER_ERROR,
-            ProbeResult.UNEXPECTED_RESPONSE, ProbeResult.VALIDATED, ProbeResult.CANCELLED})
+            ProbeResult.UNEXPECTED_RESPONSE, ProbeResult.VALIDATED, ProbeResult.CANCELLED,
+            ProbeResult.MULTIPLE_URL_CONNECTIONS_OPEN})
     @Retention(RetentionPolicy.SOURCE)
     public @interface ProbeResult {
         // Value could not be parsed from Prefs.
@@ -103,13 +105,16 @@ public class OfflineMeasurementsBackgroundTask implements BackgroundTask {
         // The HTTP probe was cancelled before it could finish, because the background task was
         // stopped.
         int CANCELLED = 5;
+        // Multiple HttpURLConnections were running at the same time causing the HTTP probe to fail.
+        int MULTIPLE_URL_CONNECTIONS_OPEN = 6;
         // Count.
-        int RESULT_COUNT = 6;
+        int RESULT_COUNT = 7;
     }
 
     // The state of the phone and how / if the user is interacting with it. Defined in
     // tools/metrics/histograms/enums.xml. These values are persisted to logs. Entries should not be
-    // renumbered and numeric values should never be reused.
+    // renumbered and numeric values should never be reused. These values are also defined in
+    // chrome/browser/offline_pages/measurements/proto/system_state.proto.
     @IntDef({UserState.INVALID, UserState.PHONE_OFF, UserState.NOT_USING_PHONE,
             UserState.USING_CHROME})
     @Retention(RetentionPolicy.SOURCE)
@@ -156,8 +161,7 @@ public class OfflineMeasurementsBackgroundTask implements BackgroundTask {
 
     public OfflineMeasurementsBackgroundTask() {}
 
-    public static void maybeScheduleTaskAndReportMetrics() {
-        reportMetrics();
+    public static void maybeScheduleTask() {
         if (ChromeFeatureList.isEnabled(ChromeFeatureList.OFFLINE_MEASUREMENTS_BACKGROUND_TASK)) {
             scheduleTask();
         } else {
@@ -165,9 +169,16 @@ public class OfflineMeasurementsBackgroundTask implements BackgroundTask {
         }
     }
 
-    private static void reportMetrics() {
-        // Record the data in the system state list to UMA.
+    public static byte[] getPersistedSystemStateListAsBytes() {
+        return getSystemStateListFromPrefs().toByteArray();
+    }
+
+    public static void reportMetricsToUmaAndClear() {
         SystemStateList systemStateList = getSystemStateListFromPrefs();
+
+        // Record the data in the system state list to UMA.
+        // TODO(1131600): Move the logging of UMA metrics to Native alongside the logging of metrics
+        // to UKM.
         for (SystemState systemState : systemStateList.getSystemStatesList()) {
             if (systemState.hasTimeSinceLastCheckMillis()) {
                 RecordHistogram.recordCustomTimesHistogram(OFFLINE_MEASUREMENTS_TIME_BETWEEN_CHECKS,
@@ -197,9 +208,7 @@ public class OfflineMeasurementsBackgroundTask implements BackgroundTask {
             }
         }
 
-        // TODO(1131600): Report the values in system state list in prefs to UKM.
-
-        // After logging the data to UMA, clear the data from prefs so it isn't logged again.
+        // Clear the data from prefs so it isn't logged again.
         clearSystemStateListFromPrefs();
     }
 
@@ -408,7 +417,6 @@ public class OfflineMeasurementsBackgroundTask implements BackgroundTask {
 
         // Gets whether airplane mode is enabled or disabled.
         boolean isAirplaneModeEnabled = isAirplaneModeEnabled(context);
-        boolean isRoaming = isRoaming(context);
         boolean isInteractive = isInteractive(context);
         boolean isApplicationForeground = isApplicationForeground();
 
@@ -416,9 +424,17 @@ public class OfflineMeasurementsBackgroundTask implements BackgroundTask {
                 didSystemBootSinceLastCheck, isInteractive, isApplicationForeground);
 
         partialSystemState.setUserState(SystemState.UserState.forNumber(userState))
-                .setIsRoaming(isRoaming)
                 .setIsAirplaneModeEnabled(isAirplaneModeEnabled)
                 .setLocalHourOfDayStart(localHourOfDay);
+
+        try {
+            boolean isRoaming = isRoaming(context);
+            partialSystemState.setIsRoaming(isRoaming);
+        } catch (SecurityException e) {
+            // When getting the capabilities of a network, we can encounter a SecurityException in
+            // some cases. When this happens we cannot determine if the network is marked as roaming
+            // or not roaming, so we do not record a value for IsRoaming. See crbug/1246848.
+        }
 
         // Starts the HTTP probe.
         sendHttpProbe((Integer probeResult) -> {
@@ -513,6 +529,10 @@ public class OfflineMeasurementsBackgroundTask implements BackgroundTask {
                     // Most likely the exception is thrown due to host name not resolved or socket
                     // timeout.
                     return ProbeResult.NO_INTERNET;
+                } catch (ArrayIndexOutOfBoundsException | NullPointerException e) {
+                    // Most likely these exceptions were thrown due to two HttpURLConnections
+                    // running at the same time.
+                    return ProbeResult.MULTIPLE_URL_CONNECTIONS_OPEN;
                 } finally {
                     if (urlConnection != null) {
                         urlConnection.disconnect();

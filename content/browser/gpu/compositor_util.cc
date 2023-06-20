@@ -15,7 +15,6 @@
 #include "base/feature_list.h"
 #include "base/logging.h"
 #include "base/metrics/field_trial.h"
-#include "base/numerics/ranges.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/system/sys_info.h"
@@ -105,6 +104,24 @@ const GpuFeatureData GetGpuFeatureData(
          "Accelerated 2D canvas is unavailable: either disabled "
          "via blocklist or the command line."),
      true},
+    {"canvas_oop_rasterization",
+     SafeGetFeatureStatus(gpu_feature_info,
+                          gpu::GPU_FEATURE_TYPE_CANVAS_OOP_RASTERIZATION),
+     !base::FeatureList::IsEnabled(features::kCanvasOopRasterization),
+#if 0
+     // TODO(crbug.com/1240756): Remove the "#if 0" once OOPR-Canvas is fully
+     // launched.
+     DisableInfo::Problem(
+         "Canvas out-of-process rasterization has been disabled, either via "
+         "blocklist, the command line, about:flags, or because out-of-process "
+         "rasterization is disabled."
+     ),
+#else
+     // As long as the Finch experiment is running, having the feature disabled
+     // is not a "problem".
+     DisableInfo::NotProblem(),
+#endif
+     /*fallback_to_software=*/false},
     {"gpu_compositing",
      // TODO(rivr): Replace with a check to see which backend is used for
      // compositing; do the same for GPU rasterization if it's enabled. For now
@@ -190,6 +207,8 @@ const GpuFeatureData GetGpuFeatureData(
      false},
     {"skia_renderer", gpu::kGpuFeatureStatusEnabled,
      !features::IsUsingSkiaRenderer(), DisableInfo::NotProblem(), false},
+    {"raw_draw", gpu::kGpuFeatureStatusEnabled, !features::IsUsingRawDraw(),
+     DisableInfo::NotProblem(), false},
   };
   DCHECK(index < base::size(kGpuFeatureData));
   *eof = (index == base::size(kGpuFeatureData) - 1);
@@ -223,6 +242,7 @@ base::Value GetFeatureStatusImpl(GpuFeatureInfoType type) {
     std::string status;
     // Features undergoing a finch controlled roll out.
     if (gpu_feature_data.name == "skia_renderer" ||
+        gpu_feature_data.name == "raw_draw" ||
         gpu_feature_data.name == "viz_hit_test_surface_layer") {
       status = (gpu_feature_data.disabled ? "disabled_off_ok" : "enabled_on");
     } else if (gpu_feature_data.disabled || gpu_access_blocked ||
@@ -238,6 +258,9 @@ base::Value GetFeatureStatusImpl(GpuFeatureInfoType type) {
       status = "unavailable_software";
     } else {
       status = "enabled";
+      if (gpu_feature_data.name == "canvas_oop_rasterization") {
+        status += "_on";
+      }
       if ((gpu_feature_data.name == "webgl" ||
            gpu_feature_data.name == "webgl2") &&
           is_gpu_compositing_disabled)
@@ -398,8 +421,7 @@ int NumberOfRendererRasterThreads() {
     }
   }
 
-  return base::ClampToRange(num_raster_threads, kMinRasterThreads,
-                            kMaxRasterThreads);
+  return base::clamp(num_raster_threads, kMinRasterThreads, kMaxRasterThreads);
 }
 
 bool IsZeroCopyUploadEnabled() {
@@ -413,6 +435,9 @@ bool IsZeroCopyUploadEnabled() {
 }
 
 bool IsPartialRasterEnabled() {
+  // Partial raster is not supported with RawDraw.
+  if (features::IsUsingRawDraw())
+    return false;
   const auto& command_line = *base::CommandLine::ForCurrentProcess();
   return !command_line.HasSwitch(blink::switches::kDisablePartialRaster);
 }

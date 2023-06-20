@@ -9,8 +9,7 @@
 #include <string>
 
 #include "ash/constants/ash_features.h"
-#include "ash/public/cpp/ash_features.h"
-#include "ash/public/cpp/ash_pref_names.h"
+#include "ash/constants/ash_pref_names.h"
 #include "ash/public/cpp/shelf_test_api.h"
 #include "ash/public/cpp/test/shell_test_api.h"
 #include "base/bind.h"
@@ -52,8 +51,6 @@ const test::UIPath kChromebookEmailToggleDiv = {"marketing-opt-in",
                                                 "toggleRow"};
 const test::UIPath kChromebookEmailLegalFooterDiv = {"marketing-opt-in",
                                                      "legalFooter"};
-const test::UIPath kChromebookEmailAnimation = {"marketing-opt-in",
-                                                "animation"};
 const test::UIPath kMarketingA11yButton = {
     "marketing-opt-in", "marketing-opt-in-accessibility-button"};
 const test::UIPath kMarketingFinalA11yPage = {"marketing-opt-in",
@@ -153,7 +150,7 @@ class MarketingOptInScreenTest : public OobeBaseTest,
   base::RepeatingClosure screen_exit_callback_;
   MarketingOptInScreen::ScreenExitCallback original_callback_;
 
-  FakeGaiaMixin fake_gaia_{&mixin_host_, embedded_test_server()};
+  FakeGaiaMixin fake_gaia_{&mixin_host_};
   LocalStateMixin local_state_mixin_{&mixin_host_, this};
 };
 
@@ -239,8 +236,6 @@ void MarketingOptInScreenTest::ExpectLegalFooterVisibility(bool visibility) {
   ExpectOptInOptionAvailable();
   if (visibility) {
     test::OobeJS().ExpectVisiblePath(kChromebookEmailLegalFooterDiv);
-    // Only the old animation is invisible when the legal footer is shown.
-    test::OobeJS().ExpectHiddenPath(kChromebookEmailAnimation);
   } else {
     test::OobeJS().ExpectHiddenPath(kChromebookEmailLegalFooterDiv);
   }
@@ -508,7 +503,8 @@ class MarketingTestCountryCodes : public MarketingOptInScreenTestWithRequest,
 
 // Tests that the given timezone resolves to the correct location and
 // generates a request for the server with the correct region code.
-IN_PROC_BROWSER_TEST_P(MarketingTestCountryCodes, CountryCodes) {
+// TODO(crbug.com/1268208): Fix flaky test.
+IN_PROC_BROWSER_TEST_P(MarketingTestCountryCodes, DISABLED_CountryCodes) {
   const RegionToCodeMap param = GetParam();
   ShowMarketingOptInScreen();
   OobeScreenWaiter(MarketingOptInScreenView::kScreenId).Wait();

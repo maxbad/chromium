@@ -82,9 +82,11 @@ class SegmentInfoDatabaseTest : public testing::Test {
     if (result.has_value())
       prediction_result.set_result(result.value());
 
-    segment_db_->SaveSegmentResult(
-        segment_id, result.has_value() ? &prediction_result : nullptr,
-        base::DoNothing());
+    segment_db_->SaveSegmentResult(segment_id,
+                                   result.has_value()
+                                       ? absl::make_optional(prediction_result)
+                                       : absl::nullopt,
+                                   base::DoNothing());
     db_->GetCallback(true);
     db_->UpdateCallback(true);
   }
@@ -159,10 +161,34 @@ TEST_F(SegmentInfoDatabaseTest, Update) {
   VerifyDb({kSegmentId});
 
   // Insert another segment and verify.
-  segment_db_->UpdateSegment(kSegmentId2, CreateSegment(kSegmentId),
+  segment_db_->UpdateSegment(kSegmentId2, CreateSegment(kSegmentId2),
                              base::DoNothing());
   db_->UpdateCallback(true);
   VerifyDb({kSegmentId, kSegmentId2});
+
+  // Verify GetSegmentInfoForSegments.
+  segment_db_->GetSegmentInfoForSegments(
+      {kSegmentId2}, base::BindOnce(&SegmentInfoDatabaseTest::OnGetAllSegments,
+                                    base::Unretained(this)));
+  db_->LoadCallback(true);
+  EXPECT_EQ(1u, get_all_segment_result_.size());
+  EXPECT_EQ(kSegmentId2, get_all_segment_result_[0].first);
+
+  segment_db_->GetSegmentInfoForSegments(
+      {kSegmentId}, base::BindOnce(&SegmentInfoDatabaseTest::OnGetAllSegments,
+                                   base::Unretained(this)));
+  db_->LoadCallback(true);
+  EXPECT_EQ(1u, get_all_segment_result_.size());
+  EXPECT_EQ(kSegmentId, get_all_segment_result_[0].first);
+
+  segment_db_->GetSegmentInfoForSegments(
+      {kSegmentId, kSegmentId2},
+      base::BindOnce(&SegmentInfoDatabaseTest::OnGetAllSegments,
+                     base::Unretained(this)));
+  db_->LoadCallback(true);
+  EXPECT_EQ(2u, get_all_segment_result_.size());
+  EXPECT_EQ(kSegmentId, get_all_segment_result_[0].first);
+  EXPECT_EQ(kSegmentId2, get_all_segment_result_[1].first);
 }
 
 TEST_F(SegmentInfoDatabaseTest, WriteResult) {

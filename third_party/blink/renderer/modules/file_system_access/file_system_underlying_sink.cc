@@ -123,26 +123,7 @@ ScriptPromise FileSystemUnderlyingSink::HandleParams(
           "Invalid params passed. write requires a data argument");
       return ScriptPromise();
     }
-    V8UnionArrayBufferOrArrayBufferViewOrBlobOrUSVString* data;
-    if (params.data().IsArrayBuffer()) {
-      data = MakeGarbageCollected<
-          V8UnionArrayBufferOrArrayBufferViewOrBlobOrUSVString>(
-          params.data().GetAsArrayBuffer());
-    } else if (params.data().IsArrayBufferView()) {
-      data = MakeGarbageCollected<
-          V8UnionArrayBufferOrArrayBufferViewOrBlobOrUSVString>(
-          params.data().GetAsArrayBufferView());
-    } else if (params.data().IsBlob()) {
-      data = MakeGarbageCollected<
-          V8UnionArrayBufferOrArrayBufferViewOrBlobOrUSVString>(
-          params.data().GetAsBlob());
-    } else {
-      DCHECK(params.data().IsUSVString());
-      data = MakeGarbageCollected<
-          V8UnionArrayBufferOrArrayBufferViewOrBlobOrUSVString>(
-          params.data().GetAsUSVString());
-    }
-    return WriteData(script_state, position, data, exception_state);
+    return WriteData(script_state, position, params.data(), exception_state);
   }
 
   exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,

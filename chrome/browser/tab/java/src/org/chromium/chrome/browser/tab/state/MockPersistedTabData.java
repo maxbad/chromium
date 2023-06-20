@@ -29,7 +29,8 @@ public class MockPersistedTabData extends PersistedTabData {
         mField = field;
     }
 
-    private MockPersistedTabData(Tab tab, byte[] data, PersistedTabDataStorage storage, String id) {
+    private MockPersistedTabData(
+            Tab tab, ByteBuffer data, PersistedTabDataStorage storage, String id) {
         super(tab, storage, id);
         deserializeAndLog(data);
     }
@@ -41,8 +42,8 @@ public class MockPersistedTabData extends PersistedTabData {
      * @param callback callback {@link MockPersistedTabData} will be passed back in
      */
     public static void from(Tab tab, Callback<MockPersistedTabData> callback) {
-        PersistedTabData.from(tab, (data, storage, id) -> {
-            return new MockPersistedTabData(tab, data, storage, id);
+        PersistedTabData.from(tab, (data, storage, id, factoryCallback) -> {
+            factoryCallback.onResult(new MockPersistedTabData(tab, data, storage, id));
         }, null, MockPersistedTabData.class, callback);
     }
 
@@ -63,16 +64,17 @@ public class MockPersistedTabData extends PersistedTabData {
     }
 
     @Override
-    public Supplier<byte[]> getSerializeSupplier() {
+    public Supplier<ByteBuffer> getSerializeSupplier() {
         ByteBuffer byteBuffer = ByteBuffer.allocate(4).putInt(mField);
+        byteBuffer.rewind();
         return () -> {
-            return byteBuffer.array();
+            return byteBuffer;
         };
     }
 
     @Override
-    public boolean deserialize(byte[] data) {
-        mField = ByteBuffer.wrap(data).getInt();
+    public boolean deserialize(ByteBuffer data) {
+        mField = data.getInt();
         return true;
     }
 

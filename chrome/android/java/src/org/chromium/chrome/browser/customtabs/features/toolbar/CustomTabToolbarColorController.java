@@ -9,8 +9,8 @@ import androidx.annotation.IntDef;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import org.chromium.blink.mojom.DisplayMode;
 import org.chromium.chrome.browser.browserservices.intents.BrowserServicesIntentDataProvider;
-import org.chromium.chrome.browser.browserservices.intents.WebDisplayMode;
 import org.chromium.chrome.browser.browserservices.intents.WebappExtras;
 import org.chromium.chrome.browser.customtabs.content.CustomTabActivityTabProvider;
 import org.chromium.chrome.browser.customtabs.content.TabObserverRegistrar;
@@ -78,6 +78,9 @@ public class CustomTabToolbarColorController {
     public static int computeToolbarColorType(BrowserServicesIntentDataProvider intentDataProvider,
             boolean useTabThemeColor, @Nullable Tab tab) {
         if (intentDataProvider.isOpenedByChrome()) {
+            if (intentDataProvider.getColorProvider().hasCustomToolbarColor()) {
+                return ToolbarColorType.INTENT_TOOLBAR_COLOR;
+            }
             return (tab == null) ? ToolbarColorType.DEFAULT_COLOR : ToolbarColorType.THEME_COLOR;
         }
 
@@ -177,8 +180,7 @@ public class CustomTabToolbarColorController {
     }
 
     private int getDefaultColor() {
-        return ChromeColors.getDefaultThemeColor(
-                mActivity.getResources(), mIntentDataProvider.isIncognito());
+        return ChromeColors.getDefaultThemeColor(mActivity, mIntentDataProvider.isIncognito());
     }
 
     private static boolean shouldUseDefaultThemeColorForFullscreen(
@@ -188,6 +190,6 @@ public class CustomTabToolbarColorController {
         // the page content when users swipe them in or they appear because the on-screen keyboard
         // was triggered.
         WebappExtras webappExtras = intentDataProvider.getWebappExtras();
-        return (webappExtras != null && webappExtras.displayMode == WebDisplayMode.FULLSCREEN);
+        return (webappExtras != null && webappExtras.displayMode == DisplayMode.FULLSCREEN);
     }
 }

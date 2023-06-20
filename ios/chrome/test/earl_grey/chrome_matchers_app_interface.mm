@@ -19,7 +19,6 @@
 #import "ios/chrome/browser/ui/autofill/manual_fill/manual_fill_password_cell.h"
 #import "ios/chrome/browser/ui/autofill/manual_fill/manual_fill_password_mediator.h"
 #import "ios/chrome/browser/ui/autofill/manual_fill/password_view_controller.h"
-#import "ios/chrome/browser/ui/autofill/save_card_infobar_controller.h"
 #import "ios/chrome/browser/ui/bookmarks/bookmark_ui_constants.h"
 #import "ios/chrome/browser/ui/content_suggestions/content_suggestions_constants.h"
 #import "ios/chrome/browser/ui/content_suggestions/content_suggestions_view_controller.h"
@@ -434,10 +433,8 @@ UIWindow* WindowWithAccessibilityIdentifier(NSString* accessibility_id) {
       buttonWithAccessibilityLabelID:(IDS_IOS_CONTENT_CONTEXT_OPENLINKNEWTAB)];
 }
 
-+ (id<GREYMatcher>)openLinkInIncognitoButtonWithUseNewString:
-    (BOOL)useNewString {
-  int stringId = useNewString ? IDS_IOS_OPEN_IN_INCOGNITO_ACTION_TITLE
-                              : IDS_IOS_CONTENT_CONTEXT_OPENLINKNEWINCOGNITOTAB;
++ (id<GREYMatcher>)openLinkInIncognitoButton {
+  int stringId = IDS_IOS_OPEN_IN_INCOGNITO_ACTION_TITLE;
   return [ChromeMatchersAppInterface buttonWithAccessibilityLabelID:(stringId)];
 }
 
@@ -501,10 +498,6 @@ UIWindow* WindowWithAccessibilityIdentifier(NSString* accessibility_id) {
 
 + (id<GREYMatcher>)settingsDoneButton {
   return grey_accessibilityID(kSettingsDoneButtonId);
-}
-
-+ (id<GREYMatcher>)syncSettingsConfirmButton {
-  return grey_accessibilityID(kSyncSettingsConfirmButtonId);
 }
 
 + (id<GREYMatcher>)autofillCreditCardEditTableView {
@@ -587,20 +580,21 @@ UIWindow* WindowWithAccessibilityIdentifier(NSString* accessibility_id) {
   return grey_accessibilityID(kPrivacyTableViewId);
 }
 
-+ (id<GREYMatcher>)accountsSyncButton {
-  return grey_allOf(grey_accessibilityID(kSettingsAccountsTableViewSyncCellId),
-                    grey_sufficientlyVisible(), nil);
-}
-
 + (id<GREYMatcher>)contentSettingsButton {
   return [ChromeMatchersAppInterface
       buttonWithAccessibilityLabelID:(IDS_IOS_CONTENT_SETTINGS_TITLE)];
 }
 
 + (id<GREYMatcher>)googleServicesSettingsButton {
-  return grey_allOf(
-      grey_kindOfClass([UITableViewCell class]), grey_sufficientlyVisible(),
-      grey_accessibilityID(kSettingsGoogleSyncAndServicesCellId), nil);
+  return grey_allOf(grey_kindOfClass([UITableViewCell class]),
+                    grey_accessibilityID(kSettingsGoogleServicesCellId),
+                    grey_sufficientlyVisible(), nil);
+}
+
++ (id<GREYMatcher>)manageSyncSettingsButton {
+  return grey_allOf(grey_kindOfClass([UITableViewCell class]),
+                    grey_accessibilityID(kSettingsGoogleSyncAndServicesCellId),
+                    grey_sufficientlyVisible(), nil);
 }
 
 + (id<GREYMatcher>)googleServicesSettingsView {
@@ -664,7 +658,8 @@ UIWindow* WindowWithAccessibilityIdentifier(NSString* accessibility_id) {
 }
 
 + (id<GREYMatcher>)settingsCollectionView {
-  return grey_accessibilityID(kSettingsTableViewId);
+  return grey_allOf(grey_accessibilityID(kSettingsTableViewId),
+                    grey_sufficientlyVisible(), nil);
 }
 
 + (id<GREYMatcher>)clearBrowsingHistoryButton {
@@ -750,18 +745,22 @@ UIWindow* WindowWithAccessibilityIdentifier(NSString* accessibility_id) {
   return grey_kindOfClass(NSClassFromString(@"UICalloutBarButton"));
 }
 
-+ (id<GREYMatcher>)systemSelectionCalloutCopyButton {
-  return grey_allOf(grey_accessibilityLabel(@"Copy"),
-                    [self systemSelectionCallout], nil);
-}
-
 + (id<GREYMatcher>)systemSelectionCalloutLinkToTextButton {
   return grey_allOf(grey_accessibilityLabel(
                         l10n_util::GetNSString(IDS_IOS_SHARE_LINK_TO_TEXT)),
                     [self systemSelectionCallout], nil);
 }
 
-+ (id<GREYMatcher>)copyActivityButton API_AVAILABLE(ios(13)) {
++ (id<GREYMatcher>)systemSelectionCalloutCopyButton {
+  return grey_allOf(grey_accessibilityLabel(@"Copy"),
+                    [self systemSelectionCallout], nil);
+}
+
++ (id<GREYMatcher>)systemSelectionCalloutOverflowButton {
+  return grey_accessibilityID(@"show.next.items.menu.button");
+}
+
++ (id<GREYMatcher>)copyActivityButton {
   id<GREYMatcher> copyStaticText = [ChromeMatchersAppInterface
       staticTextWithAccessibilityLabel:l10n_util::GetNSString(
                                            IDS_IOS_SHARE_MENU_COPY)];
@@ -770,15 +769,13 @@ UIWindow* WindowWithAccessibilityIdentifier(NSString* accessibility_id) {
       grey_ancestor(grey_kindOfClassName(@"UIActivityActionGroupCell")), nil);
 }
 
-+ (id<GREYMatcher>)copyLinkButtonWithUseNewString:(BOOL)useNewString {
-  int stringId = useNewString ? IDS_IOS_COPY_LINK_ACTION_TITLE
-                              : IDS_IOS_CONTENT_CONTEXT_COPY;
++ (id<GREYMatcher>)copyLinkButton {
+  int stringId = IDS_IOS_COPY_LINK_ACTION_TITLE;
   return [ChromeMatchersAppInterface buttonWithAccessibilityLabelID:stringId];
 }
 
-+ (id<GREYMatcher>)editButtonWithUseNewString:(BOOL)useNewString {
-  int stringId = useNewString ? IDS_IOS_EDIT_ACTION_TITLE
-                              : IDS_IOS_BOOKMARK_CONTEXT_MENU_EDIT;
++ (id<GREYMatcher>)editButton {
+  int stringId = IDS_IOS_EDIT_ACTION_TITLE;
   return [ChromeMatchersAppInterface buttonWithAccessibilityLabelID:stringId];
 }
 
@@ -967,14 +964,6 @@ UIWindow* WindowWithAccessibilityIdentifier(NSString* accessibility_id) {
                                               descriptionBlock:describe];
 }
 
-+ (id<GREYMatcher>)autofillSaveCardLocallyInfobar {
-  return grey_accessibilityID(kSaveCardInfobarViewLocalAccessibilityID);
-}
-
-+ (id<GREYMatcher>)autofillUploadCardInfobar {
-  return grey_accessibilityID(kSaveCardInfobarViewUploadAccessibilityID);
-}
-
 + (id<GREYMatcher>)historyEntryForURL:(NSString*)URL title:(NSString*)title {
   GREYMatchesBlock matches = ^BOOL(TableViewURLCell* cell) {
     return [cell.titleLabel.text isEqual:title] &&
@@ -1128,6 +1117,45 @@ UIWindow* WindowWithAccessibilityIdentifier(NSString* accessibility_id) {
   return grey_allOf(
       [self buttonWithAccessibilityLabelID:IDS_IOS_USE_SUGGESTED_PASSWORD],
       grey_interactable(), nullptr);
+}
+
+#pragma mark - Tab Grid Selection Mode
++ (id<GREYMatcher>)tabGridEditButton {
+  return grey_accessibilityID(kTabGridEditButtonIdentifier);
+}
+
++ (id<GREYMatcher>)tabGridEditMenuCloseAllButton {
+  return grey_allOf(
+      [ChromeMatchersAppInterface buttonWithAccessibilityLabelID:
+                                      (IDS_IOS_CONTENT_CONTEXT_CLOSEALLTABS)],
+      grey_sufficientlyVisible(), nil);
+}
+
++ (id<GREYMatcher>)tabGridSelectTabsMenuButton {
+  return grey_allOf(
+      [ChromeMatchersAppInterface
+          buttonWithAccessibilityLabelID:(IDS_IOS_CONTENT_CONTEXT_SELECTTABS)],
+      grey_sufficientlyVisible(), nil);
+}
+
++ (id<GREYMatcher>)tabGridEditAddToButton {
+  return grey_allOf(grey_accessibilityID(kTabGridEditAddToButtonIdentifier),
+                    grey_sufficientlyVisible(), nil);
+}
+
++ (id<GREYMatcher>)tabGridEditCloseTabsButton {
+  return grey_allOf(grey_accessibilityID(kTabGridEditCloseTabsButtonIdentifier),
+                    grey_sufficientlyVisible(), nil);
+}
+
++ (id<GREYMatcher>)tabGridEditSelectAllButton {
+  return grey_allOf(grey_accessibilityID(kTabGridEditSelectAllButtonIdentifier),
+                    grey_sufficientlyVisible(), nil);
+}
+
++ (id<GREYMatcher>)tabGridEditShareButton {
+  return grey_allOf(grey_accessibilityID(kTabGridEditShareButtonIdentifier),
+                    grey_sufficientlyVisible(), nil);
 }
 
 @end

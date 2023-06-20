@@ -154,9 +154,12 @@ AudioDevice::AudioDevice(const chromeos::AudioNode& node) {
   active = node.active;
   plugged_time = node.plugged_time;
   max_supported_channels = node.max_supported_channels;
+  audio_effect = node.audio_effect;
 }
 
 AudioDevice::AudioDevice(const AudioDevice& other) = default;
+
+AudioDevice& AudioDevice::operator=(const AudioDevice& other) = default;
 
 std::string AudioDevice::ToString() const {
   if (stable_device_id_version == 0) {

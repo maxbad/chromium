@@ -30,7 +30,6 @@
 #include <memory>
 #include <utility>
 
-#include "base/macros.h"
 #include "base/memory/ptr_util.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/blink/renderer/core/core_export.h"
@@ -86,6 +85,8 @@ class TokenPreloadScanner {
                       const MediaValuesCached::MediaValuesCachedData&,
                       const ScannerType,
                       bool priority_hints_origin_trial_enabled);
+  TokenPreloadScanner(const TokenPreloadScanner&) = delete;
+  TokenPreloadScanner& operator=(const TokenPreloadScanner&) = delete;
   ~TokenPreloadScanner();
 
   void Scan(const HTMLToken&,
@@ -126,17 +127,20 @@ class TokenPreloadScanner {
         const KURL& predicted_base_element_url,
         bool in_style,
         bool in_script,
+        bool in_script_web_bundle,
         size_t template_count,
         scoped_refptr<const PreloadRequest::ExclusionInfo> exclusion_info)
         : predicted_base_element_url(predicted_base_element_url),
           in_style(in_style),
           in_script(in_script),
+          in_script_web_bundle(in_script_web_bundle),
           template_count(template_count),
           exclusion_info(std::move(exclusion_info)) {}
 
     KURL predicted_base_element_url;
     bool in_style;
     bool in_script;
+    bool in_script_web_bundle;
     size_t template_count;
     scoped_refptr<const PreloadRequest::ExclusionInfo> exclusion_info;
   };
@@ -156,6 +160,7 @@ class TokenPreloadScanner {
   bool in_style_;
   bool in_picture_;
   bool in_script_;
+  bool in_script_web_bundle_;
   bool seen_body_;
   bool seen_img_;
   PictureData picture_data_;
@@ -174,8 +179,6 @@ class TokenPreloadScanner {
   bool did_rewind_ = false;
 
   Vector<Checkpoint> checkpoints_;
-
-  DISALLOW_COPY_AND_ASSIGN(TokenPreloadScanner);
 };
 
 class CORE_EXPORT HTMLPreloadScanner {
@@ -187,6 +190,8 @@ class CORE_EXPORT HTMLPreloadScanner {
                      std::unique_ptr<CachedDocumentParameters>,
                      const MediaValuesCached::MediaValuesCachedData&,
                      const TokenPreloadScanner::ScannerType);
+  HTMLPreloadScanner(const HTMLPreloadScanner&) = delete;
+  HTMLPreloadScanner& operator=(const HTMLPreloadScanner&) = delete;
   ~HTMLPreloadScanner();
 
   void AppendToEnd(const SegmentedString&);
@@ -199,8 +204,6 @@ class CORE_EXPORT HTMLPreloadScanner {
   SegmentedString source_;
   HTMLToken token_;
   std::unique_ptr<HTMLTokenizer> tokenizer_;
-
-  DISALLOW_COPY_AND_ASSIGN(HTMLPreloadScanner);
 };
 
 }  // namespace blink

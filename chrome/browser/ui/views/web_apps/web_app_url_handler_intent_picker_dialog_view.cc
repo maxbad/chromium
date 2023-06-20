@@ -4,47 +4,63 @@
 
 #include "chrome/browser/ui/views/web_apps/web_app_url_handler_intent_picker_dialog_view.h"
 
+#include <functional>
 #include <memory>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "base/barrier_closure.h"
 #include "base/bind.h"
+#include "base/callback.h"
 #include "base/check.h"
+#include "base/compiler_specific.h"
+#include "base/containers/flat_set.h"
+#include "base/feature_list.h"
 #include "base/location.h"
+#include "base/metrics/histogram_functions.h"
+#include "base/stl_util.h"
 #include "base/strings/string_piece_forward.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/timer/elapsed_timer.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/profiles/profile_attributes_storage.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/profiles/profiles_state.h"
 #include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/browser/ui/views/chrome_layout_provider.h"
 #include "chrome/browser/ui/views/web_apps/web_app_url_handler_hover_button.h"
-#include "chrome/browser/web_applications/components/app_registrar.h"
-#include "chrome/browser/web_applications/components/url_handler_launch_params.h"
+#include "chrome/browser/web_applications/url_handler_launch_params.h"
+#include "chrome/browser/web_applications/url_handler_prefs.h"
 #include "chrome/browser/web_applications/web_app_provider.h"
+#include "chrome/browser/web_applications/web_app_registrar.h"
 #include "chrome/grit/generated_resources.h"
 #include "components/keep_alive_registry/keep_alive_types.h"
 #include "components/keep_alive_registry/scoped_keep_alive.h"
 #include "extensions/browser/extension_dialog_auto_confirm.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
+#include "third_party/blink/public/common/features.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/metadata/metadata_impl_macros.h"
 #include "ui/base/ui_base_types.h"
+#include "ui/color/color_id.h"
 #include "ui/events/event.h"
 #include "ui/gfx/geometry/insets.h"
 #include "ui/gfx/geometry/size.h"
-#include "ui/native_theme/native_theme.h"
+#include "ui/views/accessibility/view_accessibility.h"
 #include "ui/views/border.h"
 #include "ui/views/controls/button/checkbox.h"
 #include "ui/views/controls/scroll_view.h"
 #include "ui/views/controls/separator.h"
 #include "ui/views/layout/box_layout.h"
-#include "ui/views/layout/grid_layout.h"
+#include "ui/views/layout/box_layout_view.h"
 #include "ui/views/view.h"
+#include "ui/views/view_class_properties.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/window/dialog_delegate.h"
+#include "url/gurl.h"
 
 namespace {
 
@@ -60,28 +76,61 @@ constexpr size_t kMaxAppResults = 3;
 // main component sizes were also mostly copied over to share the
 // same layout.
 // Main components sizes
-constexpr int kIntentPickerCheckBoxColumnWidth = 288;
 constexpr int kMaxIntentPickerWidth = 320;
 constexpr int kRowHeight = 32;
 constexpr int kTitlePadding = 16;
 constexpr gfx::Insets kSeparatorPadding(0, 0, 16, 0);
-constexpr SkColor kSeparatorColor = SkColorSetARGB(0x1F, 0x0, 0x0, 0x0);
 
-std::unique_ptr<views::Separator> CreateHorizontalSeparator() {
-  auto separator = std::make_unique<views::Separator>();
-  separator->SetColor(kSeparatorColor);
-  separator->SetBorder(views::CreateEmptyBorder(kSeparatorPadding));
-  return separator;
+void RecordDialogState(
+    WebAppUrlHandlerIntentPickerView::DialogState dialog_state) {
+  base::UmaHistogramEnumeration("WebApp.UrlHandling.DialogState", dialog_state);
 }
 
 }  // namespace
 
+// static
+base::flat_set<Profile*>
+WebAppUrlHandlerIntentPickerView::GetUrlHandlingValidProfiles(
+    std::vector<web_app::UrlHandlerLaunchParams>& launch_params_list) {
+  ProfileManager* const profile_manager = g_browser_process->profile_manager();
+  if (!profile_manager)
+    return {};
+
+  std::vector<Profile*> profiles;
+  // A predicate function for base::EraseIf that returns true if `params`
+  // references an invalid Profile. Otherwise, adds the corresponding profile to
+  // `profiles` and returns false.
+  // TODO(crbug.com/1217419): Verify if site permission is enabled.
+  auto remove_pred = [profile_manager, &profiles](
+                         const web_app::UrlHandlerLaunchParams& params) {
+    if (!profile_manager->GetProfileAttributesStorage()
+             .GetProfileAttributesWithPath(params.profile_path)) {
+      return true;  // Profile deleted or path otherwise invalid.
+    }
+
+    Profile* const profile = profile_manager->GetProfile(params.profile_path);
+    if (!profile)
+      return true;  // Failed to load profile.
+
+    profiles.push_back(profile);
+    return false;
+  };
+
+  profiles.reserve(launch_params_list.size());
+  base::ElapsedTimer timer;
+  base::EraseIf(launch_params_list, std::move(remove_pred));
+  base::UmaHistogramMicrosecondsTimes(
+      "WebApp.UrlHandling.GetValidProfilesAtStartUp", timer.Elapsed());
+  return std::move(profiles);
+}
+
 void WebAppUrlHandlerIntentPickerView::Show(
+    const GURL& url,
     std::vector<web_app::UrlHandlerLaunchParams> launch_params_list,
     std::unique_ptr<ScopedKeepAlive> keep_alive,
     chrome::WebAppUrlHandlerAcceptanceCallback dialog_close_callback) {
   auto view = std::make_unique<WebAppUrlHandlerIntentPickerView>(
-      std::move(launch_params_list), std::move(keep_alive),
+      url, std::move(launch_params_list), std::move(keep_alive),
       std::move(dialog_close_callback));
 
   views::DialogDelegate::CreateDialogWidget(std::move(view),
@@ -91,10 +140,12 @@ void WebAppUrlHandlerIntentPickerView::Show(
 }
 
 WebAppUrlHandlerIntentPickerView::WebAppUrlHandlerIntentPickerView(
+    const GURL& url,
     std::vector<web_app::UrlHandlerLaunchParams> launch_params_list,
     std::unique_ptr<ScopedKeepAlive> keep_alive,
     chrome::WebAppUrlHandlerAcceptanceCallback dialog_close_callback)
-    : launch_params_list_(std::move(launch_params_list)),
+    : url_(url),
+      launch_params_list_(std::move(launch_params_list)),
       close_callback_(std::move(dialog_close_callback)),
       // Pass the ScopedKeepAlive into here ensures the process is alive until
       // the dialog is closed, and initiates the shutdown at closure if there
@@ -113,9 +164,6 @@ WebAppUrlHandlerIntentPickerView::WebAppUrlHandlerIntentPickerView(
   SetButtonLabel(
       ui::DIALOG_BUTTON_OK,
       l10n_util::GetStringUTF16(IDS_URL_HANDLER_INTENT_PICKER_OK_BUTTON_TEXT));
-  SetButtonLabel(ui::DIALOG_BUTTON_CANCEL,
-                 l10n_util::GetStringUTF16(
-                     IDS_URL_HANDLER_INTENT_PICKER_CANCEL_BUTTON_TEXT));
 
   SetAcceptCallback(base::BindOnce(
       &WebAppUrlHandlerIntentPickerView::OnAccepted, base::Unretained(this)));
@@ -182,32 +230,44 @@ void WebAppUrlHandlerIntentPickerView::OnClosed() {
 }
 
 void WebAppUrlHandlerIntentPickerView::Initialize() {
-  views::GridLayout* layout =
-      SetLayoutManager(std::make_unique<views::GridLayout>());
+  auto builder =
+      views::Builder<WebAppUrlHandlerIntentPickerView>(this).SetLayoutManager(
+          std::make_unique<views::BoxLayout>(
+              views::BoxLayout::Orientation::kVertical));
+
+  // size+1 for the browser entry.
+  size_t total_buttons = launch_params_list_.size() + 1;
+  hover_buttons_.reserve(total_buttons);
+  size_t button_index = hover_buttons_.size();
 
   // Creates a view to hold the views for each app.
-  auto scrollable_view = std::make_unique<views::View>();
-  scrollable_view->SetLayoutManager(std::make_unique<views::BoxLayout>(
-      views::BoxLayout::Orientation::kVertical));
-
-  web_app::WebAppProvider* provider;
-  // Reserve size+1 for the browser entry.
-  hover_buttons_.reserve(launch_params_list_.size() + 1);
-  // Create a WebAppUrlHandlerHoverButton to open the link in browser and
-  // list it as the first choice.
-  auto app_button =
-      std::make_unique<WebAppUrlHandlerHoverButton>(base::BindRepeating(
-          &WebAppUrlHandlerIntentPickerView::SetSelectedAppIndex,
-          base::Unretained(this), 0));
-  app_button->set_tag(0);
-  hover_buttons_.push_back(app_button.get());
-  scrollable_view->AddChildViewAt(std::move(app_button), 0);
+  auto scrollable_view_builder =
+      views::Builder<views::BoxLayoutView>()
+          .SetOrientation(views::BoxLayout::Orientation::kVertical)
+          .AddChildAt(
+              views::Builder<WebAppUrlHandlerHoverButton>(
+                  std::make_unique<
+                      WebAppUrlHandlerHoverButton>(base::BindRepeating(
+                      &WebAppUrlHandlerIntentPickerView::SetSelectedAppIndex,
+                      base::Unretained(this), 0)))
+                  .SetTag(0)
+                  .CustomConfigure(base::BindOnce(
+                      [](HoverButtons& hover_buttons, int total_buttons,
+                         WebAppUrlHandlerHoverButton* view) {
+                        view->GetViewAccessibility().OverridePosInSet(
+                            1, total_buttons);
+                        hover_buttons.push_back(view);
+                      },
+                      std::ref(hover_buttons_), total_buttons)),
+              button_index++);
 
   for (const auto& launch_params : launch_params_list_) {
     Profile* profile = g_browser_process->profile_manager()->GetProfileByPath(
         launch_params.profile_path);
-    provider = web_app::WebAppProvider::Get(profile);
-    web_app::AppRegistrar& registrar = provider->registrar();
+    web_app::WebAppProvider* const provider =
+        web_app::WebAppProvider::GetForWebApps(profile);
+    DCHECK(provider);
+    web_app::WebAppRegistrar& registrar = provider->registrar();
 
     const std::u16string& profile_name =
         profiles::GetAvatarNameForProfile(launch_params.profile_path);
@@ -221,63 +281,66 @@ void WebAppUrlHandlerIntentPickerView::Initialize() {
                   IDS_URL_HANDLER_INTENT_PICKER_APP_TITLE, app_name,
                   profile_name);
 
-    const size_t button_index = hover_buttons_.size();
+    const size_t this_button_index = button_index++;
     // TODO(crbug.com/1072058): Make sure the UI is reasonable when
     // |app_title| is long.
-    auto app_button = std::make_unique<WebAppUrlHandlerHoverButton>(
-        base::BindRepeating(
-            &WebAppUrlHandlerIntentPickerView::SetSelectedAppIndex,
-            base::Unretained(this), button_index),
-        launch_params, provider, app_title,
-        registrar.GetAppStartUrl(launch_params.app_id));
-    app_button->set_tag(button_index);
-    hover_buttons_.push_back(app_button.get());
-    scrollable_view->AddChildViewAt(std::move(app_button), button_index);
+    scrollable_view_builder.AddChildAt(
+        views::Builder<WebAppUrlHandlerHoverButton>(
+            std::make_unique<WebAppUrlHandlerHoverButton>(
+                base::BindRepeating(
+                    &WebAppUrlHandlerIntentPickerView::SetSelectedAppIndex,
+                    base::Unretained(this), button_index),
+                launch_params, provider, app_title,
+                registrar.GetAppStartUrl(launch_params.app_id)))
+            .SetTag(button_index)
+            .CustomConfigure(base::BindOnce(
+                [](HoverButtons& hover_buttons, size_t this_button_index,
+                   size_t total_buttons, WebAppUrlHandlerHoverButton* view) {
+                  view->GetViewAccessibility().OverridePosInSet(
+                      this_button_index + 1, total_buttons);
+                  hover_buttons.push_back(view);
+                },
+                std::ref(hover_buttons_), this_button_index, total_buttons)),
+        this_button_index);
   }
 
-  auto scroll_view = std::make_unique<views::ScrollView>();
-  scroll_view->SetBackgroundThemeColorId(
-      ui::NativeTheme::kColorId_BubbleBackground);
-  scroll_view->SetContents(std::move(scrollable_view));
-  // This part gives the scroll a fixed width and height. The height depends on
-  // how many app candidates we got and how many we actually want to show.
-  // The added 0.5 on the else block allow us to let the user know there are
-  // more than |kMaxAppResults| apps accessible by scrolling the list.
-  scroll_view->ClipHeightTo(kRowHeight, (kMaxAppResults + 0.5) * kRowHeight);
+  builder.AddChildren(
+      views::Builder<views::ScrollView>()
+          .CopyAddressTo(&scroll_view_)
+          .SetBackgroundThemeColorId(ui::kColorBubbleBackground)
+          // This part gives the scroll a fixed width and height. The height
+          // depends on how many app candidates we got and how many we actually
+          // want to show. The added 0.5 on the else block allow us to let the
+          // user know there are more than |kMaxAppResults| apps accessible by
+          // scrolling the list.
+          .ClipHeightTo(kRowHeight, (kMaxAppResults + 0.5) * kRowHeight)
+          .CustomConfigure(base::BindOnce([](views::ScrollView* view) {
+            view->GetViewAccessibility().OverrideRole(
+                ax::mojom::Role::kRadioGroup);
+          }))
+          .SetContents(std::move(scrollable_view_builder))
+          .SetProperty(views::kMarginsKey, gfx::Insets(kTitlePadding, 0, 0, 0)),
+      views::Builder<views::Separator>().SetBorder(
+          views::CreateEmptyBorder(kSeparatorPadding)));
 
-  constexpr int kColumnSetId = 0;
-  views::ColumnSet* cs = layout->AddColumnSet(kColumnSetId);
-  cs->AddColumn(views::GridLayout::FILL, views::GridLayout::CENTER,
-                views::GridLayout::kFixedSize,
-                views::GridLayout::ColumnSize::kFixed, kMaxIntentPickerWidth,
-                0);
-
-  layout->StartRowWithPadding(views::GridLayout::kFixedSize, kColumnSetId,
-                              views::GridLayout::kFixedSize, kTitlePadding);
-  scroll_view_ = layout->AddView(std::move(scroll_view));
-  layout->StartRow(views::GridLayout::kFixedSize, kColumnSetId, 0);
-
-  // The checkbox allows the user to opt-in to relaxed security
-  // (i.e. skipping future prompts) for this url.
-  layout->AddView(CreateHorizontalSeparator());
-  // This second ColumnSet has a padding column in order to manipulate the
-  // Checkbox positioning freely.
-  constexpr int kColumnSetIdPadded = 2;
-  views::ColumnSet* cs_padded = layout->AddColumnSet(kColumnSetIdPadded);
-  cs_padded->AddPaddingColumn(views::GridLayout::kFixedSize, kTitlePadding);
-  cs_padded->AddColumn(views::GridLayout::FILL, views::GridLayout::CENTER,
-                       views::GridLayout::kFixedSize,
-                       views::GridLayout::ColumnSize::kFixed,
-                       kIntentPickerCheckBoxColumnWidth, 0);
-  layout->StartRowWithPadding(views::GridLayout::kFixedSize, kColumnSetIdPadded,
-                              views::GridLayout::kFixedSize, 0);
+  enable_remember_checkbox_ =
+      base::FeatureList::IsEnabled(blink::features::kWebAppEnableUrlHandlers);
 
   if (enable_remember_checkbox_) {
-    remember_selection_checkbox_ = layout->AddView(
-        std::make_unique<views::Checkbox>(l10n_util::GetStringUTF16(
-            IDS_URL_HANDLER_INTENT_PICKER_REMEMBER_SELECTION)));
-    layout->AddPaddingRow(views::GridLayout::kFixedSize, kRowHeight);
+    // The checkbox allows the user to opt-in to relaxed security (i.e. skipping
+    // future prompts) for this url.
+    builder.AddChild(
+        views::Builder<views::Checkbox>()
+            .CopyAddressTo(&remember_selection_checkbox_)
+            .SetText(l10n_util::GetStringUTF16(
+                IDS_URL_HANDLER_INTENT_PICKER_REMEMBER_SELECTION))
+            // Here we use the margins key to align the position of the checkbox
+            // with the items in the scroll view and provide a padding space
+            // below.
+            .SetProperty(views::kMarginsKey,
+                         gfx::Insets(0, kTitlePadding, kRowHeight, 0)));
   }
+  std::move(builder).BuildChildren();
 }
 
 void WebAppUrlHandlerIntentPickerView::RunCloseCallback(bool accepted) {
@@ -291,6 +354,9 @@ void WebAppUrlHandlerIntentPickerView::RunCloseCallback(bool accepted) {
       accepted_override = accepted;
       launch_params = GetSelectedLaunchParams();
       break;
+    case extensions::ScopedTestDialogAutoConfirm::ACCEPT_AND_REMEMBER_OPTION:
+      remember_selection_checkbox_->SetChecked(/*checked=*/true);
+      FALLTHROUGH;
     case extensions::ScopedTestDialogAutoConfirm::ACCEPT_AND_OPTION:
       accepted_override = true;
       selected_app_tag_ =
@@ -307,11 +373,30 @@ void WebAppUrlHandlerIntentPickerView::RunCloseCallback(bool accepted) {
       break;
   }
 
-  if (accepted_override && enable_remember_checkbox_ &&
-      remember_selection_checkbox_->GetChecked()) {
-    // TODO(crbug.com/1072058): Save choice if the user has checked the
-    // "Remember my choice" box.
+  auto state = DialogState::kClosed;
+  if (accepted_override) {
+    const bool remember_choice_checked =
+        enable_remember_checkbox_ && remember_selection_checkbox_->GetChecked();
+
+    if (remember_choice_checked) {
+      if (launch_params) {
+        // An app is selected as the default choice.
+        web_app::url_handler_prefs::SaveOpenInApp(
+            g_browser_process->local_state(), launch_params->app_id,
+            launch_params->profile_path, launch_params->url);
+        state = DialogState::kAppAcceptedAndRememberChoice;
+      } else {
+        // The browser is the selected default choice.
+        web_app::url_handler_prefs::SaveOpenInBrowser(
+            g_browser_process->local_state(), url_);
+        state = DialogState::kBrowserAcceptedAndRememberChoice;
+      }
+    } else {
+      state = launch_params ? DialogState::kAppAcceptedNoRememberChoice
+                            : DialogState::kBrowserAcceptedNoRememberChoice;
+    }
   }
+  RecordDialogState(state);
 
   std::move(close_callback_).Run(accepted_override, std::move(launch_params));
 }
@@ -332,23 +417,47 @@ namespace chrome {
 
 // static
 void ShowWebAppUrlHandlerIntentPickerDialog(
+    const GURL& url,
     std::vector<web_app::UrlHandlerLaunchParams> launch_params_list,
     WebAppUrlHandlerAcceptanceCallback dialog_close_callback) {
   DCHECK(dialog_close_callback);
-
-  // TODO(crbug.com/1200951): Update the following accordingly for multi-
-  // profile URL handler launch support.
-  auto* provider = web_app::WebAppProvider::Get(
-      g_browser_process->profile_manager()->GetProfileByPath(
-          launch_params_list.front().profile_path));
-  DCHECK(provider);
   auto keep_alive = std::make_unique<ScopedKeepAlive>(
       KeepAliveOrigin::WEB_APP_INTENT_PICKER, KeepAliveRestartOption::DISABLED);
-  provider->on_registry_ready().Post(
-      FROM_HERE,
-      base::BindOnce(&WebAppUrlHandlerIntentPickerView::Show,
-                     std::move(launch_params_list), std::move(keep_alive),
-                     std::move(dialog_close_callback)));
+
+  base::flat_set<Profile*> profiles =
+      WebAppUrlHandlerIntentPickerView::GetUrlHandlingValidProfiles(
+          launch_params_list);
+
+  auto show_dialog_callback = base::BindOnce(
+      [](const GURL& url, std::unique_ptr<ScopedKeepAlive> keep_alive,
+         base::ElapsedTimer timer,
+         std::vector<web_app::UrlHandlerLaunchParams> launch_params_list,
+         WebAppUrlHandlerAcceptanceCallback dialog_close_callback) {
+        // Record registrar loading time before showing the dialog.
+        base::UmaHistogramMicrosecondsTimes(
+            "WebApp.UrlHandling.LoadWebAppRegistrarsAtStartUp",
+            timer.Elapsed());
+
+        // TODO(crbug.com/1217419): Check if site permission is enabled once
+        // all profiles and registrars are loaded.
+
+        WebAppUrlHandlerIntentPickerView::Show(
+            url, std::move(launch_params_list), std::move(keep_alive),
+            std::move(dialog_close_callback));
+      },
+      url, std::move(keep_alive), base::ElapsedTimer(),
+      std::move(launch_params_list), std::move(dialog_close_callback));
+
+  auto on_registrar_ready_callback =
+      base::BarrierClosure(profiles.size(), std::move(show_dialog_callback));
+
+  for (Profile* profile : profiles) {
+    web_app::WebAppProvider* const provider =
+        web_app::WebAppProvider::GetForWebApps(profile);
+    DCHECK(provider);
+
+    provider->on_registry_ready().Post(FROM_HERE, on_registrar_ready_callback);
+  }
 }
 
 }  // namespace chrome

@@ -10,12 +10,10 @@
 #include <string>
 #include <vector>
 
-#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "build/build_config.h"
 #include "chrome/browser/ui/autofill/popup_controller_common.h"
 #include "chrome/browser/ui/passwords/password_generation_popup_controller.h"
-#include "components/autofill/content/browser/key_press_handler_manager.h"
 #include "components/autofill/core/common/signatures.h"
 #include "components/autofill/core/common/unique_ids.h"
 #include "components/password_manager/core/browser/password_form.h"
@@ -78,6 +76,12 @@ class PasswordGenerationPopupControllerImpl
       PasswordGenerationPopupObserver* observer,
       content::WebContents* web_contents,
       content::RenderFrameHost* frame);
+
+  PasswordGenerationPopupControllerImpl(
+      const PasswordGenerationPopupControllerImpl&) = delete;
+  PasswordGenerationPopupControllerImpl& operator=(
+      const PasswordGenerationPopupControllerImpl&) = delete;
+
   ~PasswordGenerationPopupControllerImpl() override;
 
   // Create a PasswordGenerationPopupView if one doesn't already exist.
@@ -193,8 +197,6 @@ class PasswordGenerationPopupControllerImpl
 
   base::WeakPtrFactory<PasswordGenerationPopupControllerImpl> weak_ptr_factory_{
       this};
-
-  DISALLOW_COPY_AND_ASSIGN(PasswordGenerationPopupControllerImpl);
 };
 
 #endif  // CHROME_BROWSER_UI_PASSWORDS_PASSWORD_GENERATION_POPUP_CONTROLLER_IMPL_H_

@@ -5,6 +5,7 @@
 #ifndef MOJO_PUBLIC_CPP_BINDINGS_SHARED_ASSOCIATED_REMOTE_H_
 #define MOJO_PUBLIC_CPP_BINDINGS_SHARED_ASSOCIATED_REMOTE_H_
 
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/threading/sequenced_task_runner_handle.h"
 #include "mojo/public/cpp/bindings/associated_remote.h"
@@ -12,6 +13,17 @@
 #include "mojo/public/cpp/bindings/shared_remote.h"
 
 namespace mojo {
+
+namespace internal {
+
+template <typename Interface>
+struct SharedRemoteTraits<AssociatedRemote<Interface>> {
+  static void BindDisconnected(AssociatedRemote<Interface>& remote) {
+    ignore_result(remote.BindNewEndpointAndPassDedicatedReceiver());
+  }
+};
+
+}  // namespace internal
 
 // SharedAssociatedRemote wraps a non-thread-safe AssociatedRemote and proxies
 // messages to it. Unlike normal AssociatedRemote objects,
@@ -45,10 +57,25 @@ class SharedAssociatedRemote {
   Interface* operator->() const { return get(); }
   Interface& operator*() const { return *get(); }
 
+  void set_disconnect_handler(
+      base::OnceClosure handler,
+      scoped_refptr<base::SequencedTaskRunner> handler_task_runner) {
+    remote_->set_disconnect_handler(std::move(handler),
+                                    std::move(handler_task_runner));
+  }
+
   // Clears this SharedAssociatedRemote. Note that this does *not* necessarily
   // close the remote's endpoint as other SharedAssociatedRemote instances may
   // reference the same underlying endpoint.
   void reset() { remote_.reset(); }
+
+  // Disconnects the SharedAssociatedRemote. This leaves the object in a usable
+  // state -- i.e. it's still safe to dereference and make calls -- but severs
+  // the underlying connection so that no new replies will be received and all
+  // outgoing messages will be discarded. This is useful when you want to force
+  // a disconnection like with reset(), but you don't want the
+  // SharedAssociatedRemote to become unbound.
+  void Disconnect() { remote_->Disconnect(); }
 
   // Creates a new pair of endpoints and binds this SharedAssociatedRemote to
   // one of them, on `task_runner`. The other is returned as a receiver.

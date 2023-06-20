@@ -8,7 +8,6 @@
 
 #include "base/allocator/partition_allocator/partition_alloc.h"
 #include "base/allocator/partition_allocator/partition_alloc_constants.h"
-#include "base/allocator/partition_allocator/partition_alloc_features.h"
 #include "base/allocator/partition_allocator/partition_root.h"
 #include "base/allocator/partition_allocator/starscan/stack/stack.h"
 #include "base/logging.h"
@@ -18,6 +17,13 @@
 #if defined(PA_ALLOW_PCSCAN)
 
 namespace base {
+
+#define EXPECT_PEQ(ptr1, ptr2) \
+  { EXPECT_EQ(memory::UnmaskPtr(ptr1), memory::UnmaskPtr(ptr2)); }
+
+#define EXPECT_PNE(ptr1, ptr2) \
+  { EXPECT_NE(memory::UnmaskPtr(ptr1), memory::UnmaskPtr(ptr2)); }
+
 namespace internal {
 
 namespace {
@@ -44,12 +50,18 @@ class PartitionAllocPCScanTest : public testing::Test {
     PartitionAllocGlobalInit([](size_t) { LOG(FATAL) << "Out of memory"; });
     // Previous test runs within the same process decommit GigaCage, therefore
     // we need to make sure that the card table is recommitted for each run.
-    PCScan::ReinitForTesting(PCScan::WantedWriteProtectionMode::kDisabled);
+    PCScan::ReinitForTesting(
+        {PCScan::InitConfig::WantedWriteProtectionMode::kDisabled,
+         PCScan::InitConfig::SafepointMode::kEnabled});
     allocator_.init({PartitionOptions::AlignedAlloc::kAllowed,
                      PartitionOptions::ThreadCache::kDisabled,
                      PartitionOptions::Quarantine::kAllowed,
-                     PartitionOptions::Cookies::kDisallowed,
-                     PartitionOptions::RefCount::kDisallowed});
+                     PartitionOptions::Cookie::kDisallowed,
+                     PartitionOptions::BackupRefPtr::kDisabled,
+                     PartitionOptions::UseConfigurablePool::kNo,
+                     PartitionOptions::LazyCommit::kEnabled});
+    allocator_.root()->UncapEmptySlotSpanMemoryForTesting();
+
     PCScan::RegisterScannableRoot(allocator_.root());
   }
   ~PartitionAllocPCScanTest() override {
@@ -76,9 +88,8 @@ class PartitionAllocPCScanTest : public testing::Test {
   void FinishPCScanAsScanner() { PCScan::FinishScanForTesting(); }
 
   bool IsInQuarantine(void* ptr) const {
-    return QuarantineBitmapFromPointer(QuarantineBitmapType::kMutator,
-                                       PCScan::Instance().epoch(), ptr)
-        ->CheckBit(reinterpret_cast<uintptr_t>(ptr));
+    return StateBitmapFromPointer(ptr)->IsQuarantined(
+        reinterpret_cast<uintptr_t>(ptr));
   }
 
   ThreadSafePartitionRoot& root() { return *allocator_.root(); }
@@ -122,11 +133,11 @@ FullSlotSpanAllocation GetFullSlotSpan(ThreadSafePartitionRoot& root,
   EXPECT_EQ(SlotSpan::FromSlotStartPtr(first),
             SlotSpan::FromSlotStartPtr(last));
   if (bucket.num_system_pages_per_slot_span == NumSystemPagesPerPartitionPage())
-    EXPECT_EQ(reinterpret_cast<size_t>(first) & PartitionPageBaseMask(),
-              reinterpret_cast<size_t>(last) & PartitionPageBaseMask());
+    EXPECT_PEQ(reinterpret_cast<size_t>(first) & PartitionPageBaseMask(),
+               reinterpret_cast<size_t>(last) & PartitionPageBaseMask());
   EXPECT_EQ(num_slots, static_cast<size_t>(
                            bucket.active_slot_spans_head->num_allocated_slots));
-  EXPECT_EQ(nullptr, bucket.active_slot_spans_head->freelist_head);
+  EXPECT_EQ(nullptr, bucket.active_slot_spans_head->get_freelist_head());
   EXPECT_TRUE(bucket.is_valid());
   EXPECT_TRUE(bucket.active_slot_spans_head !=
               SlotSpan::get_sentinel_slot_span());
@@ -136,9 +147,10 @@ FullSlotSpanAllocation GetFullSlotSpan(ThreadSafePartitionRoot& root,
 }
 
 bool IsInFreeList(void* slot_start) {
+  slot_start = memory::RemaskPtr(slot_start);
   auto* slot_span = SlotSpan::FromSlotStartPtr(slot_start);
-  for (auto* entry = slot_span->freelist_head; entry;
-       entry = entry->GetNext()) {
+  for (auto* entry = slot_span->get_freelist_head(); entry;
+       entry = entry->GetNext(slot_span->bucket->slot_size)) {
     if (entry == slot_start)
       return true;
   }
@@ -213,7 +225,7 @@ template <typename SourceList, typename ValueList>
 void TestDanglingReference(PartitionAllocPCScanTest& test,
                            SourceList* source,
                            ValueList* value) {
-  auto* value_root = ThreadSafePartitionRoot::FromPointerInNormalBuckets(
+  auto* value_root = ThreadSafePartitionRoot::FromPointerInFirstSuperpage(
       reinterpret_cast<char*>(value));
   {
     // Free |value| and leave the dangling reference in |source|.
@@ -238,6 +250,23 @@ void TestDanglingReference(PartitionAllocPCScanTest& test,
         IsInFreeList(value_root->AdjustPointerForExtrasSubtract(value)));
   }
 }
+
+void TestDanglingReferenceNotVisited(PartitionAllocPCScanTest& test,
+                                     void* value) {
+  auto* value_root = ThreadSafePartitionRoot::FromPointerInFirstSuperpage(
+      reinterpret_cast<char*>(value));
+  value_root->Free(value);
+  // Check that |value| is in the quarantine now.
+  EXPECT_TRUE(test.IsInQuarantine(value));
+  // Run PCScan.
+  test.RunPCScan();
+  // Check that the object is no longer in the quarantine since the pointer to
+  // it was not scanned from the non-scannable partition.
+  EXPECT_FALSE(test.IsInQuarantine(value));
+  // Check that the object is in the freelist now.
+  EXPECT_TRUE(IsInFreeList(value_root->AdjustPointerForExtrasSubtract(value)));
+}
+
 }  // namespace
 
 TEST_F(PartitionAllocPCScanTest, DanglingReferenceSameBucket) {
@@ -277,7 +306,7 @@ TEST_F(PartitionAllocPCScanTest, DanglingReferenceDifferentBucketsAligned) {
   // Double check the setup -- make sure that exactly two slot spans were
   // allocated, within the same super page, with a gap in between.
   {
-    auto* value_root = ThreadSafePartitionRoot::FromPointerInNormalBuckets(
+    auto* value_root = ThreadSafePartitionRoot::FromPointerInFirstSuperpage(
         reinterpret_cast<char*>(value));
     ScopedGuard<ThreadSafe> guard{value_root->lock_};
 
@@ -287,7 +316,7 @@ TEST_F(PartitionAllocPCScanTest, DanglingReferenceDifferentBucketsAligned) {
     size_t i = 0;
     void* first_slot_span_end = nullptr;
     void* second_slot_span_start = nullptr;
-    auto visited = IterateSlotSpans<ThreadSafe>(
+    IterateSlotSpans<ThreadSafe>(
         reinterpret_cast<char*>(super_page), true,
         [&](SlotSpan* slot_span) -> bool {
           if (i == 0) {
@@ -299,9 +328,9 @@ TEST_F(PartitionAllocPCScanTest, DanglingReferenceDifferentBucketsAligned) {
             second_slot_span_start = SlotSpan::ToSlotSpanStartPtr(slot_span);
           }
           ++i;
-          return true;
+          return false;
         });
-    ASSERT_EQ(visited, 2u);
+    ASSERT_EQ(i, 2u);
     ASSERT_GT(second_slot_span_start, first_slot_span_end);
   }
 
@@ -387,13 +416,33 @@ struct ListWithInnerReference {
 
 }  // namespace
 
-TEST_F(PartitionAllocPCScanTest, DanglingInnerReference) {
+// Disabled due to consistent failure http://crbug.com/1242407
+#if defined(OS_ANDROID)
+#define MAYBE_DanglingInnerReference DISABLED_DanglingInnerReference
+#else
+#define MAYBE_DanglingInnerReference DanglingInnerReference
+#endif
+TEST_F(PartitionAllocPCScanTest, MAYBE_DanglingInnerReference) {
   using SourceList = ListWithInnerReference<64>;
   using ValueList = SourceList;
 
   auto* source = SourceList::Create(root());
   auto* value = ValueList::Create(root());
   source->next = value->buffer2;
+
+  TestDanglingReference(*this, source, value);
+}
+
+TEST_F(PartitionAllocPCScanTest, DanglingReferenceFromSingleSlotSlotSpan) {
+  using SourceList = List<kMaxBucketed - 4096>;
+  using ValueList = SourceList;
+
+  auto* source = SourceList::Create(root());
+  auto* slot_span = SlotSpanMetadata<ThreadSafe>::FromSlotInnerPtr(source);
+  ASSERT_TRUE(slot_span->CanStoreRawSize());
+
+  auto* value = ValueList::Create(root());
+  source->next = value;
 
   TestDanglingReference(*this, source, value);
 }
@@ -406,14 +455,20 @@ TEST_F(PartitionAllocPCScanTest, DanglingInterPartitionReference) {
       {PartitionOptions::AlignedAlloc::kDisallowed,
        PartitionOptions::ThreadCache::kDisabled,
        PartitionOptions::Quarantine::kAllowed,
-       PartitionOptions::Cookies::kAllowed,
-       PartitionOptions::RefCount::kDisallowed});
+       PartitionOptions::Cookie::kAllowed,
+       PartitionOptions::BackupRefPtr::kDisabled,
+       PartitionOptions::UseConfigurablePool::kNo,
+       PartitionOptions::LazyCommit::kEnabled});
+  source_root.UncapEmptySlotSpanMemoryForTesting();
   ThreadSafePartitionRoot value_root(
       {PartitionOptions::AlignedAlloc::kDisallowed,
        PartitionOptions::ThreadCache::kDisabled,
        PartitionOptions::Quarantine::kAllowed,
-       PartitionOptions::Cookies::kAllowed,
-       PartitionOptions::RefCount::kDisallowed});
+       PartitionOptions::Cookie::kAllowed,
+       PartitionOptions::BackupRefPtr::kDisabled,
+       PartitionOptions::UseConfigurablePool::kNo,
+       PartitionOptions::LazyCommit::kEnabled});
+  value_root.UncapEmptySlotSpanMemoryForTesting();
 
   PCScan::RegisterScannableRoot(&source_root);
   PCScan::RegisterScannableRoot(&value_root);
@@ -433,14 +488,20 @@ TEST_F(PartitionAllocPCScanTest, DanglingReferenceToNonScannablePartition) {
       {PartitionOptions::AlignedAlloc::kDisallowed,
        PartitionOptions::ThreadCache::kDisabled,
        PartitionOptions::Quarantine::kAllowed,
-       PartitionOptions::Cookies::kAllowed,
-       PartitionOptions::RefCount::kDisallowed});
+       PartitionOptions::Cookie::kAllowed,
+       PartitionOptions::BackupRefPtr::kDisabled,
+       PartitionOptions::UseConfigurablePool::kNo,
+       PartitionOptions::LazyCommit::kEnabled});
+  source_root.UncapEmptySlotSpanMemoryForTesting();
   ThreadSafePartitionRoot value_root(
       {PartitionOptions::AlignedAlloc::kDisallowed,
        PartitionOptions::ThreadCache::kDisabled,
        PartitionOptions::Quarantine::kAllowed,
-       PartitionOptions::Cookies::kAllowed,
-       PartitionOptions::RefCount::kDisallowed});
+       PartitionOptions::Cookie::kAllowed,
+       PartitionOptions::BackupRefPtr::kDisabled,
+       PartitionOptions::UseConfigurablePool::kNo,
+       PartitionOptions::LazyCommit::kEnabled});
+  value_root.UncapEmptySlotSpanMemoryForTesting();
 
   PCScan::RegisterScannableRoot(&source_root);
   PCScan::RegisterNonScannableRoot(&value_root);
@@ -460,14 +521,20 @@ TEST_F(PartitionAllocPCScanTest, DanglingReferenceFromNonScannablePartition) {
       {PartitionOptions::AlignedAlloc::kDisallowed,
        PartitionOptions::ThreadCache::kDisabled,
        PartitionOptions::Quarantine::kAllowed,
-       PartitionOptions::Cookies::kAllowed,
-       PartitionOptions::RefCount::kDisallowed});
+       PartitionOptions::Cookie::kAllowed,
+       PartitionOptions::BackupRefPtr::kDisabled,
+       PartitionOptions::UseConfigurablePool::kNo,
+       PartitionOptions::LazyCommit::kEnabled});
+  source_root.UncapEmptySlotSpanMemoryForTesting();
   ThreadSafePartitionRoot value_root(
       {PartitionOptions::AlignedAlloc::kDisallowed,
        PartitionOptions::ThreadCache::kDisabled,
        PartitionOptions::Quarantine::kAllowed,
-       PartitionOptions::Cookies::kAllowed,
-       PartitionOptions::RefCount::kDisallowed});
+       PartitionOptions::Cookie::kAllowed,
+       PartitionOptions::BackupRefPtr::kDisabled,
+       PartitionOptions::UseConfigurablePool::kNo,
+       PartitionOptions::LazyCommit::kEnabled});
+  value_root.UncapEmptySlotSpanMemoryForTesting();
 
   PCScan::RegisterNonScannableRoot(&source_root);
   PCScan::RegisterScannableRoot(&value_root);
@@ -476,17 +543,7 @@ TEST_F(PartitionAllocPCScanTest, DanglingReferenceFromNonScannablePartition) {
   auto* value = ValueList::Create(value_root);
   source->next = value;
 
-  // Free |value| and leave the dangling reference in |source|.
-  ValueList::Destroy(source_root, value);
-  // Check that |value| is in the quarantine now.
-  EXPECT_TRUE(IsInQuarantine(value));
-  // Run PCScan.
-  RunPCScan();
-  // Check that the object is no longer in the quarantine since the pointer to
-  // it was not scanned from the non-scannable partition.
-  EXPECT_FALSE(IsInQuarantine(value));
-  // Check that the object is in the freelist now.
-  EXPECT_TRUE(IsInFreeList(value_root.AdjustPointerForExtrasSubtract(value)));
+  TestDanglingReferenceNotVisited(*this, value);
 }
 
 // Death tests misbehave on Android, http://crbug.com/643760.
@@ -498,13 +555,12 @@ TEST_F(PartitionAllocPCScanTest, DoubleFree) {
 }
 #endif
 
-#if !PCSCAN_DISABLE_SAFEPOINTS
 namespace {
 template <typename SourceList, typename ValueList>
 void TestDanglingReferenceWithSafepoint(PartitionAllocPCScanTest& test,
                                         SourceList* source,
                                         ValueList* value) {
-  auto* value_root = ThreadSafePartitionRoot::FromPointerInNormalBuckets(
+  auto* value_root = ThreadSafePartitionRoot::FromPointerInFirstSuperpage(
       reinterpret_cast<char*>(value));
   {
     // Free |value| and leave the dangling reference in |source|.
@@ -534,12 +590,12 @@ void TestDanglingReferenceWithSafepoint(PartitionAllocPCScanTest& test,
     test.SchedulePCScan();
     // Enter safepoint and scan from mutator.
     test.JoinPCScanAsMutator();
-    // Check that the object is no longer in the quarantine.
-    EXPECT_FALSE(test.IsInQuarantine(value));
     // Check that |value| is not in the freelist yet, since sweeper didn't run.
     EXPECT_FALSE(
         IsInFreeList(test.root().AdjustPointerForExtrasSubtract(value)));
     test.FinishPCScanAsScanner();
+    // Check that the object is no longer in the quarantine.
+    EXPECT_FALSE(test.IsInQuarantine(value));
     // Check that |value| is in the freelist now.
     EXPECT_TRUE(
         IsInFreeList(test.root().AdjustPointerForExtrasSubtract(value)));
@@ -559,7 +615,6 @@ TEST_F(PartitionAllocPCScanTest, Safepoint) {
 
   TestDanglingReferenceWithSafepoint(*this, source, value);
 }
-#endif  // PCSCAN_DISABLE_SAFEPOINTS
 
 TEST_F(PartitionAllocPCScanTest, StackScanning) {
   using ValueList = List<8>;
@@ -603,6 +658,125 @@ TEST_F(PartitionAllocPCScanTest, StackScanning) {
       }();
     }();
   }();
+}
+
+TEST_F(PartitionAllocPCScanTest, DontScanUnusedRawSize) {
+  using ValueList = List<8>;
+
+  // Make sure to commit more memory than requested and have slack for storing
+  // dangling reference outside of the raw size.
+  const size_t big_size = kMaxBucketed - SystemPageSize() + 1;
+  uint8_t* source = static_cast<uint8_t*>(root().Alloc(big_size, nullptr));
+
+  auto* slot_span = SlotSpanMetadata<ThreadSafe>::FromSlotInnerPtr(source);
+  ASSERT_TRUE(slot_span->CanStoreRawSize());
+
+  uint8_t* source_end =
+      static_cast<uint8_t*>(root().AdjustPointerForExtrasSubtract(source)) +
+      slot_span->GetRawSize();
+
+  auto* value = ValueList::Create(root());
+
+  *reinterpret_cast<ValueList**>(source_end) = value;
+
+  TestDanglingReferenceNotVisited(*this, value);
+}
+
+TEST_F(PartitionAllocPCScanTest, PointersToGuardPages) {
+  struct Pointers {
+    void* super_page_base;
+    void* metadata_page;
+    void* guard_page1;
+    void* scan_bitmap;
+    void* guard_page2;
+  };
+
+  auto* const pointers = static_cast<Pointers*>(
+      root().AllocFlagsNoHooks(0, sizeof(Pointers), PartitionPageSize()));
+
+  char* const super_page = reinterpret_cast<char*>(
+      reinterpret_cast<uintptr_t>(pointers) & kSuperPageBaseMask);
+
+  // Initialize scannable pointers with addresses of guard pages and metadata.
+  pointers->super_page_base = super_page;
+  pointers->metadata_page = PartitionSuperPageToMetadataArea(super_page);
+  pointers->guard_page1 =
+      static_cast<char*>(pointers->metadata_page) + SystemPageSize();
+  pointers->scan_bitmap = SuperPageStateBitmap(super_page);
+  pointers->guard_page1 = super_page + kSuperPageSize - PartitionPageSize();
+
+  // Simply run PCScan and expect no crashes.
+  RunPCScan();
+}
+
+TEST_F(PartitionAllocPCScanTest, TwoDanglingPointersToSameObject) {
+  using SourceList = List<8>;
+  using ValueList = List<128>;
+
+  auto* value = ValueList::Create(root(), nullptr);
+  // Create two source objects referring to |value|.
+  SourceList::Create(root(), value);
+  SourceList::Create(root(), value);
+
+  // Destroy |value| and run PCScan.
+  ValueList::Destroy(root(), value);
+  RunPCScan();
+  EXPECT_TRUE(IsInQuarantine(value));
+
+  // Check that accounted size after the cycle is only sizeof ValueList.
+  auto* slot_span_metadata = SlotSpan::FromSlotInnerPtr(value);
+  const auto& quarantine =
+      PCScan::scheduler().scheduling_backend().GetQuarantineData();
+  EXPECT_EQ(slot_span_metadata->bucket->slot_size, quarantine.current_size);
+}
+
+TEST_F(PartitionAllocPCScanTest, DanglingPointerToInaccessibleArea) {
+  static const size_t kObjectSizeForSlotSpanConsistingOfMultiplePartitionPages =
+      static_cast<size_t>(PartitionPageSize() * 1.25);
+
+  FullSlotSpanAllocation full_slot_span = GetFullSlotSpan(
+      root(), root().AdjustSizeForExtrasSubtract(
+                  kObjectSizeForSlotSpanConsistingOfMultiplePartitionPages));
+
+  // Assert that number of allocatable bytes for this bucket is smaller than all
+  // allocated partition pages.
+  auto* bucket = full_slot_span.slot_span->bucket;
+  ASSERT_LT(bucket->get_bytes_per_span(),
+            bucket->get_pages_per_slot_span() * PartitionPageSize());
+
+  // Let the first object point past the end of the last one + some random
+  // offset.
+  static constexpr size_t kOffsetPastEnd = 7;
+  *reinterpret_cast<uint8_t**>(full_slot_span.first) =
+      reinterpret_cast<uint8_t*>(full_slot_span.last) +
+      kObjectSizeForSlotSpanConsistingOfMultiplePartitionPages + kOffsetPastEnd;
+
+  // Destroy the last object and put it in quarantine.
+  root().Free(full_slot_span.last);
+  EXPECT_TRUE(IsInQuarantine(full_slot_span.last));
+
+  // Run PCScan. After it, the quarantined object should not be promoted.
+  RunPCScan();
+  EXPECT_FALSE(IsInQuarantine(full_slot_span.last));
+}
+
+TEST_F(PartitionAllocPCScanTest, DanglingPointerOutsideUsablePart) {
+  using ValueList = List<kMaxBucketed - 4096>;
+  using SourceList = List<64>;
+
+  auto* value = ValueList::Create(root());
+  auto* slot_span = SlotSpanMetadata<ThreadSafe>::FromSlotInnerPtr(value);
+  ASSERT_TRUE(slot_span->CanStoreRawSize());
+
+  auto* source = SourceList::Create(root());
+
+  // Let the |source| object point to the unused area of |value| and expect
+  // |value| to be nevertheless marked during scanning.
+  static constexpr size_t kOffsetPastEnd = 7;
+  source->next = reinterpret_cast<ListBase*>(
+      reinterpret_cast<uint8_t*>(value + 1) + kOffsetPastEnd);
+
+  TestDanglingReference(*this, source, value);
 }
 
 }  // namespace internal

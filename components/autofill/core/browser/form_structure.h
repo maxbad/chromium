@@ -15,13 +15,12 @@
 #include <vector>
 
 #include "base/gtest_prod_util.h"
-#include "base/macros.h"
 #include "base/strings/string_piece.h"
 #include "components/autofill/core/browser/autofill_field.h"
-#include "components/autofill/core/browser/autofill_metrics.h"
 #include "components/autofill/core/browser/autofill_type.h"
 #include "components/autofill/core/browser/field_types.h"
 #include "components/autofill/core/browser/form_types.h"
+#include "components/autofill/core/browser/metrics/autofill_metrics.h"
 #include "components/autofill/core/browser/proto/api_v1.pb.h"
 #include "components/autofill/core/common/dense_set.h"
 #include "components/autofill/core/common/language_code.h"
@@ -64,6 +63,10 @@ class RandomizedEncoder;
 class FormStructure {
  public:
   explicit FormStructure(const FormData& form);
+
+  FormStructure(const FormStructure&) = delete;
+  FormStructure& operator=(const FormStructure&) = delete;
+
   virtual ~FormStructure();
 
   // Runs several heuristics against the form fields to determine their possible
@@ -102,7 +105,8 @@ class FormStructure {
       base::StringPiece payload,
       const std::vector<FormStructure*>& forms,
       const std::vector<FormSignature>& queried_form_signatures,
-      AutofillMetrics::FormInteractionsUkmLogger*);
+      AutofillMetrics::FormInteractionsUkmLogger*,
+      LogManager* log_manager);
 
   // Returns predictions using the details from the given |form_structures| and
   // their fields' predicted types.
@@ -140,6 +144,10 @@ class FormStructure {
   // Returns true if heuristic autofill type detection should be attempted for
   // this form.
   bool ShouldRunHeuristics() const;
+
+  // Returns true if heuristic autofill type detection for promo codes should be
+  // attempted for this form.
+  bool ShouldRunPromoCodeHeuristics() const;
 
   // Returns true if we should query the crowd-sourcing server to determine this
   // form's field types. If the form includes author-specified types, this will
@@ -211,9 +219,9 @@ class FormStructure {
   // * NAME_LAST_SECOND heuristic predictions are unconditionally used.
   void OverrideServerPredictionsWithHeuristics();
 
-  // Returns the FieldRendererId for fields that are eligible for Manual Filling
-  // on form interaction.
-  static std::vector<FieldRendererId> FindFieldsEligibleForManualFilling(
+  // Returns the FieldGlobalIds of the |fields_| that are eligible for manual
+  // filling on form interaction.
+  static std::vector<FieldGlobalId> FindFieldsEligibleForManualFilling(
       const std::vector<FormStructure*>& forms);
 
   const AutofillField* field(size_t index) const;
@@ -341,8 +349,13 @@ class FormStructure {
   // purposes.
   void set_server_field_type_for_testing(size_t field_index,
                                          ServerFieldType type) {
-    if (field_index < fields_.size() && type > 0 && type < MAX_VALID_FIELD_TYPE)
-      fields_[field_index]->set_server_type(type);
+    if (field_index < fields_.size() && type > 0 &&
+        type < MAX_VALID_FIELD_TYPE) {
+      AutofillQueryResponse::FormSuggestion::FieldSuggestion::FieldPrediction
+          prediction;
+      prediction.set_type(type);
+      fields_[field_index]->set_server_predictions({prediction});
+    }
   }
 #endif
 
@@ -408,7 +421,16 @@ class FormStructure {
       AutofillMetrics::FormInteractionsUkmLogger*
           form_interactions_ukm_logger) {
     ProcessQueryResponse(response, forms, queried_form_signatures,
-                         form_interactions_ukm_logger);
+                         form_interactions_ukm_logger, nullptr);
+  }
+
+  void set_single_username_data(
+      AutofillUploadContents::SingleUsernameData single_username_data) {
+    single_username_data_ = single_username_data;
+  }
+  absl::optional<AutofillUploadContents::SingleUsernameData>
+  single_username_data() const {
+    return single_username_data_;
   }
 
  private:
@@ -434,7 +456,8 @@ class FormStructure {
       const AutofillQueryResponse& response,
       const std::vector<FormStructure*>& forms,
       const std::vector<FormSignature>& queried_form_signatures,
-      AutofillMetrics::FormInteractionsUkmLogger* form_interactions_ukm_logger);
+      AutofillMetrics::FormInteractionsUkmLogger* form_interactions_ukm_logger,
+      LogManager* log_manager);
 
   FormStructure(FormSignature form_signature,
                 const std::vector<FieldSignature>& field_signatures);
@@ -442,7 +465,7 @@ class FormStructure {
   // A function to fine tune the credit cards related predictions. For example:
   // lone credit card fields in an otherwise non-credit-card related form is
   // unlikely to be correct, the function will override that prediction.
-  void RationalizeCreditCardFieldPredictions();
+  void RationalizeCreditCardFieldPredictions(LogManager* log_manager);
 
   // The rationalization is based on the visible fields, but should be applied
   // to the hidden select fields. This is because hidden 'select' fields are
@@ -481,28 +504,31 @@ class FormStructure {
   // 1, 2 and 3 instead.
   void RationalizeAddressLineFields(
       SectionedFieldsIndexes* sections_of_address_indexes,
-      AutofillMetrics::FormInteractionsUkmLogger*);
+      AutofillMetrics::FormInteractionsUkmLogger*,
+      LogManager* log_manager);
 
   // Rationalize state and country interdependently.
   void RationalizeAddressStateCountry(
       SectionedFieldsIndexes* sections_of_state_indexes,
       SectionedFieldsIndexes* sections_of_country_indexes,
-      AutofillMetrics::FormInteractionsUkmLogger*);
+      AutofillMetrics::FormInteractionsUkmLogger*,
+      LogManager* log_manager);
 
   // Tunes the fields with identical predictions.
-  void RationalizeRepeatedFields(AutofillMetrics::FormInteractionsUkmLogger*);
+  void RationalizeRepeatedFields(AutofillMetrics::FormInteractionsUkmLogger*,
+                                 LogManager* log_manager);
 
   // Filters out fields that don't meet the relationship ruleset for their type
   // defined in |type_relationships_rules_|.
-  void RationalizeTypeRelationships();
+  void RationalizeTypeRelationships(LogManager* log_manager);
 
   // A helper function to review the predictions and do appropriate adjustments
   // when it considers necessary.
-  void RationalizeFieldTypePredictions();
+  void RationalizeFieldTypePredictions(LogManager* log_manager);
 
-  void EncodeFormForQuery(
-      autofill::AutofillPageQueryRequest::Form* query_form,
-      std::vector<FormSignature>* queried_form_signatures) const;
+  void EncodeFormForQuery(AutofillPageQueryRequest* query,
+                          std::vector<FormSignature>* queried_form_signatures,
+                          std::set<FormSignature>* processed_forms) const;
 
   void EncodeFormForUpload(
       bool is_raw_metadata_uploading_enabled,
@@ -562,6 +588,7 @@ class FormStructure {
   GURL source_url_;
 
   // The full source URL including query parameters and fragment identifiers.
+  // This value should be set only for password forms.
   GURL full_source_url_;
 
   // The target URL.
@@ -663,7 +690,9 @@ class FormStructure {
   // frame.
   FormRendererId unique_renderer_id_;
 
-  DISALLOW_COPY_AND_ASSIGN(FormStructure);
+  // Single username details, if applicable.
+  absl::optional<AutofillUploadContents::SingleUsernameData>
+      single_username_data_;
 };
 
 LogBuffer& operator<<(LogBuffer& buffer, const FormStructure& form);

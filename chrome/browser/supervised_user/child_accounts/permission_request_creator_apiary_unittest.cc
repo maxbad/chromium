@@ -17,6 +17,7 @@
 #include "net/http/http_util.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "services/network/public/cpp/weak_wrapper_shared_url_loader_factory.h"
+#include "services/network/public/mojom/url_response_head.mojom.h"
 #include "services/network/test/test_url_loader_factory.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -55,8 +56,7 @@ class PermissionRequestCreatorApiaryTest : public testing::Test {
  protected:
   void IssueAccessTokens() {
     identity_test_env_.WaitForAccessTokenRequestIfNecessaryAndRespondWithToken(
-        account_id_, "access_token",
-        base::Time::Now() + base::TimeDelta::FromHours(1));
+        account_id_, "access_token", base::Time::Now() + base::Hours(1));
   }
 
   void IssueAccessTokenErrors() {

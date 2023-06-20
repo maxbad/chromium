@@ -37,6 +37,10 @@ class AXObjectCacheImpl;
 class AXMenuListOption final : public AXNodeObject {
  public:
   AXMenuListOption(HTMLOptionElement*, AXObjectCacheImpl&);
+
+  AXMenuListOption(const AXMenuListOption&) = delete;
+  AXMenuListOption& operator=(const AXMenuListOption&) = delete;
+
   ~AXMenuListOption() override = default;
 
   // For an <option>/<optgroup>, return an AXObject* for its popup, if any,
@@ -58,7 +62,7 @@ class AXMenuListOption final : public AXNodeObject {
 
   void GetRelativeBounds(AXObject** out_container,
                          FloatRect& out_bounds_in_container,
-                         SkMatrix44& out_container_transform,
+                         skia::Matrix44& out_container_transform,
                          bool* clips_children = nullptr) const override;
   String TextAlternative(bool recursive,
                          const AXObject* aria_label_or_description_root,
@@ -67,8 +71,6 @@ class AXMenuListOption final : public AXNodeObject {
                          AXRelatedObjectVector*,
                          NameSources*) const override;
   bool ComputeAccessibilityIsIgnored(IgnoredReasons* = nullptr) const override;
-
-  DISALLOW_COPY_AND_ASSIGN(AXMenuListOption);
 };
 
 template <>

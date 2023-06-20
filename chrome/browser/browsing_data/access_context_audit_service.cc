@@ -6,9 +6,9 @@
 #include "base/memory/ref_counted.h"
 #include "base/task/post_task.h"
 #include "base/task/thread_pool.h"
+#include "base/task/updateable_sequenced_task_runner.h"
 #include "base/time/default_clock.h"
 #include "base/time/time.h"
-#include "base/updateable_sequenced_task_runner.h"
 #include "chrome/browser/browsing_data/access_context_audit_database.h"
 #include "chrome/browser/content_settings/cookie_settings_factory.h"
 #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
@@ -319,8 +319,9 @@ void AccessContextAuditService::OnURLsDeleted(
     const history::DeletionInfo& deletion_info) {
   if (deletion_info.IsAllHistory()) {
     database_task_runner_->PostTask(
-        FROM_HERE, base::BindOnce(&AccessContextAuditDatabase::RemoveAllRecords,
-                                  database_));
+        FROM_HERE,
+        base::BindOnce(&AccessContextAuditDatabase::RemoveAllRecordsHistory,
+                       database_));
     return;
   }
 
@@ -333,7 +334,7 @@ void AccessContextAuditService::OnURLsDeleted(
     database_task_runner_->PostTask(
         FROM_HERE,
         base::BindOnce(
-            &AccessContextAuditDatabase::RemoveAllRecordsForTimeRange,
+            &AccessContextAuditDatabase::RemoveAllRecordsForTimeRangeHistory,
             database_, deletion_info.time_range().begin(),
             deletion_info.time_range().end()));
   }

@@ -4,11 +4,17 @@
 
 #include "ash/projector/projector_ui_controller.h"
 
-#include "ash/accessibility/magnifier/partial_magnification_controller.h"
+#include "ash/accessibility/caption_bubble_context_ash.h"
+#include "ash/accessibility/magnifier/partial_magnifier_controller.h"
+#include "ash/capture_mode/capture_mode_controller.h"
+#include "ash/constants/ash_features.h"
 #include "ash/projector/projector_controller_impl.h"
 #include "ash/projector/projector_metrics.h"
 #include "ash/projector/ui/projector_bar_view.h"
+#include "ash/public/cpp/notification_utils.h"
 #include "ash/public/cpp/toast_data.h"
+#include "ash/public/cpp/window_properties.h"
+#include "ash/resources/vector_icons/vector_icons.h"
 #include "ash/shell.h"
 #include "ash/strings/grit/ash_strings.h"
 #include "ash/system/toast/toast_manager_impl.h"
@@ -17,16 +23,27 @@
 #include "components/live_caption/views/caption_bubble_model.h"
 #include "ui/aura/window.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/gfx/vector_icon_types.h"
+#include "ui/message_center/message_center.h"
+#include "ui/message_center/public/cpp/notification.h"
+#include "ui/message_center/public/cpp/notification_delegate.h"
+#include "ui/message_center/public/cpp/notifier_id.h"
 #include "ui/views/bubble/bubble_dialog_delegate_view.h"
 #include "ui/views/widget/unique_widget_ptr.h"
 #include "ui/views/widget/widget.h"
+#include "url/gurl.h"
 
 namespace ash {
 namespace {
 
 constexpr char kMarkedKeyIdeaToastId[] = "projector_marked_key_idea";
-constexpr base::TimeDelta kToastDuration =
-    base::TimeDelta::FromMilliseconds(2500);
+constexpr base::TimeDelta kToastDuration = base::Milliseconds(2500);
+
+// A unique id to identify system notifications coming from this file.
+constexpr char kProjectorNotifierId[] = "ash.projector_ui_controller";
+
+// A unique id for system notifications reporting a failure.
+constexpr char kProjectorErrorNotificationId[] = "projector_error_notification";
 
 void ShowToast(const std::string& id,
                int message_id,
@@ -44,6 +61,8 @@ void AddExcludedWindowToFastInkController(aura::Window* window) {
   DCHECK(window);
   Shell::Get()->laser_pointer_controller()->AddExcludedWindow(window);
   MarkerController::Get()->AddExcludedWindow(window);
+  // TODO(b/200341176): Add excluded windows to RecordingOverlayView instead of
+  // MarkerController.
 }
 
 void EnableLaserPointer(bool enabled) {
@@ -53,6 +72,20 @@ void EnableLaserPointer(bool enabled) {
 }
 
 void EnableMarker(bool enabled) {
+  if (features::IsProjectorAnnotatorEnabled()) {
+    auto* capture_mode_controller = CaptureModeController::Get();
+    // TODO(b/200292852): This check should not be necessary, but because
+    // several Projector unit tests that rely on mocking and don't test the real
+    // code path, we can end up calling |ToggleRecordingOverlayEnabled()|
+    // without ever starting a Projector recording session.
+    // |CaptureModeController| asserts all invariants via DCHECKs, and those
+    // tests would crash. Remove any unnecessary mocks and test the real thing
+    // if possible.
+    if (capture_mode_controller->is_recording_in_progress())
+      capture_mode_controller->ToggleRecordingOverlayEnabled();
+    return;
+  }
+  // TODO(b/200341176): Remove the older marker tools.
   auto* marker_controller = MarkerController::Get();
   DCHECK(marker_controller);
   marker_controller->SetEnabled(enabled);
@@ -64,7 +97,7 @@ void EnableMarker(bool enabled) {
 }
 
 void EnableMagnifier(bool enabled) {
-  auto* magnifier_controller = Shell::Get()->partial_magnification_controller();
+  auto* magnifier_controller = Shell::Get()->partial_magnifier_controller();
   DCHECK(magnifier_controller);
   magnifier_controller->SetEnabled(enabled);
   magnifier_controller->set_allow_mouse_following(enabled);
@@ -84,6 +117,35 @@ ProjectorMarkerColor GetMarkerColor(SkColor color) {
   }
 }
 
+// Shows a Projector-related notification to the user with the given parameters.
+void ShowNotification(
+    const std::string& notification_id,
+    int title_id,
+    int message_id,
+    message_center::SystemNotificationWarningLevel warning_level =
+        message_center::SystemNotificationWarningLevel::NORMAL,
+    const message_center::RichNotificationData& optional_fields = {},
+    scoped_refptr<message_center::NotificationDelegate> delegate = nullptr,
+    const gfx::VectorIcon& notification_icon = kPaletteTrayIconProjectorIcon) {
+  std::unique_ptr<message_center::Notification> notification =
+      CreateSystemNotification(
+          message_center::NOTIFICATION_TYPE_SIMPLE, notification_id,
+          l10n_util::GetStringUTF16(title_id),
+          l10n_util::GetStringUTF16(message_id),
+          l10n_util::GetStringUTF16(IDS_ASH_PROJECTOR_DISPLAY_SOURCE), GURL(),
+          message_center::NotifierId(
+              message_center::NotifierType::SYSTEM_COMPONENT,
+              kProjectorNotifierId),
+          optional_fields, delegate, notification_icon, warning_level);
+
+  // Remove the previous notification before showing the new one if there are
+  // any.
+  auto* message_center = message_center::MessageCenter::Get();
+  message_center->RemoveNotification(notification_id,
+                                     /*by_user=*/false);
+  message_center->AddNotification(std::move(notification));
+}
+
 }  // namespace
 
 // This class controls the interaction with the caption bubble. It keeps track
@@ -93,11 +155,12 @@ class ProjectorUiController::CaptionBubbleController
  public:
   explicit CaptionBubbleController(ProjectorUiController* controller)
       : controller_(controller) {
-    aura::Window* root_window = Shell::Get()->GetRootWindowForNewWindows();
-    caption_bubble_model_ = std::make_unique<captions::CaptionBubbleModel>(
-        root_window->GetBoundsInScreen(), base::NullCallback());
+    caption_bubble_context_ =
+        std::make_unique<captions::CaptionBubbleContextAsh>();
+    caption_bubble_model_ = std::make_unique<::captions::CaptionBubbleModel>(
+        caption_bubble_context_.get());
 
-    auto* caption_bubble = new captions::CaptionBubble(
+    auto* caption_bubble = new ::captions::CaptionBubble(
         base::NullCallback(), /* hide_on_inactivity= */ false);
     caption_bubble_widget_ = base::WrapUnique<views::Widget>(
         views::BubbleDialogDelegateView::CreateBubble(caption_bubble));
@@ -105,6 +168,13 @@ class ProjectorUiController::CaptionBubbleController
     caption_bubble_widget_->AddObserver(this);
     AddExcludedWindowToFastInkController(
         caption_bubble_widget_->GetNativeWindow());
+    // Use Picture-in-Picture (PIP) window management logic for caption bubble
+    // so that
+    // a) it avoids collision with system UI such as virtual keyboards, quick
+    // settings etc.
+    // b) it is draggable in tablet mode as well.
+    caption_bubble_widget_->GetNativeWindow()->SetProperty(
+        ash::kWindowPipTypeKey, true);
   }
 
   CaptionBubbleController(const CaptionBubbleController&) = delete;
@@ -151,8 +221,17 @@ class ProjectorUiController::CaptionBubbleController
   ProjectorUiController* const controller_;
 
   views::UniqueWidgetPtr caption_bubble_widget_;
-  std::unique_ptr<captions::CaptionBubbleModel> caption_bubble_model_;
+  std::unique_ptr<::captions::CaptionBubbleModel> caption_bubble_model_;
+  std::unique_ptr<captions::CaptionBubbleContextAsh> caption_bubble_context_;
 };
+
+// static
+void ProjectorUiController::ShowFailureNotification(int message_id) {
+  ShowNotification(
+      kProjectorErrorNotificationId, IDS_ASH_PROJECTOR_FAILURE_TITLE,
+      message_id,
+      message_center::SystemNotificationWarningLevel::CRITICAL_WARNING);
+}
 
 ProjectorUiController::ProjectorUiController(
     ProjectorControllerImpl* projector_controller)
@@ -165,10 +244,10 @@ ProjectorUiController::ProjectorUiController(
   DCHECK(marker_controller);
   marker_controller_observation_.Observe(marker_controller);
 
-  auto* partial_magnification_controller =
-      Shell::Get()->partial_magnification_controller();
-  DCHECK(partial_magnification_controller);
-  partial_magnification_observation_.Observe(partial_magnification_controller);
+  auto* partial_magnifier_controller =
+      Shell::Get()->partial_magnifier_controller();
+  DCHECK(partial_magnifier_controller);
+  partial_magnification_observation_.Observe(partial_magnifier_controller);
 
   caption_bubble_ =
       std::make_unique<ProjectorUiController::CaptionBubbleController>(this);
@@ -244,6 +323,13 @@ void ProjectorUiController::OnClearAllMarkersPressed() {
   DCHECK(marker_controller);
   marker_controller->Clear();
   RecordToolbarMetrics(ProjectorToolbar::kClearAllMarkers);
+}
+
+void ProjectorUiController::OnUndoPressed() {
+  auto* marker_controller = MarkerController::Get();
+  DCHECK(marker_controller);
+  marker_controller->UndoLastStroke();
+  RecordToolbarMetrics(ProjectorToolbar::kUndo);
 }
 
 void ProjectorUiController::OnCaptionBubbleModelStateChanged(bool opened) {

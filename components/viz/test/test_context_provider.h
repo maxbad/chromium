@@ -10,11 +10,11 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "base/callback.h"
 #include "base/callback_helpers.h"
 #include "base/containers/flat_set.h"
-#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/synchronization/lock.h"
@@ -65,6 +65,11 @@ class TestSharedImageInterface : public gpu::SharedImageInterface {
       const gfx::ColorSpace& color_space,
       GrSurfaceOrigin surface_origin,
       SkAlphaType alpha_type,
+      uint32_t usage) override;
+
+  std::vector<gpu::Mailbox> CreateSharedImageVideoPlanes(
+      gfx::GpuMemoryBuffer* gpu_memory_buffer,
+      gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
       uint32_t usage) override;
 
   gpu::Mailbox CreateSharedImageWithAHB(
@@ -157,6 +162,9 @@ class TestContextProvider
       std::unique_ptr<TestSharedImageInterface> sii,
       bool support_locking);
 
+  TestContextProvider(const TestContextProvider&) = delete;
+  TestContextProvider& operator=(const TestContextProvider&) = delete;
+
   // ContextProvider / RasterContextProvider implementation.
   void AddRef() const override;
   void Release() const override;
@@ -218,8 +226,6 @@ class TestContextProvider
   base::ObserverList<ContextLostObserver>::Unchecked observers_;
 
   base::WeakPtrFactory<TestContextProvider> weak_ptr_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(TestContextProvider);
 };
 
 class TestVizProcessContextProvider : public VizProcessContextProvider {

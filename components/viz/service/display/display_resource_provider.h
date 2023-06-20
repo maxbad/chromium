@@ -79,11 +79,16 @@ class VIZ_SERVICE_EXPORT DisplayResourceProvider
   bool DoesResourceWantPromotionHint(ResourceId id);
 #endif
 
+  // Returns the size in pixels of the underlying gpu mailbox/software bitmap.
+  const gfx::Size GetResourceBackedSize(ResourceId id);
+
   bool IsResourceSoftwareBacked(ResourceId id);
   // Return the format of the underlying buffer that can be used for scanout.
   gfx::BufferFormat GetBufferFormat(ResourceId id);
   ResourceFormat GetResourceFormat(ResourceId id);
   const gfx::ColorSpace& GetColorSpace(ResourceId id);
+  const absl::optional<gfx::HDRMetadata>& GetHDRMetadata(ResourceId id);
+
   // Indicates if this resource may be used for a hardware overlay plane.
   bool IsOverlayCandidate(ResourceId id);
   SurfaceId GetSurfaceId(ResourceId id);

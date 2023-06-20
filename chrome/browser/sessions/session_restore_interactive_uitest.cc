@@ -97,8 +97,9 @@ class SessionRestoreInteractiveTest : public InProcessBrowserTest {
     // before restoring.
     SessionServiceFactory::GetForProfileForSessionRestore(profile);
 
-    SessionRestore::RestoreSession(profile, nullptr,
-                                   SessionRestore::SYNCHRONOUS, {});
+    SessionRestore::RestoreSession(
+        profile, nullptr,
+        SessionRestore::SYNCHRONOUS | SessionRestore::RESTORE_BROWSER, {});
 
     for (Browser* browser : *(BrowserList::GetInstance())) {
       WaitForTabsToLoad(browser);
@@ -135,7 +136,7 @@ class SessionRestoreInteractiveTest : public InProcessBrowserTest {
 #define MAYBE_FocusOnLaunch FocusOnLaunch
 #endif
 IN_PROC_BROWSER_TEST_F(SessionRestoreInteractiveTest, MAYBE_FocusOnLaunch) {
-  ui_test_utils::NavigateToURL(browser(), url1_);
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), url1_));
 
   Browser* new_browser = QuitBrowserAndRestore(browser());
   ASSERT_EQ(1u, BrowserList::GetInstance()->size());

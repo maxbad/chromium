@@ -4,18 +4,248 @@
 
 #include "cc/paint/paint_filter.h"
 
+#include <string>
+#include <utility>
+#include <vector>
+
+#include "base/no_destructor.h"
+#include "build/build_config.h"
+#include "cc/paint/draw_image.h"
 #include "cc/paint/filter_operations.h"
+#include "cc/paint/image_provider.h"
 #include "cc/paint/paint_image_builder.h"
 #include "cc/paint/paint_op_writer.h"
 #include "cc/paint/paint_record.h"
+#include "cc/paint/scoped_raster_flags.h"
 #include "third_party/skia/include/core/SkColorFilter.h"
 #include "third_party/skia/include/core/SkMath.h"
+#include "third_party/skia/include/core/SkString.h"
 #include "third_party/skia/include/effects/SkImageFilters.h"
 #include "third_party/skia/include/effects/SkPerlinNoiseShader.h"
+#include "third_party/skia/include/effects/SkRuntimeEffect.h"
+#include "third_party/skia/src/effects/imagefilters/SkRuntimeImageFilter.h"
 
 namespace cc {
 namespace {
 const bool kHasNoDiscardableImages = false;
+
+#if defined(OS_ANDROID)
+struct StretchShaderUniforms {
+  // multiplier to apply to scale effect
+  float uMaxStretchIntensity;
+
+  // Maximum percentage to stretch beyond bounds  of target
+  float uStretchAffectedDistX;
+  float uStretchAffectedDistY;
+
+  // Distance stretched as a function of the normalized overscroll times
+  // scale intensity
+  float uDistanceStretchedX;
+  float uDistanceStretchedY;
+  float uInverseDistanceStretchedX;
+  float uInverseDistanceStretchedY;
+  float uDistDiffX;
+
+  // Difference between the peak stretch amount and overscroll amount normalized
+  float uDistDiffY;
+
+  // Horizontal offset represented as a ratio of pixels divided by the target
+  // width
+  float uScrollX;
+  // Vertical offset represented as a ratio of pixels divided by the target
+  // height
+  float uScrollY;
+
+  // Normalized overscroll amount in the horizontal direction
+  float uOverscrollX;
+
+  // Normalized overscroll amount in the vertical direction
+  float uOverscrollY;
+  float viewportWidth;   // target height in pixels
+  float viewportHeight;  // target width in pixels
+
+  // uInterpolationStrength is the intensity of the interpolation.
+  // if uInterpolationStrength is 0, then the stretch is constant for all the
+  // uStretchAffectedDist. if uInterpolationStrength is 1, then stretch
+  // intensity is interpolated based on the pixel position in the
+  // uStretchAffectedDist area; The closer we are from the scroll anchor point,
+  // the more it stretches, and the other way around.
+  float uInterpolationStrength;
+};
+
+const char* kStretchShader = R"(
+    uniform shader uContentTexture;
+
+    // multiplier to apply to scale effect
+    uniform float uMaxStretchIntensity;
+
+    // Maximum percentage to stretch beyond bounds  of target
+    uniform float uStretchAffectedDistX;
+    uniform float uStretchAffectedDistY;
+
+    // Distance stretched as a function of the normalized overscroll times
+    // scale intensity
+    uniform float uDistanceStretchedX;
+    uniform float uDistanceStretchedY;
+    uniform float uInverseDistanceStretchedX;
+    uniform float uInverseDistanceStretchedY;
+    uniform float uDistDiffX;
+
+    // Difference between the peak stretch amount and overscroll amount
+    // normalized
+    uniform float uDistDiffY;
+
+    // Horizontal offset represented as a ratio of pixels divided by the target
+    // width
+    uniform float uScrollX;
+    // Vertical offset represented as a ratio of pixels divided by the target
+    // height
+    uniform float uScrollY;
+
+    // Normalized overscroll amount in the horizontal direction
+    uniform float uOverscrollX;
+
+    // Normalized overscroll amount in the vertical direction
+    uniform float uOverscrollY;
+    uniform float viewportWidth; // target height in pixels
+    uniform float viewportHeight; // target width in pixels
+
+    // uInterpolationStrength is the intensity of the interpolation.
+    // if uInterpolationStrength is 0, then the stretch is constant for all the
+    // uStretchAffectedDist. if uInterpolationStrength is 1, then stretch
+    // intensity is interpolated based on the pixel position in the
+    // uStretchAffectedDist area; The closer we are from the scroll anchor
+    // point, the more it stretches, and the other way around.
+    uniform float uInterpolationStrength;
+
+    float easeInCubic(float t, float d) {
+        float tmp = t * d;
+        return tmp * tmp * tmp;
+    }
+
+    float computeOverscrollStart(
+        float inPos,
+        float overscroll,
+        float uStretchAffectedDist,
+        float uInverseStretchAffectedDist,
+        float distanceStretched,
+        float interpolationStrength
+    ) {
+        float offsetPos = uStretchAffectedDist - inPos;
+        float posBasedVariation = mix(
+                1. ,easeInCubic(offsetPos, uInverseStretchAffectedDist),
+                interpolationStrength);
+        float stretchIntensity = overscroll * posBasedVariation;
+        return distanceStretched - (offsetPos / (1. + stretchIntensity));
+    }
+
+    float computeOverscrollEnd(
+        float inPos,
+        float overscroll,
+        float reverseStretchDist,
+        float uStretchAffectedDist,
+        float uInverseStretchAffectedDist,
+        float distanceStretched,
+        float interpolationStrength
+    ) {
+        float offsetPos = inPos - reverseStretchDist;
+        float posBasedVariation = mix(
+                1. ,easeInCubic(offsetPos, uInverseStretchAffectedDist),
+                interpolationStrength);
+        float stretchIntensity = (-overscroll) * posBasedVariation;
+        return 1 - (distanceStretched - (offsetPos / (1. + stretchIntensity)));
+    }
+
+    // Prefer usage of return values over out parameters as it enables
+    // SKSL to properly inline method calls and works around potential GPU
+    // driver issues on Wembly. See b/182566543 for details
+    float computeOverscroll(
+        float inPos,
+        float overscroll,
+        float uStretchAffectedDist,
+        float uInverseStretchAffectedDist,
+        float distanceStretched,
+        float distanceDiff,
+        float interpolationStrength
+    ) {
+      float outPos = inPos;
+      if (overscroll > 0) {
+            if (inPos <= uStretchAffectedDist) {
+                outPos = computeOverscrollStart(
+                  inPos,
+                  overscroll,
+                  uStretchAffectedDist,
+                  uInverseStretchAffectedDist,
+                  distanceStretched,
+                  interpolationStrength
+                );
+            } else if (inPos >= distanceStretched) {
+                outPos = distanceDiff + inPos;
+            }
+        }
+        if (overscroll < 0) {
+            float stretchAffectedDist = 1. - uStretchAffectedDist;
+            if (inPos >= stretchAffectedDist) {
+                outPos = computeOverscrollEnd(
+                  inPos,
+                  overscroll,
+                  stretchAffectedDist,
+                  uStretchAffectedDist,
+                  uInverseStretchAffectedDist,
+                  distanceStretched,
+                  interpolationStrength
+                );
+            } else if (inPos < stretchAffectedDist) {
+                outPos = -distanceDiff + inPos;
+            }
+        }
+        return outPos;
+    }
+
+    vec4 main(vec2 coord) {
+        // Normalize SKSL pixel coordinate into a unit vector
+        float inU = coord.x / viewportWidth;
+        float inV = coord.y / viewportHeight;
+        float outU;
+        float outV;
+        float stretchIntensity;
+        // Add the normalized scroll position within scrolling list
+        inU += uScrollX;
+        inV += uScrollY;
+        outU = inU;
+        outV = inV;
+        outU = computeOverscroll(
+            inU,
+            uOverscrollX,
+            uStretchAffectedDistX,
+            uInverseDistanceStretchedX,
+            uDistanceStretchedX,
+            uDistDiffX,
+            uInterpolationStrength
+        );
+        outV = computeOverscroll(
+            inV,
+            uOverscrollY,
+            uStretchAffectedDistY,
+            uInverseDistanceStretchedY,
+            uDistanceStretchedY,
+            uDistDiffY,
+            uInterpolationStrength
+        );
+        coord.x = outU * viewportWidth;
+        coord.y = outV * viewportHeight;
+        return uContentTexture.eval(coord);
+    })";
+
+static const float CONTENT_DISTANCE_STRETCHED = 1.f;
+static const float INTERPOLATION_STRENGTH_VALUE = 0.7f;
+
+sk_sp<SkRuntimeEffect> getStretchEffect() {
+  static base::NoDestructor<SkRuntimeEffect::Result> effect(
+      SkRuntimeEffect::MakeForShader(SkString(kStretchShader)));
+  return effect->effect;
+}
+#endif
 
 bool AreFiltersEqual(const PaintFilter* one, const PaintFilter* two) {
   if (!one || !two)
@@ -107,6 +337,8 @@ std::string PaintFilter::TypeToString(Type type) {
       return "kLightingPoint";
     case Type::kLightingSpot:
       return "kLightingSpot";
+    case Type::kStretch:
+      return "kStretch";
   }
   NOTREACHED();
   return "Unknown";
@@ -219,6 +451,9 @@ bool PaintFilter::operator==(const PaintFilter& other) const {
     case Type::kLightingSpot:
       return *static_cast<const LightingSpotPaintFilter*>(this) ==
              static_cast<const LightingSpotPaintFilter&>(other);
+    case Type::kStretch:
+      return *static_cast<const StretchPaintFilter*>(this) ==
+             static_cast<const StretchPaintFilter&>(other);
   }
   NOTREACHED();
   return true;
@@ -658,7 +893,7 @@ bool DisplacementMapEffectPaintFilter::operator==(
 ImagePaintFilter::ImagePaintFilter(PaintImage image,
                                    const SkRect& src_rect,
                                    const SkRect& dst_rect,
-                                   SkFilterQuality filter_quality)
+                                   PaintFlags::FilterQuality filter_quality)
     : PaintFilter(kType, nullptr, !image.IsTextureBacked()),
       image_(std::move(image)),
       src_rect_(src_rect),
@@ -729,6 +964,8 @@ RecordPaintFilter::RecordPaintFilter(sk_sp<PaintRecord> record,
       raster_scale_(raster_scale),
       scaling_behavior_(scaling_behavior) {
   DCHECK(raster_scale_.width() > 0.f && raster_scale_.height() > 0.f);
+  DCHECK(scaling_behavior == ScalingBehavior::kFixedScale ||
+         (raster_scale_.width() == 1.f && raster_scale_.height() == 1.f));
 
   sk_sp<SkPicture> picture =
       ToSkPicture(record_, record_bounds_, image_provider);
@@ -738,21 +975,26 @@ RecordPaintFilter::RecordPaintFilter(sk_sp<PaintRecord> record,
     cached_sk_filter_ = SkImageFilters::Picture(std::move(picture));
   } else {
     DCHECK(scaling_behavior == ScalingBehavior::kFixedScale);
-    // Convert the record to an image and then reference that in the filter DAG
+
+    // Convert the record to an image at the scaled resolution, but draw it in
+    // the filter DAG at the original record bounds.
     int width = SkScalarCeilToInt(record_bounds.width());
     int height = SkScalarCeilToInt(record_bounds.height());
+    SkMatrix originAdjust =
+        SkMatrix::Translate(-record_bounds.fLeft, -record_bounds.fTop);
     auto image = SkImage::MakeFromPicture(
-        std::move(picture), SkISize::Make(width, height), nullptr, nullptr,
-        SkImage::BitDepth::kU8, SkColorSpace::MakeSRGB());
+        std::move(picture), SkISize::Make(width, height), &originAdjust,
+        nullptr, SkImage::BitDepth::kU8, SkColorSpace::MakeSRGB());
 
     // Must account for the raster scale when drawing the picture image,
     SkRect src = SkRect::MakeWH(record_bounds.width(), record_bounds.height());
     SkScalar inv_x = 1.f / raster_scale_.width();
     SkScalar inv_y = 1.f / raster_scale_.height();
-    SkRect dst = {inv_x * src.fLeft, inv_y * src.fTop, inv_x * src.fRight,
-                  inv_y * src.fBottom};
+    SkRect dst = {inv_x * record_bounds.fLeft, inv_y * record_bounds.fTop,
+                  inv_x * record_bounds.fRight, inv_y * record_bounds.fBottom};
 
-    // Use Mitchell cubic filter, matching historic kHigh_SkFilterQuality
+    // Use Mitchell cubic filter, matching historic
+    // PaintFlags::FilterQuality::kHigh
     SkSamplingOptions sampling(SkCubicResampler::Mitchell());
     cached_sk_filter_ =
         SkImageFilters::Image(std::move(image), src, dst, sampling);
@@ -791,7 +1033,7 @@ sk_sp<RecordPaintFilter> RecordPaintFilter::CreateScaledPaintRecord(
 size_t RecordPaintFilter::SerializedSize() const {
   base::CheckedNumeric<size_t> total_size =
       BaseSerializedSize() + sizeof(record_bounds_) + sizeof(raster_scale_) +
-      sizeof(scaling_behavior_);
+      sizeof(scaling_behavior_) + sizeof(bool);
   total_size += PaintOpWriter::GetRecordSize(record_.get());
   return total_size.ValueOrDefault(0u);
 }
@@ -1032,7 +1274,7 @@ bool TurbulencePaintFilter::operator==(
 
 ShaderPaintFilter::ShaderPaintFilter(sk_sp<PaintShader> shader,
                                      uint8_t alpha,
-                                     SkFilterQuality filter_quality,
+                                     PaintFlags::FilterQuality filter_quality,
                                      SkImageFilters::Dither dither,
                                      const CropRect* crop_rect)
     : PaintFilter(kType, crop_rect, shader->has_discardable_images()),
@@ -1096,7 +1338,7 @@ bool ShaderPaintFilter::operator==(const ShaderPaintFilter& other) const {
 }
 
 MatrixPaintFilter::MatrixPaintFilter(const SkMatrix& matrix,
-                                     SkFilterQuality filter_quality,
+                                     PaintFlags::FilterQuality filter_quality,
                                      sk_sp<PaintFilter> input)
     : PaintFilter(Type::kMatrix, nullptr, HasDiscardableImages(input)),
       matrix_(matrix),
@@ -1316,6 +1558,80 @@ bool LightingSpotPaintFilter::operator==(
          PaintOp::AreEqualEvenIfNaN(surface_scale_, other.surface_scale_) &&
          PaintOp::AreEqualEvenIfNaN(kconstant_, other.kconstant_) &&
          PaintOp::AreEqualEvenIfNaN(shininess_, other.shininess_) &&
+         AreFiltersEqual(input_.get(), other.input_.get());
+}
+
+StretchPaintFilter::StretchPaintFilter(SkScalar stretch_x,
+                                       SkScalar stretch_y,
+                                       SkScalar width,
+                                       SkScalar height,
+                                       sk_sp<PaintFilter> input,
+                                       const CropRect* crop_rect)
+    : PaintFilter(kType, crop_rect, HasDiscardableImages(input)),
+      stretch_x_(stretch_x),
+      stretch_y_(stretch_y),
+      width_(width),
+      height_(height),
+      input_(std::move(input)) {
+#if defined(OS_ANDROID)
+  float normOverScrollDistX = stretch_x_;
+  float normOverScrollDistY = stretch_y_;
+  float distanceStretchedX =
+      CONTENT_DISTANCE_STRETCHED / (1 + std::abs(normOverScrollDistX));
+  float distanceStretchedY =
+      CONTENT_DISTANCE_STRETCHED / (1 + std::abs(normOverScrollDistY));
+  float inverseDistanceStretchedX = 1.f / CONTENT_DISTANCE_STRETCHED;
+  float inverseDistanceStretchedY = 1.f / CONTENT_DISTANCE_STRETCHED;
+  float diffX = distanceStretchedX - CONTENT_DISTANCE_STRETCHED;
+  float diffY = distanceStretchedY - CONTENT_DISTANCE_STRETCHED;
+  StretchShaderUniforms uniforms;
+
+  uniforms.uInterpolationStrength = INTERPOLATION_STRENGTH_VALUE;
+  uniforms.uStretchAffectedDistX = CONTENT_DISTANCE_STRETCHED;
+  uniforms.uStretchAffectedDistY = CONTENT_DISTANCE_STRETCHED;
+  uniforms.uDistanceStretchedX = distanceStretchedX;
+  uniforms.uDistanceStretchedY = distanceStretchedY;
+  uniforms.uInverseDistanceStretchedX = inverseDistanceStretchedX;
+  uniforms.uInverseDistanceStretchedY = inverseDistanceStretchedY;
+  uniforms.uDistDiffX = diffX;
+  uniforms.uDistDiffY = diffY;
+  uniforms.uOverscrollX = normOverScrollDistX;
+  uniforms.uOverscrollY = normOverScrollDistY;
+  uniforms.uScrollX = 0;
+  uniforms.uScrollY = 0;
+  uniforms.viewportWidth = width;
+  uniforms.viewportHeight = height;
+  sk_sp<SkData> uniformVals = SkData::MakeWithCopy(&uniforms, sizeof(uniforms));
+  cached_sk_filter_ = SkMakeRuntimeImageFilter(getStretchEffect(), uniformVals,
+                                               GetSkFilter(input_.get()));
+#else   // defined(OS_ANDROID)
+  // Stretch filter is only used on android and removed from other platforms
+  // to reduce size. See https://crbug.com/1226170.
+#endif  // defined(OS_ANDROID)
+}
+
+StretchPaintFilter::~StretchPaintFilter() = default;
+
+size_t StretchPaintFilter::SerializedSize() const {
+  base::CheckedNumeric<size_t> total_size =
+      BaseSerializedSize() + sizeof(stretch_x_) + sizeof(stretch_y_) +
+      sizeof(width_) + sizeof(height_);
+  total_size += GetFilterSize(input_.get());
+  return total_size.ValueOrDefault(0u);
+}
+
+sk_sp<PaintFilter> StretchPaintFilter::SnapshotWithImagesInternal(
+    ImageProvider* image_provider) const {
+  return sk_make_sp<StretchPaintFilter>(stretch_x_, stretch_y_, width_, height_,
+                                        Snapshot(input_, image_provider),
+                                        crop_rect());
+}
+
+bool StretchPaintFilter::operator==(const StretchPaintFilter& other) const {
+  return PaintOp::AreEqualEvenIfNaN(stretch_x_, other.stretch_x_) &&
+         PaintOp::AreEqualEvenIfNaN(stretch_y_, other.stretch_y_) &&
+         PaintOp::AreEqualEvenIfNaN(width_, other.width_) &&
+         PaintOp::AreEqualEvenIfNaN(height_, other.height_) &&
          AreFiltersEqual(input_.get(), other.input_.get());
 }
 

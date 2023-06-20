@@ -109,6 +109,9 @@ class DownloadItemView : public views::View,
   // If user hasn't seen SBER opt-in text before, show SBER opt-in dialog first.
   void MaybeSubmitDownloadToFeedbackService(DownloadCommands::Command command);
 
+  std::u16string GetStatusTextForTesting() const;
+  void OpenItemForTesting();
+
  protected:
   // views::View:
   gfx::Size CalculatePreferredSize() const override;
@@ -121,6 +124,8 @@ class DownloadItemView : public views::View,
                                   float new_device_scale_factor) override;
 
  private:
+  class ContextMenuButton;
+
   // Sets the current mode to |mode| and updates UI appropriately.
   void SetMode(download::DownloadItemMode mode);
   download::DownloadItemMode GetMode() const;
@@ -206,6 +211,7 @@ class DownloadItemView : public views::View,
   void OpenButtonPressed();
   void SaveOrDiscardButtonPressed(DownloadCommands::Command command);
   void DropdownButtonPressed(const ui::Event& event);
+  void ReviewButtonPressed();
 
   // Shows an appropriate prompt dialog when the user hits the "open" button
   // when not in normal mode.
@@ -231,7 +237,7 @@ class DownloadItemView : public views::View,
   const DownloadUIModel::DownloadUIModelPtr model_;
 
   // A utility object to help execute commands on the model.
-  DownloadCommands commands_{model()};
+  DownloadCommands commands_{model()->GetWeakPtr()};
 
   // The download shelf that owns us.
   DownloadShelfView* const shelf_;
@@ -271,6 +277,7 @@ class DownloadItemView : public views::View,
   views::MdTextButton* save_button_;
   views::MdTextButton* discard_button_;
   views::MdTextButton* scan_button_;
+  views::MdTextButton* review_button_;
   views::ImageButton* dropdown_button_;
 
   // Whether the dropdown is currently pressed.
@@ -311,6 +318,14 @@ class DownloadItemView : public views::View,
 
   base::ScopedObservation<DownloadUIModel, DownloadUIModel::Observer>
       observation_{this};
+
+  // Whether or not a histogram has been emitted recording that the dropdown
+  // button shown.
+  bool dropdown_button_shown_recorded_ = false;
+
+  // Whether or not a histogram has been emitted recording that the dropdown
+  // button was pressed.
+  bool dropdown_button_pressed_recorded_ = false;
 
   // Method factory used to delay reenabling of the item when opening the
   // downloaded file.

@@ -31,17 +31,13 @@
 
 namespace {
 // Amount of time after which timestamp is shown instead of "just now".
-constexpr base::TimeDelta kJustCheckedTimeThresholdInMinutes =
-    base::TimeDelta::FromMinutes(1);
+constexpr base::TimeDelta kJustCheckedTimeThresholdInMinutes = base::Minutes(1);
 }  // namespace
 
 @interface PasswordsMediator () <PasswordCheckObserver,
                                  SavedPasswordsPresenterObserver> {
   // The service responsible for password check feature.
   scoped_refptr<IOSChromePasswordCheckManager> _passwordCheckManager;
-
-  // Service used to check if user is signed in.
-  AuthenticationService* _authService;
 
   // Service to check if passwords are synced.
   SyncSetupService* _syncService;
@@ -74,11 +70,9 @@ constexpr base::TimeDelta kJustCheckedTimeThresholdInMinutes =
 - (instancetype)initWithPasswordCheckManager:
                     (scoped_refptr<IOSChromePasswordCheckManager>)
                         passwordCheckManager
-                                 authService:(AuthenticationService*)authService
                                  syncService:(SyncSetupService*)syncService {
   self = [super init];
   if (self) {
-    _authService = authService;
     _syncService = syncService;
 
     _passwordCheckManager = passwordCheckManager;
@@ -291,7 +285,7 @@ constexpr base::TimeDelta kJustCheckedTimeThresholdInMinutes =
 
 // Compute whether user is capable to run password check in Google Account.
 - (BOOL)canUseAccountPasswordCheckup {
-  return _authService->IsAuthenticated() && _syncService->IsSyncEnabled() &&
+  return _syncService->CanSyncFeatureStart() &&
          !_syncService->IsEncryptEverythingEnabled();
 }
 

@@ -213,6 +213,12 @@ class CORE_EXPORT Frame : public GarbageCollected<Frame> {
     return user_activation_state_.HasBeenActive();
   }
 
+  // Returns if the last user activation for this frame was restricted in
+  // nature.
+  bool LastActivationWasRestricted() const {
+    return user_activation_state_.LastActivationWasRestricted();
+  }
+
   // Resets the user activation state of this frame.
   void ClearUserActivation() { user_activation_state_.Clear(); }
 
@@ -226,6 +232,12 @@ class CORE_EXPORT Frame : public GarbageCollected<Frame> {
 
   bool IsAttached() const {
     return lifecycle_.GetState() == FrameLifecycle::kAttached;
+  }
+
+  // Note that IsAttached() and IsDetached() are not strict opposites: frames
+  // that are detaching are considered to be in neither state.
+  bool IsDetached() const {
+    return lifecycle_.GetState() == FrameLifecycle::kDetached;
   }
 
   // Whether the frame is considered to be an ad subframe by Ad Tagging. Returns
@@ -320,7 +332,7 @@ class CORE_EXPORT Frame : public GarbageCollected<Frame> {
   virtual void DidFocus() = 0;
 
   virtual IntSize GetMainFrameViewportSize() const = 0;
-  virtual IntPoint GetMainFrameScrollOffset() const = 0;
+  virtual gfx::Point GetMainFrameScrollOffset() const = 0;
 
   // Sets this frame's opener to another frame, or disowned the opener
   // if opener is null. See http://html.spec.whatwg.org/#dom-opener.
@@ -332,10 +344,12 @@ class CORE_EXPORT Frame : public GarbageCollected<Frame> {
   Frame* Opener() const { return opener_; }
 
   // Returns the parent frame or null if this is the top-most frame.
-  Frame* Parent() const { return parent_; }
+  Frame* Parent(FrameTreeBoundary frame_tree_boundary =
+                    FrameTreeBoundary::kIgnoreFence) const;
 
   // Returns the top-most frame in the hierarchy containing this frame.
-  Frame* Top();
+  Frame* Top(
+      FrameTreeBoundary frame_tree_boundary = FrameTreeBoundary::kIgnoreFence);
 
   // Returns the first child frame.
   Frame* FirstChild() const { return first_child_; }
@@ -395,12 +409,6 @@ class CORE_EXPORT Frame : public GarbageCollected<Frame> {
   // See `Detach()` for more information.
   virtual bool DetachImpl(FrameDetachType) = 0;
 
-  // Note that IsAttached() and IsDetached() are not strict opposites: frames
-  // that are detaching are considered to be in neither state.
-  bool IsDetached() const {
-    return lifecycle_.GetState() == FrameLifecycle::kDetached;
-  }
-
   virtual void DidChangeVisibleToHitTesting() = 0;
 
   void FocusImpl();
@@ -417,6 +425,13 @@ class CORE_EXPORT Frame : public GarbageCollected<Frame> {
   void RenderFallbackContentWithResourceTiming(
       mojom::blink::ResourceTimingInfoPtr timing,
       const String& server_timing_values);
+
+  // Returns false if fenced frames are disabled. Returns true if the
+  // feature is enabled and if |this| or any of its ancestor nodes is a
+  // fenced frame. For MPArch returns the value of
+  // Page::IsMainFrameFencedFrameRoot and for shadowDOM returns true, if
+  // the FrameTree that this frame is in is not the outermost FrameTree.
+  bool IsInFencedFrameTree() const;
 
   mutable FrameTree tree_node_;
 

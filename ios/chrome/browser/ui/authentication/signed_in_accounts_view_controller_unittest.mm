@@ -9,13 +9,17 @@
 #include "base/bind.h"
 #include "base/strings/sys_string_conversions.h"
 #include "components/signin/public/identity_manager/identity_test_environment.h"
+#include "components/variations/scoped_variations_ids_provider.h"
 #include "ios/chrome/browser/browser_state/test_chrome_browser_state.h"
 #import "ios/chrome/browser/signin/authentication_service_delegate_fake.h"
 #include "ios/chrome/browser/signin/authentication_service_factory.h"
 #import "ios/chrome/browser/signin/authentication_service_fake.h"
+#import "ios/chrome/browser/signin/chrome_account_manager_service.h"
+#import "ios/chrome/browser/signin/chrome_account_manager_service_factory.h"
 #include "ios/chrome/browser/sync/sync_setup_service_factory.h"
 #include "ios/chrome/browser/sync/sync_setup_service_mock.h"
 #include "ios/chrome/test/block_cleanup_test.h"
+#include "ios/chrome/test/ios_chrome_scoped_testing_local_state.h"
 #import "ios/public/provider/chrome/browser/signin/fake_chrome_identity.h"
 #include "ios/public/provider/chrome/browser/signin/fake_chrome_identity_service.h"
 #include "ios/web/public/test/web_task_environment.h"
@@ -32,9 +36,9 @@ class SignedInAccountsViewControllerTest : public BlockCleanupTest {
 
   void SetUp() override {
     BlockCleanupTest::SetUp();
-    ios::FakeChromeIdentityService* identity_service =
+    identity_service_ =
         ios::FakeChromeIdentityService::GetInstanceFromChromeProvider();
-    identity_service->AddIdentities(@[ @"identity1" ]);
+    identity_service_->AddIdentities(@[ @"identity1" ]);
 
     TestChromeBrowserState::Builder builder;
     builder.AddTestingFactory(
@@ -47,17 +51,23 @@ class SignedInAccountsViewControllerTest : public BlockCleanupTest {
     AuthenticationServiceFactory::CreateAndInitializeForBrowserState(
         browser_state_.get(),
         std::make_unique<AuthenticationServiceDelegateFake>());
+    ChromeAccountManagerService* account_manager_service =
+        ChromeAccountManagerServiceFactory::GetForBrowserState(
+            browser_state_.get());
     AuthenticationService* auth_service =
         AuthenticationServiceFactory::GetForBrowserState(browser_state_.get());
-    auth_service->SignIn([identity_service->GetAllIdentitiesSortedForDisplay(
-        nullptr) objectAtIndex:0]);
+    auth_service->SignIn(account_manager_service->GetDefaultIdentity());
   }
 
  protected:
   web::WebTaskEnvironment task_environment_{
       web::WebTaskEnvironment::IO_MAINLOOP};
+  IOSChromeScopedTestingLocalState local_state_;
   signin::IdentityTestEnvironment identity_test_env_;
   std::unique_ptr<TestChromeBrowserState> browser_state_;
+  variations::ScopedVariationsIdsProvider scoped_variations_ids_provider_{
+      variations::VariationsIdsProvider::Mode::kUseSignedInState};
+  ios::FakeChromeIdentityService* identity_service_;
 };
 
 // Tests that the signed in accounts view shouldn't be presented when the
@@ -72,10 +82,8 @@ TEST_F(SignedInAccountsViewControllerTest,
 // have changed.
 TEST_F(SignedInAccountsViewControllerTest,
        ShouldBePresentedForBrowserStateNecessary) {
-  ios::FakeChromeIdentityService* identity_service =
-      ios::FakeChromeIdentityService::GetInstanceFromChromeProvider();
-  identity_service->AddIdentities(@[ @"identity2" ]);
-  identity_service->FireChromeIdentityReload();
+  identity_service_->AddIdentities(@[ @"identity2" ]);
+  identity_service_->FireChromeIdentityReload();
   base::RunLoop().RunUntilIdle();
   EXPECT_TRUE([SignedInAccountsViewController
       shouldBePresentedForBrowserState:browser_state_.get()]);

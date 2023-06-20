@@ -57,6 +57,10 @@ class COMPONENT_EXPORT(DEVICE_FIDO) FidoBleConnection
                     std::string device_address,
                     BluetoothUUID service_uuid,
                     ReadCallback read_callback);
+
+  FidoBleConnection(const FidoBleConnection&) = delete;
+  FidoBleConnection& operator=(const FidoBleConnection&) = delete;
+
   ~FidoBleConnection() override;
 
   const std::string& address() const { return address_; }
@@ -89,9 +93,8 @@ class COMPONENT_EXPORT(DEVICE_FIDO) FidoBleConnection
   const BluetoothRemoteGattService* GetFidoService();
 
   void OnCreateGattConnection(
-      std::unique_ptr<BluetoothGattConnection> connection);
-  void OnCreateGattConnectionError(
-      BluetoothDevice::ConnectErrorCode error_code);
+      std::unique_ptr<BluetoothGattConnection> connection,
+      absl::optional<BluetoothDevice::ConnectErrorCode> error_code);
 
   void ConnectToFidoService();
   void OnReadServiceRevisions(std::vector<ServiceRevision> service_revisions);
@@ -124,8 +127,6 @@ class COMPONENT_EXPORT(DEVICE_FIDO) FidoBleConnection
   absl::optional<std::string> service_revision_bitfield_id_;
 
   base::WeakPtrFactory<FidoBleConnection> weak_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(FidoBleConnection);
 };
 
 }  // namespace device

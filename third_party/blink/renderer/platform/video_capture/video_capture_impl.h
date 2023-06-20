@@ -8,12 +8,14 @@
 #include <stdint.h>
 #include <map>
 
-#include "base/macros.h"
+#include "base/callback.h"
+#include "base/feature_list.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/unsafe_shared_memory_pool.h"
 #include "base/memory/weak_ptr.h"
 #include "base/thread_annotations.h"
 #include "base/threading/thread_checker.h"
+#include "base/token.h"
 #include "media/base/video_frame.h"
 #include "media/capture/mojom/video_capture.mojom-blink.h"
 #include "media/capture/video_capture_types.h"
@@ -61,10 +63,19 @@ class PLATFORM_EXPORT VideoCaptureImpl
   VideoCaptureImpl(media::VideoCaptureSessionId session_id,
                    scoped_refptr<base::SequencedTaskRunner> main_task_runner,
                    BrowserInterfaceBrokerProxy* browser_interface_broker);
+  VideoCaptureImpl(const VideoCaptureImpl&) = delete;
+  VideoCaptureImpl& operator=(const VideoCaptureImpl&) = delete;
   ~VideoCaptureImpl() override;
 
   // Stop/resume delivering video frames to clients, based on flag |suspend|.
   void SuspendCapture(bool suspend);
+
+  // Start/stop cropping a video track.
+  // Non-empty |crop_id| sets (or changes) the crop-target.
+  // Empty |crop_id| reverts the capture to its original, uncropped state.
+  // The callback reports success/failure.
+  void Crop(const base::Token& crop_id,
+            base::OnceCallback<void(media::mojom::CropRequestResult)> callback);
 
   // Start capturing using the provided parameters.
   // |client_id| must be unique to this object in the render process. It is
@@ -121,8 +132,7 @@ class PLATFORM_EXPORT VideoCaptureImpl
   // The returned weak pointer can only be dereferenced on the IO thread.
   base::WeakPtr<VideoCaptureImpl> GetWeakPtr();
 
-  static constexpr base::TimeDelta kCaptureStartTimeout =
-      base::TimeDelta::FromSeconds(10);
+  static constexpr base::TimeDelta kCaptureStartTimeout = base::Seconds(10);
 
  private:
   friend class VideoCaptureImplTest;
@@ -207,6 +217,10 @@ class PLATFORM_EXPORT VideoCaptureImpl
       VideoCaptureDeviceFormatsCallback callback,
       const Vector<media::VideoCaptureFormat>& formats_in_use);
 
+  void OnCropResult(
+      base::OnceCallback<void(media::mojom::CropRequestResult)> callback,
+      media::mojom::CropRequestResult result);
+
   // Tries to remove |client_id| from |clients|, returning false if not found.
   bool RemoveClient(int client_id, ClientInfoMap* clients);
 
@@ -289,8 +303,6 @@ class PLATFORM_EXPORT VideoCaptureImpl
   // media::VideoFrames constructed in OnBufferReceived() from buffers cached
   // in |client_buffers_|.
   base::WeakPtrFactory<VideoCaptureImpl> weak_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(VideoCaptureImpl);
 };
 
 }  // namespace blink

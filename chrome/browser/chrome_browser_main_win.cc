@@ -4,10 +4,12 @@
 
 #include "chrome/browser/chrome_browser_main_win.h"
 
+// windows.h must be included before shellapi.h
+#include <windows.h>
+
 #include <shellapi.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <windows.h>
 
 #include <algorithm>
 #include <utility>
@@ -44,6 +46,7 @@
 #include "build/branding_buildflags.h"
 #include "chrome/browser/about_flags.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/enterprise/util/critical_policy_section_metrics_win.h"
 #include "chrome/browser/first_run/first_run.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/profiles/profile_shortcut_manager.h"
@@ -57,9 +60,9 @@
 #include "chrome/browser/web_applications/chrome_pwa_launcher/last_browser_file_util.h"
 #include "chrome/browser/web_applications/chrome_pwa_launcher/launcher_log_reporter.h"
 #include "chrome/browser/web_applications/chrome_pwa_launcher/launcher_update.h"
-#include "chrome/browser/web_applications/components/web_app_handler_registration_utils_win.h"
-#include "chrome/browser/web_applications/components/web_app_shortcut.h"
+#include "chrome/browser/web_applications/web_app_handler_registration_utils_win.h"
 #include "chrome/browser/web_applications/web_app_provider.h"
+#include "chrome/browser/web_applications/web_app_shortcut.h"
 #include "chrome/browser/win/browser_util.h"
 #include "chrome/browser/win/chrome_elf_init.h"
 #include "chrome/browser/win/conflicts/enumerate_input_method_editors.h"
@@ -209,11 +212,12 @@ void DetectFaultTolerantHeap() {
 }
 
 void DelayedRecordProcessorMetrics() {
-  mojo::Remote<chrome::mojom::UtilWin> remote_util_win =
-      LaunchUtilWinServiceInstance();
+  mojo::Remote<chrome::mojom::ProcessorMetrics> remote_util_win =
+      LaunchProcessorMetricsService();
   auto* remote_util_win_ptr = remote_util_win.get();
-  remote_util_win_ptr->RecordProcessorMetrics(base::BindOnce(
-      [](mojo::Remote<chrome::mojom::UtilWin>) {}, std::move(remote_util_win)));
+  remote_util_win_ptr->RecordProcessorMetrics(
+      base::BindOnce([](mojo::Remote<chrome::mojom::ProcessorMetrics>) {},
+                     std::move(remote_util_win)));
 }
 
 // Initializes the ModuleDatabase on its owning sequence. Also starts the
@@ -466,10 +470,10 @@ void UpdatePwaLaunchersForProfile(const base::FilePath& profile_dir) {
     // The profile was unloaded.
     return;
   }
-  auto* provider = web_app::WebAppProvider::Get(profile);
+  auto* provider = web_app::WebAppProvider::GetForWebApps(profile);
   if (!provider)
     return;
-  web_app::AppRegistrar& registrar = provider->registrar();
+  web_app::WebAppRegistrar& registrar = provider->registrar();
 
   // Create a vector of all PWA-launcher paths in |profile_dir|.
   std::vector<base::FilePath> pwa_launcher_paths;
@@ -556,9 +560,9 @@ int DoUninstallTasks(bool chrome_still_running) {
 // ChromeBrowserMainPartsWin ---------------------------------------------------
 
 ChromeBrowserMainPartsWin::ChromeBrowserMainPartsWin(
-    const content::MainFunctionParams& parameters,
+    content::MainFunctionParams parameters,
     StartupData* startup_data)
-    : ChromeBrowserMainParts(parameters, startup_data) {}
+    : ChromeBrowserMainParts(std::move(parameters), startup_data) {}
 
 ChromeBrowserMainPartsWin::~ChromeBrowserMainPartsWin() = default;
 
@@ -683,8 +687,7 @@ void ChromeBrowserMainPartsWin::PostBrowserStart() {
   // Record UMA data about whether the fault-tolerant heap is enabled.
   // Use a delayed task to minimize the impact on startup time.
   content::GetUIThreadTaskRunner({})->PostDelayedTask(
-      FROM_HERE, base::BindOnce(&DetectFaultTolerantHeap),
-      base::TimeDelta::FromMinutes(1));
+      FROM_HERE, base::BindOnce(&DetectFaultTolerantHeap), base::Minutes(1));
 
   // Record Processor Metrics. This is very low priority, hence posting as
   // BEST_EFFORT to start after Chrome startup has completed. This metric is
@@ -733,6 +736,8 @@ void ChromeBrowserMainPartsWin::PostBrowserStart() {
     AnnounceInActiveBrowser(l10n_util::GetStringUTF16(IDS_WELCOME_TO_CHROME));
 
   base::ImportantFileWriterCleaner::GetInstance().Start();
+
+  chrome::enterprise_util::MeasureAndReportCriticalPolicySectionAcquisition();
 }
 
 // static

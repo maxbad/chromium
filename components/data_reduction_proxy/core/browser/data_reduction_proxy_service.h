@@ -12,13 +12,11 @@
 
 #include "base/callback.h"
 #include "base/gtest_prod_util.h"
-#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/sequence_checker.h"
 #include "base/values.h"
 #include "components/data_reduction_proxy/core/browser/data_reduction_proxy_metrics.h"
-#include "components/data_reduction_proxy/core/browser/data_reduction_proxy_util.h"
 #include "components/data_reduction_proxy/core/browser/db_data_owner.h"
 #include "components/data_use_measurement/core/data_use_measurement.h"
 #include "net/nqe/effective_connection_type.h"
@@ -52,9 +50,11 @@ class DataReductionProxyService
       std::unique_ptr<DataStore> store,
       data_use_measurement::DataUseMeasurement* data_use_measurement,
       const scoped_refptr<base::SequencedTaskRunner>& db_task_runner,
-      const base::TimeDelta& commit_delay,
-      const std::string& channel,
-      const std::string& user_agent);
+      const base::TimeDelta& commit_delay);
+
+  DataReductionProxyService(const DataReductionProxyService&) = delete;
+  DataReductionProxyService& operator=(const DataReductionProxyService&) =
+      delete;
 
   virtual ~DataReductionProxyService();
 
@@ -72,7 +72,6 @@ class DataReductionProxyService
       int64_t data_used,
       int64_t original_size,
       bool data_reduction_proxy_enabled,
-      DataReductionProxyRequestType request_type,
       const std::string& mime_type,
       bool is_user_traffic,
       data_use_measurement::DataUseUserData::DataUseContentType content_type,
@@ -108,10 +107,6 @@ class DataReductionProxyService
     return compression_stats_.get();
   }
 
-
-  // The production channel of this build.
-  std::string channel() const { return channel_; }
-
   base::WeakPtr<DataReductionProxyService> GetWeakPtr();
 
   base::SequencedTaskRunner* GetDBTaskRunnerForTesting() const {
@@ -145,17 +140,12 @@ class DataReductionProxyService
   // lifetime of |this|.
   data_use_measurement::DataUseMeasurement* data_use_measurement_;
 
-  // The production channel of this build.
-  const std::string channel_;
-
   // Dictionary of save-data savings estimates by origin.
   const absl::optional<base::Value> save_data_savings_estimate_dict_;
 
   SEQUENCE_CHECKER(sequence_checker_);
 
   base::WeakPtrFactory<DataReductionProxyService> weak_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(DataReductionProxyService);
 };
 
 }  // namespace data_reduction_proxy

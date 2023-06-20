@@ -8,6 +8,8 @@
 #include "base/macros.h"
 #include "chromecast/browser/cast_content_gesture_handler.h"
 #include "chromecast/browser/cast_content_window.h"
+#include "chromecast/browser/cast_web_contents_observer.h"
+#include "chromecast/browser/mojom/cast_web_service.mojom.h"
 #include "chromecast/ui/media_control_ui.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
@@ -22,12 +24,16 @@ namespace chromecast {
 class TouchBlocker;
 
 class CastContentWindowAura : public CastContentWindow,
-                              public CastWebContents::Observer,
+                              public CastWebContentsObserver,
                               public content::WebContentsObserver,
                               public aura::WindowObserver {
  public:
-  CastContentWindowAura(const CastContentWindow::CreateParams& params,
+  CastContentWindowAura(mojom::CastWebViewParamsPtr params,
                         CastWindowManager* window_manager);
+
+  CastContentWindowAura(const CastContentWindowAura&) = delete;
+  CastContentWindowAura& operator=(const CastContentWindowAura&) = delete;
+
   ~CastContentWindowAura() override;
 
   // CastContentWindow implementation:
@@ -43,12 +49,10 @@ class CastContentWindowAura : public CastContentWindow,
   void EnableTouchInput(bool enabled) override;
   mojom::MediaControlUi* media_controls() override;
 
-  // CastWebContents::Observer implementation:
-  void MainFrameResized(const gfx::Rect& bounds) override;
-
   // content::WebContentsObserver implementation:
   void DidStartNavigation(
       content::NavigationHandle* navigation_handle) override;
+  void PrimaryMainFrameWasResized(bool width_changed) override;
 
   // aura::WindowObserver implementation:
   void OnWindowVisibilityChanged(aura::Window* window, bool visible) override;
@@ -62,18 +66,12 @@ class CastContentWindowAura : public CastContentWindow,
 
   // Utility class for detecting and dispatching gestures to delegates.
   std::unique_ptr<CastContentGestureHandler> gesture_dispatcher_;
-  CastContentGestureHandler::Priority const gesture_priority_;
-
-  const bool is_touch_enabled_;
   std::unique_ptr<TouchBlocker> touch_blocker_;
-
   std::unique_ptr<MediaControlUi> media_controls_;
 
   aura::Window* window_;
   bool has_screen_access_;
   bool resize_window_when_navigation_starts_;
-
-  DISALLOW_COPY_AND_ASSIGN(CastContentWindowAura);
 };
 
 }  // namespace chromecast

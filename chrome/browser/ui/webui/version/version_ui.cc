@@ -213,7 +213,7 @@ void VersionUI::AddVersionDetailStrings(content::WebUIDataSource* html_source) {
       version_ui::kCommandLine,
       base::AsString16(
           base::CommandLine::ForCurrentProcess()->GetCommandLineString()));
-#elif defined(OS_POSIX)
+#else
   std::string command_line;
   typedef std::vector<std::string> ArgvList;
   const ArgvList& argv = base::CommandLine::ForCurrentProcess()->argv();
@@ -223,6 +223,10 @@ void VersionUI::AddVersionDetailStrings(content::WebUIDataSource* html_source) {
   // below we assumes it's UTF-8.
   html_source->AddString(version_ui::kCommandLine, command_line);
 #endif
+
+#if defined(OS_MAC)
+  html_source->AddString("linker", CHROMIUM_LINKER_NAME);
+#endif  // defined(OS_MAC)
 
 #if defined(OS_WIN)
   html_source->AddString(version_ui::kUpdateCohortName,

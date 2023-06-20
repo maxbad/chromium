@@ -48,6 +48,7 @@ enum class FrameSkippedReason {
   kRecoverLatency,
   kNoDamage,
   kWaitingOnMain,
+  kDrawThrottled,
 };
 
 class SchedulerClient {
@@ -87,7 +88,7 @@ class SchedulerClient {
   virtual void FrameIntervalUpdated(base::TimeDelta interval) = 0;
 
   // Functions used for reporting animation targeting UMA, crbug.com/758439.
-  virtual bool HasCustomPropertyAnimations() const = 0;
+  virtual bool HasInvalidationAnimation() const = 0;
 
  protected:
   virtual ~SchedulerClient() {}
@@ -250,6 +251,7 @@ class CC_EXPORT Scheduler : public viz::BeginFrameObserverBase {
   void SetMainThreadWantsBeginMainFrameNotExpected(bool new_state);
 
   void AsProtozeroInto(
+      perfetto::EventContext& ctx,
       perfetto::protos::pbzero::ChromeCompositorSchedulerState* state) const;
 
   void SetVideoNeedsBeginFrames(bool video_needs_begin_frames);
@@ -284,7 +286,6 @@ class CC_EXPORT Scheduler : public viz::BeginFrameObserverBase {
   bool observing_begin_frame_source_ = false;
 
   bool skipped_last_frame_missed_exceeded_deadline_ = false;
-  bool skipped_last_frame_to_reduce_latency_ = false;
 
   std::unique_ptr<CompositorTimingHistory> compositor_timing_history_;
 
@@ -384,14 +385,6 @@ class CC_EXPORT Scheduler : public viz::BeginFrameObserverBase {
   void DrawForced();
   void ProcessScheduledActions();
   void UpdateCompositorTimingHistoryRecordingEnabled();
-  bool ShouldRecoverMainLatency(const viz::BeginFrameArgs& args,
-                                bool can_activate_before_deadline) const;
-  bool ShouldRecoverImplLatency(const viz::BeginFrameArgs& args,
-                                bool can_activate_before_deadline) const;
-  bool CanBeginMainFrameAndActivateBeforeDeadline(
-      const viz::BeginFrameArgs& args,
-      base::TimeDelta bmf_to_activate_estimate,
-      base::TimeTicks now) const;
   void AdvanceCommitStateIfPossible();
 
   void BeginImplFrameWithDeadline(const viz::BeginFrameArgs& args);
@@ -410,6 +403,10 @@ class CC_EXPORT Scheduler : public viz::BeginFrameObserverBase {
   }
 
   void UpdatePowerModeVote();
+
+  // Used only for UMa metric calculations.
+  base::TimeDelta cc_frame_time_available_;
+  base::TimeTicks cc_frame_start_;  // Begin impl frame time.
 };
 
 }  // namespace cc

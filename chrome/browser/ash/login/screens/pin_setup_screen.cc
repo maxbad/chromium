@@ -25,6 +25,7 @@
 #include "chromeos/login/auth/cryptohome_key_constants.h"
 #include "chromeos/login/auth/user_context.h"
 #include "components/prefs/pref_service.h"
+#include "components/user_manager/user_manager.h"
 
 namespace ash {
 namespace {
@@ -96,7 +97,6 @@ bool PinSetupScreen::ShouldSkipBecauseOfPolicy() {
     return false;
   PrefService* prefs = ProfileManager::GetActiveUserProfile()->GetPrefs();
   if (chrome_user_manager_util::IsPublicSessionOrEphemeralLogin() ||
-      !quick_unlock::IsPinEnabled(prefs) ||
       quick_unlock::IsPinDisabledByPolicy(prefs)) {
     return true;
   }
@@ -174,12 +174,11 @@ bool PinSetupScreen::MaybeSkip(WizardContext* context) {
 void PinSetupScreen::ShowImpl() {
   token_lifetime_timeout_.Start(
       FROM_HERE,
-      base::TimeDelta::FromSeconds(
-          chromeos::quick_unlock::AuthToken::kTokenExpirationSeconds),
+      base::Seconds(quick_unlock::AuthToken::kTokenExpirationSeconds),
       base::BindOnce(&PinSetupScreen::OnTokenTimedOut,
                      weak_ptr_factory_.GetWeakPtr()));
-  chromeos::quick_unlock::QuickUnlockStorage* quick_unlock_storage =
-      chromeos::quick_unlock::QuickUnlockFactory::GetForProfile(
+  quick_unlock::QuickUnlockStorage* quick_unlock_storage =
+      quick_unlock::QuickUnlockFactory::GetForProfile(
           ProfileManager::GetActiveUserProfile());
   quick_unlock_storage->MarkStrongAuth();
   std::unique_ptr<UserContext> user_context =
@@ -192,13 +191,14 @@ void PinSetupScreen::ShowImpl() {
 
   const std::string token =
       quick_unlock_storage->CreateAuthToken(*user_context);
+  bool is_child_account =
+      user_manager::UserManager::Get()->IsLoggedInAsChildUser();
 
   if (view_)
-    view_->Show(token);
+    view_->Show(token, is_child_account);
 
-  chromeos::quick_unlock::PinBackend::GetInstance()->HasLoginSupport(
-      base::BindOnce(&PinSetupScreen::OnHasLoginSupport,
-                     weak_ptr_factory_.GetWeakPtr()));
+  quick_unlock::PinBackend::GetInstance()->HasLoginSupport(base::BindOnce(
+      &PinSetupScreen::OnHasLoginSupport, weak_ptr_factory_.GetWeakPtr()));
 }
 
 void PinSetupScreen::HideImpl() {

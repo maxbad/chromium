@@ -11,6 +11,7 @@
 #include "base/files/file_path.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "chrome/browser/enterprise/connectors/common.h"
+#include "components/crash/core/common/crash_buildflags.h"
 #include "components/crash/core/common/crash_key.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -32,9 +33,9 @@ constexpr BinaryUploadService::Result kAllBinaryUploadServiceResults[]{
 
 constexpr int64_t kTotalBytes = 1000;
 
-constexpr base::TimeDelta kDuration = base::TimeDelta::FromSeconds(10);
+constexpr base::TimeDelta kDuration = base::Seconds(10);
 
-constexpr base::TimeDelta kInvalidDuration = base::TimeDelta::FromSeconds(0);
+constexpr base::TimeDelta kInvalidDuration = base::Seconds(0);
 
 }  // namespace
 
@@ -233,7 +234,7 @@ TEST_P(DeepScanningUtilsUMATest, InvalidDuration) {
       histograms().GetTotalCountsForPrefix("SafeBrowsing.DeepScan.").size());
 }
 
-class DeepScanningUtilsFileTypeSupportedTest : public testing::Test {
+class DeepScanningUtilsDlpFileSupportedTest : public testing::Test {
  protected:
   std::vector<base::FilePath::StringType> UnsupportedDlpFileTypes() {
     return {FILE_PATH_LITERAL(".these"), FILE_PATH_LITERAL(".types"),
@@ -241,12 +242,16 @@ class DeepScanningUtilsFileTypeSupportedTest : public testing::Test {
             FILE_PATH_LITERAL(".supported")};
   }
 
+  std::vector<std::string> UnsupportedDlpMimeTypes() {
+    return {"image/png", "video/webm", "audio/wav", "i/made", "this/up", "foo"};
+  }
+
   base::FilePath FilePath(const base::FilePath::StringType& type) {
     return base::FilePath(FILE_PATH_LITERAL("foo") + type);
   }
 };
 
-TEST_F(DeepScanningUtilsFileTypeSupportedTest, DLP) {
+TEST_F(DeepScanningUtilsDlpFileSupportedTest, FileExtension) {
   // With a DLP-only scan, only the types returned by SupportedDlpFileTypes()
   // will be supported, and other types will fail.
   for (const base::FilePath::StringType& type : SupportedDlpFileTypes()) {
@@ -257,6 +262,16 @@ TEST_F(DeepScanningUtilsFileTypeSupportedTest, DLP) {
   }
 }
 
+TEST_F(DeepScanningUtilsDlpFileSupportedTest, MimeType) {
+  for (const std::string& type : SupportedDlpMimeTypes()) {
+    EXPECT_TRUE(MimeTypeSupportedForDlp(type));
+  }
+  for (const std::string& type : UnsupportedDlpMimeTypes()) {
+    EXPECT_FALSE(MimeTypeSupportedForDlp(type));
+  }
+}
+
+#if !BUILDFLAG(USE_CRASH_KEY_STUBS)
 class DeepScanningUtilsCrashKeysTest : public testing::Test {
  public:
   void SetUp() override {
@@ -324,5 +339,6 @@ TEST_F(DeepScanningUtilsCrashKeysTest, InvalidModifications) {
   EXPECT_EQ("999999",
             crash_reporter::GetCrashKeyValue("pending-text-upload-scans"));
 }
+#endif  // !BUILDFLAG(USE_CRASH_KEY_STUBS)
 
 }  // namespace safe_browsing

@@ -15,7 +15,7 @@
 #include "components/session_manager/core/session_manager.h"
 #include "ui/events/keycodes/dom/dom_code.h"
 
-namespace chromeos {
+namespace ash {
 namespace power {
 namespace {
 PastEvent CreateEvent(int time,
@@ -122,7 +122,7 @@ class SmartChargingManagerTest : public ChromeRenderViewHostTestHarness {
   }
 
   void FastForwardTimeBySecs(const int seconds) {
-    task_environment()->FastForwardBy(base::TimeDelta::FromSeconds(seconds));
+    task_environment()->FastForwardBy(base::Seconds(seconds));
   }
 
   base::TimeDelta GetDurationRecentVideoPlaying() {
@@ -515,4 +515,4 @@ TEST_F(SmartChargingManagerTest, LastChargeRelatedFeatures) {
   EXPECT_EQ(features.battery_percentage_of_last_charge(), 80);
 }
 }  // namespace power
-}  // namespace chromeos
+}  // namespace ash

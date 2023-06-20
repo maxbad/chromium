@@ -25,6 +25,7 @@
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/simple_url_loader.h"
+#include "services/network/public/mojom/url_response_head.mojom.h"
 #include "third_party/zlib/google/compression_utils.h"
 #include "ui/display/display.h"
 #include "ui/display/screen.h"
@@ -43,7 +44,7 @@ constexpr int kResponseErrorNotEnoughApps = 5;
 
 constexpr int kResponseErrorNotFirstTimeChromebookUser = 6;
 
-constexpr base::TimeDelta kDownloadTimeOut = base::TimeDelta::FromMinutes(1);
+constexpr base::TimeDelta kDownloadTimeOut = base::Minutes(1);
 
 constexpr const int64_t kMaxDownloadBytes = 1024 * 1024;  // 1Mb
 
@@ -407,7 +408,6 @@ void RecommendAppsFetcherImpl::StartDownload() {
         }
         policy {
           cookies_allowed: YES
-          cookie_store: "user"
           setting:
             "NA"
           policy_exception_justification:

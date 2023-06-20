@@ -77,7 +77,7 @@ struct GPU_EXPORT GpuPreferences {
   // Disables hardware acceleration of video decode, where available.
   bool disable_accelerated_video_decode = false;
 
-  // Disables hardware acceleration of video decode, where available.
+  // Disables hardware acceleration of video encode, where available.
   bool disable_accelerated_video_encode = false;
 
   // Causes the GPU process to display a dialog on launch.
@@ -164,10 +164,6 @@ struct GPU_EXPORT GpuPreferences {
   // Include ANGLE's intermediate representation (AST) output in shader
   // compilation info logs.
   bool gl_shader_interm_output = false;
-
-  // Emulate ESSL lowp and mediump float precisions by mutating the shaders to
-  // round intermediate values in ANGLE.
-  bool emulate_shader_precision = false;
 
   // ===================================
   // Settings from //gpu/config/gpu_switches.h
@@ -259,6 +255,9 @@ struct GPU_EXPORT GpuPreferences {
   // Enable validation layers in Dawn backends.
   DawnBackendValidationLevel enable_dawn_backend_validation =
       DawnBackendValidationLevel::kDisabled;
+
+  // Force the use of the WebGPU/Compat (GLES) backend for all WebGPU content.
+  bool force_webgpu_compat = false;
 
   // The Dawn features(toggles) enabled on the creation of Dawn devices.
   std::vector<std::string> enabled_dawn_features_list;

@@ -106,11 +106,10 @@ class PaintInvalidator final {
   friend struct PaintInvalidatorContext;
 
   ALWAYS_INLINE void UpdatePaintingLayer(const LayoutObject&,
-                                         PaintInvalidatorContext&,
-                                         bool is_ng_painting);
-  ALWAYS_INLINE void UpdateDirectlyCompositedContainer(const LayoutObject&,
-                                                       PaintInvalidatorContext&,
-                                                       bool is_ng_painting);
+                                         PaintInvalidatorContext&);
+  ALWAYS_INLINE void UpdateDirectlyCompositedContainer(
+      const LayoutObject&,
+      PaintInvalidatorContext&);
   ALWAYS_INLINE void UpdateFromTreeBuilderContext(
       const PaintPropertyTreeBuilderFragmentContext&,
       PaintInvalidatorContext&);
@@ -119,7 +118,7 @@ class PaintInvalidator final {
       const PaintPropertyTreeBuilderFragmentContext&,
       PaintInvalidatorContext&);
 
-  Vector<const LayoutObject*> pending_delayed_paint_invalidations_;
+  HeapVector<Member<const LayoutObject>> pending_delayed_paint_invalidations_;
 };
 
 }  // namespace blink

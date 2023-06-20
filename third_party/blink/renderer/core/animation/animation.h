@@ -33,7 +33,7 @@
 
 #include <memory>
 
-#include "base/macros.h"
+#include "base/gtest_prod_util.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/time/time.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
@@ -54,6 +54,7 @@
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/graphics/compositor_element_id.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
+#include "third_party/blink/renderer/platform/heap/prefinalizer.h"
 
 namespace blink {
 
@@ -206,6 +207,7 @@ class CORE_EXPORT Animation : public EventTargetWithInlineData,
   double playbackRate() const;
   void setPlaybackRate(double, ExceptionState& = ASSERT_NO_EXCEPTION);
   AnimationTimeline* timeline() { return timeline_; }
+  AnimationTimeline* timeline() const { return timeline_; }
   virtual void setTimeline(AnimationTimeline* timeline);
   Document* GetDocument() const;
 
@@ -311,9 +313,8 @@ class CORE_EXPORT Animation : public EventTargetWithInlineData,
   bool CompositorPropertyAnimationsHaveNoEffectForTesting() const {
     return compositor_property_animations_have_no_effect_;
   }
-  bool AnimationHasNoEffectForTesting() const {
-    return animation_has_no_effect_;
-  }
+  bool AnimationHasNoEffect() const { return animation_has_no_effect_; }
+  bool AtScrollTimelineBoundary();
 
  protected:
   DispatchEventResult DispatchEventInternal(Event&) override;
@@ -349,6 +350,14 @@ class CORE_EXPORT Animation : public EventTargetWithInlineData,
   absl::optional<AnimationTimeDelta> CalculateCurrentTime() const;
   TimelinePhase CalculateCurrentPhase() const;
 
+  V8CSSNumberish* ConvertTimeToCSSNumberish(
+      absl::optional<AnimationTimeDelta>) const;
+  // Failure to convert results in a thrown exception and returning false.
+  bool ConvertCSSNumberishToTime(const V8CSSNumberish* numberish,
+                                 absl::optional<AnimationTimeDelta>& time,
+                                 String variable_name,
+                                 ExceptionState& exception_state);
+
   void BeginUpdatingState();
   void EndUpdatingState();
 
@@ -361,9 +370,12 @@ class CORE_EXPORT Animation : public EventTargetWithInlineData,
   void AttachCompositedLayers();
   void DetachCompositedLayers();
   // CompositorAnimationDelegate implementation.
-  void NotifyAnimationStarted(double monotonic_time, int group) override;
-  void NotifyAnimationFinished(double monotonic_time, int group) override {}
-  void NotifyAnimationAborted(double monotonic_time, int group) override {}
+  void NotifyAnimationStarted(base::TimeDelta monotonic_time,
+                              int group) override;
+  void NotifyAnimationFinished(base::TimeDelta monotonic_time,
+                               int group) override {}
+  void NotifyAnimationAborted(base::TimeDelta monotonic_time,
+                              int group) override {}
 
   using AnimationPromise = ScriptPromiseProperty<Member<Animation>,
                                                  Member<DOMException>>;
@@ -389,7 +401,7 @@ class CORE_EXPORT Animation : public EventTargetWithInlineData,
   void PlayInternal(AutoRewind auto_rewind, ExceptionState& exception_state);
 
   void ResetPendingTasks();
-  absl::optional<double> TimelineTime() const;
+  absl::optional<AnimationTimeDelta> TimelineTime() const;
 
   void ScheduleAsyncFinish();
   void AsyncFinishMicrotask();
@@ -481,12 +493,14 @@ class CORE_EXPORT Animation : public EventTargetWithInlineData,
           playback_rate(animation.EffectivePlaybackRate()),
           effect_changed(false),
           pending_action(animation.start_time_ ? kNone : kStart) {}
+    CompositorState(const CompositorState&) = delete;
+    CompositorState& operator=(const CompositorState&) = delete;
+
     absl::optional<double> start_time;
     absl::optional<double> hold_time;
     double playback_rate;
     bool effect_changed;
     CompositorAction pending_action;
-    DISALLOW_COPY_AND_ASSIGN(CompositorState);
   };
 
   enum CompositorPendingChange {

@@ -14,10 +14,11 @@
 
 #include "base/callback.h"
 #include "base/containers/flat_map.h"
-#include "base/macros.h"
+#include "base/logging.h"
 #include "base/observer_list_types.h"
 #include "chrome/browser/ui/app_list/search/mixer.h"
 #include "chrome/browser/ui/app_list/search/ranking/launch_data.h"
+#include "chrome/browser/ui/app_list/search/ranking/types.h"
 
 class ChromeSearchResult;
 
@@ -40,6 +41,7 @@ using ProviderType = ash::AppListSearchResultType;
 
 using Results = std::vector<std::unique_ptr<ChromeSearchResult>>;
 using ResultsMap = base::flat_map<ProviderType, Results>;
+using CategoriesMap = base::flat_map<Category, double>;
 
 // Controller that collects query from given SearchBoxModel, dispatches it
 // to all search providers, then invokes the mixer to mix and to publish the
@@ -63,11 +65,11 @@ class SearchController {
     // to another sequence because they may be invalidated.
     virtual void OnResultsAdded(
         const std::u16string& query,
-        const std::vector<ChromeSearchResult*>& results);
+        const std::vector<const ChromeSearchResult*>& results) {}
 
     // Called whenever old results are cleared. This occurs whenever a new
     // search is started.
-    virtual void OnResultsCleared();
+    virtual void OnResultsCleared() {}
   };
 
   virtual ~SearchController() {}
@@ -81,7 +83,7 @@ class SearchController {
 
   virtual void OpenResult(ChromeSearchResult* result, int event_flags) = 0;
   virtual void InvokeResultAction(ChromeSearchResult* result,
-                                  int action_index) = 0;
+                                  ash::SearchResultActionType action) = 0;
 
   // Adds a new mixer group. See Mixer::AddGroup.
   virtual size_t AddGroup(size_t max_results) = 0;

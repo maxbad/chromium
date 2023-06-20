@@ -207,6 +207,15 @@ FakeDownloadItem::GetDownloadSchedule() const {
   return download_schedule_;
 }
 
+::network::mojom::CredentialsMode FakeDownloadItem::GetCredentialsMode() const {
+  return ::network::mojom::CredentialsMode::kInclude;
+}
+
+const absl::optional<net::IsolationInfo>& FakeDownloadItem::GetIsolationInfo()
+    const {
+  return isolation_info_;
+}
+
 void FakeDownloadItem::SetIsDone(bool is_done) {
   is_done_ = is_done;
 }
@@ -248,12 +257,32 @@ void FakeDownloadItem::SetDummyFilePath(const base::FilePath& file_path) {
   dummy_file_path = file_path;
 }
 
+void FakeDownloadItem::SetIsDangerous(bool is_dangerous) {
+  is_dangerous_ = is_dangerous;
+}
+
+void FakeDownloadItem::SetIsMixedContent(bool is_mixed_content) {
+  is_mixed_content_ = is_mixed_content;
+}
+
+bool FakeDownloadItem::GetOpenWhenComplete() const {
+  return open_when_complete_;
+}
+
+void FakeDownloadItem::SetOpenWhenComplete(bool open) {
+  open_when_complete_ = open;
+}
+
 // The methods below are not supported and are not expected to be called.
 void FakeDownloadItem::ValidateDangerousDownload() {
   NOTREACHED();
 }
 
 void FakeDownloadItem::ValidateMixedContentDownload() {
+  NOTREACHED();
+}
+
+void FakeDownloadItem::AcceptIncognitoWarning() {
   NOTREACHED();
 }
 
@@ -436,13 +465,20 @@ download::DownloadItemRenameHandler* FakeDownloadItem::GetRenameHandler() {
   return nullptr;
 }
 
+const download::DownloadItemRerouteInfo& FakeDownloadItem::GetRerouteInfo()
+    const {
+  return reroute_info_;
+}
+
 bool FakeDownloadItem::IsDangerous() const {
-  NOTREACHED();
-  return false;
+  return is_dangerous_;
 }
 
 bool FakeDownloadItem::IsMixedContent() const {
-  NOTREACHED();
+  return is_mixed_content_;
+}
+
+bool FakeDownloadItem::ShouldShowIncognitoWarning() const {
   return false;
 }
 
@@ -503,11 +539,6 @@ bool FakeDownloadItem::ShouldOpenFileByPolicyBasedOnExtension() {
   return true;
 }
 
-bool FakeDownloadItem::GetOpenWhenComplete() const {
-  NOTREACHED();
-  return false;
-}
-
 bool FakeDownloadItem::GetAutoOpened() {
   NOTREACHED();
   return false;
@@ -521,10 +552,6 @@ bool FakeDownloadItem::GetOpened() const {
 void FakeDownloadItem::OnContentCheckCompleted(
     download::DownloadDangerType danger_type,
     download::DownloadInterruptReason reason) {
-  NOTREACHED();
-}
-
-void FakeDownloadItem::SetOpenWhenComplete(bool open) {
   NOTREACHED();
 }
 

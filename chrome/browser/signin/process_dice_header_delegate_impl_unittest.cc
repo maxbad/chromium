@@ -50,6 +50,7 @@ class TestDiceWebSigninInterceptorDelegate
     std::move(callback).Run(SigninInterceptionResult::kDeclined);
     return nullptr;
   }
+
   void ShowProfileCustomizationBubble(Browser* browser) override {}
 };
 

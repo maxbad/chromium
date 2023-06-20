@@ -32,6 +32,7 @@ import org.chromium.content_public.browser.WebContents;
 import org.chromium.content_public.browser.test.util.DOMUtils;
 import org.chromium.content_public.browser.test.util.TestThreadUtils;
 import org.chromium.ui.base.ActivityWindowAndroid;
+import org.chromium.ui.base.IntentRequestTracker;
 import org.chromium.ui.base.SelectFileDialog;
 
 /**
@@ -61,7 +62,8 @@ public class SelectFileDialogTest {
         public IntentCallback lastCallback;
 
         public ActivityWindowAndroidForTest(Activity activity) {
-            super(activity, /* listenToActivityState= */ true);
+            super(activity, /* listenToActivityState= */ true,
+                    IntentRequestTracker.createFromActivity(activity));
         }
 
         @Override
@@ -182,8 +184,9 @@ public class SelectFileDialogTest {
 
     private void resetActivityWindowAndroidForTest() {
         TestThreadUtils.runOnUiThreadBlocking(
-                () -> mActivityWindowAndroidForTest.lastCallback.onIntentCompleted(
-                                mActivityWindowAndroidForTest, Activity.RESULT_CANCELED, null));
+                ()
+                        -> mActivityWindowAndroidForTest.lastCallback.onIntentCompleted(
+                                Activity.RESULT_CANCELED, null));
         mActivityWindowAndroidForTest.lastCallback = null;
         mActivityWindowAndroidForTest.lastIntent = null;
     }

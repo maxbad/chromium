@@ -97,6 +97,7 @@ class CWVAutofillControllerTest : public web::WebTest {
             &web_state_, /*sync_service=*/nullptr, &pref_service_,
             /*identity_manager=*/nullptr, /*log_manager=*/nullptr,
             /*profile_store=*/nullptr, /*account_store=*/nullptr,
+            /*reuse_manager=*/nullptr,
             /*requirements_service=*/nullptr);
     auto password_manager = std::make_unique<password_manager::PasswordManager>(
         password_manager_client.get());
@@ -395,9 +396,10 @@ TEST_F(CWVAutofillControllerTest, NotifyUserOfLeak) {
 
   GURL leak_url("https://www.chromium.org");
   password_manager::CredentialLeakType leak_type =
-      password_manager::CreateLeakType(password_manager::IsSaved(true),
-                                       password_manager::IsReused(true),
-                                       password_manager::IsSyncing(true));
+      password_manager::CreateLeakType(
+          password_manager::IsSaved(true), password_manager::IsReused(true),
+          password_manager::IsSyncing(true),
+          password_manager::HasChangeScript(false));
   CWVPasswordLeakType expected_leak_type = CWVPasswordLeakTypeSaved |
                                            CWVPasswordLeakTypeUsedOnOtherSites |
                                            CWVPasswordLeakTypeSyncingNormally;

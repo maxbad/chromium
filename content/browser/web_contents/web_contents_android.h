@@ -11,7 +11,6 @@
 
 #include "base/android/jni_android.h"
 #include "base/compiler_specific.h"
-#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "content/browser/renderer_host/navigation_controller_android.h"
 #include "content/browser/renderer_host/render_widget_host_view_android.h"
@@ -33,6 +32,10 @@ class WebContentsImpl;
 class CONTENT_EXPORT WebContentsAndroid {
  public:
   explicit WebContentsAndroid(WebContentsImpl* web_contents);
+
+  WebContentsAndroid(const WebContentsAndroid&) = delete;
+  WebContentsAndroid& operator=(const WebContentsAndroid&) = delete;
+
   ~WebContentsAndroid();
 
   WebContentsImpl* web_contents() const { return web_contents_; }
@@ -187,7 +190,8 @@ class CONTENT_EXPORT WebContentsAndroid {
 
   void RequestAccessibilitySnapshot(
       JNIEnv* env,
-      const base::android::JavaParamRef<jobject>& obj,
+      const base::android::JavaParamRef<jobject>& view_structure_root,
+      const base::android::JavaParamRef<jobject>& view_structure_builder,
       const base::android::JavaParamRef<jobject>& callback);
 
   base::android::ScopedJavaLocalRef<jstring> GetEncoding(
@@ -300,7 +304,9 @@ class CONTENT_EXPORT WebContentsAndroid {
                                 int end_adjust);
   // Walks over the AXTreeUpdate and creates a light weight snapshot.
   void AXTreeSnapshotCallback(
-      const base::android::ScopedJavaGlobalRef<jobject>& callback,
+      const base::android::JavaRef<jobject>& view_structure_root,
+      const base::android::JavaRef<jobject>& view_structure_builder,
+      const base::android::JavaRef<jobject>& callback,
       const ui::AXTreeUpdate& result);
 
   WebContentsImpl* web_contents_;
@@ -311,8 +317,6 @@ class CONTENT_EXPORT WebContentsAndroid {
   base::ObserverList<DestructionObserver> destruction_observers_;
 
   base::WeakPtrFactory<WebContentsAndroid> weak_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(WebContentsAndroid);
 };
 
 }  // namespace content

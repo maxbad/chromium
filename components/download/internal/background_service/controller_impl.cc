@@ -22,6 +22,7 @@
 #include "components/download/internal/background_service/entry_utils.h"
 #include "components/download/internal/background_service/file_monitor.h"
 #include "components/download/internal/background_service/log_sink.h"
+#include "components/download/internal/background_service/logger_impl.h"
 #include "components/download/internal/background_service/model.h"
 #include "components/download/internal/background_service/scheduler/scheduler.h"
 #include "components/download/internal/background_service/stats.h"
@@ -105,7 +106,8 @@ Model::EntryList GetRunnableEntries(const Model::EntryList& list) {
 }  // namespace
 
 ControllerImpl::ControllerImpl(
-    Configuration* config,
+    std::unique_ptr<Configuration> config,
+    std::unique_ptr<Logger> logger,
     LogSink* log_sink,
     std::unique_ptr<ClientSet> clients,
     std::unique_ptr<DownloadDriver> driver,
@@ -116,9 +118,11 @@ ControllerImpl::ControllerImpl(
     std::unique_ptr<TaskScheduler> task_scheduler,
     std::unique_ptr<FileMonitor> file_monitor,
     const base::FilePath& download_file_dir)
-    : config_(config),
+    : download_file_dir_(download_file_dir),
+      config_(std::move(config)),
+      service_config_(config_.get()),
+      logger_(std::move(logger)),
       log_sink_(log_sink),
-      download_file_dir_(download_file_dir),
       clients_(std::move(clients)),
       driver_(std::move(driver)),
       model_(std::move(model)),
@@ -147,8 +151,8 @@ void ControllerImpl::Initialize(base::OnceClosure callback) {
   base::trace_event::MemoryDumpManager::GetInstance()->RegisterDumpProvider(
       this, "DownloadService", base::ThreadTaskRunnerHandle::Get());
 
-  TRACE_EVENT_ASYNC_BEGIN0("download_service", "DownloadServiceInitialize",
-                           this);
+  TRACE_EVENT_NESTABLE_ASYNC_BEGIN0(
+      "download_service", "DownloadServiceInitialize", TRACE_ID_LOCAL(this));
 
   driver_->Initialize(this);
   model_->Initialize(this);
@@ -157,6 +161,24 @@ void ControllerImpl::Initialize(base::OnceClosure callback) {
   navigation_monitor_->Configure(config_->navigation_completion_delay,
                                  config_->navigation_timeout_delay);
   navigation_monitor_->SetObserver(this);
+}
+
+const ServiceConfig& ControllerImpl::GetConfig() {
+  return service_config_;
+}
+
+BackgroundDownloadService::ServiceStatus ControllerImpl::GetStatus() {
+  switch (GetState()) {
+    case Controller::State::CREATED:       // Intentional fallthrough.
+    case Controller::State::INITIALIZING:  // Intentional fallthrough.
+    case Controller::State::RECOVERING:
+      return BackgroundDownloadService::ServiceStatus::STARTING_UP;
+    case Controller::State::READY:
+      return BackgroundDownloadService::ServiceStatus::READY;
+    case Controller::State::UNAVAILABLE:  // Intentional fallthrough.
+    default:
+      return BackgroundDownloadService::ServiceStatus::UNAVAILABLE;
+  }
 }
 
 Controller::State ControllerImpl::GetState() {
@@ -342,6 +364,10 @@ bool ControllerImpl::OnStopScheduledTask(DownloadTaskType task_type) {
   HandleTaskFinished(task_type, false,
                      stats::ScheduledTaskStatus::CANCELLED_ON_STOP);
   return false;
+}
+
+Logger* ControllerImpl::GetLogger() {
+  return logger_.get();
 }
 
 void ControllerImpl::OnCompleteCleanupTask() {
@@ -772,7 +798,7 @@ void ControllerImpl::CleanupUnknownFiles() {
       driver_entries.push_back(driver_entry.value());
   }
 
-  file_monitor_->DeleteUnknownFiles(entries, driver_entries);
+  file_monitor_->DeleteUnknownFiles(entries, driver_entries, base::DoNothing());
 }
 
 void ControllerImpl::ResolveInitialRequestStates() {
@@ -1092,7 +1118,8 @@ void ControllerImpl::NotifyClientsOfStartup(bool state_lost) {
 }
 
 void ControllerImpl::NotifyServiceOfStartup() {
-  TRACE_EVENT_ASYNC_END0("download_service", "DownloadServiceInitialize", this);
+  TRACE_EVENT_NESTABLE_ASYNC_END0(
+      "download_service", "DownloadServiceInitialize", TRACE_ID_LOCAL(this));
 
   if (init_callback_.is_null())
     return;
@@ -1276,7 +1303,7 @@ void ControllerImpl::ActivateMoreDownloads() {
   uint32_t paused_count = entries_states[Entry::State::PAUSED];
   uint32_t active_count = entries_states[Entry::State::ACTIVE];
 
-  while (CanActivateMoreDownloads(config_, active_count, paused_count)) {
+  while (CanActivateMoreDownloads(config_.get(), active_count, paused_count)) {
     Entry* next = scheduler_->Next(
         model_->PeekEntries(), device_status_listener_->CurrentDeviceStatus());
     if (!next)

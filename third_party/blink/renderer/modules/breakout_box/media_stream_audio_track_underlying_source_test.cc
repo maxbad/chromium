@@ -17,8 +17,10 @@
 #include "third_party/blink/renderer/core/streams/readable_stream.h"
 #include "third_party/blink/renderer/core/streams/readable_stream_default_controller_with_script_scope.h"
 #include "third_party/blink/renderer/modules/breakout_box/pushable_media_stream_audio_source.h"
+#include "third_party/blink/renderer/modules/breakout_box/stream_test_utils.h"
 #include "third_party/blink/renderer/modules/mediastream/media_stream_track.h"
 #include "third_party/blink/renderer/modules/mediastream/mock_media_stream_audio_sink.h"
+#include "third_party/blink/renderer/modules/webcodecs/audio_data.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/mediastream/media_stream_audio_track.h"
 #include "third_party/blink/renderer/platform/testing/io_task_runner_testing_platform_support.h"
@@ -78,8 +80,7 @@ class MediaStreamAudioTrackUnderlyingSourceTest : public testing::Test {
       const absl::optional<base::TimeDelta>& timestamp = absl::nullopt) {
     auto data = media::AudioBuffer::CreateEmptyBuffer(
         media::ChannelLayout::CHANNEL_LAYOUT_STEREO, /*channel_count=*/2,
-        kSampleRate, kNumFrames,
-        timestamp.value_or(base::TimeDelta::FromSeconds(1)));
+        kSampleRate, kNumFrames, timestamp.value_or(base::Seconds(1)));
     PushableMediaStreamAudioSource* pushable_audio_source =
         static_cast<PushableMediaStreamAudioSource*>(
             MediaStreamAudioSource::From(track->Component()->Source()));
@@ -142,8 +143,8 @@ TEST_F(MediaStreamAudioTrackUnderlyingSourceTest,
   auto* track = CreateTrack(v8_scope.GetExecutionContext());
   auto* source = CreateSource(script_state, track, buffer_size);
   EXPECT_EQ(source->MaxQueueSize(), buffer_size);
-  // Create a stream to ensure there is a controller associated to the source.
-  ReadableStream::CreateWithCountQueueingStrategy(script_state, source, 0);
+  auto* stream =
+      ReadableStream::CreateWithCountQueueingStrategy(script_state, source, 0);
 
   // Add a sink to the track to make it possible to wait until a pushed frame
   // is delivered to sinks, including |source|, which is a sink of the track.
@@ -160,83 +161,29 @@ TEST_F(MediaStreamAudioTrackUnderlyingSourceTest,
     sink_loop.Run();
   };
 
-  const auto& queue = source->QueueForTesting();
   for (wtf_size_t i = 0; i < buffer_size; ++i) {
-    EXPECT_EQ(queue.size(), i);
-    base::TimeDelta timestamp = base::TimeDelta::FromSeconds(i);
+    base::TimeDelta timestamp = base::Seconds(i);
     push_frame_sync(timestamp);
-    EXPECT_EQ(queue.back()->timestamp(), timestamp);
-    EXPECT_EQ(queue.front()->timestamp(), base::TimeDelta());
   }
 
   // Push another frame while the queue is full.
-  EXPECT_EQ(queue.size(), buffer_size);
-  push_frame_sync(base::TimeDelta::FromSeconds(buffer_size));
+  push_frame_sync(base::Seconds(buffer_size));
 
-  // Since the queue was full, the oldest frame from the queue should have been
-  // dropped.
-  EXPECT_EQ(queue.size(), buffer_size);
-  EXPECT_EQ(queue.back()->timestamp(),
-            base::TimeDelta::FromSeconds(buffer_size));
-  EXPECT_EQ(queue.front()->timestamp(), base::TimeDelta::FromSeconds(1));
+  // Since the queue was full, the oldest frame from the queue (timestamp 0)
+  // should have been dropped.
+  NonThrowableExceptionState exception_state;
+  auto* reader =
+      stream->GetDefaultReaderForTesting(script_state, exception_state);
+  for (wtf_size_t i = 1; i <= buffer_size; ++i) {
+    AudioData* audio_data = ReadObjectFromStream<AudioData>(v8_scope, reader);
+    EXPECT_EQ(base::Microseconds(audio_data->timestamp()), base::Seconds(i));
+  }
 
-  // Pulling with frames in the queue should move the oldest frame in the queue
-  // to the stream's controller.
-  EXPECT_EQ(source->DesiredSizeForTesting(), 0);
-  EXPECT_FALSE(source->IsPendingPullForTesting());
+  // Pulling causes a pending pull since there are no frames available for
+  // reading.
+  EXPECT_EQ(source->NumPendingPullsForTesting(), 0);
   source->pull(script_state);
-  EXPECT_EQ(source->DesiredSizeForTesting(), -1);
-  EXPECT_FALSE(source->IsPendingPullForTesting());
-  EXPECT_EQ(queue.size(), buffer_size - 1);
-  EXPECT_EQ(queue.front()->timestamp(), base::TimeDelta::FromSeconds(2));
-
-  source->Close();
-  EXPECT_EQ(queue.size(), 0u);
-
-  WebMediaStreamAudioSink::RemoveFromAudioTrack(
-      &mock_sink, WebMediaStreamTrack(track->Component()));
-  track->stopTrack(v8_scope.GetExecutionContext());
-}
-
-TEST_F(MediaStreamAudioTrackUnderlyingSourceTest,
-       BypassQueueAfterPullWithEmptyBuffer) {
-  V8TestingScope v8_scope;
-  ScriptState* script_state = v8_scope.GetScriptState();
-  auto* track = CreateTrack(v8_scope.GetExecutionContext());
-  auto* source = CreateSource(script_state, track);
-  // Create a stream to ensure there is a controller associated to the source.
-  ReadableStream::CreateWithCountQueueingStrategy(script_state, source, 0);
-
-  MockMediaStreamAudioSink mock_sink;
-  WebMediaStreamAudioSink::AddToAudioTrack(
-      &mock_sink, WebMediaStreamTrack(track->Component()));
-
-  auto push_frame_sync = [&mock_sink, track, this]() {
-    base::RunLoop sink_loop;
-    EXPECT_CALL(mock_sink, OnData(_, _))
-        .WillOnce(base::test::RunOnceClosure(sink_loop.QuitClosure()));
-    PushData(track);
-    sink_loop.Run();
-  };
-
-  // At first, the queue is empty and the desired size is empty as well.
-  EXPECT_TRUE(source->QueueForTesting().empty());
-  EXPECT_EQ(source->DesiredSizeForTesting(), 0);
-  EXPECT_FALSE(source->IsPendingPullForTesting());
-
-  source->pull(script_state);
-  EXPECT_TRUE(source->QueueForTesting().empty());
-  EXPECT_EQ(source->DesiredSizeForTesting(), 0);
-  EXPECT_TRUE(source->IsPendingPullForTesting());
-  EXPECT_TRUE(source->HasPendingActivity());
-
-  push_frame_sync();
-  // Since a pull was pending, the frame is put directly in the stream
-  // controller, bypassing the source queue.
-  EXPECT_TRUE(source->QueueForTesting().empty());
-  EXPECT_EQ(source->DesiredSizeForTesting(), -1);
-  EXPECT_FALSE(source->IsPendingPullForTesting());
-  EXPECT_FALSE(source->HasPendingActivity());
+  EXPECT_EQ(source->NumPendingPullsForTesting(), 1);
 
   source->Close();
   WebMediaStreamAudioSink::RemoveFromAudioTrack(

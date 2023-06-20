@@ -9,8 +9,7 @@
 #include <unordered_set>
 
 #include "ash/constants/ash_features.h"
-#include "ash/public/cpp/ash_features.h"
-#include "ash/public/cpp/ash_pref_names.h"
+#include "ash/constants/ash_pref_names.h"
 #include "ash/public/cpp/login_screen.h"
 #include "base/bind.h"
 #include "base/command_line.h"
@@ -256,10 +255,10 @@ bool MarketingOptInScreen::ShouldShowOptionToSubscribe() {
   // we need to know whether the prefs have been loaded.
   sync_preferences::PrefServiceSyncable* prefs =
       PrefServiceSyncableFromProfile(ProfileManager::GetActiveUserProfile());
-  const bool sync_complete =
-      ignore_pref_sync_for_testing_ ||
-      (features::IsSplitSettingsSyncEnabled() ? prefs->AreOsPrefsSyncing()
-                                              : prefs->IsSyncing());
+  const bool sync_complete = ignore_pref_sync_for_testing_ ||
+                             (features::IsSyncSettingsCategorizationEnabled()
+                                  ? prefs->AreOsPrefsSyncing()
+                                  : prefs->IsSyncing());
   // Do not show if the preferences cannot be synced
   if (!sync_complete)
     return false;

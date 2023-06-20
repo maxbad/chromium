@@ -119,7 +119,7 @@ template <
     typename OutElement = decltype(ConvertToBlink(std::declval<InElement>()))>
 Vector<OutElement> ConvertToBlink(const std::vector<InElement>& in) {
   Vector<OutElement> out;
-  out.ReserveCapacity(in.size());
+  out.ReserveCapacity(base::checked_cast<wtf_size_t>(in.size()));
   for (const auto& element : in) {
     out.push_back(ConvertToBlink(element));
   }
@@ -166,8 +166,8 @@ blink::CSPSourceListPtr ConvertToBlink(const CSPSourceListPtr& source_list) {
       source_list->allow_self, source_list->allow_star,
       source_list->allow_response_redirects, source_list->allow_inline,
       source_list->allow_eval, source_list->allow_wasm_eval,
-      source_list->allow_dynamic, source_list->allow_unsafe_hashes,
-      source_list->report_sample);
+      source_list->allow_wasm_unsafe_eval, source_list->allow_dynamic,
+      source_list->allow_unsafe_hashes, source_list->report_sample);
 }
 
 blink::ContentSecurityPolicyHeaderPtr ConvertToBlink(
@@ -328,7 +328,7 @@ bool ParseRefreshTime(const String& source, base::TimeDelta& delay) {
   double time = source.Left(number_end).ToDouble(&ok);
   if (!ok)
     return false;
-  delay = base::TimeDelta::FromSecondsD(time);
+  delay = base::Seconds(time);
   return true;
 }
 
@@ -638,7 +638,7 @@ CacheControlHeader ParseCacheControlDirectives(
         bool ok;
         double max_age = directives[i].second.ToDouble(&ok);
         if (ok)
-          cache_control_header.max_age = base::TimeDelta::FromSecondsD(max_age);
+          cache_control_header.max_age = base::Seconds(max_age);
       } else if (EqualIgnoringASCIICase(directives[i].first,
                                         kStaleWhileRevalidateDirective)) {
         if (cache_control_header.stale_while_revalidate) {
@@ -650,7 +650,7 @@ CacheControlHeader ParseCacheControlDirectives(
         double stale_while_revalidate = directives[i].second.ToDouble(&ok);
         if (ok) {
           cache_control_header.stale_while_revalidate =
-              base::TimeDelta::FromSecondsD(stale_while_revalidate);
+              base::Seconds(stale_while_revalidate);
         }
       }
     }

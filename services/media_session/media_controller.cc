@@ -7,6 +7,7 @@
 #include <set>
 
 #include "base/containers/contains.h"
+#include "base/containers/cxx20_erase.h"
 #include "base/memory/weak_ptr.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "services/media_session/audio_focus_request.h"
@@ -39,6 +40,9 @@ class MediaController::ImageObserverHolder {
     // Flush the observer with the latest state.
     ImagesChanged(current_images);
   }
+
+  ImageObserverHolder(const ImageObserverHolder&) = delete;
+  ImageObserverHolder& operator=(const ImageObserverHolder&) = delete;
 
   ~ImageObserverHolder() = default;
 
@@ -92,8 +96,6 @@ class MediaController::ImageObserverHolder {
   bool did_send_image_last_ = false;
 
   base::WeakPtrFactory<ImageObserverHolder> weak_ptr_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(ImageObserverHolder);
 };
 
 MediaController::MediaController() {
@@ -325,6 +327,13 @@ void MediaController::Raise() {
 
   if (session_)
     session_->ipc()->Raise();
+}
+
+void MediaController::SetMute(bool mute) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
+  if (session_)
+    session_->ipc()->SetMute(mute);
 }
 
 void MediaController::SetMediaSession(AudioFocusRequest* session) {

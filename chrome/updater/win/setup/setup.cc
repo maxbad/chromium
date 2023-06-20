@@ -42,9 +42,8 @@
 namespace updater {
 namespace {
 
-// Adds work items to register the COM Server with Windows.
-void AddComServerWorkItems(HKEY root,
-                           const base::FilePath& com_server_path,
+// Adds work items to register the per-user internal COM Server with Windows.
+void AddComServerWorkItems(const base::FilePath& com_server_path,
                            WorkItemList* list) {
   DCHECK(list);
   if (com_server_path.empty()) {
@@ -52,8 +51,9 @@ void AddComServerWorkItems(HKEY root,
     return;
   }
 
-  for (const auto& clsid : GetSideBySideServers()) {
-    AddInstallServerWorkItems(root, clsid, com_server_path, true, list);
+  for (const auto& clsid : GetSideBySideServers(UpdaterScope::kUser)) {
+    AddInstallServerWorkItems(HKEY_CURRENT_USER, clsid, com_server_path, true,
+                              list);
   }
 }
 
@@ -159,42 +159,43 @@ int Setup(UpdaterScope scope) {
 
   for (const auto& key_path :
        {GetRegistryKeyClientsUpdater(), GetRegistryKeyClientStateUpdater()}) {
-    install_list->AddCreateRegKeyWorkItem(key, key_path,
-                                          WorkItem::kWow64Default);
-    install_list->AddSetRegValueWorkItem(key, key_path, WorkItem::kWow64Default,
-                                         kRegValuePV, kUpdaterVersionUtf16,
-                                         true);
+    install_list->AddCreateRegKeyWorkItem(key, key_path, Wow6432(0));
+    install_list->AddSetRegValueWorkItem(key, key_path, Wow6432(0), kRegValuePV,
+                                         kUpdaterVersionUtf16, true);
     install_list->AddSetRegValueWorkItem(
-        key, key_path, WorkItem::kWow64Default, kRegValueName,
+        key, key_path, Wow6432(0), kRegValueName,
         base::ASCIIToWide(PRODUCT_FULLNAME_STRING), true);
   }
 
   static constexpr base::FilePath::StringPieceType kUpdaterExe =
       FILE_PATH_LITERAL("updater.exe");
-  AddComServerWorkItems(key, versioned_dir->Append(kUpdaterExe),
-                        install_list.get());
 
   AddComInterfacesWorkItems(key, versioned_dir->Append(kUpdaterExe),
                             install_list.get());
-
-  if (scope == UpdaterScope::kSystem) {
-    AddComServiceWorkItems(versioned_dir->Append(kUpdaterExe),
-                           install_list.get());
+  switch (scope) {
+    case UpdaterScope::kUser:
+      AddComServerWorkItems(versioned_dir->Append(kUpdaterExe),
+                            install_list.get());
+      break;
+    case UpdaterScope::kSystem:
+      AddComServiceWorkItems(versioned_dir->Append(kUpdaterExe), true,
+                             install_list.get());
+      break;
   }
 
   base::CommandLine run_updater_wake_command(
       versioned_dir->Append(kUpdaterExe));
   run_updater_wake_command.AppendSwitch(kWakeSwitch);
-
-#if !defined(NDEBUG)
+  if (scope == UpdaterScope::kSystem)
+    run_updater_wake_command.AppendSwitch(kSystemSwitch);
   run_updater_wake_command.AppendSwitch(kEnableLoggingSwitch);
   run_updater_wake_command.AppendSwitchASCII(kLoggingModuleSwitch,
-                                             "*/chrome/updater/*=2");
-#endif
-  if (!install_list->Do() || !RegisterWakeTask(run_updater_wake_command)) {
+                                             kLoggingModuleSwitchValue);
+  if (!install_list->Do() ||
+      !RegisterWakeTask(run_updater_wake_command, scope)) {
     LOG(ERROR) << "Install failed, rolling back...";
     install_list->Rollback();
-    UnregisterWakeTask();
+    UnregisterWakeTask(scope);
     LOG(ERROR) << "Rollback complete.";
     return -1;
   }

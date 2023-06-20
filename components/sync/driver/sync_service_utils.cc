@@ -74,9 +74,15 @@ UploadState GetUploadToGoogleState(const SyncService* sync_service,
   return UploadState::NOT_ACTIVE;
 }
 
-void RecordKeyRetrievalTrigger(KeyRetrievalTriggerForUMA trigger) {
+void RecordKeyRetrievalTrigger(TrustedVaultUserActionTriggerForUMA trigger) {
   base::UmaHistogramEnumeration("Sync.TrustedVaultKeyRetrievalTrigger",
                                 trigger);
+}
+
+void RecordRecoverabilityDegradedFixTrigger(
+    TrustedVaultUserActionTriggerForUMA trigger) {
+  base::UmaHistogramEnumeration(
+      "Sync.TrustedVaultRecoverabilityDegradedFixTrigger", trigger);
 }
 
 bool ShouldOfferTrustedVaultOptIn(const SyncService* service) {
@@ -87,6 +93,14 @@ bool ShouldOfferTrustedVaultOptIn(const SyncService* service) {
   if (service->GetTransportState() != SyncService::TransportState::ACTIVE) {
     // Transport state must be active so SyncUserSettings::GetPassphraseType()
     // changes once the opt-in completes, and the UI is notified.
+    return false;
+  }
+
+  const ModelTypeSet encrypted_types =
+      service->GetUserSettings()->GetEncryptedDataTypes();
+  if (Intersection(service->GetActiveDataTypes(), encrypted_types).Empty()) {
+    // No point in offering the user a new encryption method if they are not
+    // syncing any encrypted types.
     return false;
   }
 
@@ -104,9 +118,9 @@ bool ShouldOfferTrustedVaultOptIn(const SyncService* service) {
         return false;
       }
       return base::FeatureList::IsEnabled(
-                 switches::kSyncSupportTrustedVaultPassphraseRecovery) &&
+                 switches::kSyncTrustedVaultPassphraseRecovery) &&
              base::FeatureList::IsEnabled(
-                 switches::kSyncOfferTrustedVaultOptIn);
+                 switches::kSyncTrustedVaultPassphrasePromo);
   }
 }
 

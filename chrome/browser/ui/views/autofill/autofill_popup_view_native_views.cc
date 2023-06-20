@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "base/containers/contains.h"
+#include "base/feature_list.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/branding_buildflags.h"
 #include "build/build_config.h"
@@ -23,7 +24,9 @@
 #include "chrome/browser/ui/views/chrome_typography_provider.h"
 #include "components/autofill/core/browser/autofill_experiments.h"
 #include "components/autofill/core/browser/ui/popup_item_ids.h"
+#include "components/autofill/core/browser/ui/popup_types.h"
 #include "components/autofill/core/browser/ui/suggestion.h"
+#include "components/autofill/core/common/autofill_features.h"
 #include "components/omnibox/browser/vector_icons.h"
 #include "components/strings/grit/components_strings.h"
 #include "components/vector_icons/vector_icons.h"
@@ -32,18 +35,18 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/metadata/metadata_header_macros.h"
 #include "ui/base/metadata/metadata_impl_macros.h"
+#include "ui/base/models/image_model.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/color/color_id.h"
 #include "ui/gfx/color_palette.h"
 #include "ui/gfx/favicon_size.h"
 #include "ui/gfx/font.h"
 #include "ui/gfx/geometry/rect_conversions.h"
 #include "ui/gfx/paint_vector_icon.h"
 #include "ui/gfx/shadow_value.h"
-#include "ui/native_theme/native_theme.h"
 #include "ui/views/accessibility/view_accessibility.h"
 #include "ui/views/background.h"
 #include "ui/views/border.h"
-#include "ui/views/controls/color_tracking_icon_view.h"
 #include "ui/views/controls/image_view.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/controls/menu/menu_config.h"
@@ -58,6 +61,8 @@
 #include "ui/views/view.h"
 #include "ui/views/widget/widget.h"
 
+using views::BubbleBorder;
+
 namespace {
 
 // By spec, dropdowns should always have a width which is a multiple of 12.
@@ -70,6 +75,11 @@ constexpr int kAutofillPopupMaxWidth = kAutofillPopupWidthMultiple * 38;
 constexpr int kAutofillPopupUsernameMaxWidth = 272;
 constexpr int kAutofillPopupPasswordMaxWidth = 108;
 
+// TODO(crbug.com/1250729): Rename and cleanup once launched.
+constexpr int kAutofillExperimentalPopupMinWidth = 0;
+// Max width for address profile suggestion text.
+constexpr int kAutofillPopupAddressProfileMaxWidth = 192;
+
 // The additional height of the row in case it has two lines of text.
 constexpr int kAutofillPopupAdditionalDoubleRowHeight = 22;
 
@@ -79,9 +89,13 @@ constexpr int kAutofillPopupAdditionalPadding = 16;
 // Vertical spacing between labels in one row.
 constexpr int kAdjacentLabelsVerticalSpacing = 2;
 
+// The default icon size used in the suggestion drop down.
+constexpr int kIconSize = 16;
+
 // Popup footer items that use a leading icon instead of a trailing one.
 constexpr autofill::PopupItemId kItemTypesUsingLeadingIcons[] = {
     autofill::PopupItemId::POPUP_ITEM_ID_SHOW_ACCOUNT_CARDS,
+    autofill::PopupItemId::POPUP_ITEM_ID_AUTOFILL_OPTIONS,
     autofill::PopupItemId::POPUP_ITEM_ID_ALL_SAVED_PASSWORDS_ENTRY,
     autofill::PopupItemId::POPUP_ITEM_ID_PASSWORD_ACCOUNT_STORAGE_EMPTY,
     autofill::PopupItemId::POPUP_ITEM_ID_PASSWORD_ACCOUNT_STORAGE_OPT_IN,
@@ -125,8 +139,8 @@ std::unique_ptr<views::ImageView> ImageViewFromImageSkia(
 
 std::unique_ptr<views::ImageView> ImageViewFromVectorIcon(
     const gfx::VectorIcon& vector_icon) {
-  return std::make_unique<views::ColorTrackingIconView>(vector_icon,
-                                                        gfx::kFaviconSize);
+  return std::make_unique<views::ImageView>(
+      ui::ImageModel::FromVectorIcon(vector_icon, ui::kColorIcon, kIconSize));
 }
 
 std::unique_ptr<views::ImageView> GetIconImageViewByName(
@@ -140,9 +154,8 @@ std::unique_ptr<views::ImageView> GetIconImageViewByName(
     return ImageViewFromVectorIcon(omnibox::kHttpIcon);
 
   if (icon_str == "httpsInvalid") {
-    return ImageViewFromImageSkia(
-        gfx::CreateVectorIcon(vector_icons::kNotSecureWarningIcon,
-                              gfx::kFaviconSize, gfx::kGoogleRed700));
+    return ImageViewFromImageSkia(gfx::CreateVectorIcon(
+        vector_icons::kNotSecureWarningIcon, kIconSize, gfx::kGoogleRed700));
   }
 
   if (icon_str == "keyIcon")
@@ -151,16 +164,28 @@ std::unique_ptr<views::ImageView> GetIconImageViewByName(
   if (icon_str == "globeIcon")
     return ImageViewFromVectorIcon(kGlobeIcon);
 
-  if (icon_str == "settingsIcon")
-    return ImageViewFromVectorIcon(vector_icons::kSettingsIcon);
+  if (icon_str == "accountIcon") {
+    return ImageViewFromVectorIcon(kAccountCircleIcon);
+  }
+
+  if (icon_str == "settingsIcon") {
+    return ImageViewFromVectorIcon(
+        base::FeatureList::IsEnabled(
+            autofill::features::kAutofillUseConsistentPopupSettingsIcons)
+            ? kMonoColorProductIcon
+            : vector_icons::kSettingsIcon);
+  }
 
   if (icon_str == "empty")
     return ImageViewFromVectorIcon(omnibox::kHttpIcon);
 
+  if (icon_str == "fingerprint")
+    return ImageViewFromVectorIcon(kFingerprintIcon);
+
   if (icon_str == "google") {
 #if BUILDFLAG(GOOGLE_CHROME_BRANDING)
     return ImageViewFromImageSkia(gfx::CreateVectorIcon(
-        kGoogleGLogoIcon, gfx::kFaviconSize, gfx::kPlaceholderColor));
+        kGoogleGLogoIcon, kIconSize, gfx::kPlaceholderColor));
 #else
     return nullptr;
 #endif
@@ -209,38 +234,60 @@ namespace autofill {
 
 namespace {
 
-// Container view that holds one child view and limits its width to the
-// specified maximum.
-class ConstrainedWidthView : public views::View {
+class PopupSeparator : public views::Separator {
  public:
-  METADATA_HEADER(ConstrainedWidthView);
-  ConstrainedWidthView(std::unique_ptr<views::View> child, int max_width);
-  ConstrainedWidthView(const ConstrainedWidthView&) = delete;
-  ConstrainedWidthView& operator=(const ConstrainedWidthView&) = delete;
-  ~ConstrainedWidthView() override = default;
+  METADATA_HEADER(PopupSeparator);
+  explicit PopupSeparator(AutofillPopupBaseView* popup);
+
+  // views::Separator:
+  void OnThemeChanged() override;
 
  private:
-  // views::View:
-  gfx::Size CalculatePreferredSize() const override;
-
-  int max_width_;
+  AutofillPopupBaseView* popup_;
 };
 
-ConstrainedWidthView::ConstrainedWidthView(std::unique_ptr<views::View> child,
-                                           int max_width)
-    : max_width_(max_width) {
-  SetLayoutManager(std::make_unique<views::FillLayout>());
-  AddChildView(std::move(child));
+PopupSeparator::PopupSeparator(AutofillPopupBaseView* popup) : popup_(popup) {
+  // Add some spacing between the the previous item and the separator.
+  SetPreferredHeight(views::MenuConfig::instance().separator_thickness);
+  SetBorder(views::CreateEmptyBorder(GetContentsVerticalPadding(), 0, 0, 0));
 }
 
-gfx::Size ConstrainedWidthView::CalculatePreferredSize() const {
-  gfx::Size size = View::CalculatePreferredSize();
-  if (size.width() <= max_width_)
-    return size;
-  return gfx::Size(max_width_, GetHeightForWidth(max_width_));
+void PopupSeparator::OnThemeChanged() {
+  views::Separator::OnThemeChanged();
+  SetColor(popup_->GetSeparatorColor());
 }
 
-BEGIN_METADATA(ConstrainedWidthView, views::View)
+BEGIN_METADATA(PopupSeparator, views::Separator)
+END_METADATA
+
+class SuggestionLabel : public views::Label {
+ public:
+  METADATA_HEADER(SuggestionLabel);
+  SuggestionLabel(const std::u16string& text, AutofillPopupBaseView* popup);
+
+  // views::Label:
+  void OnThemeChanged() override;
+
+ private:
+  AutofillPopupBaseView* popup_;
+};
+
+SuggestionLabel::SuggestionLabel(const std::u16string& text,
+                                 AutofillPopupBaseView* popup)
+    : Label(text,
+            views::style::CONTEXT_DIALOG_BODY_TEXT,
+            ChromeTextStyle::STYLE_RED),
+      popup_(popup) {
+  SetMultiLine(true);
+  SetHorizontalAlignment(gfx::HorizontalAlignment::ALIGN_LEFT);
+}
+
+void SuggestionLabel::OnThemeChanged() {
+  views::Label::OnThemeChanged();
+  SetEnabledColor(popup_->GetWarningColor());
+}
+
+BEGIN_METADATA(SuggestionLabel, views::Label)
 END_METADATA
 
 // This represents a single selectable item. Subclasses distinguish between
@@ -275,7 +322,7 @@ class AutofillPopupItemView : public AutofillPopupRowView {
   virtual int GetPrimaryTextStyle() = 0;
   // Returns a main text label view. The label part is optional but allow caller
   // to keep track of all the labels for background color update.
-  virtual std::unique_ptr<views::View> CreateMainTextView();
+  virtual std::unique_ptr<views::Label> CreateMainTextView();
   // Returns a minor text label view. The label is shown side by side with the
   // main text view, but in a secondary style. Can be nullptr.
   virtual std::unique_ptr<views::View> CreateMinorTextView();
@@ -329,16 +376,23 @@ class AutofillPopupSuggestionView : public AutofillPopupItemView {
   static AutofillPopupSuggestionView* Create(
       AutofillPopupViewNativeViews* popup_view,
       int line_number,
-      int frontend_id);
+      int frontend_id,
+      PopupType popup_type);
 
  protected:
   // AutofillPopupItemView:
   int GetPrimaryTextStyle() override;
   gfx::Font::Weight GetPrimaryTextWeight() const override;
+  std::unique_ptr<views::Label> CreateMainTextView() override;
   std::vector<std::unique_ptr<views::View>> CreateSubtextViews() override;
   AutofillPopupSuggestionView(AutofillPopupViewNativeViews* popup_view,
                               int line_number,
-                              int frontend_id);
+                              int frontend_id,
+                              PopupType popup_type);
+
+ private:
+  // The popup type to which this suggestion belongs.
+  PopupType popup_type_;
 };
 
 BEGIN_METADATA(AutofillPopupSuggestionView, AutofillPopupItemView)
@@ -360,7 +414,7 @@ class PasswordPopupSuggestionView : public AutofillPopupSuggestionView {
 
  protected:
   // AutofillPopupItemView:
-  std::unique_ptr<views::View> CreateMainTextView() override;
+  std::unique_ptr<views::Label> CreateMainTextView() override;
   std::vector<std::unique_ptr<views::View>> CreateSubtextViews() override;
   std::unique_ptr<views::View> CreateDescriptionView() override;
   gfx::Font::Weight GetPrimaryTextWeight() const override;
@@ -673,7 +727,7 @@ std::unique_ptr<views::Background> AutofillPopupItemView::CreateBackground() {
                     : popup_view()->GetBackgroundColor());
 }
 
-std::unique_ptr<views::View> AutofillPopupItemView::CreateMainTextView() {
+std::unique_ptr<views::Label> AutofillPopupItemView::CreateMainTextView() {
   // TODO(crbug.com/831603): Remove elision responsibilities from controller.
   std::u16string text =
       popup_view()->controller()->GetSuggestionMainTextAt(GetLineNumber());
@@ -759,9 +813,10 @@ void AutofillPopupItemView::AddSpacerWithSize(int spacer_width,
 AutofillPopupSuggestionView* AutofillPopupSuggestionView::Create(
     AutofillPopupViewNativeViews* popup_view,
     int line_number,
-    int frontend_id) {
-  AutofillPopupSuggestionView* result =
-      new AutofillPopupSuggestionView(popup_view, line_number, frontend_id);
+    int frontend_id,
+    PopupType popup_type) {
+  AutofillPopupSuggestionView* result = new AutofillPopupSuggestionView(
+      popup_view, line_number, frontend_id, popup_type);
   result->Init();
   return result;
 }
@@ -777,9 +832,22 @@ gfx::Font::Weight AutofillPopupSuggestionView::GetPrimaryTextWeight() const {
 AutofillPopupSuggestionView::AutofillPopupSuggestionView(
     AutofillPopupViewNativeViews* popup_view,
     int line_number,
-    int frontend_id)
-    : AutofillPopupItemView(popup_view, line_number, frontend_id) {
+    int frontend_id,
+    PopupType popup_type)
+    : AutofillPopupItemView(popup_view, line_number, frontend_id),
+      popup_type_(popup_type) {
   SetFocusBehavior(FocusBehavior::ALWAYS);
+}
+
+std::unique_ptr<views::Label>
+AutofillPopupSuggestionView::CreateMainTextView() {
+  std::unique_ptr<views::Label> label =
+      AutofillPopupItemView::CreateMainTextView();
+  if (popup_type_ == PopupType::kAddresses &&
+      base::FeatureList::IsEnabled(features::kAutofillTypeSpecificPopupWidth)) {
+    label->SetMaximumWidthSingleLine(kAutofillPopupAddressProfileMaxWidth);
+  }
+  return label;
 }
 
 std::vector<std::unique_ptr<views::View>>
@@ -799,6 +867,11 @@ AutofillPopupSuggestionView::CreateSubtextViews() {
         text, ChromeTextContext::CONTEXT_DIALOG_BODY_TEXT_SMALL,
         views::style::STYLE_SECONDARY);
     KeepLabel(label.get());
+    if (popup_type_ == PopupType::kAddresses &&
+        base::FeatureList::IsEnabled(
+            features::kAutofillTypeSpecificPopupWidth)) {
+      label->SetMaximumWidthSingleLine(kAutofillPopupAddressProfileMaxWidth);
+    }
     labels.emplace_back(std::move(label));
   }
 
@@ -817,11 +890,11 @@ PasswordPopupSuggestionView* PasswordPopupSuggestionView::Create(
   return result;
 }
 
-std::unique_ptr<views::View> PasswordPopupSuggestionView::CreateMainTextView() {
-  std::unique_ptr<views::View> label =
+std::unique_ptr<views::Label>
+PasswordPopupSuggestionView::CreateMainTextView() {
+  std::unique_ptr<views::Label> label =
       AutofillPopupSuggestionView::CreateMainTextView();
-  label = std::make_unique<ConstrainedWidthView>(
-      std::move(label), kAutofillPopupUsernameMaxWidth);
+  label->SetMaximumWidthSingleLine(kAutofillPopupUsernameMaxWidth);
   return label;
 }
 
@@ -832,11 +905,10 @@ PasswordPopupSuggestionView::CreateSubtextViews() {
       views::style::STYLE_SECONDARY);
   label->SetElideBehavior(gfx::TRUNCATE);
   KeepLabel(label.get());
+  label->SetMaximumWidthSingleLine(kAutofillPopupPasswordMaxWidth);
 
-  std::unique_ptr<views::View> result = std::make_unique<ConstrainedWidthView>(
-      std::move(label), kAutofillPopupPasswordMaxWidth);
   std::vector<std::unique_ptr<views::View>> labels;
-  labels.emplace_back(std::move(result));
+  labels.emplace_back(std::move(label));
   return labels;
 }
 
@@ -850,10 +922,8 @@ PasswordPopupSuggestionView::CreateDescriptionView() {
       views::style::STYLE_SECONDARY);
   label->SetElideBehavior(gfx::ELIDE_HEAD);
   KeepLabel(label.get());
-
-  std::unique_ptr<views::View> result = std::make_unique<ConstrainedWidthView>(
-      std::move(label), kAutofillPopupUsernameMaxWidth);
-  return result;
+  label->SetMaximumWidthSingleLine(kAutofillPopupUsernameMaxWidth);
+  return label;
 }
 
 gfx::Font::Weight PasswordPopupSuggestionView::GetPrimaryTextWeight() const {
@@ -864,7 +934,10 @@ PasswordPopupSuggestionView::PasswordPopupSuggestionView(
     AutofillPopupViewNativeViews* popup_view,
     int line_number,
     int frontend_id)
-    : AutofillPopupSuggestionView(popup_view, line_number, frontend_id) {
+    : AutofillPopupSuggestionView(popup_view,
+                                  line_number,
+                                  frontend_id,
+                                  PopupType::kPasswords) {
   origin_ = popup_view->controller()->GetSuggestionLabelAt(line_number);
   masked_password_ =
       popup_view->controller()->GetSuggestionAt(line_number).additional_label;
@@ -918,14 +991,19 @@ void AutofillPopupFooterView::CreateContent() {
   auto main_text_label = CreateMainTextView();
   main_text_label->SetEnabled(!suggestion.is_loading);
   AddChildView(std::move(main_text_label));
-  AddSpacerWithSize(
-      ChromeLayoutProvider::Get()->GetDistanceMetric(
-          DISTANCE_BETWEEN_PRIMARY_AND_SECONDARY_LABELS_HORIZONTAL),
-      /*resize=*/true, layout_manager);
+
+  AddSpacerWithSize(0, /*resize=*/true, layout_manager);
 
   if (icon && !use_leading_icon) {
     AddSpacerWithSize(GetHorizontalMargin(), /*resize=*/false, layout_manager);
     AddChildView(std::move(icon));
+  }
+
+  std::unique_ptr<views::ImageView> store_indicator_icon =
+      GetStoreIndicatorIconImageView(suggestion);
+  if (store_indicator_icon) {
+    AddSpacerWithSize(GetHorizontalMargin(), /*resize=*/true, layout_manager);
+    AddChildView(std::move(store_indicator_icon));
   }
 }
 
@@ -975,18 +1053,7 @@ void AutofillPopupSeparatorView::GetAccessibleNodeData(
 
 void AutofillPopupSeparatorView::CreateContent() {
   SetLayoutManager(std::make_unique<views::FillLayout>());
-
-  views::Separator* separator = new views::Separator();
-  separator->SetColor(popup_view()->GetSeparatorColor());
-  // Add some spacing between the the previous item and the separator.
-  separator->SetPreferredHeight(
-      views::MenuConfig::instance().separator_thickness);
-  separator->SetBorder(views::CreateEmptyBorder(
-      /*top=*/GetContentsVerticalPadding(),
-      /*left=*/0,
-      /*bottom=*/0,
-      /*right=*/0));
-  AddChildView(separator);
+  AddChildView(std::make_unique<PopupSeparator>(popup_view()));
 }
 
 void AutofillPopupSeparatorView::RefreshStyle() {
@@ -1037,14 +1104,8 @@ void AutofillPopupWarningView::CreateContent() {
   SetBorder(views::CreateEmptyBorder(
       gfx::Insets(vertical_margin, horizontal_margin)));
 
-  auto text_label = std::make_unique<views::Label>(
-      controller->GetSuggestionMainTextAt(GetLineNumber()),
-      views::style::CONTEXT_DIALOG_BODY_TEXT, ChromeTextStyle::STYLE_RED);
-  text_label->SetEnabledColor(popup_view()->GetWarningColor());
-  text_label->SetMultiLine(true);
-  text_label->SetHorizontalAlignment(gfx::HorizontalAlignment::ALIGN_LEFT);
-
-  AddChildView(std::move(text_label));
+  AddChildView(std::make_unique<SuggestionLabel>(
+      controller->GetSuggestionMainTextAt(GetLineNumber()), popup_view()));
 }
 
 std::unique_ptr<views::Background>
@@ -1189,7 +1250,7 @@ absl::optional<int32_t> AutofillPopupViewNativeViews::GetAxUniqueId() {
 }
 
 void AutofillPopupViewNativeViews::CreateChildViews() {
-  RemoveAllChildViews(true /* delete_children */);
+  RemoveAllChildViews();
   rows_.clear();
   scroll_view_ = nullptr;
   body_container_ = nullptr;
@@ -1242,8 +1303,8 @@ void AutofillPopupViewNativeViews::CreateChildViews() {
         break;
 
       default:
-        rows_.push_back(AutofillPopupSuggestionView::Create(this, line_number,
-                                                            frontend_id));
+        rows_.push_back(AutofillPopupSuggestionView::Create(
+            this, line_number, frontend_id, controller_->GetPopupType()));
     }
 
     if (has_footer)
@@ -1317,13 +1378,22 @@ int AutofillPopupViewNativeViews::AdjustWidth(int width) const {
 
   int elem_width = gfx::ToEnclosingRect(controller_->element_bounds()).width();
 
+  int popup_min_width =
+      base::FeatureList::IsEnabled(features::kAutofillTypeSpecificPopupWidth)
+          ? kAutofillExperimentalPopupMinWidth
+          : kAutofillPopupMinWidth;
+
   // If the element width is within the range of legal sizes for the popup, use
   // it as the min width, so that the popup will align with its edges when
-  // possible.
-  int min_width = (kAutofillPopupMinWidth <= elem_width &&
-                   elem_width < kAutofillPopupMaxWidth)
-                      ? elem_width
-                      : kAutofillPopupMinWidth;
+  // possible. Do not use this mechanisms if horizontally-centered popups are
+  // enabled and always return the minimum widths.
+  // TODO(crbug.com/1250729): Remove this mechanisms once launched.
+  int min_width =
+      (popup_min_width <= elem_width && elem_width < kAutofillPopupMaxWidth &&
+       !base::FeatureList::IsEnabled(
+           features::kAutofillCenterAlignedSuggestions))
+          ? elem_width
+          : popup_min_width;
 
   if (width <= min_width)
     return min_width;
@@ -1343,29 +1413,44 @@ bool AutofillPopupViewNativeViews::DoUpdateBoundsAndRedrawPopup() {
   gfx::Size preferred_size = CalculatePreferredSize();
   gfx::Rect popup_bounds;
 
-  const gfx::Rect window_bounds = GetWindowBounds();
+  const gfx::Rect content_area_bounds = GetContentAreaBounds();
+  // TODO(crbug.com/1262371) Once popups can render outside the main window on
+  // Linux, use the screen bounds.
+  const gfx::Rect top_window_bounds = GetTopWindowBounds();
+  const gfx::Rect& max_bounds_for_popup =
+      PopupMayExceedContentAreaBounds(controller_->GetWebContents())
+          ? top_window_bounds
+          : content_area_bounds;
 
-  // When a bubble border is shown, the contents area (inside the shadow) is
-  // supposed to be aligned with input element boundaries.
   gfx::Rect element_bounds =
       gfx::ToEnclosingRect(controller_->element_bounds());
+
+  // If the element exceeds the content area, ensure that the popup is still
+  // visually attached to the input element.
+  element_bounds.Intersect(content_area_bounds);
+  if (element_bounds.IsEmpty()) {
+    controller_->Hide(PopupHidingReason::kElementOutsideOfContentArea);
+    return false;
+  }
+
   // Consider the element is |kElementBorderPadding| pixels larger at the top
   // and at the bottom in order to reposition the dropdown, so that it doesn't
   // look too close to the element.
   element_bounds.Inset(/*horizontal=*/0, /*vertical=*/-kElementBorderPadding);
 
+  // At least one row of the popup should be shown in the bounds of the content
+  // area so that the user notices the presence of the popup.
   int item_height =
       body_container_ && body_container_->children().size() > 0
           ? body_container_->children()[0]->GetPreferredSize().height()
           : 0;
 
-  if (!CanShowDropdownHere(item_height, GetContentAreaBounds(),
-                           element_bounds)) {
+  if (!CanShowDropdownHere(item_height, max_bounds_for_popup, element_bounds)) {
     controller_->Hide(PopupHidingReason::kInsufficientSpace);
     return false;
   }
 
-  CalculatePopupYAndHeight(preferred_size.height(), window_bounds,
+  CalculatePopupYAndHeight(preferred_size.height(), max_bounds_for_popup,
                            element_bounds, &popup_bounds);
 
   // Adjust the width to compensate for a scroll bar, if necessary, and for
@@ -1382,17 +1467,68 @@ bool AutofillPopupViewNativeViews::DoUpdateBoundsAndRedrawPopup() {
   }
   preferred_size.set_width(AdjustWidth(preferred_size.width() + scroll_width));
 
-  CalculatePopupXAndWidth(preferred_size.width(), window_bounds, element_bounds,
-                          controller_->IsRTL(), &popup_bounds);
+  if (!base::FeatureList::IsEnabled(
+          autofill::features::kAutofillCenterAlignedSuggestions)) {
+    CalculatePopupXAndWidth(preferred_size.width(), max_bounds_for_popup,
+                            element_bounds, controller_->IsRTL(),
+                            &popup_bounds);
+  } else {
+    // Deduce the arrow and the position.
+    BubbleBorder::Arrow arrow = GetOptimalBubblePlacement(
+        content_area_bounds, element_bounds, preferred_size,
+        controller_->IsRTL(), scroll_width,
+        autofill::features::kAutofillMaximumPixelsToMoveSuggestionopupToCenter
+            .Get(),
+        autofill::features::
+            kAutofillMaxiumWidthPercentageToMoveSuggestionPopupToCenter.Get(),
+        popup_bounds);
+
+    // Those values are not supported for adding an arrow.
+    // Currenrly, they can not be returned by GetOptimalBubblePlacement().
+    DCHECK(arrow != BubbleBorder::Arrow::NONE);
+    DCHECK(arrow != BubbleBorder::Arrow::FLOAT);
+
+    // Set the arrow position to the border.
+    bubble_border_->set_arrow(arrow);
+    bubble_border_->AddArrowToBubbleCornerAndPointTowardsAnchor(
+        element_bounds, /*move_bubble_to_add_arrow=*/true, popup_bounds);
+  }
+
+  if (BoundsOverlapWithAnyOpenPrompt(popup_bounds,
+                                     controller_->GetWebContents())) {
+    controller_->Hide(PopupHidingReason::kOverlappingWithAnotherPrompt);
+    return false;
+  }
+  // On Windows, due to platform-specific implementation details, the previous
+  // check isn't reliable, and fails to detect open prompts. Since the most
+  // critical bubble is the permission bubble, we check for that specifically.
+  if (BoundsOverlapWithOpenPermissionsPrompt(popup_bounds,
+                                             controller_->GetWebContents())) {
+    controller_->Hide(PopupHidingReason::kOverlappingWithAnotherPrompt);
+    return false;
+  }
 
   SetSize(preferred_size);
 
-  popup_bounds.Inset(-GetWidget()->GetRootView()->border()->GetInsets());
+  popup_bounds.Inset(-GetWidget()->GetRootView()->GetInsets());
   GetWidget()->SetBounds(popup_bounds);
   UpdateClipPath();
 
   SchedulePaint();
   return true;
+}
+
+std::unique_ptr<views::Border> AutofillPopupViewNativeViews::CreateBorder() {
+  BubbleBorder::Arrow arrow = BubbleBorder::Arrow::TOP_LEFT;
+  auto border = std::make_unique<BubbleBorder>(
+      arrow, BubbleBorder::STANDARD_SHADOW, GetBackgroundColor());
+  border->SetCornerRadius(GetCornerRadius());
+  border->set_md_shadow_elevation(
+      ChromeLayoutProvider::Get()->GetShadowElevationMetric(
+          views::Emphasis::kMedium));
+  border->set_visible_arrow(true);
+  bubble_border_ = border.get();
+  return border;
 }
 
 BEGIN_METADATA(AutofillPopupViewNativeViews, AutofillPopupBaseView)

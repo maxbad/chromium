@@ -25,17 +25,14 @@ import androidx.annotation.VisibleForTesting;
 import androidx.browser.customtabs.CustomTabsIntent;
 import androidx.browser.customtabs.CustomTabsSessionToken;
 
-import org.chromium.base.Callback;
 import org.chromium.base.IntentUtils;
 import org.chromium.base.metrics.RecordUserAction;
 import org.chromium.chrome.R;
-import org.chromium.chrome.browser.IntentHandler;
 import org.chromium.chrome.browser.LaunchIntentDispatcher;
 import org.chromium.chrome.browser.app.metrics.LaunchCauseMetrics;
 import org.chromium.chrome.browser.autofill_assistant.AutofillAssistantFacade;
 import org.chromium.chrome.browser.browserservices.intents.BrowserServicesIntentDataProvider;
 import org.chromium.chrome.browser.browserservices.intents.BrowserServicesIntentDataProvider.CustomTabsUiType;
-import org.chromium.chrome.browser.customtabs.content.CustomTabActivityNavigationController;
 import org.chromium.chrome.browser.customtabs.content.CustomTabActivityTabProvider;
 import org.chromium.chrome.browser.customtabs.features.CustomTabNavigationBarController;
 import org.chromium.chrome.browser.firstrun.FirstRunSignInProcessor;
@@ -96,6 +93,13 @@ public class CustomTabActivity extends BaseCustomTabActivity {
     }
 
     @Override
+    protected void changeBackgroundColorForResizing() {
+        if (!mBaseCustomTabRootUiCoordinator.changeBackgroundColorForResizing()) {
+            super.changeBackgroundColorForResizing();
+        }
+    }
+
+    @Override
     public void performPreInflationStartup() {
         super.performPreInflationStartup();
         mTabProvider.addObserver(mTabChangeObserver);
@@ -103,16 +107,6 @@ public class CustomTabActivity extends BaseCustomTabActivity {
         resetPostMessageHandlersForCurrentSession();
 
         mSession = mIntentDataProvider.getSession();
-
-        // shouldHideOmniboxSuggestionsForCctVisits() can not be called immediately as it depends
-        // upon FeatureList, which has not been initialized yet.
-        getStartupTabPreloader().setTabCreatedCallback(new Callback<Tab>() {
-            @Override
-            public void onResult(Tab tab) {
-                CustomTabActivityNavigationController.applyExperimentsToNewTab(
-                        tab, mIntentDataProvider);
-            }
-        });
 
         CustomTabNavigationBarController.update(getWindow(), mIntentDataProvider, getResources());
     }
@@ -123,7 +117,7 @@ public class CustomTabActivity extends BaseCustomTabActivity {
 
         FontPreloader.getInstance().onPostInflationStartupCustomTabActivity();
 
-        getStatusBarColorController().updateStatusBarColor();
+        mRootUiCoordinator.getStatusBarColorController().updateStatusBarColor();
 
         // Properly attach tab's InfoBarContainer to the view hierarchy if the tab is already
         // attached to a ChromeActivity, as the main tab might have been initialized prior to
@@ -210,11 +204,6 @@ public class CustomTabActivity extends BaseCustomTabActivity {
             if (mNavigationController.openCurrentUrlInBrowser(false)) {
                 RecordUserAction.record("CustomTabsMenuOpenInChrome");
                 WebContents webContents = tab == null ? null : tab.getWebContents();
-                if (tab != null) {
-                    tab.setAddApi2TransitionToFutureNavigations(false);
-                    tab.setHideFutureNavigations(false);
-                    tab.setShouldBlockNewNotificationRequests(false);
-                }
                 mConnection.notifyOpenInBrowser(mSession, webContents);
             }
             return true;
@@ -222,8 +211,10 @@ public class CustomTabActivity extends BaseCustomTabActivity {
             Tab tab = getTabModelSelector().getCurrentTab();
             if (tab == null) return false;
             String publisher = getToolbarManager().getContentPublisher();
-            new ChromePageInfo(getModalDialogManagerSupplier(), publisher, OpenedFromSource.MENU)
-                    .show(tab, PageInfoController.NO_HIGHLIGHTED_PERMISSION);
+            new ChromePageInfo(getModalDialogManagerSupplier(), publisher, OpenedFromSource.MENU,
+                    () -> mRootUiCoordinator.getMerchantTrustSignalsCoordinatorSupplier().get())
+                    .show(tab, PageInfoController.NO_HIGHLIGHTED_PERMISSION,
+                            /*fromStoreIcon=*/false);
             return true;
         }
         return super.onMenuOrKeyboardAction(id, fromMenu);
@@ -271,7 +262,7 @@ public class CustomTabActivity extends BaseCustomTabActivity {
         intent.putExtra(CustomTabIntentDataProvider.EXTRA_UI_TYPE, CustomTabsUiType.INFO_PAGE);
         intent.putExtra(Browser.EXTRA_APPLICATION_ID, context.getPackageName());
         if (!(context instanceof Activity)) intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        IntentHandler.addTrustedIntentExtras(intent);
+        IntentUtils.addTrustedIntentExtras(intent);
 
         context.startActivity(intent);
     }
@@ -306,5 +297,11 @@ public class CustomTabActivity extends BaseCustomTabActivity {
     @VisibleForTesting
     public NightModeStateProvider getNightModeStateProviderForTesting() {
         return super.getNightModeStateProvider();
+    }
+
+    @Override
+    protected void setDefaultTaskDescription() {
+        // mIntentDataProvider is not ready when the super calls this method. So, we skip setting
+        // the task description here, and do it in #performPostInflationStartup();
     }
 }

@@ -4,11 +4,15 @@
 
 #include "media/cdm/win/media_foundation_cdm.h"
 
+#include <mferror.h>
+
 #include <stdlib.h>
 #include <vector>
 
 #include "base/bind.h"
 #include "base/logging.h"
+#include "base/metrics/histogram_functions.h"
+#include "base/strings/stringprintf.h"
 #include "base/win/scoped_co_mem.h"
 #include "base/win/scoped_propvariant.h"
 #include "base/win/win_util.h"
@@ -95,6 +99,29 @@ HRESULT RefreshDecryptor(IMFTransform* decryptor,
   RETURN_IF_FAILED(
       decryptor->ProcessEvent(/*dwInputStreamID=*/0, key_rotation_event.Get()));
   return S_OK;
+}
+
+// The HDCP value follows the feature value in
+// https://docs.microsoft.com/en-us/uwp/api/windows.media.protection.protectioncapabilities.istypesupported?view=winrt-19041
+// - 0 (off)
+// - 1 (on without HDCP 2.2 Type 1 restriction)
+// - 2 (on with HDCP 2.2 Type 1 restriction)
+int GetHdcpValue(HdcpVersion hdcp_version) {
+  switch (hdcp_version) {
+    case HdcpVersion::kHdcpVersionNone:
+      return 0;
+    case HdcpVersion::kHdcpVersion1_0:
+    case HdcpVersion::kHdcpVersion1_1:
+    case HdcpVersion::kHdcpVersion1_2:
+    case HdcpVersion::kHdcpVersion1_3:
+    case HdcpVersion::kHdcpVersion1_4:
+    case HdcpVersion::kHdcpVersion2_0:
+    case HdcpVersion::kHdcpVersion2_1:
+      return 1;
+    case HdcpVersion::kHdcpVersion2_2:
+    case HdcpVersion::kHdcpVersion2_3:
+      return 2;
+  }
 }
 
 class CdmProxyImpl : public MediaFoundationCdmProxy {
@@ -248,18 +275,26 @@ bool MediaFoundationCdm::IsAvailable() {
 }
 
 MediaFoundationCdm::MediaFoundationCdm(
+    const std::string& uma_prefix,
     const CreateMFCdmCB& create_mf_cdm_cb,
+    const IsTypeSupportedCB& is_type_supported_cb,
+    const StoreClientTokenCB& store_client_token_cb,
     const SessionMessageCB& session_message_cb,
     const SessionClosedCB& session_closed_cb,
     const SessionKeysChangeCB& session_keys_change_cb,
     const SessionExpirationUpdateCB& session_expiration_update_cb)
-    : create_mf_cdm_cb_(create_mf_cdm_cb),
+    : uma_prefix_(uma_prefix),
+      create_mf_cdm_cb_(create_mf_cdm_cb),
+      is_type_supported_cb_(is_type_supported_cb),
+      store_client_token_cb_(store_client_token_cb),
       session_message_cb_(session_message_cb),
       session_closed_cb_(session_closed_cb),
       session_keys_change_cb_(session_keys_change_cb),
       session_expiration_update_cb_(session_expiration_update_cb) {
   DVLOG_FUNC(1);
+  DCHECK(!uma_prefix_.empty());
   DCHECK(create_mf_cdm_cb_);
+  DCHECK(is_type_supported_cb_);
   DCHECK(session_message_cb_);
   DCHECK(session_closed_cb_);
   DCHECK(session_keys_change_cb_);
@@ -293,8 +328,11 @@ void MediaFoundationCdm::SetServerCertificate(
     return;
   }
 
-  if (FAILED(mf_cdm_->SetServerCertificate(certificate.data(),
-                                           certificate.size()))) {
+  auto hr =
+      mf_cdm_->SetServerCertificate(certificate.data(), certificate.size());
+  base::UmaHistogramSparse(uma_prefix_ + "SetServerCertificate", hr);
+
+  if (FAILED(hr)) {
     promise->reject(Exception::NOT_SUPPORTED_ERROR, 0, "Failed to set cert");
     return;
   }
@@ -302,7 +340,6 @@ void MediaFoundationCdm::SetServerCertificate(
   promise->resolve();
 }
 
-// TODO(hmchen): Implement this method.
 void MediaFoundationCdm::GetStatusForPolicy(
     HdcpVersion min_hdcp_version,
     std::unique_ptr<KeyStatusCdmPromise> promise) {
@@ -311,9 +348,22 @@ void MediaFoundationCdm::GetStatusForPolicy(
     return;
   }
 
-  NOTIMPLEMENTED();
-  promise->reject(CdmPromise::Exception::NOT_SUPPORTED_ERROR, 0,
-                  "GetStatusForPolicy() is not supported.");
+  // Keys should be always usable when there is no HDCP requirement.
+  if (min_hdcp_version == HdcpVersion::kHdcpVersionNone) {
+    promise->resolve(CdmKeyInformation::KeyStatus::USABLE);
+    return;
+  }
+
+  // HDCP is independent to the codec. So query H.264, which is always supported
+  // by MFCDM.
+  const std::string content_type =
+      base::StringPrintf("video/mp4;codecs=\"avc1\";features=\"hdcp=%d\"",
+                         GetHdcpValue(min_hdcp_version));
+
+  is_type_supported_cb_.Run(
+      content_type,
+      base::BindOnce(&MediaFoundationCdm::OnIsTypeSupportedResult,
+                     weak_factory_.GetWeakPtr(), std::move(promise)));
 }
 
 void MediaFoundationCdm::CreateSessionAndGenerateRequest(
@@ -330,7 +380,7 @@ void MediaFoundationCdm::CreateSessionAndGenerateRequest(
 
   // TODO(xhwang): Implement session expiration update.
   auto session = std::make_unique<MediaFoundationCdmSession>(
-      session_message_cb_, session_keys_change_cb_,
+      uma_prefix_, session_message_cb_, session_keys_change_cb_,
       session_expiration_update_cb_);
 
   if (FAILED(session->Initialize(mf_cdm_.Get(), session_type))) {
@@ -393,6 +443,10 @@ void MediaFoundationCdm::UpdateSession(
     promise->reject(Exception::INVALID_STATE_ERROR, 0, "Update failed");
     return;
   }
+
+  // Failure to store the client token will not prevent the CDM from correctly
+  // functioning.
+  StoreClientTokenIfNeeded();
 
   promise->resolve();
 }
@@ -556,6 +610,52 @@ void MediaFoundationCdm::OnHardwareContextReset() {
     DLOG(ERROR) << __func__ << ": Re-initialization failed";
     DCHECK(!mf_cdm_);
   }
+}
+
+void MediaFoundationCdm::OnIsTypeSupportedResult(
+    std::unique_ptr<KeyStatusCdmPromise> promise,
+    bool is_supported) {
+  if (is_supported) {
+    promise->resolve(CdmKeyInformation::KeyStatus::USABLE);
+  } else {
+    promise->resolve(CdmKeyInformation::KeyStatus::OUTPUT_RESTRICTED);
+  }
+}
+
+void MediaFoundationCdm::StoreClientTokenIfNeeded() {
+  DVLOG_FUNC(1);
+
+  ComPtr<IMFAttributes> attributes;
+  if (FAILED(mf_cdm_.As(&attributes))) {
+    DLOG(ERROR) << "Failed to access the CDM's IMFAttribute store";
+    return;
+  }
+
+  base::win::ScopedCoMem<uint8_t> client_token;
+  uint32_t client_token_size;
+
+  HRESULT hr = attributes->GetAllocatedBlob(
+      EME_CONTENTDECRYPTIONMODULE_CLIENT_TOKEN.fmtid, &client_token,
+      &client_token_size);
+  if (FAILED(hr)) {
+    if (hr != MF_E_ATTRIBUTENOTFOUND)
+      DLOG(ERROR) << "Failed to get the client token blob. hr=" << hr;
+    return;
+  }
+
+  DVLOG(2) << "Got client token of size " << client_token_size;
+
+  std::vector<uint8_t> client_token_vector;
+  client_token_vector.assign(client_token.get(),
+                             client_token.get() + client_token_size);
+
+  // The store operation is cross-process so only run it if we have a new
+  // client token.
+  if (client_token_vector == cached_client_token_)
+    return;
+
+  cached_client_token_ = client_token_vector;
+  store_client_token_cb_.Run(cached_client_token_);
 }
 
 }  // namespace media

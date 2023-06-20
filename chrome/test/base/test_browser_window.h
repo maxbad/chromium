@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "build/build_config.h"
+#include "build/chromeos_buildflags.h"
 #include "chrome/browser/download/test_download_shelf.h"
 #include "chrome/browser/ui/autofill/test/test_autofill_bubble_handler.h"
 #include "chrome/browser/ui/browser.h"
@@ -122,6 +123,7 @@ class TestBrowserWindow : public BrowserWindow {
   void FocusBookmarksToolbar() override {}
   void FocusInactivePopupForAccessibility() override {}
   void RotatePaneFocus(bool forwards) override {}
+  void FocusWebContentsPane() override {}
   void ShowAppMenu() override {}
   content::KeyboardEventProcessingResult PreHandleKeyboardEvent(
       const content::NativeWebKeyboardEvent& event) override;
@@ -140,8 +142,13 @@ class TestBrowserWindow : public BrowserWindow {
   qrcode_generator::QRCodeGeneratorBubbleView* ShowQRCodeGeneratorBubble(
       content::WebContents* contents,
       qrcode_generator::QRCodeGeneratorBubbleController* controller,
-      const GURL& url) override;
+      const GURL& url,
+      bool show_back_button) override;
 #if !defined(OS_ANDROID)
+  sharing_hub::ScreenshotCapturedBubble* ShowScreenshotCapturedBubble(
+      content::WebContents* contents,
+      const gfx::Image& image,
+      sharing_hub::ScreenshotCapturedBubbleController* controller) override;
   void ShowIntentPickerBubble(
       std::vector<apps::IntentPickerAppInfo> app_info,
       bool show_stay_in_chrome,
@@ -154,10 +161,14 @@ class TestBrowserWindow : public BrowserWindow {
       content::WebContents* contents,
       send_tab_to_self::SendTabToSelfBubbleController* controller,
       bool is_user_gesture) override;
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+  views::Button* GetSharingHubIconButton() override;
+#else
   sharing_hub::SharingHubBubbleView* ShowSharingHubBubble(
       content::WebContents* contents,
       sharing_hub::SharingHubBubbleController* controller,
       bool is_user_gesture) override;
+#endif
   ShowTranslateBubbleResult ShowTranslateBubble(
       content::WebContents* contents,
       translate::TranslateStep step,
@@ -188,12 +199,16 @@ class TestBrowserWindow : public BrowserWindow {
   void MaybeShowProfileSwitchIPH() override {}
 
 #if defined(OS_CHROMEOS) || defined(OS_MAC) || defined(OS_WIN) || \
-    defined(OS_LINUX)
+    defined(OS_LINUX) || defined(OS_FUCHSIA)
   void ShowHatsDialog(
       const std::string& site_id,
       base::OnceClosure success_callback,
       base::OnceClosure failure_callback,
-      const std::map<std::string, bool>& product_specific_data) override {}
+      const SurveyBitsData& product_specific_bits_data,
+      const SurveyStringData& product_specific_string_data) override {}
+
+  void ShowIncognitoClearBrowsingDataDialog() override {}
+  void ShowIncognitoHistoryDisclaimerDialog() override {}
 #endif
 
   ExclusiveAccessContext* GetExclusiveAccessContext() override;
@@ -204,8 +219,6 @@ class TestBrowserWindow : public BrowserWindow {
   std::unique_ptr<content::EyeDropper> OpenEyeDropper(
       content::RenderFrameHost* frame,
       content::EyeDropperListener* listener) override;
-
-  void ShowInProductHelpPromo(InProductHelpFeature iph_feature) override {}
 
   void SetNativeWindow(gfx::NativeWindow window);
 

@@ -14,18 +14,13 @@
 
 namespace blink {
 
+class ContainerNode;
 class Document;
 class DocumentFragment;
 class ExceptionState;
 class ExecutionContext;
 class SanitizerConfig;
 class ScriptState;
-
-enum ElementKind {
-  kCustom,
-  kUnknown,
-  kRegular,
-};
 
 class MODULES_EXPORT Sanitizer final : public ScriptWrappable {
   DEFINE_WRAPPERTYPEINFO();
@@ -34,25 +29,39 @@ class MODULES_EXPORT Sanitizer final : public ScriptWrappable {
   static Sanitizer* Create(ExecutionContext*,
                            const SanitizerConfig*,
                            ExceptionState&);
-  explicit Sanitizer(ExecutionContext*, const SanitizerConfig*);
+  Sanitizer(ExecutionContext*, const SanitizerConfig*);
   ~Sanitizer() override;
 
-  String sanitizeToString(ScriptState* script_state,
-                          const V8SanitizerInput* input,
-                          ExceptionState& exception_state);
   DocumentFragment* sanitize(ScriptState* script_state,
-                             const V8SanitizerInputWithTrustedHTML* input,
+                             const V8SanitizerInput* input,
                              ExceptionState& exception_state);
+  Element* sanitizeFor(ScriptState* script_state,
+                       const String& element,
+                       const String& markup,
+                       ExceptionState& exception_state);
 
-  SanitizerConfig* config() const;
-  static SanitizerConfig* defaultConfig();
+  SanitizerConfig* getConfiguration() const;
+  static SanitizerConfig* getDefaultConfiguration();
+
+  // Get a (shared) Sanitizer instance with the default configuration.
+  static Sanitizer* getDefaultInstance();
+
+  // Implementation of ElementSanitizer::SetHTML, so that we have
+  // all the sanitizer logic in one place.
+  void ElementSetHTML(ScriptState* script_state,
+                      Element& element,
+                      const String& markup,
+                      ExceptionState& exception_state);
 
   void Trace(Visitor*) const override;
 
  private:
-  Node* DropElement(Node*, DocumentFragment*);
-  Node* BlockElement(Node*, DocumentFragment*, ExceptionState&);
-  Node* KeepElement(Node*, DocumentFragment*, String&, LocalDOMWindow*);
+  bool AttrListMatches(const HashMap<String, Vector<String>>&,
+                       const String& attr,
+                       const String& element);
+  Node* DropElement(Node*, ContainerNode*);
+  Node* BlockElement(Node*, ContainerNode*, ExceptionState&);
+  Node* KeepElement(Node*, ContainerNode*, String&, LocalDOMWindow*);
 
   void ElementFormatter(HashSet<String>&, const Vector<String>&);
   void AttrFormatter(HashMap<String, Vector<String>>&,
@@ -62,22 +71,16 @@ class MODULES_EXPORT Sanitizer final : public ScriptWrappable {
                                     ScriptState* script_state,
                                     const V8SanitizerInput* input,
                                     ExceptionState& exception_state);
-  DocumentFragment* DoSanitizing(DocumentFragment*,
-                                 LocalDOMWindow*,
-                                 ExceptionState&);
-  DocumentFragment* SanitizeImpl(ScriptState* script_state,
-                                 const V8SanitizerInput* input,
-                                 ExceptionState& exception_state);
+  void DoSanitizing(ContainerNode*, LocalDOMWindow*, ExceptionState&);
 
   SanitizerConfigImpl config_;
-  Member<const SanitizerConfig> config_dictionary_;
 
   // TODO(lyf): make it all-oilpan.
   const Vector<String> kVectorStar = Vector<String>({"*"});
   const HashSet<String> baseline_drop_elements_ = {
-      "APPLET",   "BASE",    "EMBED",    "IFRAME", "NOEMBED",
-      "NOFRAMES", "NOLAYER", "NOSCRIPT", "OBJECT", "FRAME",
-      "FRAMESET", "PARAM",   "SCRIPT"};
+      "applet",   "base",    "embed",    "iframe", "noembed",
+      "noframes", "nolayer", "noscript", "object", "frame",
+      "frameset", "param",   "script"};
   const HashMap<String, Vector<String>> baseline_drop_attributes_ = {
       {"onabort", kVectorStar},
       {"onafterprint", kVectorStar},

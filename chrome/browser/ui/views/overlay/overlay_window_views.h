@@ -13,10 +13,6 @@
 #include "ui/gfx/geometry/size.h"
 #include "ui/views/widget/widget.h"
 
-#if BUILDFLAG(IS_CHROMEOS_ASH)
-#include "ash/public/cpp/rounded_corner_decorator.h"
-#endif
-
 namespace views {
 class BackToTabImageButton;
 class CloseImageButton;
@@ -42,6 +38,9 @@ class OverlayWindowViews : public content::OverlayWindow,
  public:
   static std::unique_ptr<OverlayWindowViews> Create(
       content::PictureInPictureWindowController* controller);
+
+  OverlayWindowViews(const OverlayWindowViews&) = delete;
+  OverlayWindowViews& operator=(const OverlayWindowViews&) = delete;
 
   ~OverlayWindowViews() override;
 
@@ -71,6 +70,7 @@ class OverlayWindowViews : public content::OverlayWindow,
   // views::Widget:
   bool IsActive() const override;
   bool IsVisible() const override;
+  void OnNativeFocus() override;
   void OnNativeBlur() override;
   void OnNativeWidgetDestroyed() override;
   gfx::Size GetMinimumSize() const override;
@@ -116,6 +116,7 @@ class OverlayWindowViews : public content::OverlayWindow,
   ToggleCameraButton* toggle_camera_button_for_testing() const;
   HangUpButton* hang_up_button_for_testing() const;
   BackToTabLabelButton* back_to_tab_label_button_for_testing() const;
+  views::CloseImageButton* close_button_for_testing() const;
   gfx::Point close_image_position_for_testing() const;
   gfx::Point resize_handle_position_for_testing() const;
   OverlayWindowViews::PlaybackState playback_state_for_testing() const;
@@ -167,6 +168,12 @@ class OverlayWindowViews : public content::OverlayWindow,
   gfx::Rect CalculateControlsBounds(int x, const gfx::Size& size);
   void UpdateControlsPositions();
 
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+  // Updates the bounds of |resize_handle_view_| based on what |quadrant| the
+  // PIP window is in.
+  void UpdateResizeHandleBounds(WindowQuadrant quadrant);
+#endif
+
   // These values are persisted to logs. Entries should not be renumbered and
   // numeric values should never be reused.
   enum class OverlayWindowControl {
@@ -191,7 +198,7 @@ class OverlayWindowViews : public content::OverlayWindow,
   void TogglePlayPause();
 
   // Returns the current frame sink id for the surface displayed in the
-  // |video_view_]. If |video_view_| is not currently displaying a surface then
+  // |video_view_|. If |video_view_| is not currently displaying a surface then
   // returns nullptr.
   const viz::FrameSinkId* GetCurrentFrameSinkId() const;
 
@@ -212,12 +219,6 @@ class OverlayWindowViews : public content::OverlayWindow,
   // changes. http://crbug.com/819673
   gfx::Size min_size_;
   gfx::Size max_size_;
-
-  // Current bounds of the Picture-in-Picture window.
-  gfx::Rect window_bounds_;
-
-  // Bounds of |video_view_|.
-  gfx::Rect video_bounds_;
 
   // The natural size of the video to show. This is used to compute sizing and
   // ensuring factors such as aspect ratio is maintained.
@@ -244,9 +245,6 @@ class OverlayWindowViews : public content::OverlayWindow,
   ToggleMicrophoneButton* toggle_microphone_button_ = nullptr;
   ToggleCameraButton* toggle_camera_button_ = nullptr;
   HangUpButton* hang_up_button_ = nullptr;
-#if BUILDFLAG(IS_CHROMEOS_ASH)
-  std::unique_ptr<ash::RoundedCornerDecorator> decorator_;
-#endif
 
   // Automatically hides the controls a few seconds after user tap gesture.
   base::RetainingOneShotTimer hide_controls_timer_;
@@ -287,7 +285,9 @@ class OverlayWindowViews : public content::OverlayWindow,
   // ForceControlsVisibleForTesting().
   absl::optional<bool> force_controls_visible_;
 
-  DISALLOW_COPY_AND_ASSIGN(OverlayWindowViews);
+  // Whether or not the current frame sink for the surface displayed in the
+  // |video_view_| is registered as the child of the overlay window frame sink.
+  bool has_registered_frame_sink_hierarchy_ = false;
 };
 
 #endif  // CHROME_BROWSER_UI_VIEWS_OVERLAY_OVERLAY_WINDOW_VIEWS_H_

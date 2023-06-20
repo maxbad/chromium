@@ -8,10 +8,13 @@
 #include <functional>
 #include <map>
 #include <memory>
-#include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
+#include "base/compiler_specific.h"
+#include "base/cxx17_backports.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "ui/base/class_property.h"
 #include "ui/base/metadata/base_type_conversion.h"
 #include "ui/views/views_export.h"
@@ -41,7 +44,7 @@ class PropertySetterBase {
   PropertySetterBase& operator=(const PropertySetterBase&) = delete;
   virtual ~PropertySetterBase() = default;
 
-  virtual void SetProperty(void* obj) = 0;
+  virtual void SetProperty(View* obj) = 0;
 };
 
 template <typename TClass, typename TValue, typename TSig, TSig Set>
@@ -53,7 +56,7 @@ class PropertySetter : public PropertySetterBase {
   PropertySetter& operator=(const PropertySetter&) = delete;
   ~PropertySetter() override = default;
 
-  void SetProperty(void* obj) override {
+  void SetProperty(View* obj) override {
     (static_cast<TClass*>(obj)->*Set)(std::move(value_));
   }
 
@@ -71,7 +74,7 @@ class ClassPropertyValueSetter : public PropertySetterBase {
   ClassPropertyValueSetter& operator=(const ClassPropertyValueSetter&) = delete;
   ~ClassPropertyValueSetter() override = default;
 
-  void SetProperty(void* obj) override {
+  void SetProperty(View* obj) override {
     static_cast<TClass*>(obj)->SetProperty(property_, value_);
   }
 
@@ -93,7 +96,7 @@ class ClassPropertyMoveSetter : public PropertySetterBase {
   ClassPropertyMoveSetter& operator=(const ClassPropertyMoveSetter&) = delete;
   ~ClassPropertyMoveSetter() override = default;
 
-  void SetProperty(void* obj) override {
+  void SetProperty(View* obj) override {
     static_cast<TClass*>(obj)->SetProperty(property_, std::move(value_));
   }
 
@@ -102,17 +105,43 @@ class ClassPropertyMoveSetter : public PropertySetterBase {
   TValue value_;
 };
 
-template <typename TClass, typename TSig, TSig Set>
+template <typename TClass, typename TValue>
+class ClassPropertyUniquePtrSetter : public PropertySetterBase {
+ public:
+  ClassPropertyUniquePtrSetter(const ui::ClassProperty<TValue*>* property,
+                               std::unique_ptr<TValue> value)
+      : property_(property), value_(std::move(value)) {}
+  ClassPropertyUniquePtrSetter(const ClassPropertyUniquePtrSetter&) = delete;
+  ClassPropertyUniquePtrSetter& operator=(const ClassPropertyUniquePtrSetter&) =
+      delete;
+  ~ClassPropertyUniquePtrSetter() override = default;
+
+  void SetProperty(View* obj) override {
+    static_cast<TClass*>(obj)->SetProperty(property_, std::move(value_));
+  }
+
+ private:
+  const ui::ClassProperty<TValue*>* property_;
+  std::unique_ptr<TValue> value_;
+};
+
+template <typename TClass, typename TSig, TSig Set, typename... Args>
 class ClassMethodCaller : public PropertySetterBase {
  public:
-  ClassMethodCaller() = default;
+  explicit ClassMethodCaller(Args... args)
+      : args_(std::make_tuple<Args...>(std::forward<Args>(args)...)) {}
   ClassMethodCaller(const ClassMethodCaller&) = delete;
   ClassMethodCaller& operator=(const ClassMethodCaller&) = delete;
   ~ClassMethodCaller() override = default;
 
-  void SetProperty(void* obj) override { (static_cast<TClass*>(obj)->*Set)(); }
+  void SetProperty(View* obj) override {
+    base::apply(
+        Set, std::tuple_cat(std::make_tuple(static_cast<TClass*>(obj)), args_));
+  }
 
  private:
+  using Parameters = std::tuple<Args...>;
+  Parameters args_;
 };
 
 class VIEWS_EXPORT ViewBuilderCore {
@@ -122,15 +151,19 @@ class VIEWS_EXPORT ViewBuilderCore {
   ViewBuilderCore& operator=(ViewBuilderCore&&);
   virtual ~ViewBuilderCore();
 
-  std::unique_ptr<View> Build();
+  std::unique_ptr<View> Build() && WARN_UNUSED_RESULT;
+  virtual std::unique_ptr<ViewBuilderCore> Release() WARN_UNUSED_RESULT = 0;
 
  protected:
-  using ChildList = std::vector<std::reference_wrapper<ViewBuilderCore>>;
+  // Vector of child view builders. If the optional index is included it will be
+  // passed to View::AddChildViewAt().
+  using ChildList = std::vector<
+      std::pair<std::unique_ptr<ViewBuilderCore>, absl::optional<size_t>>>;
   using PropertyList = std::vector<std::unique_ptr<PropertySetterBase>>;
 
   void AddPropertySetter(std::unique_ptr<PropertySetterBase> setter);
-  virtual std::unique_ptr<View> DoBuild() = 0;
   void CreateChildren(View* parent);
+  virtual std::unique_ptr<View> DoBuild() = 0;
   void SetProperties(View* view);
 
   ChildList children_;
@@ -140,18 +173,18 @@ class VIEWS_EXPORT ViewBuilderCore {
 template <typename TClass, typename TValue, typename TSig, TSig Set>
 class ViewBuilderSetter : public PropertySetterBase {
  public:
-  explicit ViewBuilderSetter(std::reference_wrapper<ViewBuilderCore> builder)
+  explicit ViewBuilderSetter(std::unique_ptr<ViewBuilderCore> builder)
       : builder_(std::move(builder)) {}
   ViewBuilderSetter(const ViewBuilderSetter&) = delete;
   ViewBuilderSetter& operator=(const ViewBuilderSetter&) = delete;
   ~ViewBuilderSetter() override = default;
 
-  void SetProperty(void* obj) override {
-    (static_cast<TClass*>(obj)->*Set)(builder_.get().Build());
+  void SetProperty(View* obj) override {
+    (static_cast<TClass*>(obj)->*Set)(std::move(*builder_).Build());
   }
 
  private:
-  std::reference_wrapper<ViewBuilderCore> builder_;
+  std::unique_ptr<ViewBuilderCore> builder_;
 };
 
 }  // namespace internal

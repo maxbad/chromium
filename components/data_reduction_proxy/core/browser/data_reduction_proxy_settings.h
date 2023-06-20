@@ -8,12 +8,10 @@
 #include <stdint.h>
 
 #include <memory>
-#include <vector>
 
 #include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
-#include "base/macros.h"
 #include "base/observer_list.h"
 #include "base/threading/thread_checker.h"
 #include "components/data_reduction_proxy/core/browser/data_reduction_proxy_compression_stats.h"
@@ -71,6 +69,11 @@ class DataReductionProxySettings {
       base::RepeatingCallback<bool(base::StringPiece, base::StringPiece)>;
 
   explicit DataReductionProxySettings(bool is_off_the_record_profile);
+
+  DataReductionProxySettings(const DataReductionProxySettings&) = delete;
+  DataReductionProxySettings& operator=(const DataReductionProxySettings&) =
+      delete;
+
   virtual ~DataReductionProxySettings();
 
   // Initializes the Data Reduction Proxy with the profile prefs. The caller
@@ -167,8 +170,6 @@ class DataReductionProxySettings {
     return data_reduction_proxy_service_.get();
   }
 
-  bool is_initialized() const { return !!prefs_; }
-
  protected:
   void InitPrefMembers();
 
@@ -261,8 +262,6 @@ class DataReductionProxySettings {
   const bool is_off_the_record_profile_;
 
   base::ThreadChecker thread_checker_;
-
-  DISALLOW_COPY_AND_ASSIGN(DataReductionProxySettings);
 };
 
 }  // namespace data_reduction_proxy

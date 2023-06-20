@@ -186,7 +186,7 @@ void PasswordGenerationPopupViewViews::Hide() {
 }
 
 void PasswordGenerationPopupViewViews::UpdateState() {
-  RemoveAllChildViews(true);
+  RemoveAllChildViews();
   password_view_ = nullptr;
   help_label_ = nullptr;
   CreateLayoutAndChildren();
@@ -204,6 +204,9 @@ bool PasswordGenerationPopupViewViews::UpdateBoundsAndRedrawPopup() {
 void PasswordGenerationPopupViewViews::PasswordSelectionUpdated() {
   if (controller_->password_selected())
     NotifyAXSelection(this);
+
+  if (!GetWidget())
+    return;
 
   password_view_->UpdateBackground(controller_->password_selected()
                                        ? GetSelectedBackgroundColor()

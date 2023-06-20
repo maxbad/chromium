@@ -123,7 +123,7 @@ void WebGPUTest::Initialize(const Options& options) {
     RunPendingTasks();
   }
 
-  DawnProcTable procs = webgpu()->GetProcs();
+  DawnProcTable procs = webgpu()->GetAPIChannel()->GetProcs();
   dawnProcSetProcs(&procs);
 }
 
@@ -181,7 +181,8 @@ wgpu::Device WebGPUTest::GetNewDevice() {
   webgpu()->RequestDeviceAsync(
       adapter_id_, device_properties_,
       base::BindOnce(
-          [](WGPUDevice* result, bool* done, WGPUDevice device) {
+          [](WGPUDevice* result, bool* done, WGPUDevice device,
+             const WGPUSupportedLimits*, const char*) {
             *result = device;
             *done = true;
           },
@@ -282,7 +283,8 @@ TEST_F(WebGPUTest, RequestDeviceAfterContextLost) {
   bool called = false;
   webgpu()->RequestDeviceAsync(GetAdapterId(), GetDeviceProperties(),
                                base::BindOnce(
-                                   [](bool* called, WGPUDevice device) {
+                                   [](bool* called, WGPUDevice device,
+                                      const WGPUSupportedLimits*, const char*) {
                                      EXPECT_EQ(device, nullptr);
                                      *called = true;
                                    },
@@ -291,7 +293,7 @@ TEST_F(WebGPUTest, RequestDeviceAfterContextLost) {
   EXPECT_TRUE(called);
 }
 
-TEST_F(WebGPUTest, RequestDeviceWitUnsupportedExtension) {
+TEST_F(WebGPUTest, RequestDeviceWitUnsupportedFeature) {
   if (!WebGPUSupported()) {
     LOG(ERROR) << "Test skipped because WebGPU isn't supported";
     return;
@@ -299,20 +301,18 @@ TEST_F(WebGPUTest, RequestDeviceWitUnsupportedExtension) {
 
   Initialize(WebGPUTest::Options());
 
-  // Create device with unsupported extensions, expect to fail to create and
+  // Create device with unsupported features, expect to fail to create and
   // return nullptr
-  GetDecoder()->MockUnsupportedExtensionForTest(true);
+  WGPUDeviceProperties unsupported_device_properties = {};
+  unsupported_device_properties.invalidFeature = true;
   WGPUDevice device = nullptr;
   bool done = false;
 
-  int lost_count = 0;
-  webgpu()->SetLostContextCallback(base::BindOnce(&CountCallback, &lost_count));
-  EXPECT_EQ(0, lost_count);
-
   webgpu()->RequestDeviceAsync(
-      GetAdapterId(), GetDeviceProperties(),
+      GetAdapterId(), unsupported_device_properties,
       base::BindOnce(
-          [](WGPUDevice* result, bool* done, WGPUDevice device) {
+          [](WGPUDevice* result, bool* done, WGPUDevice device,
+             const WGPUSupportedLimits*, const char*) {
             *result = device;
             *done = true;
           },
@@ -323,9 +323,8 @@ TEST_F(WebGPUTest, RequestDeviceWitUnsupportedExtension) {
   }
   EXPECT_EQ(device, nullptr);
 
-  // Create device again with supported extensions, expect success and not
+  // Create device again with supported features, expect success and not
   // blocked by the last failure
-  GetDecoder()->MockUnsupportedExtensionForTest(false);
   GetNewDevice();
 }
 

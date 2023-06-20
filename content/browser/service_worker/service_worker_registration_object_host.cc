@@ -24,8 +24,8 @@ namespace content {
 
 namespace {
 
-constexpr base::TimeDelta kSelfUpdateDelay = base::TimeDelta::FromSeconds(30);
-constexpr base::TimeDelta kMaxSelfUpdateDelay = base::TimeDelta::FromMinutes(3);
+constexpr base::TimeDelta kSelfUpdateDelay = base::Seconds(30);
+constexpr base::TimeDelta kMaxSelfUpdateDelay = base::Minutes(3);
 
 // Returns an object info to send over Mojo. The info must be sent immediately.
 // See ServiceWorkerObjectHost::CreateCompleteObjectInfoToSend() for details.
@@ -47,7 +47,7 @@ void ExecuteUpdate(base::WeakPtr<ServiceWorkerContextCore> context,
                        outside_fetch_client_settings_object,
                    ServiceWorkerContextCore::UpdateCallback callback,
                    blink::ServiceWorkerStatusCode status) {
-  DCHECK_CURRENTLY_ON(ServiceWorkerContext::GetCoreThreadId());
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   if (status != blink::ServiceWorkerStatusCode::kOk) {
     // The delay was already very long and update() is rejected immediately.
@@ -65,7 +65,7 @@ void ExecuteUpdate(base::WeakPtr<ServiceWorkerContextCore> context,
     return;
   }
 
-  ServiceWorkerRegistration* registration =
+  scoped_refptr<ServiceWorkerRegistration> registration =
       context->GetLiveRegistration(registration_id);
   if (!registration) {
     // The service worker is no longer running, so update() won't be rejected.
@@ -77,7 +77,7 @@ void ExecuteUpdate(base::WeakPtr<ServiceWorkerContextCore> context,
   }
 
   context->UpdateServiceWorker(
-      registration, force_bypass_cache, skip_script_comparison,
+      registration.get(), force_bypass_cache, skip_script_comparison,
       std::move(outside_fetch_client_settings_object), std::move(callback));
 }
 
@@ -243,11 +243,11 @@ void ServiceWorkerRegistrationObjectHost::DelayUpdate(
     return;
   }
 
-  BrowserThread::GetTaskRunnerForThread(ServiceWorkerContext::GetCoreThreadId())
-      ->PostDelayedTask(FROM_HERE,
-                        base::BindOnce(std::move(update_function),
-                                       blink::ServiceWorkerStatusCode::kOk),
-                        delay);
+  GetUIThreadTaskRunner({})->PostDelayedTask(
+      FROM_HERE,
+      base::BindOnce(std::move(update_function),
+                     blink::ServiceWorkerStatusCode::kOk),
+      delay);
 }
 
 void ServiceWorkerRegistrationObjectHost::Unregister(

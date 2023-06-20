@@ -4,71 +4,222 @@
 
 #include "components/segmentation_platform/internal/database/metadata_utils.h"
 
+#include "base/metrics/metrics_hashes.h"
 #include "base/notreached.h"
+#include "base/time/time.h"
+#include "components/optimization_guide/proto/models.pb.h"
+#include "components/segmentation_platform/internal/database/signal_key.h"
+#include "components/segmentation_platform/internal/proto/aggregation.pb.h"
+#include "components/segmentation_platform/internal/proto/model_metadata.pb.h"
+#include "components/segmentation_platform/internal/proto/model_prediction.pb.h"
+#include "components/segmentation_platform/internal/proto/types.pb.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace segmentation_platform {
 namespace metadata_utils {
-namespace {
-// Used to determine if the model was executed too recently to run again.
-// TODO(shaktisahu): Make this finch configurable.
-constexpr base::TimeDelta kFreshResultsDurationThreshold =
-    base::TimeDelta::FromHours(24);
 
+namespace {
+uint64_t GetExpectedTensorLength(const proto::Feature& feature) {
+  switch (feature.aggregation()) {
+    case proto::Aggregation::COUNT:
+    case proto::Aggregation::COUNT_BOOLEAN:
+    case proto::Aggregation::BUCKETED_COUNT_BOOLEAN_TRUE_COUNT:
+    case proto::Aggregation::SUM:
+    case proto::Aggregation::SUM_BOOLEAN:
+    case proto::Aggregation::BUCKETED_SUM_BOOLEAN_TRUE_COUNT:
+      return feature.bucket_count() == 0 ? 0 : 1;
+    case proto::Aggregation::BUCKETED_COUNT:
+    case proto::Aggregation::BUCKETED_COUNT_BOOLEAN:
+    case proto::Aggregation::BUCKETED_CUMULATIVE_COUNT:
+    case proto::Aggregation::BUCKETED_SUM:
+    case proto::Aggregation::BUCKETED_SUM_BOOLEAN:
+    case proto::Aggregation::BUCKETED_CUMULATIVE_SUM:
+      return feature.bucket_count();
+    case proto::Aggregation::UNKNOWN:
+      NOTREACHED();
+      return 0;
+  }
+}
 }  // namespace
 
-bool HasExpiredOrUnavailableResult(const proto::SegmentInfo& segment_info) {
+ValidationResult ValidateSegmentInfo(const proto::SegmentInfo& segment_info) {
+  if (segment_info.segment_id() ==
+      optimization_guide::proto::OPTIMIZATION_TARGET_UNKNOWN) {
+    return ValidationResult::kSegmentIDNotFound;
+  }
+
+  if (!segment_info.has_model_metadata())
+    return ValidationResult::kMetadataNotFound;
+
+  return ValidateMetadata(segment_info.model_metadata());
+}
+
+ValidationResult ValidateMetadata(
+    const proto::SegmentationModelMetadata& model_metadata) {
+  if (model_metadata.time_unit() == proto::TimeUnit::UNKNOWN_TIME_UNIT)
+    return ValidationResult::kTimeUnitInvald;
+
+  return ValidationResult::kValidationSuccess;
+}
+
+ValidationResult ValidateMetadataFeature(const proto::Feature& feature) {
+  if (feature.type() == proto::SignalType::UNKNOWN_SIGNAL_TYPE)
+    return ValidationResult::kSignalTypeInvalid;
+
+  if ((feature.type() == proto::SignalType::HISTOGRAM_ENUM ||
+       feature.type() == proto::SignalType::HISTOGRAM_VALUE) &&
+      feature.name().empty()) {
+    return ValidationResult::kFeatureNameNotFound;
+  }
+
+  if (feature.name_hash() == 0)
+    return ValidationResult::kFeatureNameHashNotFound;
+
+  if (!feature.name().empty() &&
+      base::HashMetricName(feature.name()) != feature.name_hash()) {
+    return ValidationResult::kFeatureNameHashDoesNotMatchName;
+  }
+
+  if (feature.aggregation() == proto::Aggregation::UNKNOWN)
+    return ValidationResult::kFeatureAggregationNotFound;
+
+  if (GetExpectedTensorLength(feature) != feature.tensor_length())
+    return ValidationResult::kFeatureTensorLengthInvalid;
+
+  return ValidationResult::kValidationSuccess;
+}
+
+ValidationResult ValidateMetadataAndFeatures(
+    const proto::SegmentationModelMetadata& model_metadata) {
+  auto metadata_result = ValidateMetadata(model_metadata);
+  if (metadata_result != ValidationResult::kValidationSuccess)
+    return metadata_result;
+
+  for (int i = 0; i < model_metadata.features_size(); ++i) {
+    auto feature = model_metadata.features(i);
+    auto feature_result = ValidateMetadataFeature(feature);
+    if (feature_result != ValidationResult::kValidationSuccess)
+      return feature_result;
+  }
+
+  return ValidationResult::kValidationSuccess;
+}
+
+ValidationResult ValidateSegmentInfoMetadataAndFeatures(
+    const proto::SegmentInfo& segment_info) {
+  auto segment_info_result = ValidateSegmentInfo(segment_info);
+  if (segment_info_result != ValidationResult::kValidationSuccess)
+    return segment_info_result;
+
+  return ValidateMetadataAndFeatures(segment_info.model_metadata());
+}
+
+void SetFeatureNameHashesFromName(
+    proto::SegmentationModelMetadata* model_metadata) {
+  for (int i = 0; i < model_metadata->features_size(); ++i) {
+    proto::Feature* feature = model_metadata->mutable_features(i);
+    feature->set_name_hash(base::HashMetricName(feature->name()));
+  }
+}
+
+bool HasExpiredOrUnavailableResult(const proto::SegmentInfo& segment_info,
+                                   const base::Time& now) {
   if (!segment_info.has_prediction_result())
     return true;
 
-  base::Time last_result_timestamp =
-      base::Time::FromDeltaSinceWindowsEpoch(base::TimeDelta::FromMicroseconds(
-          segment_info.prediction_result().timestamp_us()));
+  base::Time last_result_timestamp = base::Time::FromDeltaSinceWindowsEpoch(
+      base::Microseconds(segment_info.prediction_result().timestamp_us()));
 
-  DCHECK(segment_info.has_model_metadata());
   base::TimeDelta result_ttl =
       segment_info.model_metadata().result_time_to_live() *
       GetTimeUnit(segment_info.model_metadata());
 
-  return last_result_timestamp + result_ttl < base::Time::Now();
+  return last_result_timestamp + result_ttl < now;
 }
 
-bool HasFreshResults(const proto::SegmentInfo& segment_info) {
+bool HasFreshResults(const proto::SegmentInfo& segment_info,
+                     const base::Time& now) {
   if (!segment_info.has_prediction_result())
     return false;
 
-  base::Time last_result_timestamp =
-      base::Time::FromDeltaSinceWindowsEpoch(base::TimeDelta::FromMicroseconds(
-          segment_info.prediction_result().timestamp_us()));
+  const proto::SegmentationModelMetadata& metadata =
+      segment_info.model_metadata();
 
-  return base::Time::Now() - last_result_timestamp <
-         kFreshResultsDurationThreshold;
+  base::Time last_result_timestamp = base::Time::FromDeltaSinceWindowsEpoch(
+      base::Microseconds(segment_info.prediction_result().timestamp_us()));
+  base::TimeDelta result_ttl =
+      metadata.result_time_to_live() * GetTimeUnit(metadata);
+
+  return now - last_result_timestamp < result_ttl;
 }
 
 base::TimeDelta GetTimeUnit(
     const proto::SegmentationModelMetadata& model_metadata) {
-  DCHECK(model_metadata.has_time_unit());
   proto::TimeUnit time_unit = model_metadata.time_unit();
   switch (time_unit) {
     case proto::TimeUnit::YEAR:
-      return base::TimeDelta::FromDays(1) * 365;
+      return base::Days(365);
     case proto::TimeUnit::MONTH:
-      return base::TimeDelta::FromDays(1) * 30;
+      return base::Days(30);
     case proto::TimeUnit::WEEK:
-      return base::TimeDelta::FromDays(1) * 7;
+      return base::Days(7);
     case proto::TimeUnit::DAY:
-      return base::TimeDelta::FromDays(1);
+      return base::Days(1);
     case proto::TimeUnit::HOUR:
-      return base::TimeDelta::FromHours(1);
+      return base::Hours(1);
     case proto::TimeUnit::MINUTE:
-      return base::TimeDelta::FromMinutes(1);
+      return base::Minutes(1);
     case proto::TimeUnit::SECOND:
-      return base::TimeDelta::FromSeconds(1);
+      return base::Seconds(1);
     case proto::TimeUnit::UNKNOWN_TIME_UNIT:
       FALLTHROUGH;
     default:
       NOTREACHED();
       return base::TimeDelta();
   }
+}
+
+SignalKey::Kind SignalTypeToSignalKind(proto::SignalType signal_type) {
+  switch (signal_type) {
+    case proto::SignalType::USER_ACTION:
+      return SignalKey::Kind::USER_ACTION;
+    case proto::SignalType::HISTOGRAM_ENUM:
+      return SignalKey::Kind::HISTOGRAM_ENUM;
+    case proto::SignalType::HISTOGRAM_VALUE:
+      return SignalKey::Kind::HISTOGRAM_VALUE;
+    case proto::SignalType::UNKNOWN_SIGNAL_TYPE:
+      return SignalKey::Kind::UNKNOWN;
+  }
+}
+
+int ConvertToDiscreteScore(const std::string& mapping_key,
+                           float input_score,
+                           const proto::SegmentationModelMetadata& metadata) {
+  auto iter = metadata.discrete_mappings().find(mapping_key);
+  if (iter == metadata.discrete_mappings().end()) {
+    iter =
+        metadata.discrete_mappings().find(metadata.default_discrete_mapping());
+    if (iter == metadata.discrete_mappings().end())
+      return 0;
+  }
+  DCHECK(iter != metadata.discrete_mappings().end());
+
+  const auto& mapping = iter->second;
+
+  // Iterate over the entries and find the largest entry whose min result is
+  // equal to or less than the input.
+  int discrete_result = 0;
+  float largest_score_below_input_score = std::numeric_limits<float>::min();
+  for (int i = 0; i < mapping.entries_size(); i++) {
+    const auto& entry = mapping.entries(i);
+    if (entry.min_result() <= input_score &&
+        entry.min_result() > largest_score_below_input_score) {
+      largest_score_below_input_score = entry.min_result();
+      discrete_result = entry.rank();
+    }
+  }
+
+  return discrete_result;
 }
 
 }  // namespace metadata_utils

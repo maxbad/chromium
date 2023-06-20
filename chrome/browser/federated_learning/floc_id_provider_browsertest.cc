@@ -69,8 +69,22 @@ class CopyingFileOutputStream
   base::File file_;
 };
 
+class FlocIdProviderComputationDisabledBrowserTest
+    : public InProcessBrowserTest {};
+
+IN_PROC_BROWSER_TEST_F(FlocIdProviderComputationDisabledBrowserTest,
+                       NoProvider) {
+  EXPECT_FALSE(FlocIdProviderFactory::GetForProfile(browser()->profile()));
+}
+
 class FlocIdProviderBrowserTest : public InProcessBrowserTest {
  public:
+  FlocIdProviderBrowserTest() {
+    scoped_feature_list_.InitAndEnableFeatureWithParameters(
+        kFederatedLearningOfCohorts,
+        {{"minimum_history_domain_size_required", "1"}});
+  }
+
   void SetUpOnMainThread() override {
     host_resolver()->AddRule("*", "127.0.0.1");
     https_server_.SetSSLConfig(net::EmbeddedTestServer::CERT_TEST_NAMES);
@@ -99,6 +113,8 @@ class FlocIdProviderBrowserTest : public InProcessBrowserTest {
   std::string test_host() const { return "a.test"; }
 
  protected:
+  base::test::ScopedFeatureList scoped_feature_list_;
+
   net::EmbeddedTestServer https_server_{
       net::test_server::EmbeddedTestServer::TYPE_HTTPS};
 };
@@ -108,7 +124,7 @@ IN_PROC_BROWSER_TEST_F(FlocIdProviderBrowserTest, NoProviderInIncognitoMode) {
   ASSERT_TRUE(original_provider);
 
   GURL url = https_server_.GetURL(test_host(), "/title1.html");
-  ui_test_utils::NavigateToURL(CreateIncognitoBrowser(), url);
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(CreateIncognitoBrowser(), url));
 
   ASSERT_TRUE(browser()->profile()->HasPrimaryOTRProfile());
 
@@ -181,12 +197,6 @@ class MockFlocEventLogger : public FlocEventLogger {
 class FlocIdProviderSortingLshUninitializedBrowserTest
     : public FlocIdProviderBrowserTest {
  public:
-  FlocIdProviderSortingLshUninitializedBrowserTest() {
-    scoped_feature_list_.InitAndEnableFeatureWithParameters(
-        kFederatedLearningOfCohorts,
-        {{"minimum_history_domain_size_required", "1"}});
-  }
-
   void SetUpOnMainThread() override {
     FlocIdProviderBrowserTest::SetUpOnMainThread();
     ConfigureReplacementHostAndPortForRemotePermissionService();
@@ -495,8 +505,6 @@ class FlocIdProviderSortingLshUninitializedBrowserTest
         setting);
   }
 
-  base::test::ScopedFeatureList scoped_feature_list_;
-
   // Owned by the floc id provider.
   MockFlocEventLogger* floc_event_logger_ = nullptr;
 
@@ -514,6 +522,7 @@ IN_PROC_BROWSER_TEST_F(FlocIdProviderSortingLshUninitializedBrowserTest,
 
   // Expect that the final id is invalid because it was blocked.
   EXPECT_FALSE(GetFlocId().IsValid());
+  EXPECT_EQ(FlocId::Status::kInvalidBlocked, GetFlocId().status());
 
   EXPECT_EQ(1u, floc_event_logger_->NumberOfLogAttemptsQueued());
   floc_event_logger_->HandleLastRequest();
@@ -537,6 +546,7 @@ IN_PROC_BROWSER_TEST_F(FlocIdProviderSortingLshUninitializedBrowserTest,
   // Expect that the final id is invalid due to unexpected sorting-lsh file
   // format.
   EXPECT_FALSE(GetFlocId().IsValid());
+  EXPECT_EQ(FlocId::Status::kInvalidBlocked, GetFlocId().status());
 
   EXPECT_EQ(1u, floc_event_logger_->NumberOfLogAttemptsQueued());
   floc_event_logger_->HandleLastRequest();
@@ -598,7 +608,7 @@ IN_PROC_BROWSER_TEST_F(FlocIdProviderSortingLshInitializedBrowserTest,
   EXPECT_EQ(0u, entries.size());
 
   GURL main_frame_url = https_server_.GetURL(test_host(), "/title1.html");
-  ui_test_utils::NavigateToURL(browser(), main_frame_url);
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), main_frame_url));
 
   entries =
       ukm_recorder.GetEntriesByName(ukm::builders::FlocPageLoad::kEntryName);
@@ -621,6 +631,7 @@ IN_PROC_BROWSER_TEST_F(FlocIdProviderSortingLshInitializedBrowserTest,
 
   // The floc has been invalidated. Expect no additional event logging.
   EXPECT_FALSE(GetFlocId().IsValid());
+  EXPECT_EQ(FlocId::Status::kInvalidReset, GetFlocId().status());
   EXPECT_EQ(1u, floc_event_logger_->NumberOfLogAttemptsQueued());
 }
 
@@ -661,8 +672,8 @@ IN_PROC_BROWSER_TEST_F(FlocIdProviderSortingLshInitializedBrowserTest,
   ExpireHistoryBefore(base::Time::Now());
   FinishOutstandingAsyncQueries();
 
-  ui_test_utils::NavigateToURL(
-      browser(), https_server_.GetURL(test_host(), "/title1.html"));
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(
+      browser(), https_server_.GetURL(test_host(), "/title1.html")));
 
   // Promise rejected as the floc is not yet available.
   EXPECT_EQ("rejected", InvokeInterestCohortJsApi(web_contents()));
@@ -672,8 +683,8 @@ IN_PROC_BROWSER_TEST_F(FlocIdProviderSortingLshInitializedBrowserTest,
                        InterestCohortAPI_MainFrame) {
   EXPECT_TRUE(GetFlocId().IsValid());
 
-  ui_test_utils::NavigateToURL(
-      browser(), https_server_.GetURL(test_host(), "/title1.html"));
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(
+      browser(), https_server_.GetURL(test_host(), "/title1.html")));
 
   // Promise resolved with the expected dictionary object.
   EXPECT_EQ(base::StrCat({"{\"id\":\"0\",\"version\":\"chrome.1.9\"}"}),
@@ -684,8 +695,8 @@ IN_PROC_BROWSER_TEST_F(FlocIdProviderSortingLshInitializedBrowserTest,
                        InterestCohortAPI_SameOriginSubframe) {
   EXPECT_TRUE(GetFlocId().IsValid());
 
-  ui_test_utils::NavigateToURL(
-      browser(), https_server_.GetURL(test_host(), "/iframe_blank.html"));
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(
+      browser(), https_server_.GetURL(test_host(), "/iframe_blank.html")));
 
   content::NavigateIframeToURL(
       web_contents(),
@@ -703,8 +714,8 @@ IN_PROC_BROWSER_TEST_F(FlocIdProviderSortingLshInitializedBrowserTest,
                        InterestCohortAPI_CrossOriginSubframe) {
   EXPECT_TRUE(GetFlocId().IsValid());
 
-  ui_test_utils::NavigateToURL(
-      browser(), https_server_.GetURL(test_host(), "/iframe_blank.html"));
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(
+      browser(), https_server_.GetURL(test_host(), "/iframe_blank.html")));
 
   content::NavigateIframeToURL(web_contents(),
                                /*iframe_id=*/"test",
@@ -722,8 +733,8 @@ IN_PROC_BROWSER_TEST_F(FlocIdProviderSortingLshInitializedBrowserTest,
                        InterestCohortAPI_CookiesPermissionDisallow) {
   EXPECT_TRUE(GetFlocId().IsValid());
 
-  ui_test_utils::NavigateToURL(
-      browser(), https_server_.GetURL(test_host(), "/iframe_blank.html"));
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(
+      browser(), https_server_.GetURL(test_host(), "/iframe_blank.html")));
 
   content::NavigateIframeToURL(web_contents(),
                                /*iframe_id=*/"test",

@@ -13,7 +13,6 @@
 #include "base/callback.h"
 #include "base/macros.h"
 #include "remoting/protocol/file_transfer_helpers.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace base {
 class FilePath;
@@ -102,12 +101,14 @@ class FileOperations {
   };
 
   FileOperations() = default;
+
+  FileOperations(const FileOperations&) = delete;
+  FileOperations& operator=(const FileOperations&) = delete;
+
   virtual ~FileOperations() = default;
 
   virtual std::unique_ptr<Reader> CreateReader() = 0;
   virtual std::unique_ptr<Writer> CreateWriter() = 0;
-
-  DISALLOW_COPY_AND_ASSIGN(FileOperations);
 };
 }  // namespace remoting
 

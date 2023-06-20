@@ -6,6 +6,7 @@
 
 #include "ash/constants/ash_features.h"
 #include "ash/constants/ash_pref_names.h"
+#include "ash/public/cpp/quick_answers/quick_answers_state.h"
 #include "base/feature_list.h"
 #include "base/no_destructor.h"
 #include "base/strings/utf_string_conversions.h"
@@ -165,7 +166,7 @@ bool IsAssistivePersonalInfoAllowed() {
 }
 
 bool IsPredictiveWritingAllowed() {
-  return base::FeatureList::IsEnabled(::chromeos::features::kAssistMultiWord);
+  return chromeos::features::IsAssistiveMultiWordEnabled();
 }
 
 // TODO(crbug/1113611): As Smart Inputs page is renamed to Suggestions.
@@ -222,6 +223,12 @@ void AddInputMethodOptionsStrings(content::WebUIDataSource* html_source) {
        IDS_SETTINGS_INPUT_METHOD_OPTIONS_AUTO_CORRECTION},
       {"inputMethodOptionsXkbLayout",
        IDS_SETTINGS_INPUT_METHOD_OPTIONS_XKB_LAYOUT},
+      {"inputMethodOptionsZhuyinKeyboardLayout",
+       IDS_SETTINGS_INPUT_METHOD_OPTIONS_ZHUYIN_KEYBOARD_LAYOUT},
+      {"inputMethodOptionsZhuyinSelectKeys",
+       IDS_SETTINGS_INPUT_METHOD_OPTIONS_ZHUYIN_SELECT_KEYS},
+      {"inputMethodOptionsZhuyinPageSize",
+       IDS_SETTINGS_INPUT_METHOD_OPTIONS_ZHUYIN_PAGE_SIZE},
       {"inputMethodOptionsEditUserDict",
        IDS_SETTINGS_INPUT_METHOD_OPTIONS_EDIT_USER_DICT},
       {"inputMethodOptionsPinyinChinesePunctuation",
@@ -244,6 +251,16 @@ void AddInputMethodOptionsStrings(content::WebUIDataSource* html_source) {
        IDS_SETTINGS_INPUT_METHOD_OPTIONS_AUTO_CORRECTION_AGGRESSIVE},
       {"inputMethodOptionsUsKeyboard",
        IDS_SETTINGS_INPUT_METHOD_OPTIONS_KEYBOARD_US},
+      {"inputMethodOptionsZhuyinLayoutDefault",
+       IDS_SETTINGS_INPUT_METHOD_OPTIONS_ZHUYIN_LAYOUT_DEFAULT},
+      {"inputMethodOptionsZhuyinLayoutIBM",
+       IDS_SETTINGS_INPUT_METHOD_OPTIONS_ZHUYIN_LAYOUT_IBM},
+      {"inputMethodOptionsZhuyinLayoutEten",
+       IDS_SETTINGS_INPUT_METHOD_OPTIONS_ZHUYIN_LAYOUT_ETEN},
+      {"inputMethodOptionsKoreanLayout",
+       IDS_SETTINGS_INPUT_METHOD_OPTIONS_KOREAN_LAYOUT},
+      {"inputMethodOptionsKoreanSyllableInput",
+       IDS_SETTINGS_INPUT_METHOD_OPTIONS_KOREAN_SYLLABLE_INPUT},
       {"inputMethodOptionsDvorakKeyboard",
        IDS_SETTINGS_INPUT_METHOD_OPTIONS_KEYBOARD_DVORAK},
       {"inputMethodOptionsColemakKeyboard",
@@ -263,8 +280,6 @@ void AddLanguagesPageStringsV2(content::WebUIDataSource* html_source) {
        IDS_OS_SETTINGS_LANGUAGES_LANGUAGES_PREFERENCE_TITLE},
       {"websiteLanguagesTitle",
        IDS_OS_SETTINGS_LANGUAGES_WEBSITE_LANGUAGES_TITLE},
-      {"translateTargetLabel",
-       IDS_OS_SETTINGS_LANGUAGES_TRANSLATE_TARGET_LABEL},
       {"offerToTranslateThisLanguage",
        IDS_OS_SETTINGS_LANGUAGES_OFFER_TO_TRANSLATE_THIS_LANGUAGE},
       {"offerTranslationLabel",
@@ -301,6 +316,13 @@ void AddLanguagesPageStringsV2(content::WebUIDataSource* html_source) {
           IDS_OS_SETTINGS_LANGUAGES_WEBSITE_LANGUAGES_DESCRIPTION,
           base::ASCIIToUTF16(chrome::kLanguageSettingsLearnMoreUrl)));
   html_source->AddString(
+      "translateTargetLabel",
+      l10n_util::GetStringUTF16(
+          ash::QuickAnswersState::Get() &&
+                  ash::QuickAnswersState::Get()->is_eligible()
+              ? IDS_OS_SETTINGS_LANGUAGES_TRANSLATE_TARGET_LABEL_WITH_QUICK_ANSWERS
+              : IDS_OS_SETTINGS_LANGUAGES_TRANSLATE_TARGET_LABEL));
+  html_source->AddString(
       "changeDeviceLanguageDialogDescription",
       l10n_util::GetStringFUTF16(
           IDS_OS_SETTINGS_LANGUAGES_CHANGE_DEVICE_LANGUAGE_DIALOG_DESCRIPTION,
@@ -330,6 +352,10 @@ void AddInputPageStringsV2(content::WebUIDataSource* html_source) {
       {"inputMethodNotAllowed",
        IDS_OS_SETTINGS_LANGUAGES_INPUT_METHOD_NOT_ALLOWED},
       {"spellCheckTitle", IDS_OS_SETTINGS_LANGUAGES_SPELL_CHECK_TITLE},
+      {"spellAndGrammarCheckTitle",
+       IDS_OS_SETTINGS_LANGUAGES_SPELL_AND_GRAMMAR_CHECK_TITLE},
+      {"spellAndGrammarCheckDescription",
+       IDS_OS_SETTINGS_LANGUAGES_SPELL_AND_GRAMMAR_CHECK_DESCRIPTION},
       {"spellCheckEnhancedLabel",
        IDS_OS_SETTINGS_LANGUAGES_SPELL_CHECK_ENHANCED_LABEL},
       {"spellCheckLanguagesListTitle",
@@ -430,6 +456,11 @@ void LanguagesSection::AddLoadTimeData(content::WebUIDataSource* html_source) {
       {"noSearchResults", IDS_SEARCH_NO_RESULTS},
   };
   html_source->AddLocalizedStrings(kLocalizedStrings);
+  html_source->AddString(
+      "languagePacksNotice",
+      l10n_util::GetStringFUTF16(
+          IDS_SETTINGS_LANGUAGES_LANGUAGE_PACKS_NOTICE,
+          base::ASCIIToUTF16(chrome::kLanguagePacksLearnMoreURL)));
   AddSmartInputsStrings(html_source, IsEmojiSuggestionAllowed());
   AddInputMethodOptionsStrings(html_source);
   AddLanguagesPageStringsV2(html_source);
@@ -440,6 +471,12 @@ void LanguagesSection::AddLoadTimeData(content::WebUIDataSource* html_source) {
                               ::chromeos::features::kImeOptionsInSettings));
   html_source->AddBoolean("enableLanguageSettingsV2Update2",
                           IsLanguageSettingsV2Update2Enabled());
+  html_source->AddBoolean("onDeviceGrammarCheckEnabled",
+                          base::FeatureList::IsEnabled(
+                              ::chromeos::features::kOnDeviceGrammarCheck));
+  html_source->AddBoolean("languagePacksHandwritingEnabled",
+                          base::FeatureList::IsEnabled(
+                              ::chromeos::features::kLanguagePacksHandwriting));
 }
 
 void LanguagesSection::AddHandlers(content::WebUI* web_ui) {

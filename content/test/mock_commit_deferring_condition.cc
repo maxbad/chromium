@@ -42,10 +42,22 @@ bool MockCommitDeferringConditionWrapper::IsDestroyed() const {
   return !static_cast<bool>(weak_condition_);
 }
 
+void MockCommitDeferringConditionWrapper::WaitUntilInvoked() {
+  if (WasInvoked())
+    return;
+  base::RunLoop loop;
+  invoked_closure_ = loop.QuitClosure();
+  loop.Run();
+}
+
 void MockCommitDeferringConditionWrapper::WillCommitNavigationCalled(
     base::OnceClosure resume_closure) {
   did_call_will_commit_navigation_ = true;
   resume_closure_ = std::move(resume_closure);
+  if (invoked_closure_) {
+    base::SequencedTaskRunnerHandle::Get()->PostTask(
+        FROM_HERE, std::move(invoked_closure_));
+  }
 }
 
 MockCommitDeferringCondition::MockCommitDeferringCondition(
@@ -60,7 +72,7 @@ CommitDeferringCondition::Result
 MockCommitDeferringCondition::WillCommitNavigation(base::OnceClosure resume) {
   if (on_will_commit_navigation_)
     std::move(on_will_commit_navigation_).Run(std::move(resume));
-  return is_ready_to_commit_ ? kProceed : kDefer;
+  return is_ready_to_commit_ ? Result::kProceed : Result::kDefer;
 }
 
 base::WeakPtr<MockCommitDeferringCondition>
@@ -69,17 +81,23 @@ MockCommitDeferringCondition::AsWeakPtr() {
 }
 
 MockCommitDeferringConditionInstaller::MockCommitDeferringConditionInstaller(
-    WebContents* web_contents,
     std::unique_ptr<MockCommitDeferringCondition> condition)
-    : WebContentsObserver(web_contents), condition_(std::move(condition)) {}
+    : generator_id_(
+          CommitDeferringConditionRunner::InstallConditionGeneratorForTesting(
+              base::BindRepeating(
+                  &MockCommitDeferringConditionInstaller::Install,
+                  base::Unretained(this)))),
+      condition_(std::move(condition)) {}
 
 MockCommitDeferringConditionInstaller::
-    ~MockCommitDeferringConditionInstaller() = default;
+    ~MockCommitDeferringConditionInstaller() {
+  CommitDeferringConditionRunner::UninstallConditionGeneratorForTesting(
+      generator_id_);
+}
 
-void MockCommitDeferringConditionInstaller::DidStartNavigation(
-    NavigationHandle* handle) {
-  static_cast<NavigationRequest*>(handle)
-      ->RegisterCommitDeferringConditionForTesting(std::move(condition_));
+std::unique_ptr<CommitDeferringCondition>
+MockCommitDeferringConditionInstaller::Install() {
+  return std::move(condition_);
 }
 
 }  //  namespace content

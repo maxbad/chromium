@@ -5,7 +5,7 @@
 #ifndef GPU_VULKAN_VULKAN_IMAGE_H_
 #define GPU_VULKAN_VULKAN_IMAGE_H_
 
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan_core.h>
 
 #include <array>
 #include <vector>
@@ -68,8 +68,9 @@ class COMPONENT_EXPORT(VULKAN) VulkanImage {
       const gfx::Size& size,
       VkFormat format,
       VkImageUsageFlags usage,
-      VkImageCreateFlags flags = 0,
-      VkImageTiling image_tiling = VK_IMAGE_TILING_OPTIMAL);
+      VkImageCreateFlags flags,
+      VkImageTiling image_tiling,
+      uint32_t queue_family_index);
 
   static std::unique_ptr<VulkanImage> Create(
       VulkanDeviceQueue* device_queue,
@@ -164,7 +165,8 @@ class COMPONENT_EXPORT(VULKAN) VulkanImage {
       VkFormat format,
       VkImageUsageFlags usage,
       VkImageCreateFlags flags,
-      VkImageTiling image_tiling);
+      VkImageTiling image_tiling,
+      uint32_t queue_family_index);
 
 #if defined(OS_LINUX) || defined(OS_CHROMEOS)
   bool InitializeWithExternalMemoryAndModifiers(VulkanDeviceQueue* device_queue,

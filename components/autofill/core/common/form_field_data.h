@@ -56,17 +56,29 @@ enum FieldPropertiesFlags : uint32_t {
 // values.
 using FieldPropertiesMask = std::underlying_type_t<FieldPropertiesFlags>;
 
-// Stores information about a field in a form.
+// For the HTML snippet |<option value="US">United States</option>|, the
+// value is "US" and the contents is "United States".
+struct SelectOption {
+  std::u16string value;
+  std::u16string content;
+};
+
+// Stores information about a field in a form. Read more about forms and fields
+// at FormData.
 struct FormFieldData {
   using CheckStatus = mojom::FormFieldData_CheckStatus;
   using RoleAttribute = mojom::FormFieldData_RoleAttribute;
   using LabelSource = mojom::FormFieldData_LabelSource;
 
+  // TODO(crbug/1211834): This comparator is deprecated.
   // Less-than relation for STL containers. Compares only members needed to
   // uniquely identify a field.
   struct IdentityComparator {
     bool operator()(const FormFieldData& a, const FormFieldData& b) const;
   };
+
+  // Returns true if all members of fields |a| and |b| are identical.
+  static bool DeepEqual(const FormFieldData& a, const FormFieldData& b);
 
   FormFieldData();
   FormFieldData(const FormFieldData&);
@@ -79,16 +91,26 @@ struct FormFieldData {
   // Must not be leaked to renderer process. See FieldGlobalId for details.
   FieldGlobalId global_id() const { return {host_frame, unique_renderer_id}; }
 
+  // An identifier of the renderer form that contained this field.
+  // This may be from the browser form that contains this field in the case of a
+  // frame-transcending form. See ContentAutofillRouter and internal::FormForest
+  // for details on the distinction between renderer and browser forms.
+  FormGlobalId renderer_form_id() const { return {host_frame, host_form_id}; }
+
+  // TODO(crbug/1211834): This function is deprecated. Use
+  // FormFieldData::DeepEqual() instead.
   // Returns true if both fields are identical, ignoring value- and
   // parsing related members.
   // See also SimilarFieldAs(), DynamicallySameFieldAs().
   bool SameFieldAs(const FormFieldData& field) const;
 
+  // TODO(crbug/1211834): This function is deprecated.
   // Returns true if both fields are identical, ignoring members that
   // are typically changed dynamically.
   // Strictly weaker than SameFieldAs().
   bool SimilarFieldAs(const FormFieldData& field) const;
 
+  // TODO(crbug/1211834): This function is deprecated.
   // Returns true if both forms are equivalent from the POV of dynamic refills.
   // Strictly weaker than SameFieldAs(): replaces equality of |is_focusable| and
   // |role| with equality of IsVisible().
@@ -165,6 +187,15 @@ struct FormFieldData {
   // Unique renderer ID of the enclosing form in the same frame.
   FormRendererId host_form_id;
 
+  // The signature of the field's renderer form, that is, the signature of the
+  // FormData that contained this field when it was received by the
+  // AutofillDriver (see ContentAutofillRouter and internal::FormForest
+  // for details on the distinction between renderer and browser forms). The
+  // value is only set in ContentAutofillDriver and null on iOS.
+  // This value is written and read only in the browser for voting of
+  // cross-frame forms purposes. It is therefore not sent via mojo.
+  FormSignature host_form_signature;
+
   // The origin of the frame that hosts the field.
   url::Origin origin;
 
@@ -196,10 +227,8 @@ struct FormFieldData {
   // trigger.
   std::u16string user_input;
 
-  // For the HTML snippet |<option value="US">United States</option>|, the
-  // value is "US" and the contents are "United States".
-  std::vector<std::u16string> option_values;
-  std::vector<std::u16string> option_contents;
+  // The options of a select box.
+  std::vector<SelectOption> options;
 
   // Password Manager doesn't use labels nor client side nor server side, so
   // label_source isn't in serialize methods.
@@ -213,8 +242,8 @@ struct FormFieldData {
   // The datalist is associated with this field, if any. The following two
   // vectors valid if not empty, will not be synced to the server side or be
   // used for field comparison and aren't in serialize methods.
-  // The datalist option is intentionally separated from option_values and
-  // option_contents because they are handled very differently in autofill.
+  // The datalist option is intentionally separated from |options| because they
+  // are handled very differently in Autofill.
   std::vector<std::u16string> datalist_values;
   std::vector<std::u16string> datalist_labels;
 };

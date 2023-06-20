@@ -13,6 +13,7 @@
 #include <utility>
 
 #include "base/check.h"
+#include "base/containers/cxx20_erase.h"
 #include "base/cxx17_backports.h"
 #include "base/files/file.h"
 #include "base/files/file_path.h"
@@ -82,7 +83,7 @@ const base::FilePath::CharType kModuleListComponentRelativePath[] =
 
 uint32_t CalculateTimeDateStamp(base::Time time) {
   const auto delta = time.ToDeltaSinceWindowsEpoch();
-  return delta < base::TimeDelta() ? 0 : static_cast<uint32_t>(delta.InHours());
+  return delta.is_negative() ? 0 : static_cast<uint32_t>(delta.InHours());
 }
 
 ReadResult ReadModuleBlocklistCache(

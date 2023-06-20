@@ -10,6 +10,7 @@
 
 #include "base/memory/weak_ptr.h"
 #include "base/scoped_observation.h"
+#include "base/time/time.h"
 #include "components/offline_items_collection/core/offline_content_provider.h"
 
 namespace base {
@@ -29,6 +30,12 @@ class ThrottledOfflineContentProvider
   explicit ThrottledOfflineContentProvider(OfflineContentProvider* provider);
   ThrottledOfflineContentProvider(const base::TimeDelta& delay_between_updates,
                                   OfflineContentProvider* provider);
+
+  ThrottledOfflineContentProvider(const ThrottledOfflineContentProvider&) =
+      delete;
+  ThrottledOfflineContentProvider& operator=(
+      const ThrottledOfflineContentProvider&) = delete;
+
   ~ThrottledOfflineContentProvider() override;
 
   // Taking actions on the OfflineContentProvider will flush any queued updates
@@ -97,8 +104,6 @@ class ThrottledOfflineContentProvider
   OfflineItemMap updates_;
 
   base::WeakPtrFactory<ThrottledOfflineContentProvider> weak_ptr_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(ThrottledOfflineContentProvider);
 };
 
 }  // namespace offline_items_collection

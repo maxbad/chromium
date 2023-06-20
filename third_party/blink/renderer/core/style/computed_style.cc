@@ -27,9 +27,9 @@
 #include <memory>
 #include <utility>
 
+#include "base/cxx17_backports.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/numerics/clamped_math.h"
-#include "base/numerics/ranges.h"
 #include "build/build_config.h"
 #include "cc/input/overscroll_behavior.h"
 #include "third_party/blink/renderer/core/animation/css/css_animation_data.h"
@@ -102,11 +102,13 @@ ASSERT_SIZE(BorderValue, SameSizeAsBorderValue);
 struct SameSizeAsComputedStyleBase {
   SameSizeAsComputedStyleBase() {
     base::debug::Alias(&data_refs);
+    base::debug::Alias(&pointers);
     base::debug::Alias(&bitfields);
   }
 
  private:
-  void* data_refs[9];
+  void* data_refs[8];
+  void* pointers[1];
   unsigned bitfields[5];
 };
 
@@ -198,6 +200,11 @@ static bool PseudoElementStylesEqual(const ComputedStyle& old_style,
     if (!old_style.HasPseudoElementStyle(pseudo_id) &&
         !new_style.HasPseudoElementStyle(pseudo_id))
       continue;
+    // Highlight pseudo styles are stored in StyleHighlightData, and compared
+    // like any other inherited field, yielding Difference::kInherited.
+    if (RuntimeEnabledFeatures::HighlightInheritanceEnabled() &&
+        IsHighlightPseudoElement(pseudo_id))
+      continue;
     const ComputedStyle* new_pseudo_style =
         new_style.GetCachedPseudoElementStyle(pseudo_id);
     if (!new_pseudo_style)
@@ -208,6 +215,25 @@ static bool PseudoElementStylesEqual(const ComputedStyle& old_style,
       return false;
   }
   return true;
+}
+
+static bool DiffAffectsContainerQueries(const ComputedStyle& old_style,
+                                        const ComputedStyle& new_style) {
+  if (!old_style.IsContainerForContainerQueries() &&
+      !new_style.IsContainerForContainerQueries()) {
+    return false;
+  }
+  if ((old_style.ContainerName() != new_style.ContainerName()) ||
+      (old_style.ContainerType() != new_style.ContainerType())) {
+    return true;
+  }
+  if (new_style.Display() != old_style.Display()) {
+    if (new_style.Display() == EDisplay::kNone ||
+        new_style.Display() == EDisplay::kContents) {
+      return true;
+    }
+  }
+  return false;
 }
 
 bool ComputedStyle::NeedsReattachLayoutTree(const Element& element,
@@ -245,6 +271,15 @@ bool ComputedStyle::NeedsReattachLayoutTree(const Element& element,
     // based on appearance.
     return true;
   }
+
+  // LayoutObject tree structure for <legend> depends on whether it's a
+  // rendered legend or not.
+  if (UNLIKELY(IsA<HTMLLegendElement>(element) &&
+               (old_style->IsFloating() != new_style->IsFloating() ||
+                old_style->HasOutOfFlowPosition() !=
+                    new_style->HasOutOfFlowPosition())))
+    return true;
+
   if (!RuntimeEnabledFeatures::LayoutNGEnabled())
     return false;
 
@@ -304,10 +339,8 @@ ComputedStyle::ComputeDifferenceIgnoringInheritedFirstLineStyle(
       old_style.BlockifiesChildren() != new_style.BlockifiesChildren())
     return Difference::kDescendantAffecting;
   // TODO(crbug.com/1213888): Only recalc affected descendants.
-  if ((old_style.ContainerName() != new_style.ContainerName()) ||
-      (old_style.ContainerType() != new_style.ContainerType())) {
+  if (DiffAffectsContainerQueries(old_style, new_style))
     return Difference::kDescendantAffecting;
-  }
   if (!old_style.NonIndependentInheritedEqual(new_style))
     return Difference::kInherited;
   if (old_style.JustifyItems() != new_style.JustifyItems())
@@ -344,8 +377,11 @@ ComputedStyle::ComputeDifferenceIgnoringInheritedFirstLineStyle(
 void ComputedStyle::PropagateIndependentInheritedProperties(
     const ComputedStyle& parent_style) {
   ComputedStyleBase::PropagateIndependentInheritedProperties(parent_style);
-  if (!HasVariableReference() && !HasVariableDeclaration())
-    InheritCustomPropertiesFrom(parent_style);
+  if (!HasVariableReference() && !HasVariableDeclaration() &&
+      (InheritedVariables() != parent_style.InheritedVariables())) {
+    MutableInheritedVariablesInternal() =
+        parent_style.InheritedVariablesInternal();
+  }
 }
 
 StyleSelfAlignmentData ResolvedSelfAlignment(
@@ -563,6 +599,27 @@ const ComputedStyle* ComputedStyle::AddCachedPseudoElementStyle(
 void ComputedStyle::ClearCachedPseudoElementStyles() const {
   if (cached_data_ && cached_data_->pseudo_element_styles_)
     cached_data_->pseudo_element_styles_->clear();
+}
+
+const ComputedStyle* ComputedStyle::GetBaseComputedStyle() const {
+  if (auto* base_data = BaseData().get())
+    return base_data->GetBaseComputedStyle();
+  return nullptr;
+}
+
+const CSSBitset* ComputedStyle::GetBaseImportantSet() const {
+  if (auto* base_data = BaseData().get())
+    return base_data->GetBaseImportantSet();
+  return nullptr;
+}
+
+StyleHighlightData& ComputedStyle::MutableHighlightData() {
+  scoped_refptr<StyleHighlightData>& data = MutableHighlightDataInternal();
+  if (!data)
+    data = StyleHighlightData::Create();
+  else if (!data->HasOneRef())
+    data = data->Copy();
+  return *data;
 }
 
 bool ComputedStyle::InheritedEqual(const ComputedStyle& other) const {
@@ -987,10 +1044,11 @@ void ComputedStyle::UpdatePropertySpecificDifferences(
     diff.SetCompositingReasonsChanged();
   }
 
+  // TODO(crbug.com/1246826): Remove CompositablePaintAnimationChanged.
   if (RuntimeEnabledFeatures::CompositeBGColorAnimationEnabled() &&
       (HasCurrentBackgroundColorAnimation() !=
            other.HasCurrentBackgroundColorAnimation() ||
-       CompositablePaintAnimationChanged())) {
+       other.CompositablePaintAnimationChanged())) {
     diff.SetCompositablePaintEffectChanged();
   }
 }
@@ -1021,7 +1079,7 @@ bool ComputedStyle::HasCSSPaintImagesUsingCustomProperty(
 
 void ComputedStyle::AddCursor(StyleImage* image,
                               bool hot_spot_specified,
-                              const IntPoint& hot_spot) {
+                              const gfx::Point& hot_spot) {
   if (!CursorDataInternal())
     SetCursorDataInternal(MakeGarbageCollected<CursorList>());
   MutableCursorDataInternal()->push_back(
@@ -1234,14 +1292,14 @@ void ComputedStyle::ApplyTransform(
   float origin_y = 0;
   float origin_z = 0;
 
-  const FloatSize& box_size = bounding_box.Size();
+  const FloatSize& box_size = bounding_box.size();
   if (apply_transform_origin ||
       // We need to calculate originX and originY for applying motion path.
       apply_motion_path == kIncludeMotionPath) {
-    origin_x = FloatValueForLength(TransformOriginX(), box_size.Width()) +
-               bounding_box.X();
-    origin_y = FloatValueForLength(TransformOriginY(), box_size.Height()) +
-               bounding_box.Y();
+    origin_x = FloatValueForLength(TransformOriginX(), box_size.width()) +
+               bounding_box.x();
+    origin_y = FloatValueForLength(TransformOriginY(), box_size.height()) +
+               bounding_box.y();
     if (apply_transform_origin) {
       origin_z = TransformOriginZ();
       result.Translate3d(origin_x, origin_y, origin_z);
@@ -1295,12 +1353,12 @@ void ComputedStyle::ApplyMotionPathTransform(
     // TODO(ericwilligers): crbug.com/641245 Support <size> for ray paths.
     float float_distance = FloatValueForLength(distance, 0);
 
-    // Use clampTo() to convert infinite values to min/max finite ones.
+    // Use ClampTo() to convert infinite values to min/max finite ones.
     path_position.tangent_in_degrees =
-        clampTo<float, float>(To<StyleRay>(*path).Angle() - 90);
-    float tangent_in_radians = deg2rad(path_position.tangent_in_degrees);
-    path_position.point.SetX(float_distance * cos(tangent_in_radians));
-    path_position.point.SetY(float_distance * sin(tangent_in_radians));
+        ClampTo<float, float>(To<StyleRay>(*path).Angle() - 90);
+    float tangent_in_radians = Deg2rad(path_position.tangent_in_degrees);
+    path_position.point.set_x(float_distance * cos(tangent_in_radians));
+    path_position.point.set_y(float_distance * sin(tangent_in_radians));
   } else {
     float zoom = EffectiveZoom();
     const StylePath& motion_path = To<StylePath>(*path);
@@ -1313,7 +1371,7 @@ void ComputedStyle::ApplyMotionPathTransform(
       if (computed_distance < 0)
         computed_distance += path_length;
     } else {
-      computed_distance = clampTo<float>(float_distance, 0, path_length);
+      computed_distance = ClampTo<float>(float_distance, 0, path_length);
     }
 
     path_position =
@@ -1330,17 +1388,17 @@ void ComputedStyle::ApplyMotionPathTransform(
   // they will have the default value, auto.
   FloatPoint anchor_point(origin_x, origin_y);
   if (!position.X().IsAuto() || !anchor.X().IsAuto()) {
-    anchor_point = FloatPointForLengthPoint(anchor, bounding_box.Size());
-    anchor_point += bounding_box.Location();
+    anchor_point = FloatPointForLengthPoint(anchor, bounding_box.size());
+    anchor_point += bounding_box.origin();
 
     // Shift the origin from transform-origin to offset-anchor.
-    origin_shift_x = anchor_point.X() - origin_x;
-    origin_shift_y = anchor_point.Y() - origin_y;
+    origin_shift_x = anchor_point.x() - origin_x;
+    origin_shift_y = anchor_point.y() - origin_y;
   }
 
   transform.Translate(
-      path_position.point.X() - anchor_point.X() + origin_shift_x,
-      path_position.point.Y() - anchor_point.Y() + origin_shift_y);
+      path_position.point.x() - anchor_point.x() + origin_shift_x,
+      path_position.point.y() - anchor_point.y() + origin_shift_y);
   transform.Rotate(path_position.tangent_in_degrees + rotate.angle);
 
   if (!position.X().IsAuto() || !anchor.X().IsAuto())
@@ -1362,7 +1420,7 @@ void ComputedStyle::SetListStyleImage(StyleImage* v) {
 bool ComputedStyle::SetEffectiveZoom(float f) {
   // Clamp the effective zoom value to a smaller (but hopeful still large
   // enough) range, to avoid overflow in derived computations.
-  float clamped_effective_zoom = clampTo<float>(f, 1e-6, 1e6);
+  float clamped_effective_zoom = ClampTo<float>(f, 1e-6, 1e6);
   if (EffectiveZoom() == clamped_effective_zoom)
     return false;
   SetEffectiveZoomInternal(clamped_effective_zoom);
@@ -1372,7 +1430,7 @@ bool ComputedStyle::SetEffectiveZoom(float f) {
   // real cost to our understanding of the zooms in use.
   base::UmaHistogramSparse(
       "Blink.EffectiveZoom",
-      base::ClampToRange<float>(clamped_effective_zoom * 100, 0, 400));
+      base::clamp<float>(clamped_effective_zoom * 100, 0, 400));
   return true;
 }
 
@@ -1398,8 +1456,11 @@ CounterDirectiveMap& ComputedStyle::AccessCounterDirectives() {
 
 const CounterDirectives ComputedStyle::GetCounterDirectives(
     const AtomicString& identifier) const {
-  if (const CounterDirectiveMap* directives = GetCounterDirectives())
-    return directives->at(identifier);
+  if (GetCounterDirectives()) {
+    auto it = GetCounterDirectives()->find(identifier);
+    if (it != GetCounterDirectives()->end())
+      return it->value;
+  }
   return CounterDirectives();
 }
 
@@ -1840,7 +1901,7 @@ bool ComputedStyle::HasVariables() const {
          HasInitialVariables(InitialDataInternal().get());
 }
 
-size_t ComputedStyle::GetVariableNamesCount() const {
+wtf_size_t ComputedStyle::GetVariableNamesCount() const {
   if (!HasVariables())
     return 0;
   return GetVariableNames().size();
@@ -2026,7 +2087,7 @@ Length ComputedStyle::LineHeight() const {
   return lh;
 }
 
-int ComputedStyle::ComputedLineHeight() const {
+float ComputedStyle::ComputedLineHeight() const {
   const Length& lh = LineHeight();
 
   // Negative value means the line height is not set. Use the font's built-in
@@ -2034,10 +2095,18 @@ int ComputedStyle::ComputedLineHeight() const {
   if (lh.IsNegative() && GetFont().PrimaryFont())
     return GetFont().PrimaryFont()->GetFontMetrics().LineSpacing();
 
-  if (lh.IsPercentOrCalc())
-    return MinimumValueForLength(lh, LayoutUnit(ComputedFontSize())).ToInt();
+  if (RuntimeEnabledFeatures::FractionalLineHeightEnabled()) {
+    if (lh.IsPercentOrCalc()) {
+      return MinimumValueForLength(lh, LayoutUnit(ComputedFontSize()));
+    }
 
-  return std::min(lh.Value(), LayoutUnit::Max().ToFloat());
+    return lh.Value();
+  } else {
+    if (lh.IsPercentOrCalc())
+      return MinimumValueForLength(lh, LayoutUnit(ComputedFontSize())).ToInt();
+
+    return static_cast<int>(std::min(lh.Value(), LayoutUnit::Max().ToFloat()));
+  }
 }
 
 LayoutUnit ComputedStyle::ComputedLineHeightAsFixed(const Font& font) const {
@@ -2048,12 +2117,20 @@ LayoutUnit ComputedStyle::ComputedLineHeightAsFixed(const Font& font) const {
   if (lh.IsNegative() && font.PrimaryFont())
     return font.PrimaryFont()->GetFontMetrics().FixedLineSpacing();
 
-  if (lh.IsPercentOrCalc()) {
-    return LayoutUnit(
-        MinimumValueForLength(lh, ComputedFontSizeAsFixed(font)).ToInt());
-  }
+  if (RuntimeEnabledFeatures::FractionalLineHeightEnabled()) {
+    if (lh.IsPercentOrCalc()) {
+      return MinimumValueForLength(lh, ComputedFontSizeAsFixed(font));
+    }
 
-  return LayoutUnit(floorf(lh.Value()));
+    return LayoutUnit::FromFloatFloor(lh.Value());
+  } else {
+    if (lh.IsPercentOrCalc()) {
+      return LayoutUnit(
+          MinimumValueForLength(lh, ComputedFontSizeAsFixed(font)).ToInt());
+    }
+
+    return LayoutUnit(floorf(lh.Value()));
+  }
 }
 
 LayoutUnit ComputedStyle::ComputedLineHeightAsFixed() const {
@@ -2073,6 +2150,9 @@ void ComputedStyle::SetLetterSpacing(float letter_spacing) {
 }
 
 void ComputedStyle::SetTextAutosizingMultiplier(float multiplier) {
+  if (TextAutosizingMultiplier() == multiplier)
+    return;
+
   SetTextAutosizingMultiplierInternal(multiplier);
 
   float size = SpecifiedFontSize();
@@ -2256,8 +2336,13 @@ Color ComputedStyle::ResolvedColor(const StyleColor& color) const {
 
 bool ComputedStyle::ShouldForceColor(const StyleColor& unforced_color) const {
   return InForcedColorsMode() &&
-         ForcedColorAdjust() != EForcedColorAdjust::kNone &&
+         ForcedColorAdjust() == EForcedColorAdjust::kAuto &&
          !unforced_color.IsSystemColor();
+}
+
+bool ComputedStyle::ShouldPreserveParentColor() const {
+  return InForcedColorsMode() &&
+         ForcedColorAdjust() == EForcedColorAdjust::kPreserveParentColor;
 }
 
 void ComputedStyle::SetMarginStart(const Length& margin) {
@@ -2286,30 +2371,6 @@ void ComputedStyle::SetMarginEnd(const Length& margin) {
     else
       SetMarginTop(margin);
   }
-}
-
-int ComputedStyle::OutlineOutsetExtent() const {
-  if (!HasOutline())
-    return 0;
-  if (OutlineStyleIsAuto()) {
-    return GraphicsContext::FocusRingOutsetExtent(
-        OutlineOffsetInt(), std::ceil(GetOutlineStrokeWidthForFocusRing()));
-  }
-  return base::ClampAdd(OutlineWidthInt(), OutlineOffsetInt()).Max(0);
-}
-
-float ComputedStyle::GetOutlineStrokeWidthForFocusRing() const {
-  if (OutlineStyleIsAuto()) {
-    return std::max(EffectiveZoom(), 3.f);
-  }
-
-#if defined(OS_MAC)
-  return OutlineWidthInt();
-#else
-  // Draw an outline with thickness in proportion to the zoom level, but never
-  // so narrow that it becomes invisible.
-  return std::max(EffectiveZoom(), 1.f);
-#endif
 }
 
 bool ComputedStyle::StrokeDashArrayDataEquivalent(
@@ -2488,22 +2549,10 @@ void ComputedStyle::ClearBackgroundImage() {
     curr_child->ClearImage();
 }
 
-ListStyleTypeData* ComputedStyle::GetListStyleType() const {
-  return ListStyleTypeInternal();
-}
-
-EListStyleType ComputedStyle::ListStyleType() const {
-  if (!GetListStyleType())
-    return EListStyleType::kNone;
-  if (GetListStyleType()->IsString())
-    return EListStyleType::kString;
-  return GetListStyleType()->ToDeprecatedListStyleTypeEnum();
-}
-
 const AtomicString& ComputedStyle::ListStyleStringValue() const {
-  if (!GetListStyleType() || !GetListStyleType()->IsString())
+  if (!ListStyleType() || !ListStyleType()->IsString())
     return g_null_atom;
-  return GetListStyleType()->GetStringValue();
+  return ListStyleType()->GetStringValue();
 }
 
 absl::optional<Color> ComputedStyle::AccentColorResolved() const {
@@ -2564,7 +2613,8 @@ bool ComputedStyle::ShouldApplyAnyContainment(const Element& element) const {
   if (Display() == EDisplay::kInline)
     return false;
   if ((ContainsInlineSize() || ContainsBlockSize()) &&
-      (!IsDisplayTableType() || Display() == EDisplay::kTableCaption)) {
+      (!IsDisplayTableType() || Display() == EDisplay::kTableCaption ||
+       ShouldUseContentDataForElement(GetContentData()))) {
     return true;
   }
   return (ContainsLayout() || ContainsPaint()) &&

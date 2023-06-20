@@ -35,9 +35,11 @@ import org.chromium.chrome.browser.tabmodel.TabModelSelector;
 import org.chromium.chrome.browser.tasks.pseudotab.PseudoTab;
 import org.chromium.chrome.browser.tasks.pseudotab.TabAttributeCache;
 import org.chromium.chrome.browser.tasks.tab_management.PriceMessageService.PriceMessageType;
+import org.chromium.chrome.browser.tasks.tab_management.TabListCoordinator.TabListMode;
 import org.chromium.chrome.browser.tasks.tab_management.TabSelectionEditorCoordinator.TabSelectionEditorNavigationProvider;
 import org.chromium.chrome.browser.tasks.tab_management.suggestions.TabSuggestionsOrchestrator;
 import org.chromium.chrome.browser.ui.messages.snackbar.SnackbarManager;
+import org.chromium.chrome.features.start_surface.StartSurfaceConfiguration;
 import org.chromium.chrome.tab_ui.R;
 import org.chromium.components.browser_ui.widget.MenuOrKeyboardActionController;
 import org.chromium.components.browser_ui.widget.scrim.ScrimCoordinator;
@@ -90,6 +92,10 @@ public class TabSwitcherCoordinator
     // tab switcher.
     static final String COMPONENT_NAME = "GridTabSwitcher";
     private static boolean sAppendedMessagesForTesting;
+    // TODO(crbug.com/1240249): We have to use a static variable because startedShowing() &
+    // startedHiding() aren't always called for CAROUSEL tab switcher, thus we can't get its
+    // visibility directly.
+    private static boolean sIsGridTabSwitcherShowing;
     private final PropertyModelChangeProcessor mContainerViewChangeProcessor;
     private final ActivityLifecycleDispatcher mLifecycleDispatcher;
     private final MenuOrKeyboardActionController mMenuOrKeyboardActionController;
@@ -104,7 +110,6 @@ public class TabSwitcherCoordinator
 
     private TabSelectionEditorCoordinator mTabSelectionEditorCoordinator;
     private TabGroupManualSelectionMode mTabGroupManualSelectionMode;
-    private UndoGroupSnackbarController mUndoGroupSnackbarController;
     private TabSuggestionsOrchestrator mTabSuggestionsOrchestrator;
     private NewTabTileCoordinator mNewTabTileCoordinator;
     private TabAttributeCache mTabAttributeCache;
@@ -120,6 +125,15 @@ public class TabSwitcherCoordinator
             new MenuOrKeyboardActionController.MenuOrKeyboardActionHandler() {
                 @Override
                 public boolean handleMenuOrKeyboardAction(int id, boolean fromMenu) {
+                    // Both GRID and CAROUSEL tab switchers register a MenuOrKeyboardActionHandler
+                    // upon creation, but only the first registered handler will handle the menu
+                    // actions. Checking the mode allows the handler created under GRID tab switcher
+                    // to handle the menu actions when GRID tab switcher is showing; while CAROUSAL
+                    // tab switcher handles the menu actions when Start Surface is showing.
+                    if ((sIsGridTabSwitcherShowing && mMode == TabListMode.CAROUSEL)
+                            || (!sIsGridTabSwitcherShowing && mMode == TabListMode.GRID)) {
+                        return false;
+                    }
                     if (id == R.id.menu_group_tabs) {
                         assert mTabGroupManualSelectionMode != null;
 
@@ -137,6 +151,7 @@ public class TabSwitcherCoordinator
                         RecordUserAction.record("MobileMenuGroupTabs");
                         return true;
                     } else if (id == R.id.track_prices_row_menu_id) {
+                        assert mPriceTrackingDialogCoordinator != null;
                         mPriceTrackingDialogCoordinator.show();
                         return true;
                     }
@@ -175,8 +190,8 @@ public class TabSwitcherCoordinator
         mMultiThumbnailCardProvider =
                 new MultiThumbnailCardProvider(activity, tabContentManager, tabModelSelector);
 
-        PseudoTab.TitleProvider titleProvider = tab -> {
-            int numRelatedTabs = PseudoTab.getRelatedTabs(tab, tabModelSelector).size();
+        PseudoTab.TitleProvider titleProvider = (context, tab) -> {
+            int numRelatedTabs = PseudoTab.getRelatedTabs(context, tab, tabModelSelector).size();
             if (numRelatedTabs == 1) return tab.getTitle();
             return activity.getResources().getQuantityString(
                     R.plurals.bottom_tab_grid_title_placeholder, numRelatedTabs, numRelatedTabs);
@@ -189,8 +204,26 @@ public class TabSwitcherCoordinator
         mContainerViewChangeProcessor = PropertyModelChangeProcessor.create(containerViewModel,
                 mTabListCoordinator.getContainerView(), TabListContainerViewBinder::bind);
 
+        mMediator.addOverviewModeObserver(new OverviewModeObserver() {
+            @Override
+            public void startedShowing() {
+                if (mMode == TabListMode.GRID) sIsGridTabSwitcherShowing = true;
+            }
+
+            @Override
+            public void finishedShowing() {}
+
+            @Override
+            public void startedHiding() {
+                if (mMode == TabListMode.GRID) sIsGridTabSwitcherShowing = false;
+            }
+
+            @Override
+            public void finishedHiding() {}
+        });
+
         if (TabUiFeatureUtilities.isLaunchPolishEnabled()
-                && TabUiFeatureUtilities.isTabGroupsAndroidContinuationEnabled()) {
+                && TabUiFeatureUtilities.isTabGroupsAndroidContinuationEnabled(activity)) {
             mMediator.addOverviewModeObserver(new OverviewModeObserver() {
                 @Override
                 public void startedShowing() {}
@@ -233,7 +266,7 @@ public class TabSwitcherCoordinator
                     }
                 });
 
-        if (TabUiFeatureUtilities.isTabGroupsAndroidEnabled()) {
+        if (TabUiFeatureUtilities.isTabGroupsAndroidEnabled(activity)) {
             mTabGridDialogCoordinator = new TabGridDialogCoordinator(activity, tabModelSelector,
                     tabContentManager, tabCreatorManager, mCoordinatorView, this, mMediator,
                     this::getTabGridDialogAnimationSourceView, shareDelegateSupplier,
@@ -256,7 +289,7 @@ public class TabSwitcherCoordinator
                         NewTabTileViewBinder::bind);
             }
 
-            if (TabUiFeatureUtilities.isPriceTrackingEnabled()) {
+            if (PriceTrackingUtilities.isPriceTrackingEnabled()) {
                 mTabListCoordinator.registerItemType(TabProperties.UiType.LARGE_MESSAGE,
                         new LayoutViewBuilder(R.layout.large_message_card_item),
                         LargeMessageCardViewBinder::bind);
@@ -298,17 +331,10 @@ public class TabSwitcherCoordinator
 
         mMultiThumbnailCardProvider.initWithNative();
 
-        if (TabUiFeatureUtilities.isTabGroupsAndroidEnabled()) {
-            mUndoGroupSnackbarController =
-                    new UndoGroupSnackbarController(context, mTabModelSelector, snackbarManager);
-        } else {
-            mUndoGroupSnackbarController = null;
-        }
-
         if (mMode == TabListCoordinator.TabListMode.GRID) {
             if (CachedFeatureFlags.isEnabled(ChromeFeatureList.CLOSE_TAB_SUGGESTIONS)) {
-                mTabSuggestionsOrchestrator =
-                        new TabSuggestionsOrchestrator(mTabModelSelector, mLifecycleDispatcher);
+                mTabSuggestionsOrchestrator = new TabSuggestionsOrchestrator(
+                        context, mTabModelSelector, mLifecycleDispatcher);
                 TabSuggestionMessageService tabSuggestionMessageService =
                         new TabSuggestionMessageService(context, mTabModelSelector,
                                 mTabSelectionEditorCoordinator.getController());
@@ -322,26 +348,19 @@ public class TabSwitcherCoordinator
                         new NewTabTileCoordinator(mTabModelSelector, mTabCreatorManager);
             }
 
-            if (TabUiFeatureUtilities.isTabGroupsAndroidEnabled()
-                    && !TabSwitcherMediator.isShowingTabsInMRUOrder()) {
+            if (TabUiFeatureUtilities.isTabGroupsAndroidEnabled(context)
+                    && !TabSwitcherCoordinator.isShowingTabsInMRUOrder(mMode)) {
                 mTabGridIphDialogCoordinator =
                         new TabGridIphDialogCoordinator(context, mContainer, modalDialogManager);
                 IphMessageService iphMessageService =
                         new IphMessageService(mTabGridIphDialogCoordinator);
                 mMessageCardProviderCoordinator.subscribeMessageService(iphMessageService);
             }
-
-            if (TabUiFeatureUtilities.isPriceTrackingEnabled()) {
-                PriceDropNotificationManager notificationManager =
-                        new PriceDropNotificationManager();
-                mPriceTrackingDialogCoordinator = new PriceTrackingDialogCoordinator(
-                        context, modalDialogManager, this, mTabModelSelector, notificationManager);
-                mPriceMessageService = new PriceMessageService(
-                        mTabListCoordinator, mMediator, notificationManager);
-                mMessageCardProviderCoordinator.subscribeMessageService(mPriceMessageService);
-                mMediator.setPriceMessageService(mPriceMessageService);
-            }
         }
+
+        // TODO(crbug.com/1222762): Only call setUpPriceTracking in GRID TabSwitcher.
+        setUpPriceTracking(context, modalDialogManager);
+
         mIsInitialized = true;
     }
 
@@ -363,6 +382,20 @@ public class TabSwitcherCoordinator
                         TabSelectionEditorActionProvider.TabSelectionEditorAction.GROUP),
                 new TabSelectionEditorNavigationProvider(
                         mTabSelectionEditorCoordinator.getController()));
+    }
+
+    private void setUpPriceTracking(Context context, ModalDialogManager modalDialogManager) {
+        if (PriceTrackingUtilities.isPriceTrackingEnabled()) {
+            PriceDropNotificationManager notificationManager = new PriceDropNotificationManager();
+            mPriceTrackingDialogCoordinator = new PriceTrackingDialogCoordinator(context,
+                    modalDialogManager, this, mTabModelSelector, notificationManager, mMode);
+            if (mMode == TabListCoordinator.TabListMode.GRID) {
+                mPriceMessageService = new PriceMessageService(
+                        mTabListCoordinator, mMediator, notificationManager);
+                mMessageCardProviderCoordinator.subscribeMessageService(mPriceMessageService);
+                mMediator.setPriceMessageService(mPriceMessageService);
+            }
+        }
     }
 
     // TabSwitcher implementation.
@@ -606,8 +639,8 @@ public class TabSwitcherCoordinator
 
     private boolean shouldRegisterMessageItemType() {
         return CachedFeatureFlags.isEnabled(ChromeFeatureList.CLOSE_TAB_SUGGESTIONS)
-                || (TabUiFeatureUtilities.isTabGroupsAndroidEnabled()
-                        && !TabSwitcherMediator.isShowingTabsInMRUOrder());
+                || (TabUiFeatureUtilities.isTabGroupsAndroidEnabled(mRootView.getContext())
+                        && !TabSwitcherCoordinator.isShowingTabsInMRUOrder(mMode));
     }
 
     @Override
@@ -626,9 +659,6 @@ public class TabSwitcherCoordinator
         if (mTabGridDialogCoordinator != null) {
             mTabGridDialogCoordinator.destroy();
         }
-        if (mUndoGroupSnackbarController != null) {
-            mUndoGroupSnackbarController.destroy();
-        }
         if (mTabGridIphDialogCoordinator != null) {
             mTabGridIphDialogCoordinator.destroy();
         }
@@ -644,5 +674,14 @@ public class TabSwitcherCoordinator
         if (mTabAttributeCache != null) {
             mTabAttributeCache.destroy();
         }
+    }
+
+    /**
+     * Returns whether tabs should be shown in MRU order in current start surface tab switcher.
+     * @param mode The Tab switcher mode.
+     */
+    static boolean isShowingTabsInMRUOrder(@TabListMode int mode) {
+        return StartSurfaceConfiguration.SHOW_TABS_IN_MRU_ORDER.getValue()
+                && mode == TabListMode.CAROUSEL;
     }
 }

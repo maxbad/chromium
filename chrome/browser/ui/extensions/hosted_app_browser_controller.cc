@@ -17,11 +17,10 @@
 #include "chrome/browser/ui/location_bar/location_bar.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/web_applications/web_app_launch_utils.h"
-#include "chrome/browser/web_applications/components/web_app_helpers.h"
+#include "chrome/browser/web_applications/web_app_helpers.h"
 #include "chrome/common/chrome_features.h"
 #include "chrome/common/extensions/api/url_handlers/url_handlers_parser.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
-#include "chrome/common/extensions/manifest_handlers/app_theme_color_info.h"
 #include "components/security_state/core/security_state.h"
 #include "components/url_formatter/url_formatter.h"
 #include "content/public/browser/browser_context.h"
@@ -36,6 +35,7 @@
 #include "extensions/common/extension.h"
 #include "third_party/blink/public/common/web_preferences/web_preferences.h"
 #include "third_party/blink/public/mojom/manifest/display_mode.mojom.h"
+#include "ui/base/models/image_model.h"
 #include "ui/gfx/image/image_skia.h"
 #include "url/gurl.h"
 
@@ -68,15 +68,14 @@ bool HostedAppBrowserController::HasMinimalUiButtons() const {
   return false;
 }
 
-gfx::ImageSkia HostedAppBrowserController::GetWindowAppIcon() const {
+ui::ImageModel HostedAppBrowserController::GetWindowAppIcon() const {
   // TODO(calamity): Use the app name to retrieve the app icon without using the
   // extensions tab helper to make icon load more immediate.
 #if BUILDFLAG(IS_CHROMEOS_ASH)
-  if (base::FeatureList::IsEnabled(features::kAppServiceAdaptiveIcon) &&
-      apps::AppServiceProxyFactory::IsAppServiceAvailableForProfile(
+  if (apps::AppServiceProxyFactory::IsAppServiceAvailableForProfile(
           browser()->profile())) {
     if (!app_icon_.isNull())
-      return app_icon_;
+      return ui::ImageModel::FromImageSkia(app_icon_);
 
     const Extension* extension = GetExtension();
     if (extension &&
@@ -104,32 +103,15 @@ gfx::ImageSkia HostedAppBrowserController::GetWindowAppIcon() const {
   if (!icon_bitmap)
     return GetFallbackAppIcon();
 
-  return gfx::ImageSkia::CreateFrom1xBitmap(*icon_bitmap);
+  return ui::ImageModel::FromImageSkia(
+      gfx::ImageSkia::CreateFrom1xBitmap(*icon_bitmap));
 }
 
-gfx::ImageSkia HostedAppBrowserController::GetWindowIcon() const {
+ui::ImageModel HostedAppBrowserController::GetWindowIcon() const {
   if (IsWebApp(browser()))
     return GetWindowAppIcon();
 
-  return browser()->GetCurrentPageIcon().AsImageSkia();
-}
-
-absl::optional<SkColor> HostedAppBrowserController::GetThemeColor() const {
-  absl::optional<SkColor> web_theme_color =
-      AppBrowserController::GetThemeColor();
-  if (web_theme_color)
-    return web_theme_color;
-
-  const Extension* extension = GetExtension();
-  if (!extension)
-    return absl::nullopt;
-
-  absl::optional<SkColor> extension_theme_color =
-      AppThemeColorInfo::GetThemeColor(extension);
-  if (extension_theme_color)
-    return SkColorSetA(*extension_theme_color, SK_AlphaOPAQUE);
-
-  return absl::nullopt;
+  return ui::ImageModel::FromImage(browser()->GetCurrentPageIcon());
 }
 
 std::u16string HostedAppBrowserController::GetTitle() const {
@@ -169,7 +151,7 @@ bool HostedAppBrowserController::IsUrlInAppScope(const GURL& url) const {
 
 const Extension* HostedAppBrowserController::GetExtension() const {
   return ExtensionRegistry::Get(browser()->profile())
-      ->GetExtensionById(GetAppId(), ExtensionRegistry::EVERYTHING);
+      ->GetExtensionById(app_id(), ExtensionRegistry::EVERYTHING);
 }
 
 std::u16string HostedAppBrowserController::GetAppShortName() const {

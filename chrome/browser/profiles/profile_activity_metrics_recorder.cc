@@ -27,11 +27,10 @@ ProfileActivityMetricsRecorder* g_profile_activity_metrics_recorder = nullptr;
 constexpr int kMaxProfileBucket = 100;
 
 // Long time of inactivity that is treated as if user starts the browser anew.
-constexpr base::TimeDelta kLongTimeOfInactivity =
-    base::TimeDelta::FromMinutes(30);
+constexpr base::TimeDelta kLongTimeOfInactivity = base::Minutes(30);
 
 int GetMetricsBucketIndex(const Profile* profile) {
-  if (profile->IsGuestSession() || profile->IsEphemeralGuestProfile())
+  if (profile->IsGuestSession())
     return 0;
 
   if (!g_browser_process->profile_manager()) {
@@ -105,8 +104,6 @@ void RecordProfilesState() {
 
 void RecordAccountMetrics(const Profile* profile) {
   DCHECK(profile);
-  if (profile->IsEphemeralGuestProfile())
-    return;
 
   ProfileAttributesEntry* entry =
       g_browser_process->profile_manager()

@@ -42,12 +42,12 @@ SharingUiController* SharingIconView::GetController() const {
   return web_contents ? get_controller_callback_.Run(web_contents) : nullptr;
 }
 
-void SharingIconView::StartLoadingAnimation(int icon_label_id) {
+void SharingIconView::StartLoadingAnimation() {
   if (loading_animation_)
     return;
 
   loading_animation_ = true;
-  AnimateIn(icon_label_id);
+  AnimateIn(IDS_BROWSER_SHARING_OMNIBOX_SENDING_LABEL);
   SchedulePaint();
 }
 
@@ -60,9 +60,6 @@ void SharingIconView::StopLoadingAnimation() {
   SchedulePaint();
 }
 
-// TODO(knollr): Introduce IconState / ControllerState {eg, Hidden, Success,
-// Sending} to define the various cases instead of a number of if else
-// statements.
 void SharingIconView::UpdateImpl() {
   auto* controller = GetController();
   if (!controller)
@@ -75,7 +72,7 @@ void SharingIconView::UpdateImpl() {
   }
 
   if (controller->is_loading())
-    StartLoadingAnimation(controller->GetIconLabelId());
+    StartLoadingAnimation();
   else
     StopLoadingAnimation();
 
@@ -137,8 +134,9 @@ void SharingIconView::UpdateOpacity() {
 void SharingIconView::UpdateInkDrop(bool activate) {
   auto target_state =
       activate ? views::InkDropState::ACTIVATED : views::InkDropState::HIDDEN;
-  if (ink_drop()->GetInkDrop()->GetTargetInkDropState() != target_state)
-    ink_drop()->AnimateToState(target_state, /*event=*/nullptr);
+  if (views::InkDrop::Get(this)->GetInkDrop()->GetTargetInkDropState() !=
+      target_state)
+    views::InkDrop::Get(this)->AnimateToState(target_state, /*event=*/nullptr);
 }
 
 bool SharingIconView::IsTriggerableEvent(const ui::Event& event) {

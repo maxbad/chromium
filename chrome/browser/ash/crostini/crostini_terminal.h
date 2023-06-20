@@ -9,7 +9,6 @@
 
 #include "chrome/browser/apps/app_service/app_launch_params.h"
 #include "chrome/browser/ash/crostini/crostini_util.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "ui/display/types/display_constants.h"
 #include "ui/gfx/geometry/point.h"
 
@@ -103,6 +102,10 @@ void LaunchTerminal(Profile* profile,
                     const ContainerId& container_id = ContainerId::GetDefault(),
                     const std::string& cwd = "",
                     const std::vector<std::string>& terminal_args = {});
+
+void LaunchTerminalWithUrl(Profile* profile,
+                           int64_t display_id,
+                           const GURL& url);
 
 // Launches the terminal settings popup window.
 void LaunchTerminalSettings(Profile* profile,

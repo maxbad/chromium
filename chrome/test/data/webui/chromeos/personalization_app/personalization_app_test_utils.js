@@ -8,11 +8,10 @@
  */
 
 import {setWallpaperProviderForTesting} from 'chrome://personalization/trusted/mojo_interface_provider.js';
-import {PersonalizationState} from 'chrome://personalization/trusted/personalization_actions.js';
-import {emptyState} from 'chrome://personalization/trusted/personalization_actions.js';
-import {flush, PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
+import {emptyState, PersonalizationState} from 'chrome://personalization/trusted/personalization_reducers.js';
+import {flush} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 import {assertTrue} from '../../chai_assert.js';
-import {flushTasks} from '../../test_util.m.js';
+import {flushTasks} from '../../test_util.js';
 import {TestWallpaperProvider} from './test_mojo_interface_provider.js';
 import {TestPersonalizationStore} from './test_personalization_store.js';
 

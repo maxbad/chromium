@@ -7,7 +7,6 @@
 #include <stddef.h>
 
 #include "base/bind.h"
-#include "base/macros.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "chrome/browser/ui/browser_dialogs.h"
@@ -83,6 +82,12 @@ MediaGalleriesDialogViews::MediaGalleriesDialogViews(
   SetModalType(ui::MODAL_TYPE_CHILD);
   SetShowCloseButton(false);
   SetTitle(controller_->GetHeader());
+  SetOwnedByWidget(false);
+  RegisterDeleteDelegateCallback(base::BindOnce(
+      [](MediaGalleriesDialogViews* dialog) {
+        dialog->controller_->DialogFinished(dialog->accepted_);
+      },
+      this));
 
   std::u16string label = controller_->GetAuxiliaryButtonText();
   if (!label.empty()) {
@@ -120,7 +125,7 @@ void MediaGalleriesDialogViews::AcceptDialogForTesting() {
 
 void MediaGalleriesDialogViews::InitChildViews() {
   // Outer dialog layout.
-  contents_->RemoveAllChildViews(true);
+  contents_->RemoveAllChildViews();
   checkbox_map_.clear();
 
   ChromeLayoutProvider* provider = ChromeLayoutProvider::Get();
@@ -244,10 +249,6 @@ bool MediaGalleriesDialogViews::AddOrUpdateGallery(
   gallery_view->checkbox()->SetChecked(gallery.selected);
   checkbox_map_[gallery.pref_info.pref_id] = gallery_view;
   return true;
-}
-
-void MediaGalleriesDialogViews::DeleteDelegate() {
-  controller_->DialogFinished(accepted_);
 }
 
 views::Widget* MediaGalleriesDialogViews::GetWidget() {

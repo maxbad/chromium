@@ -39,6 +39,7 @@
 #include "chrome/browser/ui/app_list/app_list_client_impl.h"
 #include "chrome/browser/ui/app_list/app_list_controller_delegate.h"
 #include "chrome/browser/ui/app_list/app_list_model_updater.h"
+#include "chrome/browser/ui/app_list/app_list_syncable_service_factory.h"
 #include "chrome/browser/ui/app_list/chrome_app_list_item.h"
 #include "chrome/browser/ui/app_list/search/search_controller.h"
 #include "chrome/browser/ui/app_list/test/chrome_app_list_test_support.h"
@@ -74,6 +75,29 @@
 
 // Browser Test for AppListClientImpl.
 using AppListClientImplBrowserTest = extensions::PlatformAppBrowserTest;
+
+namespace {
+class TestObserver : public app_list::AppListSyncableService::Observer {
+ public:
+  explicit TestObserver(app_list::AppListSyncableService* syncable_service)
+      : syncable_service_(syncable_service) {
+    syncable_service_->AddObserverAndStart(this);
+  }
+  TestObserver(const TestObserver&) = delete;
+  TestObserver& operator=(const TestObserver&) = delete;
+  ~TestObserver() override { syncable_service_->RemoveObserver(this); }
+
+  size_t add_or_update_count() const { return add_or_update_count_; }
+
+  // app_list::AppListSyncableService::Observer:
+  void OnSyncModelUpdated() override {}
+  void OnAddOrUpdateFromSyncItemForTest() override { ++add_or_update_count_; }
+
+ private:
+  app_list::AppListSyncableService* const syncable_service_;
+  size_t add_or_update_count_ = 0;
+};
+}  // namespace
 
 // Test AppListClient::IsAppOpen for extension apps.
 IN_PROC_BROWSER_TEST_F(AppListClientImplBrowserTest, IsExtensionAppOpen) {
@@ -147,7 +171,7 @@ IN_PROC_BROWSER_TEST_F(AppListClientImplBrowserTest, UninstallApp) {
 }
 
 IN_PROC_BROWSER_TEST_F(AppListClientImplBrowserTest, ShowAppInfo) {
-  web_app::WebAppProvider::Get(profile())
+  web_app::WebAppProvider::GetForTest(profile())
       ->system_web_app_manager()
       .InstallSystemAppsForTesting();
 
@@ -194,10 +218,12 @@ IN_PROC_BROWSER_TEST_F(AppListClientImplBrowserTest, CreateNewWindow) {
             chrome::GetBrowserCount(browser()->profile()->GetPrimaryOTRProfile(
                 /*create_if_needed=*/true)));
 
-  controller->CreateNewWindow(/*incognito=*/false);
+  controller->CreateNewWindow(/*incognito=*/false,
+                              /*should_trigger_session_restore=*/true);
   EXPECT_EQ(2U, chrome::GetBrowserCount(browser()->profile()));
 
-  controller->CreateNewWindow(/*incognito=*/true);
+  controller->CreateNewWindow(/*incognito=*/true,
+                              /*should_trigger_session_restore=*/true);
   EXPECT_EQ(1U,
             chrome::GetBrowserCount(browser()->profile()->GetPrimaryOTRProfile(
                 /*create_if_needed=*/true)));
@@ -249,19 +275,27 @@ IN_PROC_BROWSER_TEST_F(AppListClientImplBrowserTest,
   // Emulate that the current user is new.
   client->InitializeAsIfNewUserLoginForTest();
 
-  AppListModelUpdater* model_updater = test::GetModelUpdater(client);
+  TestObserver syncable_service_observer(
+      app_list::AppListSyncableServiceFactory::GetInstance()->GetForProfile(
+          profile()));
 
   // Add an app item.
+  AppListModelUpdater* model_updater = test::GetModelUpdater(client);
   const std::string app_id("fake_id");
   model_updater->AddItem(std::make_unique<ChromeAppListItem>(
       browser()->profile(), app_id, model_updater));
-  ChromeAppListItem* item = model_updater->FindItem(app_id);
-  ASSERT_TRUE(item);
+
+  // Verify that the app addition from the app list client side should not
+  // trigger the update recursively, i.e. the client side observers the update
+  // in the app list model then reacts to it.
+  EXPECT_EQ(0u, syncable_service_observer.add_or_update_count());
 
   base::HistogramTester histogram_tester;
 
   // Verify that app activation is recorded.
   client->ShowAppList();
+  ChromeAppListItem* item = model_updater->FindItem(app_id);
+  ASSERT_TRUE(item);
   client->ActivateItem(/*profile_id=*/0, item->id(), /*event_flags=*/0);
   histogram_tester.ExpectBucketCount(
       "Apps.FirstLauncherActionByNewUsers",
@@ -435,7 +469,8 @@ IN_PROC_BROWSER_TEST_F(AppListClientImplBrowserTest,
 
   // Create an incognito browser so that we can close the regular one without
   // exiting the test.
-  controller->CreateNewWindow(/*incognito=*/true);
+  controller->CreateNewWindow(/*incognito=*/true,
+                              /*should_trigger_session_restore=*/true);
   EXPECT_EQ(1U, chrome::GetBrowserCount(profile_otr));
   // Creating incognito browser should not update the launch time.
   EXPECT_EQ(time_recorded1,
@@ -450,7 +485,8 @@ IN_PROC_BROWSER_TEST_F(AppListClientImplBrowserTest,
 
   // Launch another regular browser.
   const base::Time time_before_launch = base::Time::Now();
-  controller->CreateNewWindow(/*incognito=*/false);
+  controller->CreateNewWindow(/*incognito=*/false,
+                              /*should_trigger_session_restore=*/true);
   const base::Time time_after_launch = base::Time::Now();
   EXPECT_EQ(1U, chrome::GetBrowserCount(profile));
 
@@ -460,7 +496,8 @@ IN_PROC_BROWSER_TEST_F(AppListClientImplBrowserTest,
   EXPECT_GE(time_after_launch, time_recorded2);
 
   // Creating a second regular browser should not update the launch time.
-  controller->CreateNewWindow(/*incognito=*/false);
+  controller->CreateNewWindow(/*incognito=*/false,
+                              /*should_trigger_session_restore=*/true);
   EXPECT_EQ(2U, chrome::GetBrowserCount(profile));
   EXPECT_EQ(time_recorded2,
             prefs->GetLastLaunchTime(extension_misc::kChromeAppId));
@@ -617,7 +654,7 @@ IN_PROC_BROWSER_TEST_F(AppListAppLaunchTest, DemoModeAppLaunchSourceReported) {
 // Verifies that the duration between login and the first launcher showing by
 // a new account is recorded correctly.
 class DurationBetweenSeesionActivationAndFirstLauncherShowingBrowserTest
-    : public chromeos::LoginManagerTest {
+    : public ash::LoginManagerTest {
  public:
   DurationBetweenSeesionActivationAndFirstLauncherShowingBrowserTest() {
     login_mixin_.AppendRegularUsers(2);
@@ -634,9 +671,9 @@ class DurationBetweenSeesionActivationAndFirstLauncherShowingBrowserTest
     ASSERT_TRUE(client->app_list_visible());
   }
 
-  // chromeos::LoginManagerTest:
+  // ash::LoginManagerTest:
   void SetUpOnMainThread() override {
-    chromeos::LoginManagerTest::SetUpOnMainThread();
+    ash::LoginManagerTest::SetUpOnMainThread();
     // Emulate to sign in to a new account. It is time-consuming for an end to
     // end test, i.e. the test covering the whole process from OOBE flow to
     // showing the launcher. Therefore we set the current user to be new
@@ -648,7 +685,7 @@ class DurationBetweenSeesionActivationAndFirstLauncherShowingBrowserTest
 
   AccountId new_user_id_;
   AccountId registered_user_id_;
-  chromeos::LoginManagerMixin login_mixin_{&mixin_host_};
+  ash::LoginManagerMixin login_mixin_{&mixin_host_};
 };
 
 IN_PROC_BROWSER_TEST_F(
@@ -659,6 +696,10 @@ IN_PROC_BROWSER_TEST_F(
   tester.ExpectTotalCount(
       "Apps.TimeDurationBetweenNewUserSessionActivationAndFirstLauncherOpening",
       1);
+  tester.ExpectBucketCount(
+      "Apps.AppListUsageByNewUsers",
+      static_cast<int>(AppListClientImpl::AppListUsageStateByNewUsers::kUsed),
+      1);
 }
 
 // The duration between OOBE and the first launcher showing should not be
@@ -666,7 +707,7 @@ IN_PROC_BROWSER_TEST_F(
 IN_PROC_BROWSER_TEST_F(
     DurationBetweenSeesionActivationAndFirstLauncherShowingBrowserTest,
     MetricNotRecordedOnRegisteredAccount) {
-  chromeos::UserAddingScreen::Get()->Start();
+  ash::UserAddingScreen::Get()->Start();
 
   // Verify that the launcher usage state is recorded when switching accounts.
   base::HistogramTester tester;
@@ -682,6 +723,10 @@ IN_PROC_BROWSER_TEST_F(
   tester.ExpectTotalCount(
       "Apps.TimeDurationBetweenNewUserSessionActivationAndFirstLauncherOpening",
       0);
+  tester.ExpectBucketCount(
+      "Apps.AppListUsageByNewUsers",
+      static_cast<int>(AppListClientImpl::AppListUsageStateByNewUsers::kUsed),
+      0);
 }
 
 // The duration between OOBE and the first launcher showing should not be
@@ -691,7 +736,7 @@ IN_PROC_BROWSER_TEST_F(
     DurationBetweenSeesionActivationAndFirstLauncherShowingBrowserTest,
     MetricNotRecordedAfterUserSwitch) {
   // Switch to a registered user account then switch back.
-  chromeos::UserAddingScreen::Get()->Start();
+  ash::UserAddingScreen::Get()->Start();
   AddUser(registered_user_id_);
   user_manager::UserManager::Get()->SwitchActiveUser(new_user_id_);
 
@@ -700,6 +745,10 @@ IN_PROC_BROWSER_TEST_F(
   ShowAppListAndVerify();
   tester.ExpectTotalCount(
       "Apps.TimeDurationBetweenNewUserSessionActivationAndFirstLauncherOpening",
+      0);
+  tester.ExpectBucketCount(
+      "Apps.AppListUsageByNewUsers",
+      static_cast<int>(AppListClientImpl::AppListUsageStateByNewUsers::kUsed),
       0);
 }
 

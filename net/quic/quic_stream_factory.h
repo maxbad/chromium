@@ -15,7 +15,7 @@
 #include <string>
 #include <vector>
 
-#include "base/containers/mru_cache.h"
+#include "base/containers/lru_cache.h"
 #include "base/gtest_prod_util.h"
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
@@ -45,12 +45,10 @@
 #include "net/third_party/quiche/src/quic/core/quic_crypto_stream.h"
 #include "net/third_party/quiche/src/quic/core/quic_packets.h"
 #include "net/third_party/quiche/src/quic/core/quic_server_id.h"
+#include "url/scheme_host_port.h"
 
 namespace base {
 class Value;
-namespace trace_event {
-class ProcessMemoryDump;
-}
 }  // namespace base
 
 namespace quic {
@@ -112,6 +110,10 @@ enum AllActiveSessionsGoingAwayReason {
 class NET_EXPORT_PRIVATE QuicStreamRequest {
  public:
   explicit QuicStreamRequest(QuicStreamFactory* factory);
+
+  QuicStreamRequest(const QuicStreamRequest&) = delete;
+  QuicStreamRequest& operator=(const QuicStreamRequest&) = delete;
+
   ~QuicStreamRequest();
 
   // |cert_verify_flags| is bitwise OR'd of CertVerifier::VerifyFlags and it is
@@ -122,7 +124,7 @@ class NET_EXPORT_PRIVATE QuicStreamRequest {
   // When |use_dns_aliases| is true, any DNS aliases found in host resolution
   // are stored in the |dns_aliases_by_session_key_| map. |use_dns_aliases|
   // should be false in the case of a proxy.
-  int Request(const HostPortPair& destination,
+  int Request(url::SchemeHostPort destination,
               quic::ParsedQuicVersion quic_version,
               PrivacyMode privacy_mode,
               RequestPriority priority,
@@ -195,8 +197,6 @@ class NET_EXPORT_PRIVATE QuicStreamRequest {
   bool expect_on_host_resolution_;
   // Callback passed to WaitForHostResolution().
   CompletionOnceCallback host_resolution_callback_;
-
-  DISALLOW_COPY_AND_ASSIGN(QuicStreamRequest);
 };
 
 // A factory for fetching QuicChromiumClientSessions.
@@ -214,15 +214,15 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
   class NET_EXPORT_PRIVATE QuicSessionAliasKey {
    public:
     QuicSessionAliasKey() = default;
-    QuicSessionAliasKey(const HostPortPair& destination,
-                        const QuicSessionKey& session_key);
+    QuicSessionAliasKey(url::SchemeHostPort destination,
+                        QuicSessionKey session_key);
     ~QuicSessionAliasKey() = default;
 
     // Needed to be an element of std::set.
     bool operator<(const QuicSessionAliasKey& other) const;
     bool operator==(const QuicSessionAliasKey& other) const;
 
-    const HostPortPair& destination() const { return destination_; }
+    const url::SchemeHostPort& destination() const { return destination_; }
     const quic::QuicServerId& server_id() const {
       return session_key_.server_id();
     }
@@ -231,7 +231,7 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
     // Returns the estimate of dynamically allocated memory in bytes.
 
    private:
-    HostPortPair destination_;
+    url::SchemeHostPort destination_;
     QuicSessionKey session_key_;
   };
 
@@ -248,13 +248,17 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
       SocketPerformanceWatcherFactory* socket_performance_watcher_factory,
       QuicCryptoClientStreamFactory* quic_crypto_client_stream_factory,
       QuicContext* context);
+
+  QuicStreamFactory(const QuicStreamFactory&) = delete;
+  QuicStreamFactory& operator=(const QuicStreamFactory&) = delete;
+
   ~QuicStreamFactory() override;
 
   // Returns true if there is an existing session for |session_key| or if the
   // request can be pooled to an existing session to the IP address of
   // |destination|.
   bool CanUseExistingSession(const QuicSessionKey& session_key,
-                             const HostPortPair& destination);
+                             const url::SchemeHostPort& destination);
 
   // Fetches a QuicChromiumClientSession to |host_port_pair| which will be
   // owned by |request|.
@@ -265,7 +269,7 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
   // are stored in the |dns_aliases_by_session_key_| map. |use_dns_aliases|
   // should be false in the case of a proxy.
   int Create(const QuicSessionKey& session_key,
-             const HostPortPair& destination,
+             url::SchemeHostPort destination,
              quic::ParsedQuicVersion quic_version,
              RequestPriority priority,
              bool use_dns_aliases,
@@ -372,11 +376,6 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
     return default_network_;
   }
 
-  // Dumps memory allocation stats. |parent_dump_absolute_name| is the name
-  // used by the parent MemoryAllocatorDump in the memory dump hierarchy.
-  void DumpMemoryStats(base::trace_event::ProcessMemoryDump* pmd,
-                       const std::string& parent_absolute_name) const;
-
   // Returns the stored DNS aliases for the session key.
   const std::vector<std::string>& GetDnsAliasesForSessionKey(
       const QuicSessionKey& key) const;
@@ -457,14 +456,11 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
   void InitializeMigrationOptions();
 
   // Initializes the cached state associated with |server_id| in
-  // |crypto_config_| with the information in |server_info|. Populates
-  // |connection_id| with the next server designated connection id,
-  // if any, and otherwise leaves it unchanged.
+  // |crypto_config_| with the information in |server_info|.
   void InitializeCachedStateInCryptoConfig(
       const CryptoClientConfigHandle& crypto_config_handle,
       const quic::QuicServerId& server_id,
-      const std::unique_ptr<QuicServerInfo>& server_info,
-      quic::QuicConnectionId* connection_id);
+      const std::unique_ptr<QuicServerInfo>& server_info);
 
   void ProcessGoingAwaySession(QuicChromiumClientSession* session,
                                const quic::QuicServerId& server_id,
@@ -564,12 +560,12 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
   // When a QuicCryptoClientConfig is in use, it has one or more live
   // CryptoClientConfigHandles, and is stored in |active_crypto_config_map_|.
   // Once all the handles are deleted, it's moved to
-  // |recent_crypto_config_map_|. If reused before it is evicted from MRUCache,
+  // |recent_crypto_config_map_|. If reused before it is evicted from LRUCache,
   // it will be removed from the cache and return to the active config map.
   // These two maps should never both have entries with the same
   // NetworkIsolationKey.
   QuicCryptoClientConfigMap active_crypto_config_map_;
-  base::MRUCache<NetworkIsolationKey,
+  base::LRUCache<NetworkIsolationKey,
                  std::unique_ptr<QuicCryptoClientConfigOwner>>
       recent_crypto_config_map_;
 
@@ -625,8 +621,6 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
   const bool use_network_isolation_key_for_crypto_configs_;
 
   base::WeakPtrFactory<QuicStreamFactory> weak_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(QuicStreamFactory);
 };
 
 }  // namespace net

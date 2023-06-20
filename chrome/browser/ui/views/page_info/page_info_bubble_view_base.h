@@ -38,8 +38,13 @@ class PageInfoBubbleViewBase : public views::BubbleDialogDelegateView,
     // Custom bubble for internal pages like chrome:// and chrome-extensions://.
     BUBBLE_INTERNAL_PAGE,
     // Custom bubble for displaying safety tips.
-    BUBBLE_SAFETY_TIP
+    BUBBLE_SAFETY_TIP,
+    // Custom bubble for displaying accuracy tips.
+    BUBBLE_ACCURACY_TIP,
   };
+
+  PageInfoBubbleViewBase(const PageInfoBubbleViewBase&) = delete;
+  PageInfoBubbleViewBase& operator=(const PageInfoBubbleViewBase&) = delete;
 
   // Returns the type of the bubble being shown. For testing only.
   static BubbleType GetShownBubbleType();
@@ -63,10 +68,9 @@ class PageInfoBubbleViewBase : public views::BubbleDialogDelegateView,
   // WebContentsObserver:
   void RenderFrameDeleted(content::RenderFrameHost* render_frame_host) override;
   void OnVisibilityChanged(content::Visibility visibility) override;
-  void DidStartNavigation(content::NavigationHandle* handle) override;
+  void PrimaryPageChanged(content::Page& page) override;
   void DidChangeVisibleSecurityState() override;
-
-  DISALLOW_COPY_AND_ASSIGN(PageInfoBubbleViewBase);
+  void WebContentsDestroyed() override;
 };
 
 #endif  // CHROME_BROWSER_UI_VIEWS_PAGE_INFO_PAGE_INFO_BUBBLE_VIEW_BASE_H_

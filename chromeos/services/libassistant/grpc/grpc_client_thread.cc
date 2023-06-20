@@ -10,7 +10,7 @@
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/memory/scoped_refptr.h"
-#include "base/single_thread_task_runner.h"
+#include "base/task/single_thread_task_runner.h"
 #include "chromeos/services/libassistant/grpc/grpc_client_cq_tag.h"
 
 namespace chromeos {
@@ -22,7 +22,7 @@ GrpcClientThread::GrpcClientThread(const std::string& thread_name,
   base::Thread::Options thread_options = {/*type=*/base::MessagePumpType::IO,
                                           /*size=*/0};
   thread_options.priority = priority;
-  thread_.StartWithOptions(thread_options);
+  thread_.StartWithOptions(std::move(thread_options));
   StartCQ();
 }
 

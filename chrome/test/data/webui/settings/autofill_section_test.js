@@ -8,8 +8,9 @@ import 'chrome://settings/settings.js';
 import {loadTimeData} from 'chrome://resources/js/load_time_data.m.js';
 import {flush} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 import {AutofillManagerImpl, CountryDetailManagerImpl} from 'chrome://settings/lazy_load.js';
-import {AutofillManagerExpectations, createAddressEntry, createEmptyAddressEntry, TestAutofillManager} from 'chrome://test/settings/passwords_and_autofill_fake_data.js';
-import {eventToPromise, whenAttributeIs} from 'chrome://test/test_util.m.js';
+import {eventToPromise, whenAttributeIs} from 'chrome://webui-test/test_util.js';
+
+import {AutofillManagerExpectations, createAddressEntry, createEmptyAddressEntry, TestAutofillManager} from './passwords_and_autofill_fake_data.js';
 // clang-format on
 
 /**
@@ -69,7 +70,7 @@ function createAutofillSection(addresses, prefValues) {
   // Override the AutofillManagerImpl for testing.
   const autofillManager = new TestAutofillManager();
   autofillManager.data.addresses = addresses;
-  AutofillManagerImpl.instance_ = autofillManager;
+  AutofillManagerImpl.setInstance(autofillManager);
 
   const section = document.createElement('settings-autofill-section');
   section.prefs = {autofill: prefValues};
@@ -107,7 +108,7 @@ function createRemoveAddressDialog(autofillManager) {
 
   // Override the AutofillManagerImpl for testing.
   autofillManager.data.addresses = [address];
-  AutofillManagerImpl.instance_ = autofillManager;
+  AutofillManagerImpl.setInstance(autofillManager);
 
   document.body.innerHTML = '';
   const section = document.createElement('settings-autofill-section');
@@ -119,18 +120,20 @@ function createRemoveAddressDialog(autofillManager) {
   assertTrue(!!row);
 
   // Simulate clicking the 'Remove' button in the menu.
-  assertTrue(!!section.$$('#addressMenu'));
-  section.$$('#addressMenu').click();
+  assertTrue(!!section.shadowRoot.querySelector('#addressMenu'));
+  section.shadowRoot.querySelector('#addressMenu').click();
   flush();
 
-  assertTrue(!!section.$$('#menuRemoveAddress'));
-  assertFalse(!!section.$$('settings-address-remove-confirmation-dialog'));
-  section.$$('#menuRemoveAddress').click();
+  assertTrue(!!section.shadowRoot.querySelector('#menuRemoveAddress'));
+  assertFalse(!!section.shadowRoot.querySelector(
+      'settings-address-remove-confirmation-dialog'));
+  section.shadowRoot.querySelector('#menuRemoveAddress').click();
   flush();
 
-  assertTrue(!!section.$$('settings-address-remove-confirmation-dialog'));
-  const removeAddressDialog =
-      section.$$('settings-address-remove-confirmation-dialog');
+  assertTrue(!!section.shadowRoot.querySelector(
+      'settings-address-remove-confirmation-dialog'));
+  const removeAddressDialog = section.shadowRoot.querySelector(
+      'settings-address-remove-confirmation-dialog');
   return removeAddressDialog;
 }
 
@@ -141,17 +144,19 @@ suite('AutofillSectionUiTest', function() {
     section.prefs = {autofill: {profile_enabled: {}}};
     document.body.appendChild(section);
 
-    assertFalse(!!section.$$('#autofillExtensionIndicator'));
+    assertFalse(
+        !!section.shadowRoot.querySelector('#autofillExtensionIndicator'));
     section.set('prefs.autofill.profile_enabled.extensionId', 'test-id');
     flush();
 
-    assertTrue(!!section.$$('#autofillExtensionIndicator'));
+    assertTrue(
+        !!section.shadowRoot.querySelector('#autofillExtensionIndicator'));
   });
 });
 
 suite('AutofillSectionAddressTests', function() {
   suiteSetup(function() {
-    CountryDetailManagerImpl.instance_ = new CountryDetailManagerTestImpl();
+    CountryDetailManagerImpl.setInstance(new CountryDetailManagerTestImpl());
   });
 
   setup(function() {
@@ -191,8 +196,9 @@ suite('AutofillSectionAddressTests', function() {
     assertEquals(1, addressList.children.length);
 
     assertFalse(section.$.noAddressesLabel.hidden);
-    assertFalse(section.$$('#addAddress').disabled);
-    assertFalse(section.$$('#autofillProfileToggle').disabled);
+    assertFalse(section.shadowRoot.querySelector('#addAddress').disabled);
+    assertFalse(
+        section.shadowRoot.querySelector('#autofillProfileToggle').disabled);
   });
 
   test('verifyAddressCount', function() {
@@ -213,16 +219,18 @@ suite('AutofillSectionAddressTests', function() {
         addresses.length, addressList.querySelectorAll('.list-item').length);
 
     assertTrue(section.$.noAddressesLabel.hidden);
-    assertFalse(section.$$('#autofillProfileToggle').disabled);
-    assertFalse(section.$$('#addAddress').disabled);
+    assertFalse(
+        section.shadowRoot.querySelector('#autofillProfileToggle').disabled);
+    assertFalse(section.shadowRoot.querySelector('#addAddress').disabled);
   });
 
   test('verifyAddressDisabled', function() {
     const section =
         createAutofillSection([], {profile_enabled: {value: false}});
 
-    assertFalse(section.$$('#autofillProfileToggle').disabled);
-    assertTrue(section.$$('#addAddress').hidden);
+    assertFalse(
+        section.shadowRoot.querySelector('#autofillProfileToggle').disabled);
+    assertTrue(section.shadowRoot.querySelector('#addAddress').hidden);
   });
 
   test('verifyAddressFields', function() {
@@ -257,14 +265,14 @@ suite('AutofillSectionAddressTests', function() {
     menuButton.click();
     flush();
 
-    assertTrue(!!section.$$('#menuEditAddress'));
-    assertTrue(!!section.$$('#menuRemoveAddress'));
+    assertTrue(!!section.shadowRoot.querySelector('#menuEditAddress'));
+    assertTrue(!!section.shadowRoot.querySelector('#menuRemoveAddress'));
   });
 
   test('verifyAddAddressDialog', function() {
     const address = createEmptyAddressEntry();
     return createAddressDialog(address).then(function(dialog) {
-      const title = dialog.$$('[slot=title]');
+      const title = dialog.shadowRoot.querySelector('[slot=title]');
       assertEquals(
           loadTimeData.getString('addAddressTitle'), title.textContent);
       // A country is preselected.
@@ -274,7 +282,7 @@ suite('AutofillSectionAddressTests', function() {
 
   test('verifyEditAddressDialog', function() {
     return createAddressDialog(createAddressEntry()).then(function(dialog) {
-      const title = dialog.$$('[slot=title]');
+      const title = dialog.shadowRoot.querySelector('[slot=title]');
       assertEquals(
           loadTimeData.getString('editAddressTitle'), title.textContent);
       // Should be possible to save when editing because fields are
@@ -297,10 +305,11 @@ suite('AutofillSectionAddressTests', function() {
     const removeAddressDialog = createRemoveAddressDialog(autofillManager);
 
     // Wait for the dialog to open.
-    await whenAttributeIs(removeAddressDialog.$$('#dialog'), 'open', '');
+    await whenAttributeIs(
+        removeAddressDialog.shadowRoot.querySelector('#dialog'), 'open', '');
 
-    assertTrue(!!removeAddressDialog.$$('#remove'));
-    removeAddressDialog.$$('#remove').click();
+    assertTrue(!!removeAddressDialog.shadowRoot.querySelector('#remove'));
+    removeAddressDialog.shadowRoot.querySelector('#remove').click();
 
     // Wait for the dialog to close.
     await eventToPromise('close', removeAddressDialog);
@@ -318,10 +327,11 @@ suite('AutofillSectionAddressTests', function() {
     const removeAddressDialog = createRemoveAddressDialog(autofillManager);
 
     // Wait for the dialog to open.
-    await whenAttributeIs(removeAddressDialog.$$('#dialog'), 'open', '');
+    await whenAttributeIs(
+        removeAddressDialog.shadowRoot.querySelector('#dialog'), 'open', '');
 
-    assertTrue(!!removeAddressDialog.$$('#cancel'));
-    removeAddressDialog.$$('#cancel').click();
+    assertTrue(!!removeAddressDialog.shadowRoot.querySelector('#cancel'));
+    removeAddressDialog.shadowRoot.querySelector('#cancel').click();
 
     // Wait for the dialog to close.
     await eventToPromise('close', removeAddressDialog);
@@ -336,7 +346,7 @@ suite('AutofillSectionAddressTests', function() {
   test('verifyCountryIsSaved', function() {
     const address = createEmptyAddressEntry();
     return createAddressDialog(address).then(function(dialog) {
-      const countrySelect = dialog.$$('select');
+      const countrySelect = dialog.shadowRoot.querySelector('select');
       // The country should be pre-selected.
       assertEquals('US', countrySelect.value);
       assertEquals('US', address.countryCode);
@@ -430,7 +440,7 @@ suite('AutofillSectionAddressTests', function() {
 
     // The country can be preselected. Clear it to ensure the form is empty.
     await expectEvent(dialog, 'on-update-can-save', function() {
-      const countrySelect = dialog.$$('select');
+      const countrySelect = dialog.shadowRoot.querySelector('select');
       countrySelect.value = '';
       countrySelect.dispatchEvent(new CustomEvent('change'));
     });
@@ -460,7 +470,7 @@ suite('AutofillSectionAddressTests', function() {
   // Setting the country should allow the address to be saved.
   test('verifySaveIsNotClickableIfCountryNotSet', async function() {
     const simulateCountryChange = function(countryCode) {
-      const countrySelect = dialog.$$('select');
+      const countrySelect = dialog.shadowRoot.querySelector('select');
       countrySelect.value = countryCode;
       countrySelect.dispatchEvent(new CustomEvent('change'));
     };
@@ -516,7 +526,7 @@ suite('AutofillSectionAddressTests', function() {
 
 suite('AutofillSectionAddressLocaleTests', function() {
   suiteSetup(function() {
-    CountryDetailManagerImpl.instance_ = new CountryDetailManagerTestImpl();
+    CountryDetailManagerImpl.setInstance(new CountryDetailManagerTestImpl());
   });
 
   setup(function() {
@@ -768,7 +778,7 @@ suite('AutofillSectionAddressLocaleTests', function() {
       const city = 'Los Angeles';
       const state = 'CA';
       const zip = '90291';
-      const countrySelect = dialog.$$('select');
+      const countrySelect = dialog.shadowRoot.querySelector('select');
 
       return expectEvent(
                  dialog, 'on-update-address-wrapper',

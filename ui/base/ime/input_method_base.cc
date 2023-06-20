@@ -7,6 +7,7 @@
 #include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/check.h"
+#include "base/macros.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "ui/base/ime/input_method_delegate.h"
@@ -43,7 +44,7 @@ void InputMethodBase::OnBlur() {
 
 #if defined(OS_WIN)
 bool InputMethodBase::OnUntranslatedIMEMessage(
-    const MSG event,
+    const CHROME_MSG event,
     InputMethod::NativeEventResult* result) {
   return false;
 }
@@ -91,6 +92,19 @@ void InputMethodBase::ShowVirtualKeyboardIfEnabled() {
     observer.OnShowVirtualKeyboardIfEnabled();
   if (auto* keyboard = GetVirtualKeyboardController())
     keyboard->DisplayVirtualKeyboard();
+}
+
+void InputMethodBase::SetVirtualKeyboardVisibilityIfEnabled(bool should_show) {
+  for (InputMethodObserver& observer : observer_list_)
+    observer.OnVirtualKeyboardVisibilityChangedIfEnabled(should_show);
+  auto* keyboard = GetVirtualKeyboardController();
+  if (keyboard) {
+    if (should_show) {
+      keyboard->DisplayVirtualKeyboard();
+    } else {
+      keyboard->DismissVirtualKeyboard();
+    }
+  }
 }
 
 void InputMethodBase::AddObserver(InputMethodObserver* observer) {

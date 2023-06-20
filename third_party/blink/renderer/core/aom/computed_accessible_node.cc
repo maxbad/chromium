@@ -29,6 +29,10 @@ class ComputedAccessibleNodePromiseResolver::RequestAnimationFrameCallback final
       ComputedAccessibleNodePromiseResolver* resolver)
       : resolver_(resolver) {}
 
+  RequestAnimationFrameCallback(const RequestAnimationFrameCallback&) = delete;
+  RequestAnimationFrameCallback& operator=(
+      const RequestAnimationFrameCallback&) = delete;
+
   void Invoke(double) override {
     resolver_->continue_callback_request_id_ = 0;
     resolver_->UpdateTreeAndResolve();
@@ -41,8 +45,6 @@ class ComputedAccessibleNodePromiseResolver::RequestAnimationFrameCallback final
 
  private:
   Member<ComputedAccessibleNodePromiseResolver> resolver_;
-
-  DISALLOW_COPY_AND_ASSIGN(RequestAnimationFrameCallback);
 };
 
 ComputedAccessibleNodePromiseResolver::ComputedAccessibleNodePromiseResolver(
@@ -100,9 +102,14 @@ void ComputedAccessibleNodePromiseResolver::UpdateTreeAndResolve() {
       DocumentUpdateReason::kAccessibility);
   AXObjectCache& cache = ax_context_->GetAXObjectCache();
   AXID ax_id = cache.GetAXID(element_);
+  if (!ax_id) {
+    resolver_->Resolve();  // No AXObject exists for this element.
+    return;
+  }
 
   ComputedAccessibleNode* accessible_node =
       document.GetOrCreateComputedAccessibleNode(ax_id);
+  DCHECK(accessible_node);
   resolver_->Resolve(accessible_node);
 }
 

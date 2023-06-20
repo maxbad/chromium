@@ -8,7 +8,6 @@
 #include <memory>
 #include <string>
 
-#include "base/macros.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
 #include "chrome/browser/command_updater_delegate.h"
@@ -81,7 +80,6 @@ class PresentationReceiverWindowView final
   content::WebContents* GetActiveWebContents() const final;
 
   // views::WidgetDelegateView overrides.
-  void DeleteDelegate() final;
   std::u16string GetWindowTitle() const final;
 
   // ui::AcceleratorTarget overrides.
@@ -99,6 +97,7 @@ class PresentationReceiverWindowView final
       ExclusiveAccessBubbleType bubble_type,
       ExclusiveAccessBubbleHideCallback bubble_first_hide_callback,
       bool force_update) final;
+  bool IsExclusiveAccessBubbleDisplayed() const final;
   void OnExclusiveAccessUserInput() final;
   content::WebContents* GetActiveWebContents() final;
   bool CanUserExitFullscreen() const final;

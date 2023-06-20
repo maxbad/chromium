@@ -160,10 +160,10 @@ export class PDFViewerBaseElement extends PolymerElement {
    * @private
    */
   createPlugin_(isPrintPreview) {
-    // Create the plugin object dynamically so we can set its src. The plugin
-    // element is sized to fill the entire window and is set to be fixed
-    // positioning, acting as a viewport. The plugin renders into this viewport
-    // according to the scroll position of the window.
+    // Create the plugin object dynamically. The plugin element is sized to
+    // fill the entire window and is set to be fixed positioning, acting as a
+    // viewport. The plugin renders into this viewport according to the scroll
+    // position of the window.
     const plugin =
         /** @type {!HTMLEmbedElement} */ (document.createElement('embed'));
 
@@ -174,15 +174,8 @@ export class PDFViewerBaseElement extends PolymerElement {
     plugin.id = 'plugin';
     plugin.type = 'application/x-google-chrome-pdf';
 
-    plugin.setAttribute('src', this.originalUrl);
-    plugin.setAttribute(
-        'stream-url', this.browserApi.getStreamInfo().streamUrl);
-    let headers = '';
-    for (const header in this.browserApi.getStreamInfo().responseHeaders) {
-      headers += header + ': ' +
-          this.browserApi.getStreamInfo().responseHeaders[header] + '\n';
-    }
-    plugin.setAttribute('headers', headers);
+    plugin.setAttribute('original-url', this.originalUrl);
+    plugin.setAttribute('src', this.browserApi.getStreamInfo().streamUrl);
 
     plugin.setAttribute('background-color', this.getBackgroundColor());
 
@@ -198,6 +191,18 @@ export class PDFViewerBaseElement extends PolymerElement {
 
     if (!isPrintPreview) {
       plugin.toggleAttribute('pdf-viewer-update-enabled', true);
+    }
+
+    // Pass the attributes for loading PDF plugin through the
+    // `mimeHandlerPrivate` API.
+    const attributesForLoading =
+        /** @type {!chrome.mimeHandlerPrivate.PdfPluginAttributes} */ ({
+          backgroundColor: this.getBackgroundColor(),
+          allowJavascript: javascript === 'allow'
+        });
+    if (chrome.mimeHandlerPrivate &&
+        chrome.mimeHandlerPrivate.setPdfPluginAttributes) {
+      chrome.mimeHandlerPrivate.setPdfPluginAttributes(attributesForLoading);
     }
 
     return plugin;
@@ -270,6 +275,10 @@ export class PDFViewerBaseElement extends PolymerElement {
       this.viewport_.goToPageAndXY(e.detail.page, point.x, point.y);
     });
 
+    // Setup the keyboard event listener.
+    document.addEventListener(
+        'keydown', e => this.handleKeyEvent(/** @type {!KeyboardEvent} */ (e)));
+
     // Set up the ZoomManager.
     this.zoomManager_ = ZoomManager.create(
         this.browserApi.getZoomBehavior(), () => this.viewport_.getZoom(),
@@ -303,10 +312,10 @@ export class PDFViewerBaseElement extends PolymerElement {
     } else if (progress === 100) {
       // Document load complete.
       if (this.lastViewportPosition) {
-        this.viewport_.position = this.lastViewportPosition;
+        this.viewport_.setPosition(this.lastViewportPosition);
       }
       this.paramsParser.getViewportFromUrlParams(this.originalUrl)
-          .then(this.handleURLParams_.bind(this));
+          .then(params => this.handleURLParams_(params));
       this.setLoadState(LoadState.SUCCESS);
       this.sendDocumentLoadedMessage();
       while (this.delayedScriptingMessages_.length > 0) {
@@ -373,8 +382,22 @@ export class PDFViewerBaseElement extends PolymerElement {
    * PDFScriptingAPI in a page containing the extension) to interact with the
    * plugin.
    * @param {!MessageObject} message The message to handle.
+   * @return {boolean} Whether the message was handled.
    */
   handleScriptingMessage(message) {
+    // TODO(crbug.com/1228987): Remove this message handler when a permanent
+    // postMessage() bridge is implemented for the Unseasoned viewer.
+    if (message.data.type === 'connect') {
+      const token = /** @type {!{token: string}} */ (message.data).token;
+      if (token === this.browserApi.getStreamInfo().streamUrl) {
+        PluginController.getInstance().bindUnseasonedMessageHandler(
+            message.ports[0]);
+      } else {
+        this.dispatchEvent(new CustomEvent('connection-denied-for-testing'));
+      }
+      return true;
+    }
+
     if (this.parentWindow_ !== message.source) {
       this.parentWindow_ = message.source;
       this.parentOrigin_ = message.origin;
@@ -383,6 +406,7 @@ export class PDFViewerBaseElement extends PolymerElement {
         this.sendDocumentLoadedMessage();
       }
     }
+    return false;
   }
 
   /**
@@ -404,6 +428,14 @@ export class PDFViewerBaseElement extends PolymerElement {
    * @protected
    */
   handlePluginMessage(e) {}
+
+  /**
+   * Handles key events. For instance, these may come from the user directly,
+   * the plugin frame, or the scripting API.
+   * @param {!KeyboardEvent} e the event to handle.
+   * @protected
+   */
+  handleKeyEvent(e) {}
 
   /**
    * Sets document dimensions from the current controller.
@@ -512,7 +544,7 @@ export class PDFViewerBaseElement extends PolymerElement {
         } else if (params.view === FittingType.FIT_TO_HEIGHT) {
           currentViewportPosition.x += zoomedPositionShift;
         }
-        this.viewport_.position = currentViewportPosition;
+        this.viewport_.setPosition(currentViewportPosition);
       }
       this.isUserInitiatedEvent = true;
     }

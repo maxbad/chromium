@@ -13,13 +13,14 @@
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/observer_list.h"
-#include "base/single_thread_task_runner.h"
 #include "base/synchronization/atomic_flag.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/task/cancelable_task_tracker.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/threading/thread.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
+#include "components/viz/service/display_embedder/compositor_gpu_thread.h"
 #include "components/viz/service/viz_service_export.h"
 #include "gpu/command_buffer/client/gpu_memory_buffer_manager.h"
 #include "gpu/command_buffer/common/activity_flags.h"
@@ -99,6 +100,9 @@ class VIZ_SERVICE_EXPORT GpuServiceImpl : public gpu::GpuChannelManagerDelegate,
                  gpu::VulkanImplementation* vulkan_implementation,
                  base::OnceCallback<void(ExitCode)> exit_callback);
 
+  GpuServiceImpl(const GpuServiceImpl&) = delete;
+  GpuServiceImpl& operator=(const GpuServiceImpl&) = delete;
+
   ~GpuServiceImpl() override;
 
   void UpdateGPUInfo();
@@ -127,6 +131,8 @@ class VIZ_SERVICE_EXPORT GpuServiceImpl : public gpu::GpuChannelManagerDelegate,
                            bool is_gpu_host,
                            bool cache_shaders_on_disk,
                            EstablishGpuChannelCallback callback) override;
+  void SetChannelClientPid(int32_t client_id,
+                           base::ProcessId client_pid) override;
   void CloseChannel(int32_t client_id) override;
 #if BUILDFLAG(IS_CHROMEOS_ASH)
   void CreateArcVideoDecodeAccelerator(
@@ -148,6 +154,14 @@ class VIZ_SERVICE_EXPORT GpuServiceImpl : public gpu::GpuChannelManagerDelegate,
       mojo::PendingReceiver<chromeos_camera::mojom::JpegEncodeAccelerator>
           jea_receiver) override;
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
+
+#if defined(OS_WIN)
+  void RegisterDCOMPSurfaceHandle(
+      mojo::PlatformHandle surface_handle,
+      RegisterDCOMPSurfaceHandleCallback callback) override;
+  void UnregisterDCOMPSurfaceHandle(
+      const base::UnguessableToken& token) override;
+#endif  // defined(OS_WIN)
 
   void CreateVideoEncodeAcceleratorProvider(
       mojo::PendingReceiver<media::mojom::VideoEncodeAcceleratorProvider>
@@ -216,6 +230,8 @@ class VIZ_SERVICE_EXPORT GpuServiceImpl : public gpu::GpuChannelManagerDelegate,
   void DidUpdateOverlayInfo(const gpu::OverlayInfo& overlay_info) override;
   void DidUpdateHDRStatus(bool hdr_enabled) override;
 #endif
+  void GetDawnInfo(GetDawnInfoCallback callback) override;
+
   void StoreShaderToDisk(int client_id,
                          const std::string& key,
                          const std::string& shader) override;
@@ -250,6 +266,10 @@ class VIZ_SERVICE_EXPORT GpuServiceImpl : public gpu::GpuChannelManagerDelegate,
     return gpu_channel_manager_.get();
   }
 
+  CompositorGpuThread* compositor_gpu_thread() {
+    return compositor_gpu_thread_.get();
+  }
+
   gpu::ImageFactory* gpu_image_factory();
   gpu::GpuMemoryBufferFactory* gpu_memory_buffer_factory() {
     return gpu_memory_buffer_factory_.get();
@@ -279,10 +299,19 @@ class VIZ_SERVICE_EXPORT GpuServiceImpl : public gpu::GpuChannelManagerDelegate,
     return main_runner_;
   }
 
+  scoped_refptr<base::SingleThreadTaskRunner> gpu_task_runner() {
+    return compositor_gpu_thread() ? compositor_gpu_thread()->task_runner()
+                                   : main_runner_;
+  }
+
   gpu::GpuWatchdogThread* watchdog_thread() { return watchdog_thread_.get(); }
 
   const gpu::GpuFeatureInfo& gpu_feature_info() const {
     return gpu_feature_info_;
+  }
+
+  const gpu::GpuDriverBugWorkarounds& gpu_driver_bug_workarounds() const {
+    return gpu_driver_bug_workarounds_;
   }
 
   bool in_host_process() const { return gpu_info_.in_process_gpu; }
@@ -356,6 +385,8 @@ class VIZ_SERVICE_EXPORT GpuServiceImpl : public gpu::GpuChannelManagerDelegate,
   void UpdateOverlayAndHDRInfo();
 #endif
 
+  void GetDawnInfoOnMain(GetDawnInfoCallback callback);
+
   scoped_refptr<base::SingleThreadTaskRunner> main_runner_;
   scoped_refptr<base::SingleThreadTaskRunner> io_runner_;
 
@@ -371,6 +402,8 @@ class VIZ_SERVICE_EXPORT GpuServiceImpl : public gpu::GpuChannelManagerDelegate,
   // Information about general chrome feature support for the GPU.
   gpu::GpuFeatureInfo gpu_feature_info_;
 
+  const gpu::GpuDriverBugWorkarounds gpu_driver_bug_workarounds_;
+
   bool hdr_enabled_ = false;
 
   // What we would have gotten if we haven't fallen back to SwiftShader or
@@ -384,6 +417,9 @@ class VIZ_SERVICE_EXPORT GpuServiceImpl : public gpu::GpuChannelManagerDelegate,
   mojo::SharedRemote<mojom::GpuHost> gpu_host_;
   std::unique_ptr<gpu::GpuChannelManager> gpu_channel_manager_;
   std::unique_ptr<media::MediaGpuChannelManager> media_gpu_channel_manager_;
+
+  // Display compositor gpu thread.
+  std::unique_ptr<CompositorGpuThread> compositor_gpu_thread_;
 
   // On some platforms (e.g. android webview), the SyncPointManager and
   // SharedImageManager comes from external sources.
@@ -436,8 +472,6 @@ class VIZ_SERVICE_EXPORT GpuServiceImpl : public gpu::GpuChannelManagerDelegate,
 
   base::WeakPtr<GpuServiceImpl> weak_ptr_;
   base::WeakPtrFactory<GpuServiceImpl> weak_ptr_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(GpuServiceImpl);
 };
 
 }  // namespace viz

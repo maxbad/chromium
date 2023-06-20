@@ -15,6 +15,7 @@
 #include "chrome/browser/ui/bookmarks/bookmark_bar.h"
 #include "chrome/browser/ui/bookmarks/bookmark_bubble_observer.h"
 #include "chrome/browser/ui/bookmarks/bookmark_stats.h"
+#include "chrome/browser/ui/tabs/tab_group_theme.h"
 #include "chrome/browser/ui/views/bookmarks/bookmark_menu_controller_observer.h"
 #include "components/bookmarks/browser/bookmark_model_observer.h"
 #include "components/bookmarks/browser/bookmark_node_data.h"
@@ -316,6 +317,10 @@ class BookmarkBarView : public views::AccessiblePaneView,
                              const bookmarks::BookmarkNodeData& data,
                              DropLocation* location);
 
+  // Marks the current drop as invalid and cancels the menu. Used when the
+  // model is mutated and a drop is in progress.
+  void InvalidateDrop();
+
   // Returns the node corresponding to |sender|, which is one of the
   // |bookmark_buttons_|.
   const bookmarks::BookmarkNode* GetNodeForSender(View* sender) const;
@@ -390,6 +395,8 @@ class BookmarkBarView : public views::AccessiblePaneView,
                    const ui::DropTargetEvent& event,
                    ui::mojom::DragOperation& output_drag_op);
 
+  int GetDropLocationModelIndexForTesting() const;
+
   // Needed to react to kShowAppsShortcutInBookmarkBar changes.
   PrefChangeRegistrar profile_pref_registrar_;
 
@@ -433,6 +440,9 @@ class BookmarkBarView : public views::AccessiblePaneView,
 
   // The individual bookmark buttons.
   std::vector<views::LabelButton*> bookmark_buttons_;
+
+  // The individual TAB GROUP bookmark buttons.
+  std::vector<views::LabelButton*> tab_group_buttons_;
 
   ButtonSeparatorView* bookmarks_separator_view_ = nullptr;
 

@@ -16,11 +16,11 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/web_applications/test/web_app_browsertest_util.h"
 #include "chrome/browser/ui/web_applications/web_app_controller_browsertest.h"
-#include "chrome/browser/web_applications/components/install_finalizer.h"
-#include "chrome/browser/web_applications/components/web_app_id.h"
-#include "chrome/browser/web_applications/components/web_app_provider_base.h"
 #include "chrome/browser/web_applications/isolation_prefs_utils.h"
 #include "chrome/browser/web_applications/web_app.h"
+#include "chrome/browser/web_applications/web_app_id.h"
+#include "chrome/browser/web_applications/web_app_install_finalizer.h"
+#include "chrome/browser/web_applications/web_app_provider.h"
 #include "chrome/browser/web_applications/web_app_registrar.h"
 #include "components/services/app_service/public/mojom/types.mojom.h"
 #include "components/sessions/core/tab_restore_service.h"
@@ -40,8 +40,7 @@ class WebAppUninstallBrowserTest : public WebAppControllerBrowserTest {
   }
 
   void UninstallWebApp(const AppId& app_id) {
-    WebAppProviderBase* const provider =
-        WebAppProviderBase::GetProviderBase(profile());
+    WebAppProvider* const provider = WebAppProvider::GetForTest(profile());
     base::RunLoop run_loop;
 
     DCHECK(provider->install_finalizer().CanUserUninstallWebApp(app_id));
@@ -136,8 +135,7 @@ IN_PROC_BROWSER_TEST_F(WebAppUninstallBrowserTest, CannotLaunchAfterUninstall) {
 
   apps::AppLaunchParams params(
       app_id, apps::mojom::LaunchContainer::kLaunchContainerWindow,
-      WindowOpenDisposition::NEW_WINDOW,
-      apps::mojom::AppLaunchSource::kSourceTest);
+      WindowOpenDisposition::NEW_WINDOW, apps::mojom::LaunchSource::kFromTest);
 
   UninstallWebApp(app_id);
   content::WebContents* const web_contents =
@@ -155,8 +153,7 @@ IN_PROC_BROWSER_TEST_F(WebAppUninstallBrowserTest, TwoUninstallCalls) {
   bool quit_run_loop = false;
 
   // Trigger app uninstall without waiting for result.
-  WebAppProviderBase* const provider =
-      WebAppProviderBase::GetProviderBase(profile());
+  WebAppProvider* const provider = WebAppProvider::GetForTest(profile());
   EXPECT_TRUE(provider->registrar().IsInstalled(app_id));
   DCHECK(provider->install_finalizer().CanUserUninstallWebApp(app_id));
   provider->install_finalizer().UninstallWebApp(
@@ -168,7 +165,7 @@ IN_PROC_BROWSER_TEST_F(WebAppUninstallBrowserTest, TwoUninstallCalls) {
       }));
 
   // Validate that uninstalling flag is set
-  auto* app = provider->registrar().AsWebAppRegistrar()->GetAppById(app_id);
+  auto* app = provider->registrar().GetAppById(app_id);
   EXPECT_TRUE(app);
   EXPECT_TRUE(app->is_uninstalling());
 

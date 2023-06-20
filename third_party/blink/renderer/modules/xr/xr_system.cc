@@ -121,9 +121,6 @@ const char* SessionModeToString(device::mojom::blink::XRSessionMode mode) {
   return "";
 }
 
-// TODO(crbug.com/1070871): Drop this #if-else
-#if defined(USE_BLINK_V8_BINDING_NEW_IDL_DICTIONARY)
-
 device::mojom::XRDepthUsage ParseDepthUsage(const V8XRDepthUsage& usage) {
   switch (usage.AsEnum()) {
     case V8XRDepthUsage::Enum::kCpuOptimized:
@@ -162,52 +159,6 @@ Vector<device::mojom::XRDepthDataFormat> ParseDepthFormats(
 
   return result;
 }
-
-#else
-
-device::mojom::XRDepthUsage ParseDepthUsage(const String& usage) {
-  if (usage == "cpu-optimized") {
-    return device::mojom::XRDepthUsage::kCPUOptimized;
-  } else if (usage == "gpu-optimized") {
-    return device::mojom::XRDepthUsage::kGPUOptimized;
-  }
-
-  NOTREACHED() << "Only strings in the enum are allowed by IDL";
-  return device::mojom::XRDepthUsage::kCPUOptimized;
-}
-
-Vector<device::mojom::XRDepthUsage> ParseDepthUsages(
-    const Vector<String>& usages) {
-  Vector<device::mojom::XRDepthUsage> result;
-
-  std::transform(usages.begin(), usages.end(), std::back_inserter(result),
-                 ParseDepthUsage);
-
-  return result;
-}
-
-device::mojom::XRDepthDataFormat ParseDepthFormat(const String& format) {
-  if (format == "luminance-alpha") {
-    return device::mojom::XRDepthDataFormat::kLuminanceAlpha;
-  } else if (format == "float32") {
-    return device::mojom::XRDepthDataFormat::kFloat32;
-  }
-
-  NOTREACHED() << "Only strings in the enum are allowed by IDL";
-  return device::mojom::XRDepthDataFormat::kLuminanceAlpha;
-}
-
-Vector<device::mojom::XRDepthDataFormat> ParseDepthFormats(
-    const Vector<String>& formats) {
-  Vector<device::mojom::XRDepthDataFormat> result;
-
-  std::transform(formats.begin(), formats.end(), std::back_inserter(result),
-                 ParseDepthFormat);
-
-  return result;
-}
-
-#endif  // USE_BLINK_V8_BINDING_NEW_IDL_DICTIONARY
 
 // Converts the given string to an XRSessionFeature. If the string is
 // unrecognized, returns nullopt. Based on the spec:
@@ -313,7 +264,7 @@ bool IsFeatureValidForMode(device::mojom::XRSessionFeature feature,
   }
 }
 
-bool HasRequiredPermissionsPolicy(const ExecutionContext* context,
+bool HasRequiredPermissionsPolicy(ExecutionContext* context,
                                   device::mojom::XRSessionFeature feature) {
   if (!context)
     return false;
@@ -1362,7 +1313,7 @@ ScriptPromise XRSystem::requestSession(ScriptState* script_state,
       SkBitmap sk_bitmap = static_bitmap_image->AsSkBitmapForCurrentFrame(
           kRespectImageOrientation);
       IntSize int_size = static_bitmap_image->Size();
-      gfx::Size size(int_size.Width(), int_size.Height());
+      gfx::Size size(int_size.width(), int_size.height());
       images.emplace_back(sk_bitmap, size, image->widthInMeters());
       ++index;
     }

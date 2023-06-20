@@ -89,15 +89,6 @@ Event::PassiveMode EventPassiveMode(
   return Event::PassiveMode::kPassiveDefault;
 }
 
-Settings* WindowSettings(LocalDOMWindow* executing_window) {
-  if (executing_window) {
-    if (LocalFrame* frame = executing_window->GetFrame()) {
-      return frame->GetSettings();
-    }
-  }
-  return nullptr;
-}
-
 bool IsTouchScrollBlockingEvent(const AtomicString& event_type) {
   return event_type == event_type_names::kTouchstart ||
          event_type == event_type_names::kTouchmove;
@@ -215,34 +206,6 @@ void CountFiringEventListeners(const Event& event,
     if (CheckTypeThenUseCount(event, counted_event.event_type,
                               counted_event.feature, document))
       return;
-  }
-}
-
-void RegisterWithScheduler(ExecutionContext* execution_context,
-                           const AtomicString& event_type) {
-  if (!execution_context || !execution_context->GetScheduler())
-    return;
-  // TODO(altimin): Ideally we would also support tracking unregistration of
-  // event listeners, but we don't do this for performance reasons.
-  absl::optional<SchedulingPolicy::Feature> feature_for_scheduler;
-  if (event_type == event_type_names::kPageshow) {
-    feature_for_scheduler = SchedulingPolicy::Feature::kPageShowEventListener;
-  } else if (event_type == event_type_names::kPagehide) {
-    feature_for_scheduler = SchedulingPolicy::Feature::kPageHideEventListener;
-  } else if (event_type == event_type_names::kBeforeunload) {
-    feature_for_scheduler =
-        SchedulingPolicy::Feature::kBeforeUnloadEventListener;
-  } else if (event_type == event_type_names::kUnload) {
-    feature_for_scheduler = SchedulingPolicy::Feature::kUnloadEventListener;
-  } else if (event_type == event_type_names::kFreeze) {
-    feature_for_scheduler = SchedulingPolicy::Feature::kFreezeEventListener;
-  } else if (event_type == event_type_names::kResume) {
-    feature_for_scheduler = SchedulingPolicy::Feature::kResumeEventListener;
-  }
-  if (feature_for_scheduler) {
-    execution_context->GetScheduler()->RegisterStickyFeature(
-        feature_for_scheduler.value(),
-        {SchedulingPolicy::DisableBackForwardCache()});
   }
 }
 
@@ -408,24 +371,8 @@ void EventTarget::SetDefaultAddEventListenerOptions(
     }
   }
 
-  if (Settings* settings = WindowSettings(ExecutingWindow())) {
-    switch (settings->GetPassiveListenerDefault()) {
-      case PassiveListenerDefault::kFalse:
-        if (!options->hasPassive())
-          options->setPassive(false);
-        break;
-      case PassiveListenerDefault::kTrue:
-        if (!options->hasPassive())
-          options->setPassive(true);
-        break;
-      case PassiveListenerDefault::kForceAllTrue:
-        options->setPassive(true);
-        break;
-    }
-  } else {
-    if (!options->hasPassive())
-      options->setPassive(false);
-  }
+  if (!options->hasPassive())
+    options->setPassive(false);
 
   if (!options->passive() && !options->PassiveSpecified()) {
     String message_text = String::Format(
@@ -583,8 +530,6 @@ void EventTarget::AddedEventListener(
     }
   }
 
-  RegisterWithScheduler(GetExecutionContext(), event_type);
-
   if (event_util::IsDOMMutationEventType(event_type)) {
     if (ExecutionContext* context = GetExecutionContext()) {
       String message_text = String::Format(
@@ -601,7 +546,7 @@ void EventTarget::AddedEventListener(
 bool EventTarget::removeEventListener(const AtomicString& event_type,
                                       V8EventListener* listener) {
   EventListener* event_listener = JSEventListener::CreateOrNull(listener);
-  return removeEventListener(event_type, event_listener);
+  return removeEventListener(event_type, event_listener, /*use_capture=*/false);
 }
 
 bool EventTarget::removeEventListener(
@@ -1031,6 +976,11 @@ void EventTarget::DispatchEnqueuedEvent(Event* event,
   }
   probe::AsyncTask async_task(context, event->async_task_id());
   DispatchEvent(*event);
+}
+
+void EventTargetWithInlineData::Trace(Visitor* visitor) const {
+  visitor->Trace(data_);
+  EventTarget::Trace(visitor);
 }
 
 STATIC_ASSERT_ENUM(WebSettings::PassiveEventListenerDefault::kFalse,

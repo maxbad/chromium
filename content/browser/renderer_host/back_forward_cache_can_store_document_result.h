@@ -6,12 +6,22 @@
 #define CONTENT_BROWSER_RENDERER_HOST_BACK_FORWARD_CACHE_CAN_STORE_DOCUMENT_RESULT_H_
 
 #include <bitset>
+#include <cstdint>
 #include <set>
 
+#include "base/containers/enum_set.h"
+#include "base/trace_event/typed_macros.h"
 #include "content/browser/renderer_host/back_forward_cache_metrics.h"
 #include "content/browser/renderer_host/should_swap_browsing_instance.h"
+#include "content/public/browser/back_forward_cache.h"
+#include "content/public/browser/render_frame_host.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
+#include "third_party/blink/public/common/scheduler/web_scheduler_tracked_feature.h"
 
 namespace content {
+
+using BlockListedFeatures = blink::scheduler::WebSchedulerTrackedFeatures;
+using ChromeTrackEvent = perfetto::protos::pbzero::ChromeTrackEvent;
 
 // Represents the result whether the page could be stored in the back-forward
 // cache with the reasons.
@@ -20,9 +30,9 @@ namespace content {
 class CONTENT_EXPORT BackForwardCacheCanStoreDocumentResult {
  public:
   using NotStoredReasons =
-      std::bitset<static_cast<size_t>(
-                      BackForwardCacheMetrics::NotRestoredReason::kMaxValue) +
-                  1ul>;
+      base::EnumSet<BackForwardCacheMetrics::NotRestoredReason,
+                    BackForwardCacheMetrics::NotRestoredReason::kMinValue,
+                    BackForwardCacheMetrics::NotRestoredReason::kMaxValue>;
 
   BackForwardCacheCanStoreDocumentResult();
   BackForwardCacheCanStoreDocumentResult(
@@ -37,12 +47,16 @@ class CONTENT_EXPORT BackForwardCacheCanStoreDocumentResult {
       BackForwardCacheMetrics::NotRestoredReason reason) const;
 
   void No(BackForwardCacheMetrics::NotRestoredReason reason);
-  void NoDueToFeatures(uint64_t features);
+  void NoDueToFeatures(BlockListedFeatures features);
+
+  void NoDueToRelatedActiveContents(
+      absl::optional<ShouldSwapBrowsingInstance> browsing_instance_swap_result);
 
   // TODO(hajimehoshi): Replace the arbitrary strings with base::Location /
   // FROM_HERE for privacy reasons.
   void NoDueToDisableForRenderFrameHostCalled(
       const std::set<BackForwardCache::DisabledReason>& reasons);
+  void NoDueToDisallowActivation(uint64_t reason);
 
   bool CanStore() const;
   operator bool() const { return CanStore(); }
@@ -50,13 +64,24 @@ class CONTENT_EXPORT BackForwardCacheCanStoreDocumentResult {
   const NotStoredReasons& not_stored_reasons() const {
     return not_stored_reasons_;
   }
-  uint64_t blocklisted_features() const { return blocklisted_features_; }
+  BlockListedFeatures blocklisted_features() const {
+    return blocklisted_features_;
+  }
 
   const std::set<BackForwardCache::DisabledReason>& disabled_reasons() const {
     return disabled_reasons_;
   }
 
+  const std::set<uint64_t>& disallow_activation_reasons() const {
+    return disallow_activation_reasons_;
+  }
+
   std::string ToString() const;
+
+  void WriteIntoTrace(
+      perfetto::TracedProto<
+          perfetto::protos::pbzero::BackForwardCacheCanStoreDocumentResult>
+          result) const;
 
  private:
   void AddNotStoredReason(BackForwardCacheMetrics::NotRestoredReason reason);
@@ -64,8 +89,10 @@ class CONTENT_EXPORT BackForwardCacheCanStoreDocumentResult {
       BackForwardCacheMetrics::NotRestoredReason reason) const;
 
   NotStoredReasons not_stored_reasons_;
-  uint64_t blocklisted_features_ = 0;
+  BlockListedFeatures blocklisted_features_;
   std::set<BackForwardCache::DisabledReason> disabled_reasons_;
+  absl::optional<ShouldSwapBrowsingInstance> browsing_instance_swap_result_;
+  std::set<uint64_t> disallow_activation_reasons_;
 };
 
 }  // namespace content

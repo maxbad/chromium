@@ -8,7 +8,7 @@
 #include <utility>
 
 #include "base/command_line.h"
-#include "base/numerics/ranges.h"
+#include "base/cxx17_backports.h"
 #include "base/time/clock.h"
 #include "chrome/browser/notifications/scheduler/internal/impression_types.h"
 #include "chrome/browser/notifications/scheduler/internal/notification_entry.h"
@@ -151,14 +151,13 @@ class BackgroundTaskCoordinatorHelper {
 
     base::TimeDelta window_start_time =
         background_task_time_.value() - clock_->Now();
-    window_start_time = base::ClampToRange(window_start_time, base::TimeDelta(),
-                                           base::TimeDelta::Max());
+    window_start_time = base::clamp(window_start_time, base::TimeDelta(),
+                                    base::TimeDelta::Max());
 
     // TODO(xingliu): Remove SchedulerTaskTime.
     if (base::CommandLine::ForCurrentProcess()->HasSwitch(
             switches::kNotificationSchedulerImmediateBackgroundTask)) {
-      background_task_->Schedule(base::TimeDelta::FromSeconds(30),
-                                 base::TimeDelta::FromMinutes(1));
+      background_task_->Schedule(base::Seconds(30), base::Minutes(1));
       return;
     }
 

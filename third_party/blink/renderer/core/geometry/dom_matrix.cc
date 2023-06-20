@@ -63,7 +63,7 @@ DOMMatrix* DOMMatrix::Create(DOMMatrixReadOnly* other,
   return MakeGarbageCollected<DOMMatrix>(other->Matrix(), other->is2D());
 }
 
-DOMMatrix* DOMMatrix::Create(const SkMatrix44& matrix,
+DOMMatrix* DOMMatrix::Create(const skia::Matrix44& matrix,
                              ExceptionState& exception_state) {
   TransformationMatrix transformation_matrix(matrix);
   return MakeGarbageCollected<DOMMatrix>(transformation_matrix,
@@ -266,7 +266,7 @@ DOMMatrix* DOMMatrix::rotateSelf(double rot_x, double rot_y, double rot_z) {
 }
 
 DOMMatrix* DOMMatrix::rotateFromVectorSelf(double x, double y) {
-  matrix_.Rotate(rad2deg(atan2(y, x)));
+  matrix_.Rotate(Rad2deg(atan2(y, x)));
   return this;
 }
 

@@ -28,6 +28,9 @@ class AuthenticatorDialogTest : public DialogBrowserTest {
  public:
   AuthenticatorDialogTest() = default;
 
+  AuthenticatorDialogTest(const AuthenticatorDialogTest&) = delete;
+  AuthenticatorDialogTest& operator=(const AuthenticatorDialogTest&) = delete;
+
   // DialogBrowserTest:
   void ShowUi(const std::string& name) override {
     // Web modal dialogs' bounds may exceed the display's work area.
@@ -80,8 +83,7 @@ class AuthenticatorDialogTest : public DialogBrowserTest {
           AuthenticatorRequestDialogModel::Step::kBlePowerOnManual);
     } else if (name == "touchid_incognito") {
       model->SetCurrentStepForTesting(
-          AuthenticatorRequestDialogModel::Step::
-              kPlatformAuthenticatorOffTheRecordInterstitial);
+          AuthenticatorRequestDialogModel::Step::kOffTheRecordInterstitial);
     } else if (name == "cable_activate" ||
                name == "cable_server_link_activate") {
       model->set_cable_transport_info(
@@ -127,7 +129,7 @@ class AuthenticatorDialogTest : public DialogBrowserTest {
     } else if (name == "inline_bio_enrollment") {
       model->StartInlineBioEnrollment(base::DoNothing());
       timer_.Start(
-          FROM_HERE, base::TimeDelta::FromSeconds(2),
+          FROM_HERE, base::Seconds(2),
           base::BindLambdaForTesting([&, weak_model = model->GetWeakPtr()] {
             if (!weak_model || weak_model->current_step() !=
                                    AuthenticatorRequestDialogModel::Step::
@@ -244,8 +246,6 @@ class AuthenticatorDialogTest : public DialogBrowserTest {
  private:
   base::RepeatingTimer timer_;
   int bio_samples_remaining_ = 5;
-
-  DISALLOW_COPY_AND_ASSIGN(AuthenticatorDialogTest);
 };
 
 // Run with:

@@ -36,9 +36,13 @@
 #include "ui/base/ui_base_paths.h"
 #include "ui/gl/test/gl_surface_test_support.h"
 
+#if BUILDFLAG(IS_CHROMEOS_ASH) || BUILDFLAG(IS_CHROMEOS_LACROS)
+#include "chromeos/dbus/constants/dbus_paths.h"
+#endif
+
 #if BUILDFLAG(IS_CHROMEOS_ASH)
 #include "ash/constants/ash_paths.h"
-#include "chromeos/dbus/constants/dbus_paths.h"
+#include "chrome/browser/ash/arc/arc_util.h"
 #endif
 
 #if BUILDFLAG(ENABLE_EXTENSIONS)
@@ -108,6 +112,9 @@ class ChromeUnitTestSuiteInitializer : public testing::EmptyTestEventListener {
     DCHECK(ui::AXPlatformNode::GetAccessibilityMode() == 0)
         << "Please use ScopedAxModeSetter, or add a call to "
            "AXPlatformNode::ResetAxModeForTesting() at the end of your test.";
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+    arc::ClearArcAllowedCheckForTesting();
+#endif  // BUILDFLAG(IS_CHROMEOS_ASH)
   }
 
  private:
@@ -174,6 +181,9 @@ void ChromeUnitTestSuite::InitializeProviders() {
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
   chromeos::RegisterPathProvider();
+#endif
+
+#if BUILDFLAG(IS_CHROMEOS_ASH) || BUILDFLAG(IS_CHROMEOS_LACROS)
   chromeos::dbus_paths::RegisterPathProvider();
 #endif
 
@@ -200,11 +210,11 @@ void ChromeUnitTestSuite::InitializeResourceBundle() {
   base::FilePath resources_pack_path;
   base::PathService::Get(chrome::FILE_RESOURCES_PACK, &resources_pack_path);
   ui::ResourceBundle::GetSharedInstance().AddDataPackFromPath(
-      resources_pack_path, ui::SCALE_FACTOR_NONE);
+      resources_pack_path, ui::kScaleFactorNone);
 
   base::FilePath unit_tests_pack_path;
-  ASSERT_TRUE(base::PathService::Get(base::DIR_MODULE, &unit_tests_pack_path));
+  ASSERT_TRUE(base::PathService::Get(base::DIR_ASSETS, &unit_tests_pack_path));
   unit_tests_pack_path = unit_tests_pack_path.AppendASCII("unit_tests.pak");
   ui::ResourceBundle::GetSharedInstance().AddDataPackFromPath(
-      unit_tests_pack_path, ui::SCALE_FACTOR_NONE);
+      unit_tests_pack_path, ui::kScaleFactorNone);
 }

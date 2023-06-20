@@ -11,7 +11,7 @@
 #include "base/scoped_observation.h"
 #include "chrome/browser/safe_browsing/download_protection/download_protection_util.h"
 #include "components/download/public/common/download_item.h"
-#include "components/safe_browsing/core/db/database_manager.h"
+#include "components/safe_browsing/core/browser/db/database_manager.h"
 #include "content/public/browser/browser_thread.h"
 
 using content::BrowserThread;
@@ -35,6 +35,9 @@ class DownloadUrlSBClient : public SafeBrowsingDatabaseManager::Client,
       CheckDownloadCallback callback,
       const scoped_refptr<SafeBrowsingUIManager>& ui_manager,
       const scoped_refptr<SafeBrowsingDatabaseManager>& database_manager);
+
+  DownloadUrlSBClient(const DownloadUrlSBClient&) = delete;
+  DownloadUrlSBClient& operator=(const DownloadUrlSBClient&) = delete;
 
   // Implements DownloadItem::Observer.
   void OnDownloadDestroyed(download::DownloadItem* download) override;
@@ -84,8 +87,6 @@ class DownloadUrlSBClient : public SafeBrowsingDatabaseManager::Client,
   base::ScopedObservation<download::DownloadItem,
                           download::DownloadItem::Observer>
       download_item_observation_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(DownloadUrlSBClient);
 };
 
 }  // namespace safe_browsing

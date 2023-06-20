@@ -10,12 +10,12 @@
 #include <utility>
 
 #include "base/callback.h"
-#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "build/chromeos_buildflags.h"
 #include "cc/base/region.h"
+#include "components/exo/buffer.h"
 #include "components/exo/layer_tree_frame_sink_holder.h"
 #include "components/exo/surface_delegate.h"
 #include "components/viz/common/frame_sinks/begin_frame_source.h"
@@ -23,8 +23,10 @@
 #include "third_party/skia/include/core/SkBlendMode.h"
 #include "ui/aura/window.h"
 #include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/rounded_corners_f.h"
+#include "ui/gfx/geometry/size_f.h"
+#include "ui/gfx/geometry/transform.h"
 #include "ui/gfx/native_widget_types.h"
-#include "ui/gfx/transform.h"
 
 class SkPath;
 
@@ -58,7 +60,19 @@ class PropertyHelper;
 }
 
 // Counter-clockwise rotations.
-enum class Transform { NORMAL, ROTATE_90, ROTATE_180, ROTATE_270 };
+enum class Transform {
+  NORMAL,
+  ROTATE_90,
+  ROTATE_180,
+  ROTATE_270,
+  FLIPPED,
+  FLIPPED_ROTATE_90,
+  FLIPPED_ROTATE_180,
+  FLIPPED_ROTATE_270
+};
+
+// Priority for overlay promotion.
+enum class OverlayPriority { LOW, REGULAR, REQUIRED };
 
 // A property key to store the surface Id set by the client.
 extern const ui::ClassProperty<std::string*>* const kClientSurfaceIdKey;
@@ -72,9 +86,13 @@ extern const ui::ClassProperty<int32_t>* const kWindowSessionId;
 class Surface final : public ui::PropertyHandler {
  public:
   using PropertyDeallocator = void (*)(int64_t value);
-  using LeaveEnterCallback = base::RepeatingCallback<void(int64_t, int64_t)>;
+  using LeaveEnterCallback = base::RepeatingCallback<bool(int64_t, int64_t)>;
 
   Surface();
+
+  Surface(const Surface&) = delete;
+  Surface& operator=(const Surface&) = delete;
+
   ~Surface() override;
 
   // Type-checking downcast routine.
@@ -87,7 +105,8 @@ class Surface final : public ui::PropertyHandler {
   }
 
   // Called when the display the surface is on has changed.
-  void UpdateDisplay(int64_t old_id, int64_t new_id);
+  // Returns true if successful, and false if it fails.
+  bool UpdateDisplay(int64_t old_id, int64_t new_id);
 
   // Called when the output is added for new display.
   void OnNewOutputAdded();
@@ -154,6 +173,9 @@ class Surface final : public ui::PropertyHandler {
   void PlaceSubSurfaceBelow(Surface* sub_surface, Surface* sibling);
   void OnSubSurfaceCommit();
 
+  void SetRoundedCorners(const gfx::RoundedCornersF& radii);
+  void SetOverlayPriorityHint(OverlayPriority hint);
+
   // This sets the surface viewport for scaling.
   void SetViewport(const gfx::Size& viewport);
 
@@ -190,14 +212,16 @@ class Surface final : public ui::PropertyHandler {
   // (plain fullscreen), the titlebar and shelf are always hidden.
   void SetUseImmersiveForFullscreen(bool value);
 
-  // Called to show the snap preview to the right or left, or to hide it.
-  void ShowSnapPreviewToRight();
-  void ShowSnapPreviewToLeft();
+  // Called to show the snap preview to the primary or secondary position, or
+  // to hide it.
+  void ShowSnapPreviewToSecondary();
+  void ShowSnapPreviewToPrimary();
   void HideSnapPreview();
 
-  // Called when the client was snapped to right or left, or reset.
-  void SetSnappedToRight();
-  void SetSnappedToLeft();
+  // Called when the client was snapped to primary or secondary position, or
+  // reset.
+  void SetSnappedToSecondary();
+  void SetSnappedToPrimary();
   void UnsetSnap();
 
   // Whether the current client window can go back, as per its navigation list.
@@ -228,6 +252,13 @@ class Surface final : public ui::PropertyHandler {
   void SetAcquireFence(std::unique_ptr<gfx::GpuFence> gpu_fence);
   // Returns whether the surface has an uncommitted acquire fence.
   bool HasPendingAcquireFence() const;
+
+  // Request a callback when the buffer attached at the next commit is
+  // no longer used by that commit.
+  void SetPerCommitBufferReleaseCallback(
+      Buffer::PerCommitExplicitReleaseCallback callback);
+  // Whether the surface has an uncommitted per-commit buffer release callback.
+  bool HasPendingPerCommitBufferReleaseCallback() const;
 
   // Surface state (damage regions, attached buffers, etc.) is double-buffered.
   // A Commit() call atomically applies all pending state, replacing the
@@ -338,6 +369,37 @@ class Surface final : public ui::PropertyHandler {
   void SetWindowSessionId(int32_t window_session_id);
   int32_t GetWindowSessionId();
 
+  // Requests that the surface enters PIP mode.
+  void SetPip();
+
+  // Requests that the surface exits PIP mode.
+  void UnsetPip();
+
+  // Requests that the surface maintains the given aspect ratio.
+  void SetAspectRatio(const gfx::SizeF& aspect_ratio);
+
+  // Triggers send desk state of the window to observers.
+  // |state| is the index of the desk which the window moved to,
+  // or -1 for a window assigned to all desks.
+  void OnDeskChanged(int state);
+
+  // Requests that DesksController to move the window to a desk at |desk_index|.
+  void MoveToDesk(int desk_index);
+
+  // Requests that window is visible on all workspaces.
+  void SetVisibleOnAllWorkspaces();
+
+  // Sets the initial workspace to restore a window to the corresponding desk.
+  void SetInitialWorkspace(const char* initial_workspace);
+
+  // Pins/locks a window to the screen so that the user cannot do anything
+  // else before the mode is released. If trusted is set, it is an invocation
+  // from a trusted app like a school test mode app.
+  void Pin(bool trusted);
+
+  // Release the pinned mode and allows the user to do other things again.
+  void Unpin();
+
  private:
   struct State {
     State();
@@ -363,6 +425,10 @@ class Surface final : public ui::PropertyHandler {
   class BufferAttachment {
    public:
     BufferAttachment();
+
+    BufferAttachment(const BufferAttachment&) = delete;
+    BufferAttachment& operator=(const BufferAttachment&) = delete;
+
     ~BufferAttachment();
 
     BufferAttachment& operator=(BufferAttachment&& buffer);
@@ -375,8 +441,6 @@ class Surface final : public ui::PropertyHandler {
    private:
     base::WeakPtr<Buffer> buffer_;
     gfx::Size size_;
-
-    DISALLOW_COPY_AND_ASSIGN(BufferAttachment);
   };
 
   struct ExtendedState {
@@ -387,6 +451,8 @@ class Surface final : public ui::PropertyHandler {
 
     // The buffer that will become the content of surface.
     BufferAttachment buffer;
+    // The rounded corner for the surface.
+    gfx::RoundedCornersF radii;
     // The damage region to schedule paint for.
     cc::Region damage;
     // These lists contain the callbacks to notify the client when it is a good
@@ -397,6 +463,13 @@ class Surface final : public ui::PropertyHandler {
     std::list<PresentationCallback> presentation_callbacks;
     // The acquire gpu fence to associate with the surface buffer.
     std::unique_ptr<gfx::GpuFence> acquire_fence;
+    // Callback to notify about the per-commit buffer release. The wayland
+    // Exo backend uses this callback to implement the immediate_release
+    // event of the explicit sync protocol.
+    Buffer::PerCommitExplicitReleaseCallback
+        per_commit_explicit_release_callback_;
+    // The hint for overlay prioritization
+    OverlayPriority overlay_priority_hint = OverlayPriority::REGULAR;
   };
 
   friend class subtle::PropertyHelper;
@@ -501,21 +574,21 @@ class Surface final : public ui::PropertyHandler {
   gfx::Size embedded_surface_size_;
 
   LeaveEnterCallback leave_enter_callback_;
-
-  DISALLOW_COPY_AND_ASSIGN(Surface);
 };
 
 class ScopedSurface {
  public:
   ScopedSurface(Surface* surface, SurfaceObserver* observer);
+
+  ScopedSurface(const ScopedSurface&) = delete;
+  ScopedSurface& operator=(const ScopedSurface&) = delete;
+
   virtual ~ScopedSurface();
   Surface* get() { return surface_; }
 
  private:
   Surface* const surface_;
   SurfaceObserver* const observer_;
-
-  DISALLOW_COPY_AND_ASSIGN(ScopedSurface);
 };
 
 }  // namespace exo

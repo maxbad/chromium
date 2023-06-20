@@ -14,7 +14,6 @@
 #include "base/json/json_string_value_serializer.h"
 #include "base/json/string_escape.h"
 #include "base/logging.h"
-#include "base/macros.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/string_util.h"
@@ -87,9 +86,9 @@ std::string GenerateJWKSet(const uint8_t* key,
 
 std::string GenerateJWKSet(const KeyIdAndKeyPairs& keys,
                            CdmSessionType session_type) {
-  auto list = std::make_unique<base::ListValue>();
+  base::ListValue list;
   for (const auto& key_pair : keys) {
-    list->Append(CreateJSONDictionary(
+    list.Append(CreateJSONDictionary(
         reinterpret_cast<const uint8_t*>(key_pair.second.data()),
         key_pair.second.length(),
         reinterpret_cast<const uint8_t*>(key_pair.first.data()),
@@ -97,7 +96,7 @@ std::string GenerateJWKSet(const KeyIdAndKeyPairs& keys,
   }
 
   base::DictionaryValue jwk_set;
-  jwk_set.Set(kKeysTag, std::move(list));
+  jwk_set.SetKey(kKeysTag, std::move(list));
   switch (session_type) {
     case CdmSessionType::kTemporary:
       jwk_set.SetString(kTypeTag, kTemporarySession);
@@ -187,7 +186,7 @@ bool ExtractKeysFromJWKSet(const std::string& jwk_set,
   // Create a local list of keys, so that |jwk_keys| only gets updated on
   // success.
   KeyIdAndKeyPairs local_keys;
-  for (size_t i = 0; i < list_val->GetSize(); ++i) {
+  for (size_t i = 0; i < list_val->GetList().size(); ++i) {
     base::DictionaryValue* jwk = NULL;
     if (!list_val->GetDictionary(i, &jwk)) {
       DVLOG(1) << "Unable to access '" << kKeysTag << "'[" << i
@@ -256,7 +255,7 @@ bool ExtractKeyIdsFromKeyIdsInitData(const std::string& input,
   // Create a local list of key ids, so that |key_ids| only gets updated on
   // success.
   KeyIdList local_key_ids;
-  for (size_t i = 0; i < list_val->GetSize(); ++i) {
+  for (size_t i = 0; i < list_val->GetList().size(); ++i) {
     std::string encoded_key_id;
     if (!list_val->GetString(i, &encoded_key_id)) {
       error_message->assign("'");
@@ -402,7 +401,7 @@ bool ExtractFirstKeyIdFromLicenseRequest(const std::vector<uint8_t>& license,
   }
 
   // Get the first key.
-  if (list_val->GetSize() < 1) {
+  if (list_val->GetList().size() < 1) {
     DVLOG(1) << "Empty '" << kKeyIdsTag << "' list";
     return false;
   }

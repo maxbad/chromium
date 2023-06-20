@@ -6,6 +6,7 @@ package org.chromium.chrome.browser.dom_distiller;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.content.res.Resources;
 import android.net.Uri;
 import android.os.SystemClock;
 
@@ -20,6 +21,8 @@ import org.chromium.base.IntentUtils;
 import org.chromium.base.SysUtils;
 import org.chromium.base.UserData;
 import org.chromium.base.metrics.RecordHistogram;
+import org.chromium.base.supplier.Supplier;
+import org.chromium.chrome.R;
 import org.chromium.chrome.browser.IntentHandler;
 import org.chromium.chrome.browser.browser_controls.BrowserControlsVisibilityManager;
 import org.chromium.chrome.browser.browserservices.intents.BrowserServicesIntentDataProvider.CustomTabsUiType;
@@ -39,6 +42,12 @@ import org.chromium.chrome.browser.tab.TabHidingType;
 import org.chromium.chrome.browser.tab.TabSelectionType;
 import org.chromium.chrome.browser.tab.TabUtils;
 import org.chromium.components.dom_distiller.core.DomDistillerUrlUtils;
+import org.chromium.components.messages.DismissReason;
+import org.chromium.components.messages.MessageBannerProperties;
+import org.chromium.components.messages.MessageDispatcher;
+import org.chromium.components.messages.MessageDispatcherProvider;
+import org.chromium.components.messages.MessageIdentifier;
+import org.chromium.components.messages.MessageScopeType;
 import org.chromium.components.navigation_interception.InterceptNavigationDelegate;
 import org.chromium.content_public.browser.LoadCommittedDetails;
 import org.chromium.content_public.browser.LoadUrlParams;
@@ -48,6 +57,7 @@ import org.chromium.content_public.browser.NavigationHandle;
 import org.chromium.content_public.browser.WebContents;
 import org.chromium.content_public.browser.WebContentsObserver;
 import org.chromium.ui.base.WindowAndroid;
+import org.chromium.ui.modelutil.PropertyModel;
 import org.chromium.ui.util.ColorUtils;
 import org.chromium.url.GURL;
 
@@ -123,15 +133,22 @@ public class ReaderModeManager extends EmptyTabObserver implements UserData {
     private boolean mIsDestroyed;
 
     /** The tab this manager is attached to. */
-    private Tab mTab;
+    private final Tab mTab;
+
+    /** The supplier of MessageDispatcher to display the message. */
+    private final Supplier<MessageDispatcher> mMessageDispatcherSupplier;
 
     // Hold on to the InterceptNavigationDelegate that the custom tab uses.
     InterceptNavigationDelegate mCustomTabNavigationDelegate;
 
-    ReaderModeManager(Tab tab) {
+    /** Whether the messages UI was requested for a navigation. */
+    private boolean mMessageRequestedForNavigation;
+
+    ReaderModeManager(Tab tab, Supplier<MessageDispatcher> messageDispatcherSupplier) {
         super();
         mTab = tab;
         mTab.addObserver(this);
+        mMessageDispatcherSupplier = messageDispatcherSupplier;
     }
 
     /**
@@ -139,7 +156,9 @@ public class ReaderModeManager extends EmptyTabObserver implements UserData {
      * @param tab The tab that will have a manager instance attached to it.
      */
     public static void createForTab(Tab tab) {
-        tab.getUserDataHost().setUserData(USER_DATA_KEY, new ReaderModeManager(tab));
+        tab.getUserDataHost().setUserData(USER_DATA_KEY,
+                new ReaderModeManager(
+                        tab, () -> MessageDispatcherProvider.from(tab.getWindowAndroid())));
     }
 
     /**
@@ -211,7 +230,7 @@ public class ReaderModeManager extends EmptyTabObserver implements UserData {
         if (mWebContentsObserver == null && mTab.getWebContents() != null) {
             mWebContentsObserver = createWebContentsObserver();
         }
-        tryShowingInfoBar();
+        tryShowingPrompt();
     }
 
     @Override
@@ -249,6 +268,7 @@ public class ReaderModeManager extends EmptyTabObserver implements UserData {
         if (mWebContentsObserver != null) mWebContentsObserver.destroy();
         mDistillationStatus = DistillationStatus.POSSIBLE;
         mIsDismissed = false;
+        mMessageRequestedForNavigation = false;
         mDistillerUrl = null;
         mShowInfoBarRecorded = false;
         mIsViewingReaderModePage = false;
@@ -315,7 +335,7 @@ public class ReaderModeManager extends EmptyTabObserver implements UserData {
 
             @Override
             public void didStartNavigation(NavigationHandle navigation) {
-                if (!navigation.isInMainFrame() || navigation.isSameDocument()) return;
+                if (!navigation.isInPrimaryMainFrame() || navigation.isSameDocument()) return;
 
                 // Reader Mode should not pollute the navigation stack. To avoid this, watch for
                 // navigations and prepare to remove any that are "chrome-distiller" urls.
@@ -341,7 +361,7 @@ public class ReaderModeManager extends EmptyTabObserver implements UserData {
             public void didFinishNavigation(NavigationHandle navigation) {
                 // TODO(cjhopman): This should possibly ignore navigations that replace the entry
                 // (like those from history.replaceState()).
-                if (!navigation.hasCommitted() || !navigation.isInMainFrame()
+                if (!navigation.hasCommitted() || !navigation.isInPrimaryMainFrame()
                         || navigation.isSameDocument()) {
                     return;
                 }
@@ -366,7 +386,7 @@ public class ReaderModeManager extends EmptyTabObserver implements UserData {
                 }
                 mReaderModePageUrl = null;
 
-                if (mDistillationStatus == DistillationStatus.POSSIBLE) tryShowingInfoBar();
+                if (mDistillationStatus == DistillationStatus.POSSIBLE) tryShowingPrompt();
             }
 
             @Override
@@ -375,6 +395,7 @@ public class ReaderModeManager extends EmptyTabObserver implements UserData {
                 // Reset closed state of reader mode in this tab once we know a navigation is
                 // happening.
                 mIsDismissed = false;
+                mMessageRequestedForNavigation = false;
 
                 // If the infobar was not shown for the previous navigation, record it now.
                 if (mTab != null && !mTab.isNativePage() && !mTab.isBeingRestored()) {
@@ -399,9 +420,9 @@ public class ReaderModeManager extends EmptyTabObserver implements UserData {
         RecordHistogram.recordLongTimesHistogram("DomDistiller.Time.ViewingReaderModePage", timeMs);
     }
 
-    /** Try showing the reader mode infobar. */
+    /** Try showing the reader mode prompt. */
     @VisibleForTesting
-    void tryShowingInfoBar() {
+    void tryShowingPrompt() {
         if (mTab == null || mTab.getWebContents() == null) return;
 
         // Test if the user is requesting the desktop site. Ignore this if distiller is set to
@@ -415,7 +436,38 @@ public class ReaderModeManager extends EmptyTabObserver implements UserData {
             return;
         }
 
-        ReaderModeInfoBar.showReaderModeInfoBar(mTab);
+        MessageDispatcher messageDispatcher = mMessageDispatcherSupplier.get();
+        if (messageDispatcher != null && DomDistillerTabUtils.useMessagesForReaderModePrompt()) {
+            if (!mMessageRequestedForNavigation) showReaderModeMessage(messageDispatcher);
+            mMessageRequestedForNavigation = true;
+        } else {
+            ReaderModeInfoBar.showReaderModeInfoBar(mTab);
+        }
+    }
+
+    private void showReaderModeMessage(MessageDispatcher messageDispatcher) {
+        Resources resources = mTab.getContext().getResources();
+        PropertyModel message =
+                new PropertyModel.Builder(MessageBannerProperties.ALL_KEYS)
+                        .with(MessageBannerProperties.MESSAGE_IDENTIFIER,
+                                MessageIdentifier.READER_MODE)
+                        .with(MessageBannerProperties.TITLE,
+                                resources.getString(R.string.reader_mode_message_title))
+                        .with(MessageBannerProperties.ICON_RESOURCE_ID,
+                                R.drawable.infobar_mobile_friendly)
+                        .with(MessageBannerProperties.PRIMARY_BUTTON_TEXT,
+                                resources.getString(R.string.reader_mode_message_button))
+                        .with(MessageBannerProperties.ON_PRIMARY_ACTION, this::activateReaderMode)
+                        .with(MessageBannerProperties.ON_DISMISSED, this::onMessageDismissed)
+                        .build();
+        messageDispatcher.enqueueMessage(
+                message, mTab.getWebContents(), MessageScopeType.NAVIGATION, false);
+    }
+
+    private void onMessageDismissed(@DismissReason int dismissReason) {
+        if (dismissReason == DismissReason.GESTURE) {
+            onClosed();
+        }
     }
 
     public void activateReaderMode() {
@@ -524,7 +576,7 @@ public class ReaderModeManager extends EmptyTabObserver implements UserData {
                     && !(isMobileOptimized
                             && DomDistillerTabUtils.shouldExcludeMobileFriendly(tabToObserve))) {
                 mDistillationStatus = DistillationStatus.POSSIBLE;
-                tryShowingInfoBar();
+                tryShowingPrompt();
             } else {
                 mDistillationStatus = DistillationStatus.NOT_POSSIBLE;
             }

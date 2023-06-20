@@ -35,9 +35,14 @@ class SerialChooserContext : public permissions::ObjectPermissionContextBase,
   using PortObserver = content::SerialDelegate::Observer;
 
   explicit SerialChooserContext(Profile* profile);
+
+  SerialChooserContext(const SerialChooserContext&) = delete;
+  SerialChooserContext& operator=(const SerialChooserContext&) = delete;
+
   ~SerialChooserContext() override;
 
   // ObjectPermissionContextBase:
+  std::string GetKeyForObject(const base::Value& object) override;
   bool IsValidObject(const base::Value& object) override;
   std::u16string GetObjectDisplayName(const base::Value& object) override;
 
@@ -76,11 +81,12 @@ class SerialChooserContext : public permissions::ObjectPermissionContextBase,
   void SetUpPortManagerConnection(
       mojo::PendingRemote<device::mojom::SerialPortManager> manager);
   void OnPortManagerConnectionError();
-  void OnGetPorts(const url::Origin& origin,
-                  blink::mojom::SerialService::GetPortsCallback callback,
-                  std::vector<device::mojom::SerialPortInfoPtr> ports);
+  bool CanApplyPortSpecificPolicy();
 
-  const bool is_incognito_;
+  // This raw pointer is safe because instances of this class are created by
+  // SerialChooserContextFactory as KeyedServices that will be destroyed when
+  // the Profile object is destroyed.
+  Profile* const profile_;
 
   // Tracks the set of ports to which an origin has access to.
   std::map<url::Origin, std::set<base::UnguessableToken>> ephemeral_ports_;
@@ -93,8 +99,6 @@ class SerialChooserContext : public permissions::ObjectPermissionContextBase,
   base::ObserverList<PortObserver> port_observer_list_;
 
   base::WeakPtrFactory<SerialChooserContext> weak_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(SerialChooserContext);
 };
 
 #endif  // CHROME_BROWSER_SERIAL_SERIAL_CHOOSER_CONTEXT_H_

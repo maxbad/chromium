@@ -10,7 +10,6 @@
 
 #include "base/callback.h"
 #include "base/callback_list.h"
-#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
@@ -19,7 +18,6 @@
 #include "mojo/public/cpp/bindings/remote.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "services/network/public/cpp/simple_url_loader.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "url/gurl.h"
 
 class BrowserSwitchHandler;
@@ -120,7 +118,13 @@ class BrowserSwitcherService : public KeyedService {
       base::RepeatingCallback<AllRulesetsParsedCallbackSignature>;
 
  public:
+  BrowserSwitcherService() = delete;
+
   explicit BrowserSwitcherService(Profile* profile);
+
+  BrowserSwitcherService(const BrowserSwitcherService&) = delete;
+  BrowserSwitcherService& operator=(const BrowserSwitcherService&) = delete;
+
   ~BrowserSwitcherService() override;
 
   virtual void Init();
@@ -205,9 +209,6 @@ class BrowserSwitcherService : public KeyedService {
   std::unique_ptr<BrowserSwitcherSitelist> sitelist_;
 
   base::WeakPtrFactory<BrowserSwitcherService> weak_ptr_factory_{this};
-
- private:
-  DISALLOW_IMPLICIT_CONSTRUCTORS(BrowserSwitcherService);
 };
 
 }  // namespace browser_switcher

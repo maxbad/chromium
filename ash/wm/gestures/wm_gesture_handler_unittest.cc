@@ -4,8 +4,8 @@
 
 #include "ash/wm/gestures/wm_gesture_handler.h"
 
-#include "ash/public/cpp/ash_features.h"
-#include "ash/public/cpp/ash_pref_names.h"
+#include "ash/constants/ash_features.h"
+#include "ash/constants/ash_pref_names.h"
 #include "ash/session/session_controller_impl.h"
 #include "ash/shell.h"
 #include "ash/test/ash_test_base.h"
@@ -95,8 +95,8 @@ class WmGestureHandlerTest : public AshTestBase {
 
   void Scroll(float x_offset, float y_offset, int fingers) {
     GetEventGenerator()->ScrollSequence(
-        gfx::Point(), base::TimeDelta::FromMilliseconds(5),
-        GetOffsetX(x_offset), GetOffsetY(y_offset), /*steps=*/100, fingers);
+        gfx::Point(), base::Milliseconds(5), GetOffsetX(x_offset),
+        GetOffsetY(y_offset), /*steps=*/100, fingers);
   }
 
   void ScrollToSwitchDesks(bool scroll_left) {
@@ -117,7 +117,7 @@ class WmGestureHandlerTest : public AshTestBase {
     // Continue with a large enough scroll to start the desk switch animation.
     // The animation does not start on fling cancel since there is no finger
     // data in production code.
-    const base::TimeDelta step_delay = base::TimeDelta::FromMilliseconds(5);
+    const base::TimeDelta step_delay = base::Milliseconds(5);
     timestamp += step_delay;
     const int direction = scroll_left ? -1 : 1;
     const int initial_move_x =
@@ -211,7 +211,7 @@ TEST_F(WmGestureHandlerTest, HorizontalScrollInOverview) {
   // Enter overview mode as if using an accelerator.
   // Entering overview mode with an upwards three-finger scroll gesture would
   // have the same result (allow selection using horizontal scroll).
-  Shell::Get()->overview_controller()->StartOverview();
+  EnterOverview();
   EXPECT_TRUE(InOverviewSession());
 
   // Scrolls until a window is highlight, ignoring any desks items (if any).
@@ -261,7 +261,7 @@ TEST_F(WmGestureHandlerTest, HorizontalScrolls) {
 TEST_F(WmGestureHandlerTest, EnterOverviewOnScrollEnd) {
   base::TimeTicks timestamp = base::TimeTicks::Now();
   const int num_fingers = 3;
-  base::TimeDelta step_delay(base::TimeDelta::FromMilliseconds(5));
+  base::TimeDelta step_delay(base::Milliseconds(5));
   ui::ScrollEvent fling_cancel(ui::ET_SCROLL_FLING_CANCEL, gfx::Point(),
                                timestamp, 0, 0, 0, 0, 0, num_fingers);
   GetEventGenerator()->Dispatch(&fling_cancel);
@@ -377,8 +377,7 @@ TEST_F(DesksGestureHandlerTest, NoDeskChangesInLockScreen) {
 TEST_F(WmGestureHandlerTest, ActivateHighlightedDeskWithVerticalScroll) {
   auto* desks_controller = DesksController::Get();
 
-  auto* overview_controller = Shell::Get()->overview_controller();
-  overview_controller->StartOverview();
+  EnterOverview();
   EXPECT_TRUE(InOverviewSession());
 
   // Create a new desk (we have two desks now).
@@ -389,7 +388,8 @@ TEST_F(WmGestureHandlerTest, ActivateHighlightedDeskWithVerticalScroll) {
   EXPECT_EQ(0, desks_controller->GetActiveDeskIndex());
 
   // Move highlight to the second desk.
-  OverviewSession* overview_session = overview_controller->overview_session();
+  OverviewSession* overview_session =
+      Shell::Get()->overview_controller()->overview_session();
   DeskMiniView* mini_view_1 =
       overview_session->GetGridWithRootWindow(Shell::GetPrimaryRootWindow())
           ->desks_bar_view()

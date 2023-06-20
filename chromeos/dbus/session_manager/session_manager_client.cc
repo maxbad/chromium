@@ -20,7 +20,6 @@
 #include "base/files/scoped_file.h"
 #include "base/location.h"
 #include "base/logging.h"
-#include "base/macros.h"
 #include "base/memory/platform_shared_memory_region.h"
 #include "base/memory/read_only_shared_memory_region.h"
 #include "base/memory/writable_shared_memory_region.h"
@@ -166,6 +165,10 @@ bool ReadSecretFromSharedMemory(base::ScopedFD fd,
 class SessionManagerClientImpl : public SessionManagerClient {
  public:
   SessionManagerClientImpl() = default;
+
+  SessionManagerClientImpl(const SessionManagerClientImpl&) = delete;
+  SessionManagerClientImpl& operator=(const SessionManagerClientImpl&) = delete;
+
   ~SessionManagerClientImpl() override = default;
 
   // SessionManagerClient overrides:
@@ -394,6 +397,20 @@ class SessionManagerClientImpl : public SessionManagerClient {
         login_manager::kSessionManagerHandleLockScreenDismissed);
   }
 
+  void RequestBrowserDataMigration(
+      const cryptohome::AccountIdentifier& cryptohome_id,
+      VoidDBusMethodCallback callback) override {
+    dbus::MethodCall method_call(
+        login_manager::kSessionManagerInterface,
+        login_manager::kSessionManagerStartBrowserDataMigration);
+    dbus::MessageWriter writer(&method_call);
+    writer.AppendString(cryptohome_id.account_id());
+    session_manager_proxy_->CallMethod(
+        &method_call, dbus::ObjectProxy::TIMEOUT_USE_DEFAULT,
+        base::BindOnce(&SessionManagerClientImpl::OnVoidMethod,
+                       weak_ptr_factory_.GetWeakPtr(), std::move(callback)));
+  }
+
   void RetrieveActiveSessions(ActiveSessionsCallback callback) override {
     dbus::MethodCall method_call(
         login_manager::kSessionManagerInterface,
@@ -507,13 +524,26 @@ class SessionManagerClientImpl : public SessionManagerClient {
 
   void SetFeatureFlagsForUser(
       const cryptohome::AccountIdentifier& cryptohome_id,
-      const std::vector<std::string>& feature_flags) override {
+      const std::vector<std::string>& feature_flags,
+      const std::map<std::string, std::string>& origin_list_flags) override {
     dbus::MethodCall method_call(
         login_manager::kSessionManagerInterface,
         login_manager::kSessionManagerSetFeatureFlagsForUser);
     dbus::MessageWriter writer(&method_call);
     writer.AppendString(cryptohome_id.account_id());
     writer.AppendArrayOfStrings(feature_flags);
+
+    dbus::MessageWriter dict_writer(nullptr);
+    writer.OpenArray("{ss}", &dict_writer);
+    for (const auto& origin_entry : origin_list_flags) {
+      dbus::MessageWriter entry_writer(nullptr);
+      dict_writer.OpenDictEntry(&entry_writer);
+      entry_writer.AppendString(origin_entry.first);
+      entry_writer.AppendString(origin_entry.second);
+      dict_writer.CloseContainer(&entry_writer);
+    }
+    writer.CloseContainer(&dict_writer);
+
     session_manager_proxy_->CallMethod(&method_call,
                                        dbus::ObjectProxy::TIMEOUT_USE_DEFAULT,
                                        base::DoNothing());
@@ -1073,8 +1103,6 @@ class SessionManagerClientImpl : public SessionManagerClient {
   // Note: This should remain the last member so it'll be destroyed and
   // invalidate its weak pointers before any other members are destroyed.
   base::WeakPtrFactory<SessionManagerClientImpl> weak_ptr_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(SessionManagerClientImpl);
 };
 
 SessionManagerClient::SessionManagerClient() {

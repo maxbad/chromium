@@ -8,6 +8,8 @@
 
 #include "content/renderer/service_worker/service_worker_context_client.h"
 #include "net/http/http_response_headers.h"
+#include "services/network/public/mojom/early_hints.mojom.h"
+#include "services/network/public/mojom/url_response_head.mojom.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_error_type.mojom.h"
 #include "third_party/blink/public/platform/web_url_loader.h"
 
@@ -17,12 +19,12 @@ NavigationPreloadRequest::NavigationPreloadRequest(
     ServiceWorkerContextClient* owner,
     int fetch_event_id,
     const GURL& url,
-    blink::mojom::FetchEventPreloadHandlePtr preload_handle)
+    mojo::PendingReceiver<network::mojom::URLLoaderClient>
+        preload_url_loader_client_receiver)
     : owner_(owner),
       fetch_event_id_(fetch_event_id),
       url_(url),
-      url_loader_(std::move(preload_handle->url_loader)),
-      receiver_(this, std::move(preload_handle->url_loader_client_receiver)) {}
+      receiver_(this, std::move(preload_url_loader_client_receiver)) {}
 
 NavigationPreloadRequest::~NavigationPreloadRequest() = default;
 

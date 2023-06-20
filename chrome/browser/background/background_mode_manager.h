@@ -12,10 +12,9 @@
 
 #include "base/callback_forward.h"
 #include "base/gtest_prod_util.h"
-#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "base/scoped_observation.h"
-#include "base/sequenced_task_runner.h"
+#include "base/task/sequenced_task_runner.h"
 #include "chrome/browser/background/background_application_list_model.h"
 #include "chrome/browser/extensions/forced_extensions/force_installed_tracker.h"
 #include "chrome/browser/profiles/profile.h"
@@ -71,11 +70,21 @@ class BackgroundModeManager : public content::NotificationObserver,
  public:
   BackgroundModeManager(const base::CommandLine& command_line,
                         ProfileAttributesStorage* profile_storage);
+
+  BackgroundModeManager(const BackgroundModeManager&) = delete;
+  BackgroundModeManager& operator=(const BackgroundModeManager&) = delete;
+
   ~BackgroundModeManager() override;
 
   static void RegisterPrefs(PrefRegistrySimple* registry);
 
-  virtual void RegisterProfile(Profile* profile);
+  // Adds an entry for |profile| to |background_mode_data_|, and starts tracking
+  // events for this profile.
+  void RegisterProfile(Profile* profile);
+
+  // Removes the entry for |profile| from |background_mode_data_|, if present.
+  // Returns true if a removal was performed.
+  bool UnregisterProfile(Profile* profile);
 
   static void LaunchBackgroundApplication(
       Profile* profile,
@@ -476,8 +485,6 @@ class BackgroundModeManager : public content::NotificationObserver,
   const scoped_refptr<base::SequencedTaskRunner> task_runner_;
 
   base::WeakPtrFactory<BackgroundModeManager> weak_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(BackgroundModeManager);
 };
 
 #endif  // CHROME_BROWSER_BACKGROUND_BACKGROUND_MODE_MANAGER_H_

@@ -128,10 +128,13 @@ SkColor PickGoogleColor(const SkColor (&colors)[kNumGoogleColors],
   constexpr size_t kDarkBackgroundStartIndex = 5;
   static_assert(kBlue[kDarkBackgroundStartIndex] == gfx::kGoogleBlue500,
                 "The start index needs to match kGoogleBlue500");
+  const float background_luminance = GetRelativeLuminance(background_color);
   if (IsDark(background_color)) {
     for (size_t i = kDarkBackgroundStartIndex; i > 0; --i) {
-      if (GetContrastRatio(colors[i], background_color) > min_contrast)
+      if (GetContrastRatio(GetRelativeLuminance(colors[i]),
+                           background_luminance) > min_contrast) {
         return colors[i];
+      }
     }
     return colors[0];
   }
@@ -141,8 +144,10 @@ SkColor PickGoogleColor(const SkColor (&colors)[kNumGoogleColors],
   static_assert(kBlue[kLightBackgroundStartIndex] == gfx::kGoogleBlue400,
                 "The start index needs to match kGoogleBlue400");
   for (size_t i = kLightBackgroundStartIndex; i < kNumGoogleColors - 1; ++i) {
-    if (GetContrastRatio(colors[i], background_color) > min_contrast)
+    if (GetContrastRatio(GetRelativeLuminance(colors[i]),
+                         background_luminance) > min_contrast) {
       return colors[i];
+    }
   }
   return colors[kNumGoogleColors - 1];
 }
@@ -398,7 +403,7 @@ SkColor AlphaBlend(SkColor foreground, SkColor background, float alpha) {
 
 SkColor GetResultingPaintColor(SkColor foreground, SkColor background) {
   return AlphaBlend(SkColorSetA(foreground, SK_AlphaOPAQUE), background,
-                    SkAlpha{SkColorGetA(foreground)});
+                    static_cast<SkAlpha>(SkColorGetA(foreground)));
 }
 
 bool IsDark(SkColor color) {

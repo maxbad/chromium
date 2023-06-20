@@ -37,7 +37,7 @@
 #include "ui/ozone/platform/wayland/host/wayland_data_device_manager.h"
 #include "ui/ozone/platform/wayland/host/wayland_data_offer.h"
 #include "ui/ozone/platform/wayland/host/wayland_data_source.h"
-#include "ui/ozone/platform/wayland/host/wayland_pointer.h"
+#include "ui/ozone/platform/wayland/host/wayland_serial_tracker.h"
 #include "ui/ozone/platform/wayland/host/wayland_surface.h"
 #include "ui/ozone/platform/wayland/host/wayland_window.h"
 #include "ui/ozone/platform/wayland/host/wayland_window_manager.h"
@@ -58,8 +58,8 @@ constexpr uint32_t kDndActionWindowDrag =
 
 class WaylandWindowDragController::ExtendedDragSource {
  public:
-  ExtendedDragSource(const WaylandConnection& connection,
-                     wl_data_source* source) {
+  ExtendedDragSource(WaylandConnection& connection, wl_data_source* source)
+      : connection_(connection) {
     DCHECK(connection.extended_drag_v1());
     uint32_t options = ZCR_EXTENDED_DRAG_V1_OPTIONS_ALLOW_SWALLOW |
                        ZCR_EXTENDED_DRAG_V1_OPTIONS_ALLOW_DROP_NO_TARGET |
@@ -74,23 +74,28 @@ class WaylandWindowDragController::ExtendedDragSource {
     auto* surface = window ? window->root_surface()->surface() : nullptr;
     zcr_extended_drag_source_v1_drag(source_.get(), surface, offset.x(),
                                      offset.y());
+    connection_.ScheduleFlush();
   }
 
  private:
   wl::Object<zcr_extended_drag_source_v1> source_;
+  WaylandConnection& connection_;
 };
 
 WaylandWindowDragController::WaylandWindowDragController(
     WaylandConnection* connection,
     WaylandDataDeviceManager* device_manager,
-    WaylandPointer::Delegate* pointer_delegate)
+    WaylandPointer::Delegate* pointer_delegate,
+    WaylandTouch::Delegate* touch_delegate)
     : connection_(connection),
       data_device_manager_(device_manager),
       data_device_(device_manager->GetDevice()),
       window_manager_(connection_->wayland_window_manager()),
-      pointer_delegate_(pointer_delegate) {
+      pointer_delegate_(pointer_delegate),
+      touch_delegate_(touch_delegate) {
   DCHECK(data_device_);
   DCHECK(pointer_delegate_);
+  DCHECK(touch_delegate_);
 }
 
 WaylandWindowDragController::~WaylandWindowDragController() = default;
@@ -99,19 +104,29 @@ bool WaylandWindowDragController::StartDragSession() {
   if (state_ != State::kIdle)
     return true;
 
-  origin_window_ = window_manager_->GetCurrentFocusedWindow();
+  origin_window_ = window_manager_->GetCurrentPointerOrTouchFocusedWindow();
   if (!origin_window_) {
     LOG(ERROR) << "Failed to get origin window.";
     return false;
   }
 
+  auto serial = connection_->serial_tracker().GetSerial(
+      {wl::SerialType::kTouchPress, wl::SerialType::kMousePress});
+  if (!serial.has_value()) {
+    LOG(ERROR) << "Failed to retrieve touch/mouse press serial.";
+    return false;
+  }
+
   VLOG(1) << "Starting DND session.";
   state_ = State::kAttached;
+  drag_source_ = serial->type == wl::SerialType::kTouchPress
+                     ? DragSource::kTouch
+                     : DragSource::kMouse;
 
   DCHECK(!data_source_);
   data_source_ = data_device_manager_->CreateSource(this);
   data_source_->Offer({kMimeTypeChromiumWindow});
-  data_source_->SetAction(DragDropTypes::DRAG_MOVE);
+  data_source_->SetDndActions(kDndActionWindowDrag);
 
   if (IsExtendedDragAvailable()) {
     extended_drag_source_ = std::make_unique<ExtendedDragSource>(
@@ -121,7 +136,7 @@ bool WaylandWindowDragController::StartDragSession() {
                << "Window/Tab dragging won't be fully functional.";
   }
 
-  data_device_->StartDrag(*data_source_, *origin_window_,
+  data_device_->StartDrag(*data_source_, *origin_window_, serial->value,
                           /*icon_surface=*/nullptr, this);
   pointer_grab_owner_ = origin_window_;
   should_process_drag_event_ = false;
@@ -162,7 +177,8 @@ void WaylandWindowDragController::StopDragging() {
   // snapped into a tab strip. So switch to |kAttached| state, store the focused
   // window as the pointer grabber and ask to quit the nested loop.
   state_ = State::kAttaching;
-  pointer_grab_owner_ = window_manager_->GetCurrentFocusedWindow();
+  pointer_grab_owner_ =
+      window_manager_->GetCurrentPointerOrTouchFocusedWindow();
   DCHECK(pointer_grab_owner_);
   QuitLoop();
 }
@@ -197,7 +213,12 @@ void WaylandWindowDragController::OnDragEnter(WaylandWindow* window,
   // as WaylandScreen, are able to properly retrieve focus related info during
   // window dragging sesstions.
   pointer_location_ = location;
-  pointer_delegate_->OnPointerFocusChanged(window, location);
+
+  DCHECK(drag_source_.has_value());
+  if (*drag_source_ == DragSource::kMouse)
+    pointer_delegate_->OnPointerFocusChanged(window, location);
+  else
+    touch_delegate_->OnTouchFocusChanged(window);
 
   VLOG(1) << "OnEnter. widget=" << window->GetWidget();
 
@@ -212,7 +233,7 @@ void WaylandWindowDragController::OnDragEnter(WaylandWindow* window,
   DCHECK_EQ(data_offer_->mime_types().front(), kMimeTypeChromiumWindow);
 
   // Accept the offer and set the dnd action.
-  data_offer_->SetActions(kDndActionWindowDrag);
+  data_offer_->SetDndActions(kDndActionWindowDrag);
   data_offer_->Accept(serial, kMimeTypeChromiumWindow);
 }
 
@@ -228,7 +249,16 @@ void WaylandWindowDragController::OnDragMotion(const gfx::PointF& location) {
   // Forward cursor location update info to the input handling delegate.
   should_process_drag_event_ = true;
   pointer_location_ = location;
-  pointer_delegate_->OnPointerMotionEvent(location);
+
+  if (*drag_source_ == DragSource::kMouse) {
+    pointer_delegate_->OnPointerMotionEvent(location);
+  } else {
+    base::TimeTicks timestamp = base::TimeTicks::Now();
+    auto touch_pointer_ids = touch_delegate_->GetActiveTouchPointIds();
+    DCHECK_EQ(touch_pointer_ids.size(), 1u);
+    touch_delegate_->OnTouchMotionEvent(location, timestamp,
+                                        touch_pointer_ids[0]);
+  }
 }
 
 void WaylandWindowDragController::OnDragLeave() {
@@ -297,9 +327,14 @@ void WaylandWindowDragController::OnDataSourceFinish(bool completed) {
   // before the drag session, we must reset focus to it, otherwise it would be
   // wrongly kept to the latest surface received through wl_data_device::enter
   // (see OnDragEnter function).
+  // In case of touch, though, we simply reset the focus altogether.
   if (IsExtendedDragAvailable() && dragged_window_) {
-    pointer_delegate_->OnPointerFocusChanged(dragged_window_,
-                                             pointer_location_);
+    if (*drag_source_ == DragSource::kMouse) {
+      pointer_delegate_->OnPointerFocusChanged(dragged_window_,
+                                               pointer_location_);
+    } else {
+      touch_delegate_->OnTouchFocusChanged(nullptr);
+    }
   }
   dragged_window_ = nullptr;
 
@@ -331,8 +366,9 @@ uint32_t WaylandWindowDragController::DispatchEvent(
   DCHECK_EQ(state_, State::kDetached);
   DCHECK(base::CurrentUIThread::IsSet());
 
-  if (event->type() == ET_MOUSE_MOVED || event->type() == ET_MOUSE_DRAGGED) {
-    HandleMotionEvent(event->AsMouseEvent());
+  if (event->type() == ET_MOUSE_MOVED || event->type() == ET_MOUSE_DRAGGED ||
+      event->type() == ET_TOUCH_MOVED) {
+    HandleMotionEvent(event->AsLocatedEvent());
     return POST_DISPATCH_STOP_PROPAGATION;
   }
   return POST_DISPATCH_PERFORM_DEFAULT;
@@ -362,7 +398,7 @@ void WaylandWindowDragController::OnWindowRemoved(WaylandWindow* window) {
     origin_surface_ = origin_window_->TakeWaylandSurface();
 }
 
-void WaylandWindowDragController::HandleMotionEvent(MouseEvent* event) {
+void WaylandWindowDragController::HandleMotionEvent(LocatedEvent* event) {
   DCHECK_EQ(state_, State::kDetached);
   DCHECK(dragged_window_);
   DCHECK(event);
@@ -395,12 +431,20 @@ void WaylandWindowDragController::HandleDropAndResetState() {
   DCHECK(pointer_grab_owner_);
   VLOG(1) << "Notifying drop. window=" << pointer_grab_owner_;
 
-  EventFlags pointer_button = EF_LEFT_MOUSE_BUTTON;
-  pointer_delegate_->OnPointerButtonEvent(ET_MOUSE_RELEASED, pointer_button,
-                                          pointer_grab_owner_);
+  if (*drag_source_ == DragSource::kMouse) {
+    EventFlags pointer_button = EF_LEFT_MOUSE_BUTTON;
+    pointer_delegate_->OnPointerButtonEvent(ET_MOUSE_RELEASED, pointer_button,
+                                            pointer_grab_owner_);
+  } else {
+    base::TimeTicks timestamp = base::TimeTicks::Now();
+    auto touch_pointer_ids = touch_delegate_->GetActiveTouchPointIds();
+    DCHECK_EQ(touch_pointer_ids.size(), 1u);
+    touch_delegate_->OnTouchReleaseEvent(timestamp, touch_pointer_ids[0]);
+  }
 
   pointer_grab_owner_ = nullptr;
   state_ = State::kIdle;
+  drag_source_.reset();
 }
 
 void WaylandWindowDragController::RunLoop() {

@@ -132,6 +132,17 @@ class ModelTest(unittest.TestCase):
         test_json[0],
         'path/to/redundant_default_attribute.json')
 
+  def testReturnsAsyncMissingParametersKey(self):
+    test_json = CachedLoad('test/returns_async_missing_parameters_key.json')
+    self.assertRaisesRegexp(
+        ValueError,
+        'parameters key not specified on returns_async: '
+        'returnsAsyncMissingParametersKey.asyncNoParametersKey in '
+        'path/to/returns_async_missing_parameters_key.json',
+        self.model.AddNamespace,
+        test_json[0],
+        'path/to/returns_async_missing_parameters_key.json')
+
   def testDescription(self):
     self.assertFalse(
         self.permissions.functions['contains'].params[0].description)
@@ -195,6 +206,20 @@ class ModelTest(unittest.TestCase):
         self.idl_namespace_all_platforms.platforms)
     self.assertEqual(None,
         self.idl_namespace_non_specific_platforms.platforms)
+
+  def testInvalidNamespacePlatform(self):
+    invalid_namespace_platform = Load('test/invalid_platform_namespace.idl')
+    with self.assertRaises(ValueError) as context:
+      self.model.AddNamespace(invalid_namespace_platform[0],
+                              'path/to/something.json')
+    self.assertIn('Invalid platform specified: invalid', str(context.exception))
+
+  def testInvalidFunctionPlatform(self):
+    invalid_function_platform = Load('test/invalid_function_platform.idl')
+    with self.assertRaises(ValueError) as context:
+      self.model.AddNamespace(invalid_function_platform[0],
+                              'path/to/something.json')
+    self.assertIn('Invalid platform specified: windows', str(context.exception))
 
   def testPlatformsOnFunctionsIDL(self):
     function_win_linux = self.function_platforms.functions['function_win_linux']

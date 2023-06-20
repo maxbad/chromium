@@ -7,18 +7,18 @@
 #include <memory>
 #include <string>
 
+#include "ash/components/settings/cros_settings_names.h"
 #include "base/bind.h"
 #include "base/memory/ref_counted.h"
 #include "base/values.h"
 #include "chrome/browser/ash/ownership/owner_settings_service_ash.h"
 #include "chrome/browser/ash/ownership/owner_settings_service_ash_factory.h"
+#include "chrome/browser/ash/policy/core/device_policy_builder.h"
 #include "chrome/browser/ash/settings/cros_settings.h"
 #include "chrome/browser/ash/settings/device_settings_cache.h"
-#include "chrome/browser/chromeos/policy/device_policy_builder.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/test/base/scoped_testing_local_state.h"
 #include "chrome/test/base/testing_profile.h"
-#include "chromeos/settings/cros_settings_names.h"
 #include "components/ownership/mock_owner_key_util.h"
 #include "components/prefs/testing_pref_service.h"
 #include "content/public/browser/browser_thread.h"
@@ -61,7 +61,7 @@ class StatsReportingControllerTest : public testing::Test {
         keys);
     std::unique_ptr<TestingProfile> user = std::make_unique<TestingProfile>();
     OwnerSettingsServiceAshFactory::GetForBrowserContext(user.get())
-        ->OnTPMTokenReady(true);
+        ->OnTPMTokenReady();
     content::RunAllTasksUntilIdle();
     return user;
   }
@@ -122,10 +122,10 @@ TEST_F(StatsReportingControllerTest, GetAndSet_OwnershipUnknown) {
 
   std::unique_ptr<TestingProfile> user = CreateUser(no_keys);
   StatsReportingController::Get()->SetEnabled(user.get(), true);
-  // A pending value is written in case there is no owner, in which case it will
-  // be written properly when ownership is taken - but we don't read the
-  // pending value, in case there actually is an owner already.
-  EXPECT_FALSE(StatsReportingController::Get()->IsEnabled());
+  // A pending value is written in case there is no owner. It will be cleared
+  // and written properly when ownership is taken. We will read from the
+  // pending value before ownership is taken (pending value exists).
+  EXPECT_TRUE(StatsReportingController::Get()->IsEnabled());
   ExpectThatPendingValueIs(true);
   ExpectThatSignedStoredValueIs(false);
 
@@ -232,8 +232,8 @@ TEST_F(StatsReportingControllerTest, SetBeforeOwnershipTaken) {
   // Before device is owned, setting the value means writing a pending value:
   std::unique_ptr<TestingProfile> pre_ownership_user = CreateUser(no_keys);
   StatsReportingController::Get()->SetEnabled(pre_ownership_user.get(), true);
-  EXPECT_FALSE(StatsReportingController::Get()->IsEnabled());
-  EXPECT_FALSE(value_at_last_notification_);
+  EXPECT_TRUE(StatsReportingController::Get()->IsEnabled());
+  EXPECT_TRUE(value_at_last_notification_);
   ExpectThatPendingValueIs(true);
   ExpectThatSignedStoredValueIs(false);
 

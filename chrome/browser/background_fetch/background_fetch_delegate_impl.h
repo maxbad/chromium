@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 
+#include "base/gtest_prod_util.h"
 #include "base/memory/weak_ptr.h"
 #include "components/background_fetch/background_fetch_delegate_base.h"
 #include "components/download/public/background_service/download_params.h"
@@ -72,7 +73,7 @@ class BackgroundFetchDelegateImpl
 
  protected:
   // BackgroundFetchDelegateBase:
-  download::DownloadService* GetDownloadService() override;
+  download::BackgroundDownloadService* GetDownloadService() override;
   void OnJobDetailsCreated(const std::string& job_id) override;
   void DoShowUi(const std::string& job_id) override;
   void DoUpdateUi(const std::string& job_id) override;

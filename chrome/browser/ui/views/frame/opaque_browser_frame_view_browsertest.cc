@@ -4,21 +4,31 @@
 
 #include "chrome/browser/ui/views/frame/opaque_browser_frame_view.h"
 
+#include "base/files/file_util.h"
+#include "base/macros.h"
+#include "base/test/bind.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
+#include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_factory.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/frame/opaque_browser_frame_view_layout.h"
+#include "chrome/browser/ui/views/web_apps/frame_toolbar/web_app_frame_toolbar_test_helper.h"
 #include "chrome/browser/ui/views/web_apps/frame_toolbar/web_app_frame_toolbar_view.h"
 #include "chrome/browser/ui/views/web_apps/frame_toolbar/web_app_toolbar_button_container.h"
+#include "chrome/browser/ui/web_applications/app_browser_controller.h"
 #include "chrome/browser/ui/web_applications/test/web_app_browsertest_util.h"
-#include "chrome/browser/web_applications/components/web_application_info.h"
 #include "chrome/browser/web_applications/test/web_app_install_test_utils.h"
+#include "chrome/browser/web_applications/web_application_info.h"
 #include "chrome/test/base/in_process_browser_test.h"
+#include "chrome/test/base/ui_test_utils.h"
 #include "content/public/common/content_features.h"
 #include "content/public/test/browser_test.h"
+#include "ui/base/hit_test.h"
+#include "ui/compositor/scoped_animation_duration_scale_mode.h"
 #include "ui/gfx/color_utils.h"
 #include "ui/views/test/test_views.h"
 #include "ui/views/view_utils.h"
@@ -28,6 +38,12 @@
 class WebAppOpaqueBrowserFrameViewTest : public InProcessBrowserTest {
  public:
   WebAppOpaqueBrowserFrameViewTest() = default;
+
+  WebAppOpaqueBrowserFrameViewTest(const WebAppOpaqueBrowserFrameViewTest&) =
+      delete;
+  WebAppOpaqueBrowserFrameViewTest& operator=(
+      const WebAppOpaqueBrowserFrameViewTest&) = delete;
+
   ~WebAppOpaqueBrowserFrameViewTest() override = default;
 
   static GURL GetAppURL() { return GURL("https://test.org"); }
@@ -46,11 +62,9 @@ class WebAppOpaqueBrowserFrameViewTest : public InProcessBrowserTest {
     Browser* app_browser =
         web_app::LaunchWebAppBrowser(browser()->profile(), app_id);
 
+    browser_view_ = BrowserView::GetBrowserViewForBrowser(app_browser);
     views::NonClientFrameView* frame_view =
-        BrowserView::GetBrowserViewForBrowser(app_browser)
-            ->GetWidget()
-            ->non_client_view()
-            ->frame_view();
+        browser_view_->GetWidget()->non_client_view()->frame_view();
 
     // Not all platform configurations use OpaqueBrowserFrameView for their
     // browser windows, see |CreateBrowserNonClientFrameView()|.
@@ -94,11 +108,13 @@ class WebAppOpaqueBrowserFrameViewTest : public InProcessBrowserTest {
               theme_mode == ThemeMode::kDefault);
   }
 
+  BrowserView* browser_view_ = nullptr;
   OpaqueBrowserFrameView* opaque_browser_frame_view_ = nullptr;
   WebAppFrameToolbarView* web_app_frame_toolbar_ = nullptr;
 
- private:
-  DISALLOW_COPY_AND_ASSIGN(WebAppOpaqueBrowserFrameViewTest);
+  // Disable animations.
+  ui::ScopedAnimationDurationScaleMode scoped_animation_duration_scale_mode_{
+      ui::ScopedAnimationDurationScaleMode::ZERO_DURATION};
 };
 
 IN_PROC_BROWSER_TEST_F(WebAppOpaqueBrowserFrameViewTest, NoThemeColor) {
@@ -182,32 +198,123 @@ IN_PROC_BROWSER_TEST_F(WebAppOpaqueBrowserFrameViewTest, StaticTitleBarHeight) {
   EXPECT_EQ(title_bar_height, GetRestoredTitleBarHeight());
 }
 
-class WebAppOpaqueBrowserFrameViewWindowControlsOvelayTest
+// Tests for the appearance of the origin text in the titlebar. The origin text
+// shows and then hides both when the window is first opened and any time the
+// titlebar's appearance changes.
+IN_PROC_BROWSER_TEST_F(WebAppOpaqueBrowserFrameViewTest, OriginTextVisibility) {
+  ui_test_utils::UrlLoadObserver url_observer(
+      GetAppURL(), content::NotificationService::AllSources());
+
+  if (!InstallAndLaunchWebApp())
+    return;
+
+  views::View* web_app_origin_text =
+      web_app_frame_toolbar_->GetViewByID(VIEW_ID_WEB_APP_ORIGIN_TEXT);
+  // Keep track of the number of times the view is made visible or hidden.
+  int visible_count = 0, hidden_count = 0;
+  auto visibility_change_counter = [](views::View* view, int* visible_count,
+                                      int* hidden_count) {
+    if (view->GetVisible())
+      (*visible_count)++;
+    else
+      (*hidden_count)++;
+  };
+  auto subscription = web_app_origin_text->AddVisibleChangedCallback(
+      base::BindRepeating(visibility_change_counter, web_app_origin_text,
+                          &visible_count, &hidden_count));
+
+  // Starts off visible, then animates out.
+  {
+    EXPECT_TRUE(web_app_origin_text->GetVisible());
+    base::RunLoop view_hidden_runloop;
+    auto callback_subscription = web_app_origin_text->AddVisibleChangedCallback(
+        view_hidden_runloop.QuitClosure());
+    view_hidden_runloop.Run();
+    EXPECT_EQ(0, visible_count);
+    EXPECT_EQ(1, hidden_count);
+    EXPECT_FALSE(web_app_origin_text->GetVisible());
+  }
+
+  // The app changes the theme. The origin text should show again and then hide.
+  {
+    base::RunLoop view_hidden_runloop;
+    base::RunLoop view_shown_runloop;
+    auto quit_runloop = base::BindLambdaForTesting(
+        [&web_app_origin_text, &view_hidden_runloop, &view_shown_runloop]() {
+          if (web_app_origin_text->GetVisible())
+            view_shown_runloop.Quit();
+          else
+            view_hidden_runloop.Quit();
+        });
+    auto callback_subscription =
+        web_app_origin_text->AddVisibleChangedCallback(quit_runloop);
+    // Make sure the navigation has finished before proceeding.
+    url_observer.Wait();
+    ASSERT_TRUE(ExecJs(
+        browser_view_->GetActiveWebContents()->GetMainFrame(),
+        "var meta = document.head.appendChild(document.createElement('meta'));"
+        "meta.name = 'theme-color';"
+        "meta.content = '#123456';"));
+    view_shown_runloop.Run();
+    EXPECT_EQ(1, visible_count);
+    view_hidden_runloop.Run();
+    EXPECT_EQ(2, hidden_count);
+    EXPECT_FALSE(web_app_origin_text->GetVisible());
+  }
+}
+
+IN_PROC_BROWSER_TEST_F(WebAppOpaqueBrowserFrameViewTest, Fullscreen) {
+  if (!InstallAndLaunchWebApp())
+    return;
+
+  opaque_browser_frame_view_->frame()->SetFullscreen(true);
+  browser_view_->GetWidget()->LayoutRootViewIfNecessary();
+
+  // Verify that all children except the ClientView are hidden when the window
+  // is fullscreened.
+  for (views::View* child : opaque_browser_frame_view_->children()) {
+    EXPECT_EQ(views::IsViewClass<views::ClientView>(child),
+              child->GetVisible());
+  }
+}
+
+#if defined(OS_WIN)
+class WebAppOpaqueBrowserFrameViewWindowControlsOverlayTest
     : public InProcessBrowserTest {
  public:
-  WebAppOpaqueBrowserFrameViewWindowControlsOvelayTest() {
-    scoped_feature_list_ = std::make_unique<base::test::ScopedFeatureList>();
-    scoped_feature_list_->InitAndEnableFeature(
+  WebAppOpaqueBrowserFrameViewWindowControlsOverlayTest() {
+    scoped_feature_list_.InitAndEnableFeature(
         features::kWebAppWindowControlsOverlay);
   }
-  WebAppOpaqueBrowserFrameViewWindowControlsOvelayTest(
-      const WebAppOpaqueBrowserFrameViewWindowControlsOvelayTest&) = delete;
-  WebAppOpaqueBrowserFrameViewWindowControlsOvelayTest& operator=(
-      const WebAppOpaqueBrowserFrameViewWindowControlsOvelayTest&) = delete;
-  ~WebAppOpaqueBrowserFrameViewWindowControlsOvelayTest() override = default;
+  WebAppOpaqueBrowserFrameViewWindowControlsOverlayTest(
+      const WebAppOpaqueBrowserFrameViewWindowControlsOverlayTest&) = delete;
+  WebAppOpaqueBrowserFrameViewWindowControlsOverlayTest& operator=(
+      const WebAppOpaqueBrowserFrameViewWindowControlsOverlayTest&) = delete;
 
-  bool InstallAndLaunchWebAppWithWindowControlsOverlay() {
-    GURL start_url("https://test.org");
-    std::vector<blink::mojom::DisplayMode> display_overrides;
-    display_overrides.emplace_back(
-        blink::mojom::DisplayMode::kWindowControlsOverlay);
+  ~WebAppOpaqueBrowserFrameViewWindowControlsOverlayTest() override = default;
+
+  void SetUp() override {
+    ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
+
+    embedded_test_server()->ServeFilesFromDirectory(temp_dir_.GetPath());
+    ASSERT_TRUE(embedded_test_server()->Start());
+
+    InProcessBrowserTest::SetUp();
+  }
+
+  void InstallAndLaunchWebAppWithWindowControlsOverlay() {
+    GURL start_url = web_app_frame_toolbar_helper_
+                         .LoadWindowControlsOverlayTestPageWithDataAndGetURL(
+                             embedded_test_server(), &temp_dir_);
+
     auto web_app_info = std::make_unique<WebApplicationInfo>();
     web_app_info->start_url = start_url;
     web_app_info->scope = start_url.GetWithoutFilename();
     web_app_info->display_mode = blink::mojom::DisplayMode::kStandalone;
-    web_app_info->open_as_window = true;
+    web_app_info->user_display_mode = blink::mojom::DisplayMode::kStandalone;
     web_app_info->title = u"A Web App";
-    web_app_info->display_override = display_overrides;
+    web_app_info->display_override = {
+        blink::mojom::DisplayMode::kWindowControlsOverlay};
 
     web_app::AppId app_id = web_app::test::InstallWebApp(
         browser()->profile(), std::move(web_app_info));
@@ -221,100 +328,90 @@ class WebAppOpaqueBrowserFrameViewWindowControlsOvelayTest
     views::NonClientFrameView* frame_view =
         browser_view_->GetWidget()->non_client_view()->frame_view();
 
-    // Not all platform configurations use OpaqueBrowserFrameView for their
-    // browser windows, see |CreateBrowserNonClientFrameView()|.
-    bool is_opaque_browser_frame_view =
-        views::IsViewClass<OpaqueBrowserFrameView>(frame_view);
-#if defined(OS_LINUX) && !BUILDFLAG(IS_CHROMEOS_ASH) && \
-    !BUILDFLAG(IS_CHROMEOS_LACROS)
-    DCHECK(is_opaque_browser_frame_view);
-#else
-    if (!is_opaque_browser_frame_view)
-      return false;
-#endif
-
     opaque_browser_frame_view_ =
         static_cast<OpaqueBrowserFrameView*>(frame_view);
     auto* web_app_frame_toolbar =
         opaque_browser_frame_view_->web_app_frame_toolbar_for_testing();
     DCHECK(web_app_frame_toolbar);
     DCHECK(web_app_frame_toolbar->GetVisible());
+  }
 
-    return true;
+  void ToggleWindowControlsOverlayEnabledAndWait() {
+    auto* web_contents = browser_view_->GetActiveWebContents();
+    web_app_frame_toolbar_helper_.SetupGeometryChangeCallback(web_contents);
+    browser_view_->ToggleWindowControlsOverlayEnabled();
+    content::TitleWatcher title_watcher(web_contents, u"ongeometrychange");
+    ignore_result(title_watcher.WaitAndGetTitle());
   }
 
   BrowserView* browser_view_ = nullptr;
   OpaqueBrowserFrameView* opaque_browser_frame_view_ = nullptr;
+  WebAppFrameToolbarTestHelper web_app_frame_toolbar_helper_;
 
  private:
-  std::unique_ptr<base::test::ScopedFeatureList> scoped_feature_list_;
+  base::test::ScopedFeatureList scoped_feature_list_;
+  base::ScopedTempDir temp_dir_;
 };
 
-IN_PROC_BROWSER_TEST_F(WebAppOpaqueBrowserFrameViewWindowControlsOvelayTest,
-                       UpdateBoundingRect) {
-  if (!InstallAndLaunchWebAppWithWindowControlsOverlay())
-    return;
+IN_PROC_BROWSER_TEST_F(WebAppOpaqueBrowserFrameViewWindowControlsOverlayTest,
+                       CaptionButtonsTooltip) {
+  InstallAndLaunchWebAppWithWindowControlsOverlay();
 
-  static_cast<views::View*>(opaque_browser_frame_view_)->Layout();
+  auto* minimize_button = static_cast<const views::Button*>(
+      opaque_browser_frame_view_->GetViewByID(VIEW_ID_MINIMIZE_BUTTON));
+  auto* maximize_button = static_cast<const views::Button*>(
+      opaque_browser_frame_view_->GetViewByID(VIEW_ID_MAXIMIZE_BUTTON));
+  auto* restore_button = static_cast<const views::Button*>(
+      opaque_browser_frame_view_->GetViewByID(VIEW_ID_RESTORE_BUTTON));
+  auto* close_button = static_cast<const views::Button*>(
+      opaque_browser_frame_view_->GetViewByID(VIEW_ID_CLOSE_BUTTON));
 
-  auto* web_contents =
-      opaque_browser_frame_view_->browser_view()->GetActiveWebContents();
+  // Verify tooltip text was first empty.
+  EXPECT_EQ(minimize_button->GetTooltipText(), u"");
+  EXPECT_EQ(maximize_button->GetTooltipText(), u"");
+  EXPECT_EQ(restore_button->GetTooltipText(), u"");
+  EXPECT_EQ(close_button->GetTooltipText(), u"");
 
-  // window controls overlay should be not be an empty rect and visible as this
-  // a web app.
-  int empty_rect_value = 0;
+  ToggleWindowControlsOverlayEnabledAndWait();
 
-  EXPECT_EQ(true, EvalJs(web_contents,
-                         "window.navigator.windowControlsOverlay.visible"));
+  // Verify tooltip text has been updated.
+  EXPECT_EQ(minimize_button->GetTooltipText(),
+            minimize_button->GetAccessibleName());
+  EXPECT_EQ(maximize_button->GetTooltipText(),
+            maximize_button->GetAccessibleName());
+  EXPECT_EQ(restore_button->GetTooltipText(),
+            restore_button->GetAccessibleName());
+  EXPECT_EQ(close_button->GetTooltipText(), close_button->GetAccessibleName());
 
-  EXPECT_EQ(
-      0, EvalJs(web_contents,
-                "navigator.windowControlsOverlay.getBoundingClientRect().x"));
-  EXPECT_EQ(
-      0, EvalJs(web_contents,
-                "navigator.windowControlsOverlay.getBoundingClientRect().y"));
-  EXPECT_NE(
-      empty_rect_value,
-      EvalJs(web_contents,
-             "navigator.windowControlsOverlay.getBoundingClientRect().width"));
-  EXPECT_NE(
-      empty_rect_value,
-      EvalJs(web_contents,
-             "navigator.windowControlsOverlay.getBoundingClientRect().height"));
+  ToggleWindowControlsOverlayEnabledAndWait();
+
+  // Verify tooltip text has been cleared when the feature is toggled off.
+  EXPECT_EQ(minimize_button->GetTooltipText(), u"");
+  EXPECT_EQ(maximize_button->GetTooltipText(), u"");
+  EXPECT_EQ(restore_button->GetTooltipText(), u"");
+  EXPECT_EQ(close_button->GetTooltipText(), u"");
 }
 
-IN_PROC_BROWSER_TEST_F(WebAppOpaqueBrowserFrameViewWindowControlsOvelayTest,
-                       GeometryChangeEvent) {
-  if (!InstallAndLaunchWebAppWithWindowControlsOverlay())
-    return;
+IN_PROC_BROWSER_TEST_F(WebAppOpaqueBrowserFrameViewWindowControlsOverlayTest,
+                       CaptionButtonHitTest) {
+  InstallAndLaunchWebAppWithWindowControlsOverlay();
 
-  auto* web_contents =
-      opaque_browser_frame_view_->browser_view()->GetActiveWebContents();
+  opaque_browser_frame_view_->GetWidget()->LayoutRootViewIfNecessary();
 
-  EXPECT_TRUE(ExecuteScript(
-      web_contents->GetMainFrame(),
-      "geometrychangeCount = 0;"
-      "navigator.windowControlsOverlay.ongeometrychange = (e) => {"
-      "  geometrychangeCount++;"
-      "  rect = e.boundingRect;"
-      "  visible = e.visible;"
-      "}"));
+  // Avoid the top right resize corner.
+  constexpr int kInset = 10;
+  const gfx::Point kPoint(opaque_browser_frame_view_->width() - kInset, kInset);
 
-  // Change size of widget to trigger a "geometrychange" event.
-  gfx::Rect bounds =
-      opaque_browser_frame_view_->browser_view()->GetLocalBounds();
-  bounds.set_width(bounds.width() - 1);
-  opaque_browser_frame_view_->browser_view()->GetWidget()->SetBounds(bounds);
+  EXPECT_EQ(opaque_browser_frame_view_->NonClientHitTest(kPoint), HTCLOSE);
 
-  // Window controls overlay should be not be an empty rect and visible as this
-  // a web app.
-  int empty_rect_value = 0;
+  ToggleWindowControlsOverlayEnabledAndWait();
 
-  // expect the "geometrychange" event to have fired.
-  EXPECT_NE(0, EvalJs(web_contents, "geometrychangeCount"));
+  // Verify the component updates on toggle.
+  EXPECT_EQ(opaque_browser_frame_view_->NonClientHitTest(kPoint), HTCLIENT);
 
-  // Validate event payload.
-  EXPECT_EQ(true, EvalJs(web_contents, "visible"));
-  EXPECT_NE(empty_rect_value, EvalJs(web_contents, "rect.width"));
-  EXPECT_NE(empty_rect_value, EvalJs(web_contents, "rect.height"));
+  ToggleWindowControlsOverlayEnabledAndWait();
+
+  // Verify the component clears when the feature is turned off.
+  EXPECT_EQ(opaque_browser_frame_view_->NonClientHitTest(kPoint), HTCLOSE);
 }
+#endif

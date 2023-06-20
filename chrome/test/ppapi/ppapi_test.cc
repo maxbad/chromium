@@ -12,9 +12,9 @@
 #include "base/location.h"
 #include "base/path_service.h"
 #include "base/run_loop.h"
-#include "base/single_thread_task_runner.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "build/build_config.h"
@@ -259,7 +259,7 @@ void PPAPITestBase::RunTestURL(const GURL& test_url) {
       browser()->tab_strip_model()->GetActiveWebContents(),
       &handler);
 
-  ui_test_utils::NavigateToURL(browser(), test_url);
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), test_url));
 
   ASSERT_TRUE(observer.Run()) << handler.error_message();
   EXPECT_STREQ("PASS", handler.message().c_str());
@@ -312,6 +312,16 @@ OutOfProcessPPAPITest::OutOfProcessPPAPITest() {
 void OutOfProcessPPAPITest::SetUpCommandLine(base::CommandLine* command_line) {
   PPAPITest::SetUpCommandLine(command_line);
   command_line->AppendSwitch(switches::kUseFakeUIForMediaStream);
+}
+
+void OutOfProcessPPAPITest::RunTest(const std::string& test_case) {
+#if defined(OS_WIN)
+  // See crbug.com/1231528 for context.
+  if (test_case == "Printing")
+    return;
+#endif
+
+  PPAPITestBase::RunTest(test_case);
 }
 
 // Send touch events to a plugin and expect the events to reach the renderer

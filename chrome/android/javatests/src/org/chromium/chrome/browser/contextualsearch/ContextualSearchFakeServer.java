@@ -405,7 +405,7 @@ class ContextualSearchFakeServer
                 OverlayContentProgressObserver progressObserver, ChromeActivity activity,
                 float barHeight) {
             super(contentDelegate, progressObserver, activity, false, barHeight,
-                    activity.getCompositorViewHolder(), activity.getWindowAndroid(),
+                    activity.getCompositorViewHolderForTesting(), activity.getWindowAndroid(),
                     activity::getActivityTab);
         }
 
@@ -663,6 +663,19 @@ class ContextualSearchFakeServer
         rSearches.put(rSearch3);
         JSONObject suggestions = new JSONObject();
         suggestions.put("content", rSearches);
+        // Also add selection suggestions, which are shown in the Bar, so we can exercise that code.
+        JSONObject rBar1 = new JSONObject();
+        rBar1.put("title", "Selection Related 1");
+        JSONObject rBar2 = new JSONObject();
+        rBar2.put("title", "Selection Related 2");
+        JSONObject rBar3 = new JSONObject();
+        rBar3.put("title", "Selection Related 3");
+        JSONArray selectionSearches = new JSONArray();
+        selectionSearches.put(rBar1);
+        selectionSearches.put(rBar2);
+        selectionSearches.put(rBar3);
+        suggestions.put("selection", selectionSearches);
+
         ResolvedSearchTerm intelligenceWithRelatedSearches =
                 new ResolvedSearchTerm.Builder(false, 200, "Intelligence", "Intelligence")
                         .setRelatedSearchesJson(suggestions.toString())

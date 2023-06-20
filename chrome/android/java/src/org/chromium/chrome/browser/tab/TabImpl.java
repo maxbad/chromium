@@ -27,11 +27,13 @@ import org.chromium.base.annotations.NativeMethods;
 import org.chromium.base.metrics.RecordHistogram;
 import org.chromium.base.metrics.RecordUserAction;
 import org.chromium.base.supplier.ObservableSupplierImpl;
+import org.chromium.base.supplier.Supplier;
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.ActivityUtils;
 import org.chromium.chrome.browser.WarmupManager;
 import org.chromium.chrome.browser.WebContentsFactory;
 import org.chromium.chrome.browser.app.ChromeActivity;
+import org.chromium.chrome.browser.compositor.CompositorViewHolder;
 import org.chromium.chrome.browser.content.ContentUtils;
 import org.chromium.chrome.browser.contextmenu.ContextMenuPopulatorFactory;
 import org.chromium.chrome.browser.flags.CachedFeatureFlags;
@@ -56,6 +58,7 @@ import org.chromium.components.security_state.ConnectionSecurityLevel;
 import org.chromium.components.security_state.SecurityStateModel;
 import org.chromium.components.url_formatter.UrlFormatter;
 import org.chromium.content_public.browser.ChildProcessImportance;
+import org.chromium.content_public.browser.ContentFeatureList;
 import org.chromium.content_public.browser.LoadUrlParams;
 import org.chromium.content_public.browser.WebContents;
 import org.chromium.content_public.browser.WebContentsAccessibility;
@@ -65,6 +68,8 @@ import org.chromium.ui.base.ViewAndroidDelegate;
 import org.chromium.ui.base.WindowAndroid;
 import org.chromium.ui.util.ColorUtils;
 import org.chromium.url.GURL;
+
+import java.nio.ByteBuffer;
 
 /**
  * Implementation of the interface {@link Tab}. Contains and manages a {@link ContentView}.
@@ -224,7 +229,7 @@ public class TabImpl implements Tab, TabObscuringHandler.Observer {
      */
     @SuppressLint("HandlerLeak")
     TabImpl(int id, boolean incognito, @Nullable @TabLaunchType Integer launchType,
-            @Nullable byte[] serializedCriticalPersistedTabData) {
+            @Nullable ByteBuffer serializedCriticalPersistedTabData) {
         mIsTabSaveEnabledSupplier.set(false);
         mId = TabIdManager.getInstance().generateValidId(id);
         mIncognito = incognito;
@@ -436,8 +441,12 @@ public class TabImpl implements Tab, TabObscuringHandler.Observer {
     public boolean isThemingAllowed() {
         // Do not apply the theme color if there are any security issues on the page.
         int securityLevel = SecurityStateModel.getSecurityLevelForWebContents(getWebContents());
-        return securityLevel != ConnectionSecurityLevel.DANGEROUS
-                && securityLevel != ConnectionSecurityLevel.SECURE_WITH_POLICY_INSTALLED_CERT;
+        boolean hasSecurityIssue = securityLevel == ConnectionSecurityLevel.DANGEROUS
+            || securityLevel == ConnectionSecurityLevel.SECURE_WITH_POLICY_INSTALLED_CERT;
+        // If chrome is showing an error page, allow theming so the system UI can match the page.
+        // This is considered acceptable since chrome is in control of the error page. Otherwise, if
+        // the page has a security issue, disable theming.
+        return isShowingErrorPage() || !hasSecurityIssue;
     }
 
     @Override
@@ -486,7 +495,7 @@ public class TabImpl implements Tab, TabObscuringHandler.Observer {
                 throw new RuntimeException("Tab.loadUrl called when no native side exists");
             }
 
-            // Request desktop sites for large screen tablets.
+            // Request desktop sites for large screen tablets if necessary.
             params.setOverrideUserAgent(calculateUserAgentOverrideOption());
 
             @TabLoadStatus
@@ -790,34 +799,13 @@ public class TabImpl implements Tab, TabObscuringHandler.Observer {
     }
 
     @Override
-    public void setAddApi2TransitionToFutureNavigations(boolean shouldAdd) {
-        if (mNativeTabAndroid != 0) {
-            TabImplJni.get().setAddApi2TransitionToFutureNavigations(mNativeTabAndroid, shouldAdd);
-        }
-    }
-
-    @Override
-    public boolean getAddApi2TransitionToFutureNavigations() {
-        return (mNativeTabAndroid != 0)
-                && TabImplJni.get().getAddApi2TransitionToFutureNavigations(mNativeTabAndroid);
-    }
-
-    @Override
-    public void setHideFutureNavigations(boolean hide) {
-        if (mNativeTabAndroid != 0) {
-            TabImplJni.get().setHideFutureNavigations(mNativeTabAndroid, hide);
-        }
-    }
-
-    @Override
-    public boolean getHideFutureNavigations() {
-        return (mNativeTabAndroid != 0)
-                && TabImplJni.get().getHideFutureNavigations(mNativeTabAndroid);
-    }
-
-    @Override
     public void setIsTabSaveEnabled(boolean isTabSaveEnabled) {
         mIsTabSaveEnabledSupplier.set(isTabSaveEnabled);
+    }
+
+    @VisibleForTesting
+    public ObservableSupplierImpl<Boolean> getIsTabSaveEnabledSupplierForTesting() {
+        return mIsTabSaveEnabledSupplier;
     }
 
     // TabObscuringHandler.Observer
@@ -931,7 +919,7 @@ public class TabImpl implements Tab, TabObscuringHandler.Observer {
                 appId = CriticalPersistedTabData.from(this).getOpenerAppId();
                 themeColor = CriticalPersistedTabData.from(this).getThemeColor();
                 hasThemeColor = themeColor != TabState.UNSPECIFIED_THEME_COLOR
-                        && ColorUtils.isValidThemeColor(themeColor);
+                        && !ColorUtils.isThemeColorTooBright(themeColor);
             } else if (tabState != null) {
                 appId = tabState.openerAppId;
                 themeColor = tabState.getThemeColor();
@@ -1235,19 +1223,6 @@ public class TabImpl implements Tab, TabObscuringHandler.Observer {
     @Override
     public LoadUrlParams getPendingLoadParams() {
         return mPendingLoadParams;
-    }
-
-    @Override
-    public void setShouldBlockNewNotificationRequests(boolean value) {
-        if (mNativeTabAndroid != 0) {
-            TabImplJni.get().setShouldBlockNewNotificationRequests(mNativeTabAndroid, value);
-        }
-    }
-
-    @Override
-    public boolean getShouldBlockNewNotificationRequests() {
-        return mNativeTabAndroid != 0
-                && TabImplJni.get().getShouldBlockNewNotificationRequests(mNativeTabAndroid);
     }
 
     /**
@@ -1556,7 +1531,9 @@ public class TabImpl implements Tab, TabObscuringHandler.Observer {
                 for (TabObserver observer : mObservers) observer.onRestoreFailed(this);
                 restored = false;
             }
-            View compositorView = getActivity().getCompositorViewHolder();
+            Supplier<CompositorViewHolder> compositorViewHolderSupplier =
+                    getActivity().getCompositorViewHolderSupplier();
+            View compositorView = compositorViewHolderSupplier.get();
             webContents.setSize(compositorView.getWidth(), compositorView.getHeight());
 
             CriticalPersistedTabData.from(this).setWebContentsState(null);
@@ -1575,6 +1552,7 @@ public class TabImpl implements Tab, TabObscuringHandler.Observer {
     }
 
     @CalledByNative
+    @Override
     public boolean isCustomTab() {
         ChromeActivity activity = getActivity();
         return activity != null && activity.isCustomTab();
@@ -1660,17 +1638,19 @@ public class TabImpl implements Tab, TabObscuringHandler.Observer {
                 : getWebContents().getNavigationController().getUseDesktopUserAgent();
 
         // We only calculate the user agent when users did not manually choose one.
+        // TODO(crbug.com/1251794): Desktop site setting in app menu does not persist after restart.
         if (!mUserForcedUserAgent
-                && ChromeFeatureList.isEnabled(ChromeFeatureList.REQUEST_DESKTOP_SITE_FOR_TABLETS)
-                && ChromeFeatureList.getFieldTrialParamByFeatureAsBoolean(
-                        ChromeFeatureList.REQUEST_DESKTOP_SITE_FOR_TABLETS,
-                        REQUEST_DESKTOP_ENABLED_PARAM, false)) {
-            // We only do the following logic to choose the desktop/mobile user agent if
-            // 1. User never manually made a choice in app menu for requesting desktop site.
-            // 2. The browser is running in tablets.
-            boolean shouldRequestDesktopSite = TabUtils.isTabLargeEnoughForDesktopSite(this);
+                && ContentFeatureList.isEnabled(ContentFeatureList.REQUEST_DESKTOP_SITE_GLOBAL)) {
+            // We only do the following logic to choose the desktop/mobile user agent if:
+            // 1. User never manually made a choice in the app menu for requesting desktop site.
+            // 2. User-enabled request desktop site in site settings.
+            Profile profile =
+                    IncognitoUtils.getProfileFromWindowAndroid(mWindowAndroid, isIncognito());
+            boolean shouldRequestDesktopSite = getWebContents() != null
+                    && TabUtils.isDesktopSiteEnabled(profile, getWebContents().getVisibleUrl());
 
             if (shouldRequestDesktopSite != currentRequestDesktopSite) {
+                // TODO(crbug.com/1243758): Confirm if a new histogram should be used.
                 RecordHistogram.recordBooleanHistogram(
                         "Android.RequestDesktopSite.UseDesktopUserAgent", shouldRequestDesktopSite);
 
@@ -1721,12 +1701,6 @@ public class TabImpl implements Tab, TabObscuringHandler.Observer {
                 long nativeTabAndroid, WebContents webContents, int width, int height);
         void setActiveNavigationEntryTitleForUrl(long nativeTabAndroid, String url, String title);
         void loadOriginalImage(long nativeTabAndroid);
-        void setAddApi2TransitionToFutureNavigations(long nativeTabAndroid, boolean shouldAdd);
-        boolean getAddApi2TransitionToFutureNavigations(long nativeTabAndroid);
-        void setHideFutureNavigations(long nativeTabAndroid, boolean hide);
-        boolean getHideFutureNavigations(long nativeTabAndroid);
-        void setShouldBlockNewNotificationRequests(long nativeTabAndroid, boolean value);
-        boolean getShouldBlockNewNotificationRequests(long nativeTabAndroid);
         boolean handleNonNavigationAboutURL(GURL url);
     }
 }

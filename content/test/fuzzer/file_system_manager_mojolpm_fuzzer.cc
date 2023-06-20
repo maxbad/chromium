@@ -10,6 +10,7 @@
 #include "base/command_line.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/i18n/icu_util.h"
+#include "base/no_destructor.h"
 #include "base/test/test_switches.h"
 #include "base/test/test_timeouts.h"
 #include "base/threading/platform_thread.h"
@@ -24,9 +25,11 @@
 #include "content/public/test/test_content_client_initializer.h"
 #include "content/test/fuzzer/file_system_manager_mojolpm_fuzzer.pb.h"
 #include "mojo/core/embedder/embedder.h"
+#include "storage/browser/quota/quota_manager_proxy.h"
 #include "storage/browser/quota/special_storage_policy.h"
 #include "storage/browser/test/mock_special_storage_policy.h"
 #include "storage/browser/test/test_file_system_context.h"
+#include "third_party/blink/public/common/storage_key/storage_key.h"
 #include "third_party/blink/public/mojom/filesystem/file_system.mojom-mojolpm.h"
 #include "third_party/libprotobuf-mutator/src/src/libfuzzer/libfuzzer_macro.h"
 #include "url/origin.h"
@@ -330,7 +333,10 @@ void FileSystemManagerTestcase::AddFileSystemManagerImpl(
                               NewFileSystemManagerAction_RenderProcessId_ZERO
                       ? 0
                       : 1;
-  file_system_manager_impls_[offset]->BindReceiver(std::move(receiver));
+  // TODO(https://crbug.com/1243348): Pipe in the proper third-party StorageKey
+  // value for the LegacyFileSystem; replace the empty construction below.
+  file_system_manager_impls_[offset]->BindReceiver(blink::StorageKey(),
+                                                   std::move(receiver));
 }
 
 void FileSystemManagerTestcase::AddFileSystemManager(

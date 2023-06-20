@@ -13,6 +13,7 @@ import androidx.annotation.VisibleForTesting;
 
 import org.chromium.base.Callback;
 import org.chromium.base.ObserverList;
+import org.chromium.base.jank_tracker.JankTracker;
 import org.chromium.base.metrics.RecordUserAction;
 import org.chromium.base.supplier.ObservableSupplier;
 import org.chromium.base.supplier.OneshotSupplierImpl;
@@ -92,7 +93,7 @@ public class LayoutManagerChrome extends LayoutManagerImpl
             ObservableSupplier<TabContentManager> tabContentManagerSupplier,
             Supplier<LayerTitleCache> layerTitleCacheSupplier,
             OneshotSupplierImpl<OverviewModeBehavior> overviewModeBehaviorSupplier,
-            Supplier<TopUiThemeColorProvider> topUiThemeColorProvider) {
+            Supplier<TopUiThemeColorProvider> topUiThemeColorProvider, JankTracker jankTracker) {
         super(host, contentContainer, tabContentManagerSupplier, layerTitleCacheSupplier,
                 topUiThemeColorProvider);
         Context context = host.getContext();
@@ -107,6 +108,7 @@ public class LayoutManagerChrome extends LayoutManagerImpl
         mTabContentManagerSupplier.addObserver(new Callback<TabContentManager>() {
             @Override
             public void onResult(TabContentManager manager) {
+                manager.addThumbnailChangeListener((id) -> requestUpdate());
                 if (mOverviewLayout != null) {
                     mOverviewLayout.setTabContentManager(manager);
                 }
@@ -116,13 +118,13 @@ public class LayoutManagerChrome extends LayoutManagerImpl
 
         if (createOverviewLayout) {
             if (startSurface != null) {
-                assert TabUiFeatureUtilities.isGridTabSwitcherEnabled();
+                assert TabUiFeatureUtilities.isGridTabSwitcherEnabled(context);
                 TabManagementDelegate tabManagementDelegate =
                         TabManagementModuleProvider.getDelegate();
                 assert tabManagementDelegate != null;
 
                 mOverviewLayout = tabManagementDelegate.createStartSurfaceLayout(
-                        context, this, renderHost, startSurface);
+                        context, this, renderHost, startSurface, jankTracker);
             }
         }
 
@@ -283,7 +285,7 @@ public class LayoutManagerChrome extends LayoutManagerImpl
     @Override
     protected boolean shouldDelayHideAnimation(Layout layoutBeingHidden) {
         return mEnableAnimations && layoutBeingHidden == mOverviewLayout && mCreatingNtp
-                && !TabUiFeatureUtilities.isGridTabSwitcherEnabled();
+                && !TabUiFeatureUtilities.isGridTabSwitcherEnabled(mHost.getContext());
     }
 
     @Override
@@ -362,7 +364,7 @@ public class LayoutManagerChrome extends LayoutManagerImpl
      */
     @Override
     public void showOverview(boolean animate) {
-        boolean useAccessibility = DeviceClassManager.enableAccessibilityLayout();
+        boolean useAccessibility = DeviceClassManager.enableAccessibilityLayout(mHost.getContext());
 
         boolean accessibilityIsVisible =
                 useAccessibility && getActiveLayout() == mOverviewListLayout;

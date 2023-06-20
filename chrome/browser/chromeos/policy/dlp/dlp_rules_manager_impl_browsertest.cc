@@ -4,11 +4,12 @@
 
 #include "base/json/json_writer.h"
 #include "base/values.h"
+#include "chrome/browser/ash/policy/core/user_policy_test_helper.h"
+#include "chrome/browser/ash/policy/login/login_policy_test_base.h"
 #include "chrome/browser/chromeos/policy/dlp/dlp_policy_constants.h"
+#include "chrome/browser/chromeos/policy/dlp/dlp_rules_manager.h"
 #include "chrome/browser/chromeos/policy/dlp/dlp_rules_manager_factory.h"
 #include "chrome/browser/chromeos/policy/dlp/dlp_rules_manager_test_utils.h"
-#include "chrome/browser/chromeos/policy/login/login_policy_test_base.h"
-#include "chrome/browser/chromeos/policy/user_policy_test_helper.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "components/policy/core/common/policy_map.h"
 #include "components/policy/policy_constants.h"
@@ -38,7 +39,7 @@ class DlpRulesPolicyTest : public LoginPolicyTestBase {
 
 IN_PROC_BROWSER_TEST_F(DlpRulesPolicyTest, ParsePolicyPref) {
   SkipToLoginScreen();
-  LogIn(kAccountId, kAccountPassword, kEmptyServices);
+  LogIn();
 
   base::Value rules(base::Value::Type::LIST);
 
@@ -69,7 +70,7 @@ IN_PROC_BROWSER_TEST_F(DlpRulesPolicyTest, ReportingEnabled) {
                                   /*recommended=*/base::DictionaryValue());
 
   SkipToLoginScreen();
-  LogIn(kAccountId, kAccountPassword, kEmptyServices);
+  LogIn();
 
   DlpRulesManager* rules_manager =
       DlpRulesManagerFactory::GetForPrimaryProfile();
@@ -84,7 +85,7 @@ IN_PROC_BROWSER_TEST_F(DlpRulesPolicyTest, ReportingDisabled) {
                                   /*recommended=*/base::DictionaryValue());
 
   SkipToLoginScreen();
-  LogIn(kAccountId, kAccountPassword, kEmptyServices);
+  LogIn();
 
   DlpRulesManager* rules_manager =
       DlpRulesManagerFactory::GetForPrimaryProfile();

@@ -5,6 +5,7 @@
 #include "components/cast_streaming/browser/receiver_session_impl.h"
 
 #include "base/threading/sequenced_task_runner_handle.h"
+#include "components/cast_streaming/browser/public/network_context_getter.h"
 #include "media/base/audio_decoder_config.h"
 #include "media/base/video_decoder_config.h"
 #include "media/mojo/mojom/media_types.mojom.h"
@@ -13,14 +14,19 @@ namespace cast_streaming {
 
 // static
 std::unique_ptr<ReceiverSession> ReceiverSession::Create(
+    std::unique_ptr<ReceiverSession::AVConstraints> av_constraints,
     ReceiverSession::MessagePortProvider message_port_provider) {
   return std::make_unique<ReceiverSessionImpl>(
-      std::move(message_port_provider));
+      std::move(av_constraints), std::move(message_port_provider));
 }
 
 ReceiverSessionImpl::ReceiverSessionImpl(
+    std::unique_ptr<ReceiverSession::AVConstraints> av_constraints,
     ReceiverSession::MessagePortProvider message_port_provider)
-    : message_port_provider_(std::move(message_port_provider)) {
+    : message_port_provider_(std::move(message_port_provider)),
+      av_constraints_(std::move(av_constraints)) {
+  // TODO(crbug.com/1218495): Validate the provided codecs against build flags.
+  DCHECK(av_constraints_);
   DCHECK(message_port_provider_);
 }
 
@@ -29,6 +35,8 @@ ReceiverSessionImpl::~ReceiverSessionImpl() = default;
 void ReceiverSessionImpl::SetCastStreamingReceiver(
     mojo::AssociatedRemote<mojom::CastStreamingReceiver>
         cast_streaming_receiver) {
+  DCHECK(HasNetworkContextGetter());
+
   DVLOG(1) << __func__;
   cast_streaming_receiver_ = std::move(cast_streaming_receiver);
 
@@ -44,7 +52,8 @@ void ReceiverSessionImpl::SetCastStreamingReceiver(
 void ReceiverSessionImpl::OnReceiverEnabled() {
   DVLOG(1) << __func__;
   DCHECK(message_port_provider_);
-  cast_streaming_session_.Start(this, std::move(message_port_provider_).Run(),
+  cast_streaming_session_.Start(this, std::move(av_constraints_),
+                                std::move(message_port_provider_).Run(),
                                 base::SequencedTaskRunnerHandle::Get());
 }
 
@@ -128,6 +137,7 @@ void ReceiverSessionImpl::OnMojoDisconnect() {
 
   // Close the underlying connection.
   if (message_port_provider_) {
+    av_constraints_ = std::make_unique<ReceiverSession::AVConstraints>();
     std::move(message_port_provider_).Run().reset();
   }
 

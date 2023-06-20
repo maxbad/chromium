@@ -38,6 +38,7 @@
 #include "build/build_config.h"
 #include "cc/animation/animation_host.h"
 #include "cc/layers/picture_layer.h"
+#include "cc/trees/paint_holding_reason.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/blink/public/common/page/page_zoom.h"
 #include "third_party/blink/public/mojom/input/focus_type.mojom-blink.h"
@@ -108,6 +109,7 @@
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
 #include "third_party/blink/renderer/platform/widget/frame_widget.h"
+#include "third_party/blink/renderer/platform/wtf/casting.h"
 #include "third_party/blink/renderer/platform/wtf/text/character_names.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_concatenate.h"
@@ -161,6 +163,13 @@ String TruncateDialogMessage(const String& message) {
 
 }  // namespace
 
+static bool g_can_browser_handle_focus = false;
+
+// Function defined in third_party/blink/public/web/blink.h.
+void SetBrowserCanHandleFocusForWebTest(bool value) {
+  g_can_browser_handle_focus = value;
+}
+
 class CompositorAnimationTimeline;
 
 ChromeClientImpl::ChromeClientImpl(WebViewImpl* web_view)
@@ -188,13 +197,17 @@ void ChromeClientImpl::ChromeDestroyed() {
 
 void ChromeClientImpl::SetWindowRect(const IntRect& r, LocalFrame& frame) {
   DCHECK_EQ(&frame, web_view_->MainFrameImpl()->GetFrame());
-  web_view_->MainFrameViewWidget()->SetWindowRect(r);
+  web_view_->MainFrameViewWidget()->SetWindowRect(ToGfxRect(r));
 }
 
 IntRect ChromeClientImpl::RootWindowRect(LocalFrame& frame) {
   // The WindowRect() for each WebFrameWidget will be the same rect of the top
   // level window.
   return IntRect(frame.GetWidgetForLocalRoot()->WindowRect());
+}
+
+void ChromeClientImpl::DidAccessInitialMainDocument() {
+  web_view_->DidAccessInitialMainDocument();
 }
 
 void ChromeClientImpl::FocusPage() {
@@ -209,7 +222,9 @@ void ChromeClientImpl::DidFocusPage() {
 bool ChromeClientImpl::CanTakeFocus(mojom::blink::FocusType) {
   // For now the browser can always take focus if we're not running layout
   // tests.
-  return !WebTestSupport::IsRunningWebTest();
+  if (!WebTestSupport::IsRunningWebTest())
+    return true;
+  return g_can_browser_handle_focus;
 }
 
 void ChromeClientImpl::TakeFocus(mojom::blink::FocusType type) {
@@ -255,13 +270,11 @@ Page* ChromeClientImpl::CreateWindowDelegate(
   NotifyPopupOpeningObservers();
   const AtomicString& frame_name =
       !EqualIgnoringASCIICase(name, "_blank") ? name : g_empty_atom;
-  WebViewImpl* new_view =
-      static_cast<WebViewImpl*>(web_view_->Client()->CreateView(
-          WebLocalFrameImpl::FromFrame(frame),
-          WrappedResourceRequest(r.GetResourceRequest()), features, frame_name,
-          static_cast<WebNavigationPolicy>(r.GetNavigationPolicy()),
-          sandbox_flags, session_storage_namespace_id, consumed_user_gesture,
-          r.Impression()));
+  WebViewImpl* new_view = To<WebViewImpl>(web_view_->Client()->CreateView(
+      WebLocalFrameImpl::FromFrame(frame),
+      WrappedResourceRequest(r.GetResourceRequest()), features, frame_name,
+      static_cast<WebNavigationPolicy>(r.GetNavigationPolicy()), sandbox_flags,
+      session_storage_namespace_id, consumed_user_gesture, r.Impression()));
   if (!new_view)
     return nullptr;
   return new_view->GetPage();
@@ -304,8 +317,8 @@ void ChromeClientImpl::Show(const blink::LocalFrameToken& opener_frame_token,
                             NavigationPolicy navigation_policy,
                             const IntRect& initial_rect,
                             bool user_gesture) {
-  web_view_->Show(opener_frame_token, navigation_policy, initial_rect,
-                  user_gesture);
+  web_view_->Show(opener_frame_token, navigation_policy,
+                  ToGfxRect(initial_rect), user_gesture);
 }
 
 bool ChromeClientImpl::ShouldReportDetailedMessageForSourceAndSeverity(
@@ -448,7 +461,7 @@ IntRect ChromeClientImpl::ViewportToScreen(
 
   gfx::Rect screen_rect =
       frame.GetWidgetForLocalRoot()->BlinkSpaceToEnclosedDIPs(
-          gfx::Rect(rect_in_viewport));
+          ToGfxRect(rect_in_viewport));
   gfx::Rect view_rect = frame.GetWidgetForLocalRoot()->ViewRect();
 
   screen_rect.Offset(view_rect.x(), view_rect.y());
@@ -469,11 +482,13 @@ float ChromeClientImpl::WindowToViewportScalar(LocalFrame* frame,
   return frame->GetWidgetForLocalRoot()->DIPsToBlinkSpace(scalar_value);
 }
 
-const ScreenInfo& ChromeClientImpl::GetScreenInfo(LocalFrame& frame) const {
+const display::ScreenInfo& ChromeClientImpl::GetScreenInfo(
+    LocalFrame& frame) const {
   return frame.GetWidgetForLocalRoot()->GetScreenInfo();
 }
 
-const ScreenInfos& ChromeClientImpl::GetScreenInfos(LocalFrame& frame) const {
+const display::ScreenInfos& ChromeClientImpl::GetScreenInfos(
+    LocalFrame& frame) const {
   return frame.GetWidgetForLocalRoot()->GetScreenInfos();
 }
 
@@ -482,7 +497,7 @@ void ChromeClientImpl::OverrideVisibleRectForMainFrame(
     IntRect* visible_rect) const {
   DCHECK(frame.IsMainFrame());
   return web_view_->GetDevToolsEmulator()->OverrideVisibleRect(
-      IntRect(frame.GetWidgetForLocalRoot()->ViewRect()).Size(), visible_rect);
+      IntRect(frame.GetWidgetForLocalRoot()->ViewRect()).size(), visible_rect);
 }
 
 float ChromeClientImpl::InputEventsScaleForEmulation() const {
@@ -590,6 +605,15 @@ void ChromeClientImpl::UpdateTooltipFromKeyboard(LocalFrame& frame,
       ->UpdateTooltipFromKeyboard(tooltip_text, dir, bounds);
 }
 
+void ChromeClientImpl::ClearKeyboardTriggeredTooltip(LocalFrame& frame) {
+  if (!RuntimeEnabledFeatures::KeyboardAccessibleTooltipEnabled())
+    return;
+
+  WebLocalFrameImpl::FromFrame(frame)
+      ->LocalRootFrameWidget()
+      ->ClearKeyboardTriggeredTooltip();
+}
+
 void ChromeClientImpl::DispatchViewportPropertiesDidChange(
     const ViewportDescription& description) const {
   web_view_->UpdatePageDefinedViewportConstraints(description);
@@ -616,6 +640,9 @@ ColorChooser* ChromeClientImpl::OpenColorChooser(
     controller = MakeGarbageCollected<ColorChooserPopupUIController>(
         frame, this, chooser_client);
   } else {
+#if !defined(OS_ANDROID)
+    NOTREACHED() << "Page popups should be enabled on all but Android";
+#endif
     controller =
         MakeGarbageCollected<ColorChooserUIController>(frame, chooser_client);
   }
@@ -964,30 +991,18 @@ void ChromeClientImpl::SetEventListenerProperties(
   widget->SetEventListenerProperties(event_class, properties);
 }
 
-cc::EventListenerProperties ChromeClientImpl::EventListenerProperties(
-    LocalFrame* frame,
-    cc::EventListenerClass event_class) const {
-  if (!frame)
-    return cc::EventListenerProperties::kNone;
-
-  WebFrameWidgetImpl* widget =
-      WebLocalFrameImpl::FromFrame(frame)->LocalRootFrameWidget();
-  if (!widget)
-    return cc::EventListenerProperties::kNone;
-  return widget->EventListenerProperties(event_class);
-}
-
 void ChromeClientImpl::BeginLifecycleUpdates(LocalFrame& main_frame) {
   DCHECK(main_frame.IsMainFrame());
   web_view_->StopDeferringMainFrameUpdate();
 }
 
-void ChromeClientImpl::StartDeferringCommits(LocalFrame& main_frame,
-                                             base::TimeDelta timeout) {
+bool ChromeClientImpl::StartDeferringCommits(LocalFrame& main_frame,
+                                             base::TimeDelta timeout,
+                                             cc::PaintHoldingReason reason) {
   DCHECK(main_frame.IsMainFrame());
-  WebLocalFrameImpl::FromFrame(main_frame)
+  return WebLocalFrameImpl::FromFrame(main_frame)
       ->FrameWidgetImpl()
-      ->StartDeferringCommits(timeout);
+      ->StartDeferringCommits(timeout, reason);
 }
 
 void ChromeClientImpl::StopDeferringCommits(

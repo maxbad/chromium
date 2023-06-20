@@ -12,7 +12,7 @@
 #include "chrome/browser/ui/views/toolbar/toolbar_view.h"
 #include "chrome/browser/ui/web_applications/app_browser_controller.h"
 #include "chrome/browser/ui/web_applications/web_app_controller_browsertest.h"
-#include "chrome/browser/web_applications/components/web_application_info.h"
+#include "chrome/browser/web_applications/web_application_info.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
@@ -144,8 +144,7 @@ class UrlHidingInterstitialPage
   bool ShouldDisplayURL() const override { return false; }
 
  protected:
-  void PopulateInterstitialStrings(
-      base::DictionaryValue* load_time_data) override {}
+  void PopulateInterstitialStrings(base::Value* load_time_data) override {}
 };
 
 // An observer that associates a URL-hiding interstitial when a page loads when
@@ -160,7 +159,7 @@ class UrlHidingWebContentsObserver : public content::WebContentsObserver {
       return;
 
     security_interstitials::SecurityInterstitialTabHelper::
-        AssociateBlockingPage(web_contents(), handle->GetNavigationId(),
+        AssociateBlockingPage(handle,
                               std::make_unique<UrlHidingInterstitialPage>(
                                   web_contents(), handle->GetURL()));
   }
@@ -177,6 +176,11 @@ class CustomTabBarViewBrowserTest
     : public web_app::WebAppControllerBrowserTest {
  public:
   CustomTabBarViewBrowserTest() = default;
+
+  CustomTabBarViewBrowserTest(const CustomTabBarViewBrowserTest&) = delete;
+  CustomTabBarViewBrowserTest& operator=(const CustomTabBarViewBrowserTest&) =
+      delete;
+
   ~CustomTabBarViewBrowserTest() override = default;
 
  protected:
@@ -206,15 +210,15 @@ class CustomTabBarViewBrowserTest
     auto web_app_info = std::make_unique<WebApplicationInfo>();
     web_app_info->start_url = start_url;
     web_app_info->scope = start_url.GetWithoutFilename();
-    web_app_info->open_as_window = true;
+    web_app_info->user_display_mode = blink::mojom::DisplayMode::kStandalone;
     Install(std::move(web_app_info));
   }
 
   void InstallBookmark(const GURL& start_url) {
     auto web_app_info = std::make_unique<WebApplicationInfo>();
     web_app_info->start_url = start_url;
-    web_app_info->scope = start_url.GetOrigin();
-    web_app_info->open_as_window = true;
+    web_app_info->scope = start_url.DeprecatedGetOriginAsURL();
+    web_app_info->user_display_mode = blink::mojom::DisplayMode::kStandalone;
     Install(std::move(web_app_info));
   }
 
@@ -242,8 +246,6 @@ class CustomTabBarViewBrowserTest
   }
 
   base::test::ScopedFeatureList feature_list_;
-
-  DISALLOW_COPY_AND_ASSIGN(CustomTabBarViewBrowserTest);
 };
 
 // Check the custom tab bar is not instantiated for a tabbed browser window.
@@ -366,8 +368,10 @@ IN_PROC_BROWSER_TEST_F(CustomTabBarViewBrowserTest, ShowsWithMixedContent) {
   EXPECT_TRUE(bar->GetVisible());
   EXPECT_EQ(bar->title_for_testing(), u"Google");
   EXPECT_EQ(bar->location_for_testing() + u"/",
-            base::ASCIIToUTF16(
-                https_server()->GetURL("app.com", "/ssl").GetOrigin().spec()));
+            base::ASCIIToUTF16(https_server()
+                                   ->GetURL("app.com", "/ssl")
+                                   .DeprecatedGetOriginAsURL()
+                                   .spec()));
   EXPECT_FALSE(bar->close_button_for_testing()->GetVisible());
 }
 
@@ -390,7 +394,7 @@ IN_PROC_BROWSER_TEST_F(CustomTabBarViewBrowserTest, TitleAndLocationUpdate) {
 
   SetTitleAndLocation(app_view->GetActiveWebContents(), u"FooBar", navigate_to);
 
-  std::string expected_origin = navigate_to.GetOrigin().spec();
+  std::string expected_origin = navigate_to.DeprecatedGetOriginAsURL().spec();
   EXPECT_EQ(
       base::ASCIIToUTF16(expected_origin),
       app_view->toolbar()->custom_tab_bar()->location_for_testing() + u"/");
@@ -452,14 +456,10 @@ IN_PROC_BROWSER_TEST_F(CustomTabBarViewBrowserTest,
 }
 
 // Right-click menu on CustomTabBar should have Copy URL option.
-// TODO(crbug.com/988323): Times out on Mac.
-#if defined(OS_MAC)
-#define MAYBE_RightClickMenuShowsCopyUrl DISABLED_RightClickMenuShowsCopyUrl
-#else
-#define MAYBE_RightClickMenuShowsCopyUrl RightClickMenuShowsCopyUrl
-#endif
+// Disabled on Mac because Mac's native menu is synchronous.
+#if !defined(OS_MAC)
 IN_PROC_BROWSER_TEST_F(CustomTabBarViewBrowserTest,
-                       MAYBE_RightClickMenuShowsCopyUrl) {
+                       RightClickMenuShowsCopyUrl) {
   const GURL app_url = https_server()->GetURL("app.com", "/ssl/google.html");
   InstallPWA(app_url);
   EXPECT_TRUE(app_browser_->is_type_app());
@@ -488,6 +488,7 @@ IN_PROC_BROWSER_TEST_F(CustomTabBarViewBrowserTest,
                       &result);
   EXPECT_EQ(result, u"http://example.test/");
 }
+#endif  // !defined(OS_MAC)
 
 // Paths above the launch url should be out of scope and should be closable from
 // the CustomTabBar.

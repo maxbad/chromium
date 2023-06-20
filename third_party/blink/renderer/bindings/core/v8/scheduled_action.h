@@ -47,7 +47,6 @@ class V8Function;
 
 class ScheduledAction final : public GarbageCollected<ScheduledAction>,
                               public NameClient {
-  DISALLOW_COPY_AND_ASSIGN(ScheduledAction);
 
  public:
   ScheduledAction(ScriptState*,
@@ -58,7 +57,10 @@ class ScheduledAction final : public GarbageCollected<ScheduledAction>,
                   ExecutionContext* target,
                   const String& handler);
 
-  ~ScheduledAction();
+  ScheduledAction(const ScheduledAction&) = delete;
+  ScheduledAction& operator=(const ScheduledAction&) = delete;
+
+  ~ScheduledAction() override;
 
   void Dispose();
 

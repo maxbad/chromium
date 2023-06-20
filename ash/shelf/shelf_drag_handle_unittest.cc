@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 #include "ash/app_list/test/app_list_test_helper.h"
-#include "ash/public/cpp/ash_features.h"
-#include "ash/public/cpp/ash_pref_names.h"
+#include "ash/constants/ash_features.h"
+#include "ash/constants/ash_pref_names.h"
 #include "ash/public/cpp/shelf_types.h"
 #include "ash/session/session_controller_impl.h"
 #include "ash/shelf/contextual_tooltip.h"
@@ -55,7 +55,7 @@ class DragHandleContextualNudgeTest : public ShelfLayoutManagerTestBase {
   // ShelfLayoutManagerTestBase:
   void SetUp() override {
     ShelfLayoutManagerTestBase::SetUp();
-    test_clock_.Advance(base::TimeDelta::FromHours(2));
+    test_clock_.Advance(base::Hours(2));
     contextual_tooltip::OverrideClockForTesting(&test_clock_);
   }
   void TearDown() override {
@@ -276,7 +276,7 @@ TEST_F(DragHandleContextualNudgeTest, DragHandleNudgeShownInAppShelf) {
                    ->has_show_drag_handle_timer_for_testing());
 
   // Advance time for more than a day (which should enable the nudge again).
-  test_clock_.Advance(base::TimeDelta::FromHours(25));
+  test_clock_.Advance(base::Hours(25));
 
   // Reentering tablet mode with a maximized widget should immedietly show the
   // drag handle and set a timer to show the nudge.
@@ -574,7 +574,7 @@ TEST_F(DragHandleContextualNudgeTest,
 
   TabletModeControllerTestApi().LeaveTabletMode();
   // Advance time for more than a day (which should enable the nudge again).
-  test_clock_.Advance(base::TimeDelta::FromHours(25));
+  test_clock_.Advance(base::Hours(25));
   TabletModeControllerTestApi().EnterTabletMode();
   EXPECT_TRUE(drag_handle->has_show_drag_handle_timer_for_testing());
   drag_handle->fire_show_drag_handle_timer_for_testing();
@@ -585,8 +585,7 @@ TEST_F(DragHandleContextualNudgeTest,
   // hide the drag handle nudge is canceled when the window drag from shelf
   // starts.
   GetEventGenerator()->GestureScrollSequenceWithCallback(
-      start, start + gfx::Vector2d(0, -200),
-      base::TimeDelta::FromMilliseconds(50),
+      start, start + gfx::Vector2d(0, -200), base::Milliseconds(50),
       /*num_steps = */ 6,
       base::BindRepeating(
           [](DragHandle* drag_handle, ui::EventType type,
@@ -629,8 +628,7 @@ TEST_F(DragHandleContextualNudgeTest,
   // show the drag handle nudge is canceled when the window drag from shelf
   // starts.
   GetEventGenerator()->GestureScrollSequenceWithCallback(
-      start, start + gfx::Vector2d(0, -200),
-      base::TimeDelta::FromMilliseconds(50),
+      start, start + gfx::Vector2d(0, -200), base::Milliseconds(50),
       /*num_steps = */ 6,
       base::BindRepeating(
           [](DragHandle* drag_handle, ui::EventType type,
@@ -677,8 +675,7 @@ TEST_F(DragHandleContextualNudgeTest, GestureSwipeHidesDragHandleNudge) {
   // Simulates a swipe up from the drag handle to perform the in app to home
   // gesture.
   GetEventGenerator()->GestureScrollSequence(
-      start, start + gfx::Vector2d(0, -300),
-      base::TimeDelta::FromMilliseconds(10),
+      start, start + gfx::Vector2d(0, -300), base::Milliseconds(10),
       /*num_steps = */ 5);
 
   // The nudge should be hidden when the gesture completes.
@@ -689,8 +686,7 @@ TEST_F(DragHandleContextualNudgeTest, GestureSwipeHidesDragHandleNudge) {
       "Ash.ContextualNudgeDismissContext.InAppToHome",
       contextual_tooltip::DismissNudgeReason::kPerformedGesture, 1);
   histogram_tester.ExpectTimeBucketCount(
-      "Ash.ContextualNudgeDismissTime.InAppToHome",
-      base::TimeDelta::FromSeconds(0), 1);
+      "Ash.ContextualNudgeDismissTime.InAppToHome", base::Seconds(0), 1);
 }
 
 // Tests that drag handle nudge gets hidden when the user performs window drag
@@ -714,8 +710,7 @@ TEST_F(DragHandleContextualNudgeTest, FlingFromShelfToHomeHidesTheNudge) {
   // hide the drag handle nudge is canceled when the window drag from shelf
   // starts.
   GetEventGenerator()->GestureScrollSequenceWithCallback(
-      start, start + gfx::Vector2d(0, -300),
-      base::TimeDelta::FromMilliseconds(10),
+      start, start + gfx::Vector2d(0, -300), base::Milliseconds(10),
       /*num_steps = */ 6,
       base::BindRepeating(
           [](DragHandle* drag_handle, ui::EventType type,
@@ -752,8 +747,7 @@ TEST_F(DragHandleContextualNudgeTest, DragFromShelfToHomeHidesTheNudge) {
   // hide the drag handle nudge is canceled when the window drag from shelf
   // starts.
   GetEventGenerator()->GestureScrollSequenceWithCallback(
-      start, start + gfx::Vector2d(0, -150),
-      base::TimeDelta::FromMilliseconds(500),
+      start, start + gfx::Vector2d(0, -150), base::Milliseconds(500),
       /*num_steps = */ 20,
       base::BindRepeating(
           [](DragHandle* drag_handle, ui::EventType type,
@@ -790,7 +784,7 @@ TEST_F(DragHandleContextualNudgeTest, OverviewCancelsNudgeShow) {
   DragHandle* const drag_handle = shelf_widget->GetDragHandle();
 
   ASSERT_TRUE(drag_handle->has_show_drag_handle_timer_for_testing());
-  Shell::Get()->overview_controller()->StartOverview();
+  EnterOverview();
   ASSERT_FALSE(drag_handle->has_show_drag_handle_timer_for_testing());
 }
 
@@ -812,7 +806,7 @@ TEST_F(DragHandleContextualNudgeTest, DragHandleTapShowNudgeInOverview) {
   TabletModeControllerTestApi().LeaveTabletMode();
   TabletModeControllerTestApi().EnterTabletMode();
 
-  Shell::Get()->overview_controller()->StartOverview();
+  EnterOverview();
   ASSERT_FALSE(drag_handle->has_show_drag_handle_timer_for_testing());
 
   GetEventGenerator()->GestureTapAt(
@@ -844,8 +838,7 @@ TEST_F(DragHandleContextualNudgeTest,
 
   // Go into split view mode by first going into overview, and then snapping
   // the open window on one side.
-  OverviewController* overview_controller = Shell::Get()->overview_controller();
-  overview_controller->StartOverview();
+  EnterOverview();
   SplitViewController* split_view_controller =
       SplitViewController::Get(shelf_widget->GetNativeWindow());
   split_view_controller->SnapWindow(window.get(), SplitViewController::LEFT);
@@ -875,8 +868,7 @@ TEST_F(DragHandleContextualNudgeTest, DragHandleNudgeHiddenOnSplitScreen) {
 
   // Go into split view mode by first going into overview, and then snapping
   // the open window on one side.
-  OverviewController* overview_controller = Shell::Get()->overview_controller();
-  overview_controller->StartOverview();
+  EnterOverview();
   SplitViewController* split_view_controller =
       SplitViewController::Get(shelf_widget->GetNativeWindow());
   split_view_controller->SnapWindow(window.get(), SplitViewController::LEFT);

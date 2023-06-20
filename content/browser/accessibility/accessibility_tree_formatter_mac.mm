@@ -18,6 +18,7 @@
 #include "content/public/browser/ax_inspect_factory.h"
 #include "ui/accessibility/platform/inspect/ax_inspect_utils.h"
 #include "ui/accessibility/platform/inspect/ax_property_node.h"
+#include "ui/accessibility/platform/inspect/ax_script_instruction.h"
 
 // This file uses the deprecated NSObject accessibility interface.
 // TODO(crbug.com/948844): Migrate to the new NSAccessibility interface.
@@ -55,6 +56,7 @@ const char kRangeLenDictAttr[] = "len";
 
 const char kNULLValue[] = "_const_NULL";
 const char kFailedToParseError[] = "_const_ERROR:FAILED_TO_PARSE";
+const char kNotApplicable[] = "_const_n/a";
 
 }  // namespace
 
@@ -86,11 +88,6 @@ base::Value AccessibilityTreeFormatterMac::BuildTree(
   return BuildTree(ToBrowserAccessibilityCocoa(internal_root));
 }
 
-base::Value AccessibilityTreeFormatterMac::BuildTreeForWindow(
-    gfx::AcceleratedWidget widget) const {
-  return BuildTreeForAXUIElement(AXUIElementCreateApplication(widget));
-}
-
 base::Value AccessibilityTreeFormatterMac::BuildTreeForSelector(
     const AXTreeSelector& selector) const {
   AXUIElementRef node = nil;
@@ -116,30 +113,55 @@ base::Value AccessibilityTreeFormatterMac::BuildTree(const id root) const {
   NSSize size = SizeOf(root);
   NSRect rect = NSMakeRect(position.x, position.y, size.width, size.height);
 
-  EvaluateScripts(&line_indexer, &dict);
   RecursiveBuildTree(root, rect, &line_indexer, &dict);
 
   return dict;
 }
 
-void AccessibilityTreeFormatterMac::EvaluateScripts(
-    const LineIndexer* line_indexer,
-    base::Value* dict) const {
+std::string AccessibilityTreeFormatterMac::EvaluateScript(
+    ui::AXPlatformNodeDelegate* root,
+    const std::vector<ui::AXScriptInstruction>& instructions,
+    size_t start_index,
+    size_t end_index) const {
+  BrowserAccessibilityCocoa* platform_root = ToBrowserAccessibilityCocoa(
+      BrowserAccessibility::FromAXPlatformNodeDelegate(root));
+
   base::Value scripts(base::Value::Type::LIST);
-  for (const AXPropertyNode& property_node : ScriptPropertyNodes()) {
-    AttributeInvoker invoker(line_indexer);
-    OptionalNSObject value = invoker.Invoke(property_node);
-    if (value.IsNotApplicable()) {
+  LineIndexer line_indexer(platform_root);
+  std::map<std::string, id> storage;
+  AttributeInvoker invoker(&line_indexer, &storage);
+  for (size_t index = start_index; index < end_index; index++) {
+    if (instructions[index].IsComment()) {
+      scripts.Append(instructions[index].AsComment());
       continue;
     }
 
-    base::Value result = value.IsError() ? base::Value(kFailedToParseError)
-                                         : PopulateObject(*value, line_indexer);
+    DCHECK(instructions[index].IsScript());
+    const AXPropertyNode& property_node = instructions[index].AsScript();
+    OptionalNSObject value = invoker.Invoke(property_node);
+    if (value.IsUnsupported()) {
+      continue;
+    }
 
-    std::string code = property_node.original_property;
-    scripts.Append(code + "=" + AXFormatValue(result));
+    base::Value result;
+    if (value.IsError()) {
+      result = base::Value(kFailedToParseError);
+    } else if (value.IsNotApplicable()) {
+      result = base::Value(kNotApplicable);
+    } else {
+      result = PopulateObject(*value, &line_indexer);
+    }
+
+    scripts.Append(property_node.ToString() + "=" + AXFormatValue(result));
   }
-  dict->SetPath(kScriptsDictAttr, std::move(scripts));
+
+  std::string contents;
+  for (const base::Value& script : scripts.GetList()) {
+    std::string line;
+    WriteAttribute(true, script.GetString(), &line);
+    contents += line + "\n";
+  }
+  return contents;
 }
 
 base::Value AccessibilityTreeFormatterMac::BuildNode(
@@ -160,7 +182,6 @@ base::Value AccessibilityTreeFormatterMac::BuildNode(const id node) const {
   NSSize size = SizeOf(node);
   NSRect rect = NSMakeRect(position.x, position.y, size.width, size.height);
 
-  EvaluateScripts(&line_indexer, &dict);
   AddProperties(node, rect, &line_indexer, &dict);
   return dict;
 }
@@ -171,14 +192,15 @@ void AccessibilityTreeFormatterMac::RecursiveBuildTree(
     const LineIndexer* line_indexer,
     base::Value* dict) const {
   BrowserAccessibility* platform_node =
-      [static_cast<BrowserAccessibilityCocoa*>(node) owner];
-  DCHECK(platform_node);
+      IsBrowserAccessibilityCocoa(node)
+          ? [static_cast<BrowserAccessibilityCocoa*>(node) owner]
+          : nullptr;
 
-  if (!ShouldDumpNode(*platform_node))
+  if (platform_node && !ShouldDumpNode(*platform_node))
     return;
 
   AddProperties(node, root_rect, line_indexer, dict);
-  if (!ShouldDumpChildren(*platform_node))
+  if (platform_node && !ShouldDumpChildren(*platform_node))
     return;
 
   NSArray* children = ChildrenOf(node);
@@ -216,7 +238,7 @@ void AccessibilityTreeFormatterMac::AddProperties(
        PropertyFilterNodesFor(line_index)) {
     AttributeInvoker invoker(node, line_indexer);
     OptionalNSObject value = invoker.Invoke(property_node);
-    if (value.IsNotApplicable()) {
+    if (value.IsNotApplicable() || value.IsUnsupported()) {
       continue;
     }
     if (value.IsError()) {
@@ -362,8 +384,10 @@ base::Value AccessibilityTreeFormatterMac::PopulateRect(
 base::Value AccessibilityTreeFormatterMac::PopulateRange(
     NSRange node_range) const {
   base::Value range(base::Value::Type::DICTIONARY);
-  range.SetIntPath(kRangeLocDictAttr, static_cast<int>(node_range.location));
-  range.SetIntPath(kRangeLenDictAttr, static_cast<int>(node_range.length));
+  range.SetIntPath(AXMakeOrderedKey(kRangeLocDictAttr, 0),
+                   static_cast<int>(node_range.location));
+  range.SetIntPath(AXMakeOrderedKey(kRangeLenDictAttr, 1),
+                   static_cast<int>(node_range.length));
   return range;
 }
 

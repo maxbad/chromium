@@ -13,6 +13,7 @@
 
 class Profile;
 class StatefulSSLHostStateDelegate;
+class TrustSafetySentimentService;
 
 namespace content_settings {
 class PageSpecificContentSettings;
@@ -52,11 +53,17 @@ class ChromePageInfoDelegate : public PageInfoDelegate {
 
 #if !defined(OS_ANDROID)
   bool CreateInfoBarDelegate() override;
+  // In Chrome's case, this may show the site settings page or an app settings
+  // page, depending on context.
   void ShowSiteSettings(const GURL& site_url) override;
   void OpenCookiesDialog() override;
   void OpenCertificateDialog(net::X509Certificate* certificate) override;
   void OpenConnectionHelpCenterPage(const ui::Event& event) override;
   void OpenSafetyTipHelpCenterPage() override;
+  void OpenContentSettingsExceptions(
+      ContentSettingsType content_settings_type) override;
+  void OnPageInfoActionOccurred(PageInfo::PageInfoAction action) override;
+  void OnUIClosing() override;
 #endif
 
   permissions::PermissionDecisionAutoBlocker* GetPermissionDecisionAutoblocker()
@@ -81,6 +88,12 @@ class ChromePageInfoDelegate : public PageInfoDelegate {
   GetChromePasswordProtectionService() const;
 #endif
   content::WebContents* web_contents_;
+#if !defined(OS_ANDROID)
+  // The sentiment service is owned by the profile and will outlive this. The
+  // service cannot be retrieved via |web_contents_| as that may be destroyed
+  // before this is.
+  TrustSafetySentimentService* sentiment_service_;
+#endif
   security_state::SecurityLevel security_level_for_tests_;
   security_state::VisibleSecurityState visible_security_state_for_tests_;
   bool security_state_for_tests_set_ = false;

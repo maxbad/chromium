@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "base/bind.h"
 #include "base/logging.h"
 #include "base/threading/sequenced_task_runner_handle.h"
 #include "remoting/protocol/webrtc_video_frame_adapter.h"
@@ -14,7 +15,7 @@ namespace remoting {
 namespace protocol {
 
 WebrtcVideoTrackSource::WebrtcVideoTrackSource(
-    base::RepeatingClosure add_sink_callback)
+    AddSinkCallback add_sink_callback)
     : add_sink_callback_(add_sink_callback),
       main_task_runner_(base::SequencedTaskRunnerHandle::Get()) {}
 WebrtcVideoTrackSource::~WebrtcVideoTrackSource() = default;
@@ -51,7 +52,8 @@ void WebrtcVideoTrackSource::AddOrUpdateSink(
     LOG(WARNING) << "More than one sink added, only the latest will be used.";
   }
   sink_ = sink;
-  main_task_runner_->PostTask(FROM_HERE, add_sink_callback_);
+  main_task_runner_->PostTask(FROM_HERE,
+                              base::BindRepeating(add_sink_callback_, wants));
 }
 
 void WebrtcVideoTrackSource::RemoveSink(
@@ -87,6 +89,12 @@ void WebrtcVideoTrackSource::SendCapturedFrame(
 
   webrtc::VideoFrame video_frame = WebrtcVideoFrameAdapter::CreateVideoFrame(
       std::move(desktop_frame), std::move(frame_stats));
+
+  // Wrap-around behavior of '++' is defined for unsigned types.
+  // VideoFrame::id() is a 16-bit number which could wrap back to 0 many times
+  // during a connection.
+  video_frame.set_id(frame_id_++);
+
   sink_->OnFrame(video_frame);
 }
 

@@ -4,14 +4,15 @@
 
 #include "components/arc/dark_theme/arc_dark_theme_bridge.h"
 
+#include "ash/constants/ash_features.h"
 #include "ash/public/cpp/style/color_provider.h"
 #include "base/bind.h"
 #include "base/logging.h"
 #include "base/memory/singleton.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "components/arc/arc_browser_context_keyed_service_factory_base.h"
-#include "components/arc/arc_service_manager.h"
 #include "components/arc/session/arc_bridge_service.h"
+#include "components/arc/session/arc_service_manager.h"
 #include "mojo/public/cpp/system/platform_handle.h"
 
 namespace arc {
@@ -70,8 +71,14 @@ ArcDarkThemeBridge::~ArcDarkThemeBridge() {
 void ArcDarkThemeBridge::OnConnectionReady() {
   auto* provider = ash::ColorProvider::Get();
   bool dark_theme_status = false;
-  if (provider)
+  // Checking to see if the flag is enabled because provider returns dark mode
+  // when the flag is default.
+  if (provider && ash::features::IsDarkLightModeEnabled())
     dark_theme_status = provider->IsDarkModeEnabled();
+
+  if (provider && ash::features::IsNotificationsRefreshEnabled())
+    dark_theme_status = provider->IsDarkModeEnabled();
+
   if (!ArcDarkThemeBridge::SendDeviceDarkThemeState(dark_theme_status)) {
     LOG(ERROR) << "OnConnectionReady failed to get Dark Theme instance for "
                   "initial dark theme status : "

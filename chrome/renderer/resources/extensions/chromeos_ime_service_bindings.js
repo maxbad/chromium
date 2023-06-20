@@ -11,6 +11,8 @@ mojo.config.autoLoadMojomDeps = false;
 
 loadScript('chromeos.ime.mojom.ime_service.mojom');
 loadScript('chromeos.ime.mojom.input_engine.mojom');
+loadScript('chromeos.ime.mojom.input_method.mojom');
+loadScript('chromeos.ime.mojom.input_method_host.mojom');
 
 /**
  * Empty result to keep Mojo pipe from disconnection.
@@ -228,8 +230,6 @@ class ImeService {
 
   /**
    * Activates an input method based on its specification.
-   * If |activateIME| was called previously, this will call |onConnectionError|
-   * for the previous connection, because only one IME can be active at a time.
    *
    * @param {string} imeSpec The specification of an IME (e.g. the engine ID).
    * @param {!Uint8Array} extra The extra data (e.g. initial tasks to run).
@@ -262,8 +262,6 @@ class ImeService {
             const bound = result && result['success'];
             if (bound && onConnectionError) {
               this.activeEngine_.ptr.setConnectionErrorHandler(
-                  onConnectionError);
-              this.clientChannel_.ptr.setConnectionErrorHandler(
                   onConnectionError);
             };
             if (onConnection) {

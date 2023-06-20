@@ -9,8 +9,9 @@ GEN_INCLUDE(['//chrome/test/data/webui/polymer_browser_test_base.js']);
 
 GEN('#include "content/public/test/browser_test.h"');
 
+/* eslint-disable no-var */
+
 /** Test fixture for shared Polymer 3 components using Mojo. */
-// eslint-disable-next-line no-var
 var CrComponentsMojoBrowserTest = class extends PolymerTest {
   /** @override */
   get browsePreload() {
@@ -30,7 +31,6 @@ TEST_F('CrComponentsCustomizeThemesTest', 'All', function() {
   mocha.run();
 });
 
-// eslint-disable-next-line no-var
 var CrComponentsMostVisitedTest = class extends CrComponentsMojoBrowserTest {
   /** @override */
   get browsePreload() {
@@ -38,7 +38,20 @@ var CrComponentsMostVisitedTest = class extends CrComponentsMojoBrowserTest {
   }
 };
 
-// The test is failing on dbg builds: https://crbug.com/1216019
-TEST_F('CrComponentsMostVisitedTest', 'DISABLED_All', function() {
-  mocha.run();
+TEST_F('CrComponentsMostVisitedTest', 'General', function() {
+  runMochaSuite('General');
+});
+
+// crbug.com/1226996
+GEN('#if defined(OS_LINUX) && !defined(NDEBUG)');
+GEN('#define MAYBE_Modification DISABLED_Modification');
+GEN('#else');
+GEN('#define MAYBE_Modification Modification');
+GEN('#endif');
+TEST_F('CrComponentsMostVisitedTest', 'MAYBE_Modification', function() {
+  runMochaSuite('Modification');
+});
+
+TEST_F('CrComponentsMostVisitedTest', 'Theming', function() {
+  runMochaSuite('Theming');
 });

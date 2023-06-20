@@ -15,12 +15,14 @@
 #include "base/posix/eintr_wrapper.h"
 #include "base/system/sys_info.h"
 #include "components/arc/video_accelerator/arc_video_accelerator_util.h"
+#include "media/base/bitrate.h"
 #include "media/base/color_plane_layout.h"
 #include "media/base/format_utils.h"
 #include "media/base/video_types.h"
 #include "media/gpu/buffer_validation.h"
 #include "media/gpu/gpu_video_encode_accelerator_factory.h"
 #include "media/gpu/macros.h"
+#include "media/video/video_encode_accelerator.h"
 #include "mojo/public/cpp/bindings/type_converter.h"
 #include "mojo/public/cpp/system/platform_handle.h"
 
@@ -209,7 +211,7 @@ void GpuArcVideoEncodeAccelerator::Encode(
       gfx::Rect(visible_size_), visible_size_, std::move(gpu_memory_buffer),
       dummy_mailbox /* mailbox_holders */,
       base::NullCallback() /* mailbox_holder_release_cb_ */,
-      base::TimeDelta::FromMicroseconds(timestamp));
+      base::Microseconds(timestamp));
   if (!frame) {
     DLOG(ERROR) << "Failed to create VideoFrame";
     client_->NotifyError(Error::kInvalidArgumentError);
@@ -265,6 +267,22 @@ void GpuArcVideoEncodeAccelerator::UseBitstreamBuffer(
 }
 
 void GpuArcVideoEncodeAccelerator::RequestEncodingParametersChange(
+    const media::Bitrate& bitrate,
+    uint32_t framerate) {
+  DVLOGF(2) << bitrate.ToString();
+
+  if (!accelerator_) {
+    DLOG(ERROR) << "Accelerator is not initialized.";
+    return;
+  }
+
+  // Note that dynamic bitrate mode changes are not allowed. Attempting to
+  // change the bitrate mode at runtime will result in the |accelerator_|
+  // reporting an error through NotifyError.
+  accelerator_->RequestEncodingParametersChange(bitrate, framerate);
+}
+
+void GpuArcVideoEncodeAccelerator::RequestEncodingParametersChangeDeprecated(
     uint32_t bitrate,
     uint32_t framerate) {
   DVLOGF(2) << "bitrate=" << bitrate << ", framerate=" << framerate;
@@ -272,7 +290,8 @@ void GpuArcVideoEncodeAccelerator::RequestEncodingParametersChange(
     DLOG(ERROR) << "Accelerator is not initialized.";
     return;
   }
-  accelerator_->RequestEncodingParametersChange(bitrate, framerate);
+  accelerator_->RequestEncodingParametersChange(
+      media::Bitrate::ConstantBitrate(bitrate), framerate);
 }
 
 void GpuArcVideoEncodeAccelerator::Flush(FlushCallback callback) {

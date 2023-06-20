@@ -22,28 +22,32 @@ class NavigationRequest;
 // This implementation assumes that there are no new navigations happening in
 // the main frame during prerender activation i.e., between the ongoing
 // navigation commit until the prerender activates.
-// TODO(https://crbug.com/1194414): Cancel all new navigations when the
-// activation is in progress.
 class PrerenderCommitDeferringCondition : public CommitDeferringCondition,
                                           public WebContentsObserver {
  public:
   ~PrerenderCommitDeferringCondition() override;
 
   static std::unique_ptr<CommitDeferringCondition> MaybeCreate(
-      NavigationRequest& navigation_request);
+      NavigationRequest& navigation_request,
+      NavigationType navigation_type,
+      absl::optional<int> candidate_prerender_frame_tree_node_id);
 
   Result WillCommitNavigation(base::OnceClosure resume) override;
 
  private:
-  explicit PrerenderCommitDeferringCondition(
-      NavigationRequest& navigation_request);
+  PrerenderCommitDeferringCondition(NavigationRequest& navigation_request,
+                                    int candidate_prerender_frame_tree_node_id);
 
   // WebContentsObserver
   // Tracks the ongoing navigation commit in prerender frame tree to resume the
   // activation.
   void DidFinishNavigation(NavigationHandle* handle) override;
 
-  NavigationRequest& navigation_request_;
+  // The root frame tree node id of the prerendered page that this navigation
+  // will attempt to activate. See comments on
+  // `CommitDeferringConditionRunner::candidate_prerender_frame_tree_node_id_`
+  // for details.
+  const int candidate_prerender_frame_tree_node_id_;
 
   // The time PrerenderCommitDeferringCondition started deferring the
   // navigation.

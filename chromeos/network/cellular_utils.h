@@ -10,12 +10,19 @@
 #include "base/component_export.h"
 #include "chromeos/network/device_state.h"
 
+namespace dbus {
+class ObjectPath;
+}  // namespace dbus
+
 namespace chromeos {
 
 class CellularESimProfile;
 
 // Generates a list of CellularESimProfile objects for all Hermes esim profile
-// objects available through its dbus clients.
+// objects available through its dbus clients. Note that this function returns
+// an empty array if CellularESimProfileHandler::RefreshProfileList has not
+// been called. CellularESimProfileHandler::GetESimProfiles() should be called
+// to fetch cached profiles.
 COMPONENT_EXPORT(CHROMEOS_NETWORK)
 std::vector<CellularESimProfile> GenerateProfilesFromHermes();
 
@@ -37,6 +44,11 @@ std::string GenerateStubCellularServicePath(const std::string& iccid);
 
 COMPONENT_EXPORT(CHROMEOS_NETWORK)
 bool IsStubCellularServicePath(const std::string& service_path);
+
+// Returns the path to the Euicc that is currently used for all eSIM operations
+// in OS Settings and System UI.
+COMPONENT_EXPORT(CHROMEOS_NETWORK)
+absl::optional<dbus::ObjectPath> GetCurrentEuiccPath();
 
 }  // namespace chromeos
 

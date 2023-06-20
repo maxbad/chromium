@@ -15,11 +15,13 @@
 #include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace base {
+class TimeDelta;
 class Value;
 }  // namespace base
 
 namespace web {
 
+class FuzzerEnvWithJavaScriptFeature;
 class ScriptMessage;
 class WebState;
 class WebFrame;
@@ -32,6 +34,12 @@ class WebFrame;
 // state itself and can be used application-wide across browser states. However,
 // this is not guaranteed of JavaScriptFeature subclasses.
 class JavaScriptFeature {
+  // |FuzzerEnvWithJavaScriptFeature| stores subclasses of |JavaScriptFeature|
+  // and invokes |ScriptMessageReceived| function in a public API. So fuzzers
+  // can call |ScriptMessageReceived| functions without friending with each
+  // subclass.
+  friend class FuzzerEnvWithJavaScriptFeature;
+
  public:
   // The content world which this feature supports.
   // NOTE: Features should use kAnyContentWorld whenever possible to allow for
@@ -166,10 +174,18 @@ class JavaScriptFeature {
  protected:
   explicit JavaScriptFeature(ContentWorld supported_world);
 
+  // Calls |function_name| with |parameters| in |web_frame| within the content
+  // world that this feature has been configured. |web_frame| must not be null.
+  // See WebFrame::CallJavaScriptFunction for more details.
   bool CallJavaScriptFunction(WebFrame* web_frame,
                               const std::string& function_name,
                               const std::vector<base::Value>& parameters);
 
+  // Calls |function_name| with |parameters| in |web_frame| within the content
+  // world that this feature has been configured. |callback| will be called with
+  // the return value of the function if it completes within |timeout|.
+  // |web_frame| must not be null.
+  // See WebFrame::CallJavaScriptFunction for more details.
   bool CallJavaScriptFunction(
       WebFrame* web_frame,
       const std::string& function_name,

@@ -26,7 +26,7 @@ WindowType GetWindowType(content::WebContents* web_contents) {
     return WindowType::kNoBrowser;
   if (!browser->app_controller())
     return WindowType::kRegularTabbed;
-  if (browser->app_controller()->is_for_system_web_app())
+  if (browser->app_controller()->system_app())
     return WindowType::kSystemWebApp;
   return WindowType::kWebApp;
 }
@@ -47,8 +47,7 @@ ExtensionFunction::ResponseAction CrashReportPrivateReportErrorFunction::Run() {
     return RespondNow(NoArguments());
   }
 
-  // TODO(https://crbug.com/986166): Use crash_reporter for Chrome OS.
-  const auto params = crash_report_private::ReportError::Params::Create(*args_);
+  const auto params = crash_report_private::ReportError::Params::Create(args());
   EXTENSION_FUNCTION_VALIDATE(params.get());
 
   auto processor = JsErrorReportProcessor::Get();
@@ -76,6 +75,10 @@ ExtensionFunction::ResponseAction CrashReportPrivateReportErrorFunction::Run() {
 
   if (params->info.column_number) {
     error_report.column_number = *params->info.column_number;
+  }
+
+  if (params->info.debug_id) {
+    error_report.debug_id = *params->info.debug_id;
   }
 
   if (params->info.stack_trace) {

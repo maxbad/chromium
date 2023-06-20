@@ -40,7 +40,7 @@ void CleanupDeprecatedTrackedPreferences(
 
   for (size_t i = 0; i < base::size(kDeprecatedTrackedPreferences); ++i) {
     const char* key = kDeprecatedTrackedPreferences[i];
-    pref_store_contents->Remove(key, NULL);
+    pref_store_contents->RemovePath(key);
     hash_store_transaction->ClearHash(key);
   }
 }
@@ -300,20 +300,17 @@ void PrefHashFilter::FlushToExternalStore(
     if (it.value().GetAsDictionary(&split_values)) {
       for (base::DictionaryValue::Iterator inner_it(*split_values);
            !inner_it.IsAtEnd(); inner_it.Advance()) {
-        std::string mac;
-        bool is_string = inner_it.value().GetAsString(&mac);
+        const std::string* mac = inner_it.value().GetIfString();
+        bool is_string = !!mac;
         DCHECK(is_string);
 
         external_validation_hash_store_contents->SetSplitMac(
-            changed_path, inner_it.key(), mac);
+            changed_path, inner_it.key(), *mac);
       }
     } else {
-      const base::Value* value_as_string;
-      bool is_string = it.value().GetAsString(&value_as_string);
-      DCHECK(is_string);
-
-      external_validation_hash_store_contents->SetMac(
-          changed_path, value_as_string->GetString());
+      DCHECK(it.value().is_string());
+      external_validation_hash_store_contents->SetMac(changed_path,
+                                                      it.value().GetString());
     }
   }
 }

@@ -10,12 +10,10 @@
 
 #include <memory>
 #include <string>
-#include <vector>
 
-#include "base/macros.h"
 #include "base/memory/ref_counted.h"
-#include "base/single_thread_task_runner.h"
 #include "base/strings/string_piece.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/time/clock.h"
 #include "base/time/tick_clock.h"
 #include "components/data_reduction_proxy/core/browser/data_reduction_proxy_service.h"
@@ -48,17 +46,15 @@ class MockDataReductionProxyService : public DataReductionProxyService {
   ~MockDataReductionProxyService() override;
 
   MOCK_METHOD2(SetProxyPrefs, void(bool enabled, bool at_startup));
-  MOCK_METHOD8(
-      UpdateContentLengths,
-      void(int64_t data_used,
-           int64_t original_size,
-           bool data_reduction_proxy_enabled,
-           data_reduction_proxy::DataReductionProxyRequestType request_type,
-           const std::string& mime_type,
-           bool is_user_traffic,
-           data_use_measurement::DataUseUserData::DataUseContentType
-               content_type,
-           int32_t service_hash_code));
+  MOCK_METHOD7(UpdateContentLengths,
+               void(int64_t data_used,
+                    int64_t original_size,
+                    bool data_reduction_proxy_enabled,
+                    const std::string& mime_type,
+                    bool is_user_traffic,
+                    data_use_measurement::DataUseUserData::DataUseContentType
+                        content_type,
+                    int32_t service_hash_code));
   MOCK_METHOD3(UpdateDataUseForHost,
                void(int64_t network_bytes,
                     int64_t original_bytes,
@@ -146,6 +142,10 @@ class DataReductionProxyTestContext {
         data_use_measurement_;
   };
 
+  DataReductionProxyTestContext(const DataReductionProxyTestContext&) = delete;
+  DataReductionProxyTestContext& operator=(
+      const DataReductionProxyTestContext&) = delete;
+
   virtual ~DataReductionProxyTestContext();
 
   // Registers, sets, and gets the preference used to enable the Data Reduction
@@ -220,8 +220,6 @@ class DataReductionProxyTestContext {
   std::unique_ptr<DataReductionProxySettings> settings_;
   DataReductionProxyService* data_reduction_proxy_service_;
   std::unique_ptr<DataReductionProxyService> service_;
-
-  DISALLOW_COPY_AND_ASSIGN(DataReductionProxyTestContext);
 };
 
 }  // namespace data_reduction_proxy

@@ -35,8 +35,6 @@ bool DeviceState::PropertyChanged(const std::string& key,
     return GetBooleanValue(key, value, &scanning_);
   } else if (key == shill::kSupportNetworkScanProperty) {
     return GetBooleanValue(key, value, &support_network_scan_);
-  } else if (key == shill::kCellularAllowRoamingProperty) {
-    return GetBooleanValue(key, value, &allow_roaming_);
   } else if (key == shill::kProviderRequiresRoamingProperty) {
     return GetBooleanValue(key, value, &provider_requires_roaming_);
   } else if (key == shill::kHomeProviderProperty) {

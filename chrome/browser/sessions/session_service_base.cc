@@ -16,7 +16,7 @@
 #include "base/containers/contains.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
-#include "chrome/browser/apps/app_service/launch_utils.h"
+#include "chrome/browser/apps/app_service/web_contents_app_id_utils.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/profile.h"
@@ -29,8 +29,6 @@
 #include "chrome/browser/ui/startup/startup_browser_creator.h"
 #include "chrome/browser/ui/tabs/tab_group.h"
 #include "chrome/browser/ui/tabs/tab_group_model.h"
-#include "chrome/browser/ui/web_applications/app_browser_controller.h"
-#include "chrome/browser/web_applications/components/web_app_helpers.h"
 #include "components/sessions/content/content_serialized_navigation_builder.h"
 #include "components/sessions/content/session_tab_helper.h"
 #include "components/sessions/core/command_storage_manager.h"
@@ -41,10 +39,6 @@
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/session_storage_namespace.h"
-
-#if BUILDFLAG(IS_CHROMEOS_ASH)
-#include "chrome/browser/ash/crostini/crostini_util.h"
-#endif
 
 #if defined(OS_MAC)
 #include "chrome/browser/app_controller_mac.h"
@@ -188,7 +182,8 @@ void SessionServiceBase::SetWindowVisibleOnAllWorkspaces(
 }
 
 void SessionServiceBase::ResetFromCurrentBrowsers() {
-  ScheduleResetCommands();
+  if (is_saving_enabled_)
+    ScheduleResetCommands();
 }
 
 void SessionServiceBase::SetTabWindow(const SessionID& window_id,
@@ -272,6 +267,9 @@ void SessionServiceBase::TabClosing(WebContents* contents) {
 }
 
 void SessionServiceBase::TabRestored(WebContents* tab, bool pinned) {
+  if (!is_saving_enabled_)
+    return;
+
   sessions::SessionTabHelper* session_tab_helper =
       sessions::SessionTabHelper::FromWebContents(tab);
   if (!ShouldTrackChangesToWindow(session_tab_helper->window_id()))
@@ -339,7 +337,12 @@ bool SessionServiceBase::ShouldUseDelayedSave() {
 }
 
 void SessionServiceBase::OnWillSaveCommands() {
+  if (!is_saving_enabled_)
+    return;
+
   RebuildCommandsIfRequired();
+  did_save_commands_at_least_once_ |=
+      !command_storage_manager()->pending_commands().empty();
 }
 
 void SessionServiceBase::OnErrorWritingSessionCommands() {
@@ -556,6 +559,7 @@ void SessionServiceBase::BuildCommandsForBrowser(
     Browser* browser,
     IdToRange* tab_to_available_range,
     std::set<SessionID>* windows_to_track) {
+  DCHECK(is_saving_enabled_);
   DCHECK(browser);
   DCHECK(browser->session_id().is_valid());
 
@@ -618,6 +622,7 @@ void SessionServiceBase::BuildCommandsForBrowser(
 void SessionServiceBase::BuildCommandsFromBrowsers(
     IdToRange* tab_to_available_range,
     std::set<SessionID>* windows_to_track) {
+  DCHECK(is_saving_enabled_);
   for (auto* browser : *BrowserList::GetInstance()) {
     // Make sure the browser has tabs and a window. Browser's destructor
     // removes itself from the BrowserList. When a browser is closed the
@@ -635,6 +640,9 @@ void SessionServiceBase::BuildCommandsFromBrowsers(
 
 void SessionServiceBase::ScheduleCommand(
     std::unique_ptr<sessions::SessionCommand> command) {
+  if (!is_saving_enabled_)
+    return;
+
   DCHECK(command);
   if (ReplacePendingCommand(command_storage_manager_.get(), &command))
     return;
@@ -648,6 +656,7 @@ void SessionServiceBase::ScheduleCommand(
       !is_closing_command) {
     ScheduleResetCommands();
   }
+  DidScheduleCommand();
 }
 
 bool SessionServiceBase::ShouldTrackChangesToWindow(
@@ -658,31 +667,17 @@ bool SessionServiceBase::ShouldTrackChangesToWindow(
 bool SessionServiceBase::ShouldTrackBrowser(Browser* browser) const {
   if (browser->profile() != profile())
     return false;
-#if BUILDFLAG(IS_CHROMEOS_ASH)
-  // Do not track Crostini apps or terminal.  Apps will fail since VMs are not
-  // restarted on restore, and we don't want terminal to force the VM to start.
-  if (web_app::GetAppIdFromApplicationName(browser->app_name()) ==
-      crostini::kCrostiniTerminalSystemAppId) {
-    return false;
-  }
 
-  // System Web App windows can't be properly restored without storing the app
-  // type. Until that is implemented we skip them for session restore.
-  // TODO(crbug.com/1003170): Enable session restore for System Web Apps.
-  if (browser->app_controller() &&
-      browser->app_controller()->is_for_system_web_app()) {
+  if (browser->omit_from_session_restore())
     return false;
-  }
 
-  // Don't track custom_tab browser. It doesn't need to be restored.
-  if (browser->is_type_custom_tab())
-    return false;
-#endif
   // Never track app popup windows that do not have a trusted source (i.e.
   // popup windows spawned by an app). If this logic changes, be sure to also
   // change SessionRestoreImpl::CreateRestoredBrowser().
-  if (browser->deprecated_is_app() && !browser->is_trusted_source())
+  if ((browser->is_type_app() || browser->is_type_app_popup()) &&
+      !browser->is_trusted_source()) {
     return false;
+  }
 
   return ShouldRestoreWindowOfType(WindowTypeForBrowserType(browser->type()));
 }
@@ -706,4 +701,20 @@ bool SessionServiceBase::GetAvailableRangeForTest(const SessionID& tab_id,
 
   *range = i->second;
   return true;
+}
+
+void SessionServiceBase::SetSavingEnabled(bool enabled) {
+  if (is_saving_enabled_ == enabled)
+    return;
+  is_saving_enabled_ = enabled;
+  if (!is_saving_enabled_) {
+    // Transitioning from enabled to disabled should happen very early on,
+    // before any commands are actually written. If commands are written, then
+    // the purpose of disabling will have failed (because by writing some
+    // commands the previous session is going to be lost on exit).
+    DCHECK(!did_save_commands_at_least_once_);
+    command_storage_manager()->ClearPendingCommands();
+  } else {
+    ScheduleResetCommands();
+  }
 }

@@ -28,7 +28,6 @@
 #include "components/signin/public/identity_manager/primary_account_mutator.h"
 #include "components/sync/base/model_type.h"
 #include "components/sync/base/stop_source.h"
-#include "components/sync/base/sync_base_switches.h"
 #include "components/sync/base/sync_util.h"
 #include "components/sync/driver/backend_migrator.h"
 #include "components/sync/driver/configure_context.h"
@@ -36,9 +35,11 @@
 #include "components/sync/driver/sync_auth_manager.h"
 #include "components/sync/driver/sync_driver_switches.h"
 #include "components/sync/driver/sync_type_preference_provider.h"
+#include "components/sync/engine/configure_reason.h"
 #include "components/sync/engine/engine_components_factory_impl.h"
 #include "components/sync/engine/net/http_bridge.h"
 #include "components/sync/engine/net/http_post_provider_factory.h"
+#include "components/sync/engine/shutdown_reason.h"
 #include "components/sync/engine/sync_encryption_handler.h"
 #include "components/sync/invalidations/switches.h"
 #include "components/sync/invalidations/sync_invalidations_service.h"
@@ -117,11 +118,9 @@ DataTypeController::TypeMap BuildDataTypeControllerMap(
 std::unique_ptr<HttpPostProviderFactory> CreateHttpBridgeFactory(
     const std::string& user_agent,
     std::unique_ptr<network::PendingSharedURLLoaderFactory>
-        pending_url_loader_factory,
-    const NetworkTimeUpdateCallback& network_time_update_callback) {
+        pending_url_loader_factory) {
   return std::make_unique<HttpBridgeFactory>(
-      user_agent, std::move(pending_url_loader_factory),
-      network_time_update_callback);
+      user_agent, std::move(pending_url_loader_factory));
 }
 
 }  // namespace
@@ -145,8 +144,6 @@ SyncServiceImpl::SyncServiceImpl(InitParams init_params)
       sync_service_url_(
           GetSyncServiceURL(*base::CommandLine::ForCurrentProcess(), channel_)),
       crypto_(this, sync_client_->GetTrustedVaultClient()),
-      network_time_update_callback_(
-          std::move(init_params.network_time_update_callback)),
       url_loader_factory_(std::move(init_params.url_loader_factory)),
       network_connection_tracker_(init_params.network_connection_tracker),
       is_first_time_sync_configure_(false),
@@ -221,6 +218,13 @@ void SyncServiceImpl::Initialize() {
         sync_client_->GetSyncInvalidationsService();
     if (sync_invalidations_service) {
       sync_invalidations_service->SetActive(IsSignedIn());
+      // Trigger a refresh when additional data types get enabled for
+      // invalidations. This is needed to get the latest data after subscribing
+      // for the updates.
+      sync_invalidations_service
+          ->SetCommittedAdditionalInterestedDataTypesCallback(
+              base::BindRepeating(&SyncServiceImpl::TriggerRefresh,
+                                  weak_factory_.GetWeakPtr()));
     }
   }
 
@@ -229,7 +233,7 @@ void SyncServiceImpl::Initialize() {
   if (HasDisableReason(DISABLE_REASON_ENTERPRISE_POLICY) ||
       (HasDisableReason(DISABLE_REASON_NOT_SIGNED_IN) &&
        auth_manager_->IsActiveAccountInfoFullyLoaded())) {
-    StopImpl(CLEAR_DATA);
+    StopAndClear();
   }
 
   // Note: We need to record the initial state *after* calling
@@ -238,18 +242,14 @@ void SyncServiceImpl::Initialize() {
   RecordSyncInitialState(GetDisableReasons(),
                          user_settings_->IsFirstSetupComplete());
 
-  if (!IsAuthenticatedAccountPrimary()) {
+  if (!HasSyncConsent()) {
     // Remove after 11/2021. Migration logic to set SyncRequested to false if
     // the user is signed-out or signed-in but not syncing (crbug.com/1147026).
     user_settings_->SetSyncRequested(false);
 
 #if defined(OS_ANDROID)
-    // If Sync was turned on after the feature toggle was enabled, it should be
-    // in the decoupled state.
-    if (base::FeatureList::IsEnabled(
-            switches::kDecoupleSyncFromAndroidMasterSync)) {
-      sync_prefs_.SetDecoupledFromAndroidMasterSync();
-    }
+    // If Sync gets turned on, it should be in the decoupled state.
+    sync_prefs_.SetDecoupledFromAndroidMasterSync();
 #endif  // defined(OS_ANDROID)
   }
 
@@ -273,7 +273,7 @@ void SyncServiceImpl::StartSyncingWithServer() {
   if (engine_)
     engine_->StartSyncingWithServer();
   if (IsLocalSyncEnabled()) {
-    TriggerRefresh(Intersection(GetActiveDataTypes(), ProtocolTypes()));
+    TriggerRefresh(ModelTypeSet::All());
   }
 }
 
@@ -312,12 +312,10 @@ void SyncServiceImpl::AccountStateChanged() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
 #if defined(OS_ANDROID)
-  // Once the feature toggle is enabled, Sync and master sync should only remain
-  // coupled if the former stays enabled and the latter disabled. Upon sign-out
-  // set the pref so they are decoupled on the next time Sync is turned on.
-  if (!IsAuthenticatedAccountPrimary() &&
-      base::FeatureList::IsEnabled(
-          switches::kDecoupleSyncFromAndroidMasterSync)) {
+  // Sync and master sync should only remain coupled if the former stays enabled
+  // and the latter disabled. Upon sign-out set the pref so they are decoupled
+  // on the next time Sync is turned on.
+  if (!HasSyncConsent()) {
     sync_prefs_.SetDecoupledFromAndroidMasterSync();
   }
 #endif  // defined(OS_ANDROID)
@@ -325,11 +323,11 @@ void SyncServiceImpl::AccountStateChanged() {
   if (!IsSignedIn()) {
     // The account was signed out, so shut down.
     sync_disabled_by_admin_ = false;
-    StopImpl(CLEAR_DATA);
+    StopAndClear();
     DCHECK(!engine_);
   } else {
     // Either a new account was signed in, or the existing account's
-    // |is_primary| bit was changed. Start up or reconfigure.
+    // |is_sync_consented| bit was changed. Start up or reconfigure.
     if (!engine_) {
       // Note: We only get here after an actual sign-in (not during browser
       // startup with an existing signed-in account), so no need for deferred
@@ -356,14 +354,14 @@ void SyncServiceImpl::CredentialsChanged() {
   // then shut down. This happens when the user signs out on the web, i.e. we're
   // in the "Sync paused" state.
   if (!IsEngineAllowedToRun()) {
-    // If the engine currently exists, then StopImpl() will notify observers
+    // If the engine currently exists, then ResetEngine() will notify observers
     // anyway. Otherwise, notify them here. (One relevant case is when entering
     // the PAUSED state before the engine was created, e.g. during deferred
     // startup.)
     if (!engine_) {
       NotifyObservers();
     }
-    StopImpl(KEEP_DATA);
+    ResetEngine(ShutdownReason::STOP_SYNC_AND_KEEP_DATA);
     return;
   }
 
@@ -422,8 +420,7 @@ void SyncServiceImpl::OnDataTypeRequestsSyncStartup(ModelType type) {
 void SyncServiceImpl::StartUpSlowEngineComponents() {
   DCHECK(IsEngineAllowedToRun());
 
-  const CoreAccountInfo authenticated_account_info =
-      GetAuthenticatedAccountInfo();
+  const CoreAccountInfo authenticated_account_info = GetAccountInfo();
 
   if (IsLocalSyncEnabled()) {
     // With local sync (roaming profiles) there is no identity manager and hence
@@ -456,14 +453,14 @@ void SyncServiceImpl::StartUpSlowEngineComponents() {
   params.service_url = sync_service_url_;
   params.http_factory_getter = base::BindOnce(
       create_http_post_provider_factory_cb_, MakeUserAgentForSync(channel_),
-      url_loader_factory_->Clone(), network_time_update_callback_);
+      url_loader_factory_->Clone());
   params.authenticated_account_info = authenticated_account_info;
-  if (!base::FeatureList::IsEnabled(switches::kSyncE2ELatencyMeasurement)) {
-    invalidation::InvalidationService* invalidator =
-        sync_client_->GetInvalidationService();
-    params.invalidator_client_id =
-        invalidator ? invalidator->GetInvalidatorClientId() : std::string();
-  }
+
+  invalidation::InvalidationService* invalidator =
+      sync_client_->GetInvalidationService();
+  params.invalidator_client_id =
+      invalidator ? invalidator->GetInvalidatorClientId() : std::string();
+
   params.sync_manager_factory =
       std::make_unique<SyncManagerFactory>(network_connection_tracker_);
   if (sync_prefs_.IsLocalSyncEnabled()) {
@@ -487,7 +484,7 @@ void SyncServiceImpl::Shutdown() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   NotifyShutdown();
-  ShutdownImpl(BROWSER_SHUTDOWN);
+  ResetEngine(ShutdownReason::BROWSER_SHUTDOWN_AND_KEEP_DATA);
 
   DCHECK(!data_type_manager_);
   data_type_controllers_.clear();
@@ -507,19 +504,23 @@ void SyncServiceImpl::Shutdown() {
   auth_manager_.reset();
 }
 
-void SyncServiceImpl::ShutdownImpl(ShutdownReason reason) {
+void SyncServiceImpl::ResetEngine(ShutdownReason reason) {
   if (!engine_) {
     // If the engine hasn't started or is already shut down when a DISABLE_SYNC
     // happens, the Directory needs to be cleaned up here.
-    if (reason == ShutdownReason::DISABLE_SYNC) {
+    if (reason == ShutdownReason::DISABLE_SYNC_AND_CLEAR_DATA) {
       sync_client_->GetSyncApiComponentFactory()->ClearAllTransportData();
     }
     return;
   }
 
-  if (reason == ShutdownReason::STOP_SYNC ||
-      reason == ShutdownReason::DISABLE_SYNC) {
-    RemoveClientFromServer();
+  switch (reason) {
+    case ShutdownReason::STOP_SYNC_AND_KEEP_DATA:
+    case ShutdownReason::DISABLE_SYNC_AND_CLEAR_DATA:
+      RemoveClientFromServer();
+      break;
+    case ShutdownReason::BROWSER_SHUTDOWN_AND_KEEP_DATA:
+      break;
   }
 
   // First, we spin down the engine to stop change processing as soon as
@@ -562,30 +563,22 @@ void SyncServiceImpl::ShutdownImpl(ShutdownReason reason) {
   }
 
   NotifyObservers();
-}
 
-void SyncServiceImpl::StopImpl(SyncStopDataFate data_fate) {
-  switch (data_fate) {
-    case KEEP_DATA:
-      ShutdownImpl(STOP_SYNC);
+  // Now that everything is shut down, try to start up again.
+  switch (reason) {
+    case ShutdownReason::STOP_SYNC_AND_KEEP_DATA:
+    case ShutdownReason::DISABLE_SYNC_AND_CLEAR_DATA:
+      // If Sync is being stopped (either temporarily or permanently),
+      // immediately try to start up again. Note that this might start only the
+      // transport mode, or it might not start anything at all if something is
+      // preventing Sync startup (e.g. the user signed out).
+      // Note that TryStart() is guaranteed to *not* have a synchronous effect
+      // (it posts a task).
+      startup_controller_->TryStart(/*force_immediate=*/true);
       break;
-    case CLEAR_DATA:
-      ClearUnrecoverableError();
-      ShutdownImpl(DISABLE_SYNC);
-      // Note: ShutdownImpl(DISABLE_SYNC) does *not* clear prefs which are
-      // directly user-controlled such as the set of selected types here, so
-      // that if the user ever chooses to enable Sync again, they start off
-      // with their previous settings by default. We do however require going
-      // through first-time setup again and set SyncRequested to false.
-      sync_prefs_.ClearFirstSetupComplete();
-      sync_prefs_.ClearPassphrasePromptMutedProductVersion();
-      // For explicit passphrase users, clear the encryption key, such that they
-      // will need to reenter it if sync gets re-enabled.
-      sync_prefs_.ClearEncryptionBootstrapToken();
-      SetSyncRequestedAndIgnoreNotification(false);
-      // Also let observers know that Sync-the-feature is now fully disabled
-      // (before it possibly starts up again in transport-only mode).
-      NotifyObservers();
+    case ShutdownReason::BROWSER_SHUTDOWN_AND_KEEP_DATA:
+      // The only exception is browser shutdown: In this case, there's clearly
+      // no point in starting up again.
       break;
   }
 }
@@ -635,18 +628,16 @@ SyncService::TransportState SyncServiceImpl::GetTransportState() const {
 
   if (!IsEngineAllowedToRun()) {
     // We generally shouldn't have an engine while in a disabled state, but it
-    // can happen if this method gets called during ShutdownImpl().
+    // can happen if this method gets called during ResetEngine().
     return auth_manager_->IsSyncPaused() ? TransportState::PAUSED
                                          : TransportState::DISABLED;
   }
 
   if (!engine_ || !engine_->IsInitialized()) {
     switch (startup_controller_->GetState()) {
-        // TODO(crbug.com/935523): If the engine is allowed to start, then we
-        // should generally have kicked off the startup process already, so
-        // NOT_STARTED should be impossible. But we can temporarily be in this
-        // state between shutting down and starting up again (e.g. during the
-        // NotifyObservers() call in ShutdownImpl()).
+        // Note: If the engine is allowed to run, then we should generally have
+        // kicked off the startup process already, so NOT_STARTED should be
+        // impossible here. But it can happen during browser shutdown.
       case StartupController::State::NOT_STARTED:
       case StartupController::State::STARTING_DEFERRED:
         DCHECK(!engine_);
@@ -718,8 +709,10 @@ void SyncServiceImpl::OnUnrecoverableErrorImpl(
   LOG(ERROR) << "Unrecoverable error detected at " << from_here.ToString()
              << " -- SyncServiceImpl unusable: " << message;
 
-  // Shut all data types down.
-  ShutdownImpl(DISABLE_SYNC);
+  // Shut the Sync machinery down. The existence of
+  // |unrecoverable_error_reason_| and thus |DISABLE_REASON_UNRECOVERABLE_ERROR|
+  // will prevent Sync from starting up again (even in transport-only mode).
+  ResetEngine(ShutdownReason::DISABLE_SYNC_AND_CLEAR_DATA);
 }
 
 void SyncServiceImpl::DataTypePreconditionChanged(ModelType type) {
@@ -727,23 +720,6 @@ void SyncServiceImpl::DataTypePreconditionChanged(ModelType type) {
   if (!engine_ || !engine_->IsInitialized() || !data_type_manager_)
     return;
   data_type_manager_->DataTypePreconditionChanged(type);
-}
-
-void SyncServiceImpl::UpdateEngineInitUMA(bool success) const {
-  if (is_first_time_sync_configure_) {
-    UMA_HISTOGRAM_BOOLEAN("Sync.BackendInitializeFirstTimeSuccess", success);
-  } else {
-    UMA_HISTOGRAM_BOOLEAN("Sync.BackendInitializeRestoreSuccess", success);
-  }
-
-  base::Time on_engine_initialized_time = base::Time::Now();
-  base::TimeDelta delta =
-      on_engine_initialized_time - startup_controller_->start_engine_time();
-  if (is_first_time_sync_configure_) {
-    UMA_HISTOGRAM_LONG_TIMES("Sync.BackendInitializeFirstTime", delta);
-  } else {
-    UMA_HISTOGRAM_LONG_TIMES("Sync.BackendInitializeRestoreTime", delta);
-  }
 }
 
 void SyncServiceImpl::OnEngineInitialized(
@@ -760,8 +736,6 @@ void SyncServiceImpl::OnEngineInitialized(
   // The very first time the backend initializes is effectively the first time
   // we can say we successfully "synced".
   is_first_time_sync_configure_ = is_first_time_sync_configure;
-
-  UpdateEngineInitUMA(success);
 
   if (!success) {
     // Something went unexpectedly wrong.  Play it safe: stop syncing at once
@@ -780,7 +754,7 @@ void SyncServiceImpl::OnEngineInitialized(
           debug_info_listener, &data_type_controllers_, &crypto_, engine_.get(),
           this);
 
-  crypto_.SetSyncEngine(GetAuthenticatedAccountInfo(), engine_.get());
+  crypto_.SetSyncEngine(GetAccountInfo(), engine_.get());
 
   // Auto-start means IsFirstSetupComplete gets set automatically.
   if (start_behavior_ == AUTO_START &&
@@ -848,7 +822,7 @@ void SyncServiceImpl::OnActionableError(const SyncProtocolError& error) {
       // actions in the popup. The current experience might not be optimal for
       // the user. We just dismiss the dialog.
       if (IsSetupInProgress()) {
-        StopImpl(CLEAR_DATA);
+        StopAndClear();
         expect_sync_configuration_aborted_ = true;
       }
       // Trigger an unrecoverable error to stop syncing.
@@ -861,11 +835,14 @@ void SyncServiceImpl::OnActionableError(const SyncProtocolError& error) {
         UMA_HISTOGRAM_ENUMERATION("Sync.StopSource", BIRTHDAY_ERROR,
                                   STOP_SOURCE_LIMIT);
       }
-      // Note: Here we explicitly want StopAndClear (rather than StopImpl), so
-      // that IsSyncRequested gets set to false, and Sync won't start again on
-      // the next browser startup.
+      // Note: StopAndClear sets IsSyncRequested to false, which ensures that
+      // Sync-the-feature remains off.
       StopAndClear();
-#if !BUILDFLAG(IS_CHROMEOS_ASH)
+
+#if !BUILDFLAG(IS_CHROMEOS_ASH) && !BUILDFLAG(IS_CHROMEOS_LACROS)
+      // TODO(https://crbug.com/1233933): Update this when Lacros profiles
+      //     support signed-in-but-not-consented-to-sync state.
+
       // On every platform except ChromeOS, revoke the Sync consent in
       // IdentityManager after a dashboard clear.
       if (!IsLocalSyncEnabled() &&
@@ -884,14 +861,12 @@ void SyncServiceImpl::OnActionableError(const SyncProtocolError& error) {
 #endif
       break;
     case STOP_SYNC_FOR_DISABLED_ACCOUNT:
-      // Sync disabled by domain admin. we should stop syncing until next
-      // restart.
+      // Sync disabled by domain admin. Stop syncing until next restart.
       sync_disabled_by_admin_ = true;
-      ShutdownImpl(DISABLE_SYNC);
+      ResetEngine(ShutdownReason::DISABLE_SYNC_AND_CLEAR_DATA);
       break;
     case RESET_LOCAL_SYNC_DATA:
-      ShutdownImpl(DISABLE_SYNC);
-      startup_controller_->TryStart(/*force_immediate=*/true);
+      ResetEngine(ShutdownReason::DISABLE_SYNC_AND_CLEAR_DATA);
       break;
     case UNKNOWN_ACTION:
       NOTREACHED();
@@ -1066,7 +1041,7 @@ void SyncServiceImpl::TriggerRefresh(const ModelTypeSet& types) {
 
 bool SyncServiceImpl::IsSignedIn() const {
   // Sync is logged in if there is a non-empty account id.
-  return !GetAuthenticatedAccountInfo().account_id.empty();
+  return !GetAccountInfo().account_id.empty();
 }
 
 base::Time SyncServiceImpl::GetLastSyncedTimeForDebugging() const {
@@ -1122,19 +1097,6 @@ ModelTypeSet SyncServiceImpl::GetActiveDataTypes() const {
   return data_type_manager_->GetActiveDataTypes();
 }
 
-void SyncServiceImpl::SyncAllowedByPlatformChanged(bool allowed) {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-
-  if (!allowed) {
-    StopImpl(KEEP_DATA);
-    // Try to start up again (in transport-only mode).
-    // TODO(crbug.com/856179): Evaluate whether we can get away without a full
-    // restart (i.e. just reconfigure). See also similar comment in
-    // OnSyncRequestedPrefChange().
-    startup_controller_->TryStart(/*force_immediate=*/true);
-  }
-}
-
 void SyncServiceImpl::SetSyncRequestedAndIgnoreNotification(bool is_requested) {
   // For a no-op, OnSyncRequestedPrefChange() wouldn't be called and
   // |is_setting_sync_requested_| wouldn't get reset, so check.
@@ -1153,8 +1115,7 @@ void SyncServiceImpl::ConfigureDataTypeManager(ConfigureReason reason) {
   DCHECK(!engine_->GetCacheGuid().empty());
 
   ConfigureContext configure_context;
-  configure_context.authenticated_account_id =
-      GetAuthenticatedAccountInfo().account_id;
+  configure_context.authenticated_account_id = GetAccountInfo().account_id;
   configure_context.cache_guid = engine_->GetCacheGuid();
   configure_context.sync_mode = SyncMode::kFull;
   configure_context.reason = reason;
@@ -1267,6 +1228,7 @@ void SyncServiceImpl::UpdateDataTypesForInvalidations() {
   }
 
   // No need to register invalidations for non-protocol or commit-only types.
+  // TODO(crbug.com/1260836): This could break with dynamic proxy types.
   ModelTypeSet types = Intersection(GetDataTypesToConfigure(), ProtocolTypes());
   types.RemoveAll(CommitOnlyTypes());
   if (!sessions_invalidations_enabled_) {
@@ -1277,9 +1239,7 @@ void SyncServiceImpl::UpdateDataTypesForInvalidations() {
             switches::kUseSyncInvalidationsForWalletAndOffer))) {
     types.RemoveAll({AUTOFILL_WALLET_DATA, AUTOFILL_WALLET_OFFER});
   }
-  invalidations_service->SetInterestedDataTypes(
-      types, base::BindRepeating(&SyncServiceImpl::TriggerRefresh,
-                                 sync_enabled_weak_factory_.GetWeakPtr()));
+  invalidations_service->SetInterestedDataTypes(types);
 }
 
 SyncCycleSnapshot SyncServiceImpl::GetLastCycleSnapshotForDebugging() const {
@@ -1305,7 +1265,7 @@ std::unique_ptr<base::Value> SyncServiceImpl::GetTypeStatusMapForDebugging() {
   auto result = std::make_unique<base::ListValue>();
 
   if (!engine_ || !engine_->IsInitialized()) {
-    return std::move(result);
+    return result;
   }
 
   const SyncStatus& detailed_status = engine_->GetDetailedStatus();
@@ -1322,8 +1282,12 @@ std::unique_ptr<base::Value> SyncServiceImpl::GetTypeStatusMapForDebugging() {
   type_status_header->SetString("state", "State");
   result->Append(std::move(type_status_header));
 
-  const ModelTypeSet registered = GetRegisteredDataTypes();
-  for (ModelType type : registered) {
+  for (const std::pair<const ModelType, std::unique_ptr<DataTypeController>>&
+           type_and_controller : data_type_controllers_) {
+    const ModelType type = type_and_controller.first;
+    const DataTypeController* const controller =
+        type_and_controller.second.get();
+
     auto type_status = std::make_unique<base::DictionaryValue>();
     type_status->SetString("name", ModelTypeToString(type));
 
@@ -1332,36 +1296,57 @@ std::unique_ptr<base::Value> SyncServiceImpl::GetTypeStatusMapForDebugging() {
       DCHECK(error.IsSet());
       switch (error.GetSeverity()) {
         case SyncError::SYNC_ERROR_SEVERITY_ERROR:
-          type_status->SetString("status", "error");
+          type_status->SetString("status", "severity_error");
           type_status->SetString(
               "message", "Error: " + error.location().ToString() + ", " +
                              error.GetMessagePrefix() + error.message());
           break;
         case SyncError::SYNC_ERROR_SEVERITY_INFO:
-          type_status->SetString("status", "disabled");
+          type_status->SetString("status", "severity_info");
           type_status->SetString("message", error.message());
           break;
       }
     } else if (throttled_types.Has(type)) {
-      type_status->SetString("status", "warning");
+      type_status->SetString("status", "severity_warning");
       type_status->SetString("message", " Throttled");
     } else if (backed_off_types.Has(type)) {
-      type_status->SetString("status", "warning");
+      type_status->SetString("status", "severity_warning");
       type_status->SetString("message", "Backed off");
     } else {
-      type_status->SetString("status", "ok");
       type_status->SetString("message", "");
+
+      // Determine the row color based on the controller's state.
+      switch (controller->state()) {
+        case DataTypeController::NOT_RUNNING:
+          // One common case is that the sync was just disabled by the user,
+          // which is not very different to certain SYNC_ERROR_SEVERITY_INFO
+          // cases like preconditions not having been met due to user
+          // configuration.
+          type_status->SetString("status", "severity_info");
+          break;
+        case DataTypeController::MODEL_STARTING:
+        case DataTypeController::MODEL_LOADED:
+        case DataTypeController::STOPPING:
+          // These are all transitional states that should be rare to observe.
+          type_status->SetString("status", "transitioning");
+          break;
+        case DataTypeController::RUNNING:
+          type_status->SetString("status", "ok");
+          break;
+        case DataTypeController::FAILED:
+          // Note that most of the errors (possibly all) should have been
+          // handled earlier via |data_type_error_map_|.
+          type_status->SetString("status", "severity_error");
+          break;
+      }
     }
 
-    const auto& dtc_iter = data_type_controllers_.find(type);
-    if (dtc_iter != data_type_controllers_.end()) {
-      type_status->SetString("state", DataTypeController::StateToString(
-                                          dtc_iter->second->state()));
-    }
+    type_status->SetString(
+        "state", DataTypeController::StateToString(controller->state()));
 
     result->Append(std::move(type_status));
   }
-  return std::move(result);
+  return result;
 }
 
 void SyncServiceImpl::GetEntityCountsForDebugging(
@@ -1410,7 +1395,7 @@ void SyncServiceImpl::OnSyncManagedPrefChange(bool is_sync_managed) {
   }
 
   if (is_sync_managed) {
-    StopImpl(CLEAR_DATA);
+    StopAndClear();
   } else {
     // Sync is no longer disabled by policy. Try starting it up if appropriate.
     DCHECK(!engine_);
@@ -1448,15 +1433,7 @@ void SyncServiceImpl::OnSyncRequestedPrefChange(bool is_sync_requested) {
     // This will notify the observers.
     // TODO(crbug.com/856179): Evaluate whether we can get away without a
     // full restart in this case (i.e. just reconfigure).
-    StopImpl(KEEP_DATA);
-
-    // Try to start up again (in transport-only mode).
-    // TODO(crbug.com/1035874): There's no real need to delay the startup here,
-    // i.e. it should be fine to set force_immediate to true. However currently
-    // some tests depend on the startup *not* happening immediately (because
-    // they want to check that Sync (the feature) got disabled, which is hard to
-    // do if the engine starts up again immediately).
-    startup_controller_->TryStart(/*force_immediate=*/false);
+    ResetEngine(ShutdownReason::STOP_SYNC_AND_KEEP_DATA);
   }
 }
 
@@ -1465,10 +1442,6 @@ void SyncServiceImpl::OnAccountsInCookieUpdated(
     const GoogleServiceAuthError& error) {
   OnAccountsInCookieUpdatedWithCallback(
       accounts_in_cookie_jar_info.signed_in_accounts, base::NullCallback());
-}
-
-void SyncServiceImpl::OnAccountsCookieDeletedByUserAction() {
-  sync_client_->GetTrustedVaultClient()->RemoveAllStoredKeys();
 }
 
 void SyncServiceImpl::OnAccountsInCookieUpdatedWithCallback(
@@ -1488,7 +1461,7 @@ void SyncServiceImpl::OnAccountsInCookieUpdatedWithCallback(
 
 bool SyncServiceImpl::HasCookieJarMismatch(
     const std::vector<gaia::ListedAccount>& cookie_jar_accounts) {
-  CoreAccountId account_id = GetAuthenticatedAccountInfo().account_id;
+  CoreAccountId account_id = GetAccountInfo().account_id;
   // Iterate through list of accounts, looking for current sync account.
   for (const auto& account : cookie_jar_accounts) {
     if (account.id == account_id)
@@ -1524,6 +1497,9 @@ class GetAllNodesRequestHelper
       ModelTypeSet requested_types,
       base::OnceCallback<void(std::unique_ptr<base::ListValue>)> callback);
 
+  GetAllNodesRequestHelper(const GetAllNodesRequestHelper&) = delete;
+  GetAllNodesRequestHelper& operator=(const GetAllNodesRequestHelper&) = delete;
+
   void OnReceivedNodesForType(const ModelType type,
                               std::unique_ptr<base::ListValue> node_list);
 
@@ -1535,8 +1511,6 @@ class GetAllNodesRequestHelper
   ModelTypeSet awaiting_types_;
   base::OnceCallback<void(std::unique_ptr<base::ListValue>)> callback_;
   SEQUENCE_CHECKER(sequence_checker_);
-
-  DISALLOW_COPY_AND_ASSIGN(GetAllNodesRequestHelper);
 };
 
 GetAllNodesRequestHelper::GetAllNodesRequestHelper(
@@ -1617,7 +1591,7 @@ void SyncServiceImpl::GetAllNodesForDebugging(
   }
 }
 
-CoreAccountInfo SyncServiceImpl::GetAuthenticatedAccountInfo() const {
+CoreAccountInfo SyncServiceImpl::GetAccountInfo() const {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (!auth_manager_) {
     // Some crashes on iOS (crbug.com/962384) suggest that SyncServiceImpl
@@ -1629,14 +1603,14 @@ CoreAccountInfo SyncServiceImpl::GetAuthenticatedAccountInfo() const {
   return auth_manager_->GetActiveAccountInfo().account_info;
 }
 
-bool SyncServiceImpl::IsAuthenticatedAccountPrimary() const {
+bool SyncServiceImpl::HasSyncConsent() const {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (!auth_manager_) {
     // This is a precautionary check to be consistent with the check in
-    // GetAuthenticatedAccountInfo().
+    // GetAccountInfo().
     return false;
   }
-  return auth_manager_->GetActiveAccountInfo().is_primary;
+  return auth_manager_->GetActiveAccountInfo().is_sync_consented;
 }
 
 void SyncServiceImpl::SetInvalidationsForSessionsEnabled(bool enabled) {
@@ -1669,10 +1643,22 @@ void SyncServiceImpl::AddTrustedVaultRecoveryMethodFromWeb(
 void SyncServiceImpl::StopAndClear() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
+  ClearUnrecoverableError();
+  ResetEngine(ShutdownReason::DISABLE_SYNC_AND_CLEAR_DATA);
+  // Note: ResetEngine(DISABLE_SYNC_AND_CLEAR_DATA) does *not* clear prefs which
+  // are directly user-controlled such as the set of selected types here, so
+  // that if the user ever chooses to enable Sync again, they start off with
+  // their previous settings by default. We do however require going through
+  // first-time setup again and set SyncRequested to false.
+  sync_prefs_.ClearFirstSetupComplete();
+  sync_prefs_.ClearPassphrasePromptMutedProductVersion();
+  // For explicit passphrase users, clear the encryption key, such that they
+  // will need to reenter it if sync gets re-enabled.
+  sync_prefs_.ClearEncryptionBootstrapToken();
   SetSyncRequestedAndIgnoreNotification(false);
-  StopImpl(CLEAR_DATA);
-  // Try to start up again (in transport-only mode).
-  startup_controller_->TryStart(/*force_immediate=*/true);
+  // Also let observers know that Sync-the-feature is now fully disabled
+  // (before it possibly starts up again in transport-only mode).
+  NotifyObservers();
 }
 
 void SyncServiceImpl::SetSyncAllowedByPlatform(bool allowed) {
@@ -1683,12 +1669,10 @@ void SyncServiceImpl::SetSyncAllowedByPlatform(bool allowed) {
 
   sync_allowed_by_platform_ = allowed;
   if (!sync_allowed_by_platform_) {
-    StopImpl(KEEP_DATA);
-    // Try to start up again (in transport-only mode).
     // TODO(crbug.com/856179): Evaluate whether we can get away without a full
     // restart (i.e. just reconfigure). See also similar comment in
     // OnSyncRequestedPrefChange().
-    startup_controller_->TryStart(/*force_immediate=*/true);
+    ResetEngine(ShutdownReason::STOP_SYNC_AND_KEEP_DATA);
   }
 }
 
@@ -1748,7 +1732,9 @@ void SyncServiceImpl::OverrideNetworkForTest(
   // callback in the ctor instead of adding it retroactively.
   bool restart = false;
   if (engine_) {
-    StopImpl(KEEP_DATA);
+    // Use BROWSER_SHUTDOWN_AND_KEEP_DATA to prevent the engine from immediately
+    // restarting.
+    ResetEngine(ShutdownReason::BROWSER_SHUTDOWN_AND_KEEP_DATA);
     restart = true;
   }
   DCHECK(!engine_);
@@ -1767,7 +1753,6 @@ void SyncServiceImpl::OverrideNetworkForTest(
 
   if (restart) {
     startup_controller_->TryStart(/*force_immediate=*/true);
-    DCHECK(engine_);
   }
 }
 
@@ -1796,7 +1781,9 @@ void SyncServiceImpl::RemoveClientFromServer() const {
   const std::string birthday = engine_->GetBirthday();
   DCHECK(!cache_guid.empty());
   const std::string& access_token = auth_manager_->access_token();
-  if (!access_token.empty() && !birthday.empty()) {
+  const bool report_sync_stopped = !access_token.empty() && !birthday.empty();
+  base::UmaHistogramBoolean("Sync.SyncStoppedReported", report_sync_stopped);
+  if (report_sync_stopped) {
     sync_stopped_reporter_->ReportSyncStopped(access_token, cache_guid,
                                               birthday);
   }

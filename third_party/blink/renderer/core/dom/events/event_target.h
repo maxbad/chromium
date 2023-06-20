@@ -75,8 +75,9 @@ struct FiringEventIterator {
 };
 using FiringEventIteratorVector = Vector<FiringEventIterator, 1>;
 
-class CORE_EXPORT EventTargetData final
-    : public GarbageCollected<EventTargetData> {
+class CORE_EXPORT EventTargetData final {
+  DISALLOW_NEW();
+
  public:
   EventTargetData();
   EventTargetData(const EventTargetData&) = delete;
@@ -152,7 +153,7 @@ class CORE_EXPORT EventTarget : public ScriptWrappable {
       const V8UnionBooleanOrEventListenerOptions* bool_or_options);
   bool removeEventListener(const AtomicString& event_type,
                            const EventListener*,
-                           bool use_capture = false);
+                           bool use_capture);
   bool removeEventListener(const AtomicString& event_type,
                            const EventListener*,
                            EventListenerOptions*);
@@ -240,25 +241,19 @@ class CORE_EXPORT EventTarget : public ScriptWrappable {
   friend class EventListenerIterator;
 };
 
+// Provide EventTarget with inlined EventTargetData for improved performance.
 class CORE_EXPORT EventTargetWithInlineData : public EventTarget {
  public:
   ~EventTargetWithInlineData() override = default;
 
-  void Trace(Visitor* visitor) const override {
-    visitor->Trace(event_target_data_);
-    EventTarget::Trace(visitor);
-  }
+  void Trace(Visitor* visitor) const override;
 
  protected:
-  EventTargetData* GetEventTargetData() final { return &event_target_data_; }
-  EventTargetData& EnsureEventTargetData() final { return event_target_data_; }
+  EventTargetData* GetEventTargetData() final { return &data_; }
+  EventTargetData& EnsureEventTargetData() final { return data_; }
 
  private:
-  // EventTargetData is a GCed object, so it should not be used as a part of
-  // object. However, we intentionally use it as a part of object for
-  // performance, assuming that no one extracts a pointer of
-  // EventTargetWithInlineData::event_target_data_ and store it to a Member etc.
-  GC_PLUGIN_IGNORE("513199") EventTargetData event_target_data_;
+  EventTargetData data_;
 };
 
 // Macros to define an attribute event listener.

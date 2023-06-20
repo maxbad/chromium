@@ -24,9 +24,10 @@
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/values.h"
 #include "build/build_config.h"
+#include "remoting/base/file_path_util_linux.h"
 #include "remoting/host/host_config.h"
-#include "remoting/host/linux/file_path_util.h"
 #include "remoting/host/usage_stats_consent.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace remoting {
 
@@ -42,6 +43,8 @@ const char kDaemonScript[] =
 // The name of the command-line switch used to specify the host configuration
 // file to use.
 const char kHostConfigSwitchName[] = "host-config";
+
+bool start_host_after_setup = true;
 
 base::FilePath GetConfigPath() {
   base::CommandLine* current_process = base::CommandLine::ForCurrentProcess();
@@ -144,19 +147,22 @@ DaemonController::State DaemonControllerDelegateLinux::GetState() {
 
 std::unique_ptr<base::DictionaryValue>
 DaemonControllerDelegateLinux::GetConfig() {
-  std::unique_ptr<base::DictionaryValue> config(
+  absl::optional<base::Value> host_config(
       HostConfigFromJsonFile(GetConfigPath()));
-  if (!config)
+  if (!host_config.has_value())
     return nullptr;
 
-  std::unique_ptr<base::DictionaryValue> result(new base::DictionaryValue());
-  std::string value;
-  if (config->GetString(kHostIdConfigPath, &value)) {
-    result->SetString(kHostIdConfigPath, value);
+  std::unique_ptr<base::DictionaryValue> result(new base::DictionaryValue);
+  std::string* value = host_config->FindStringKey(kHostIdConfigPath);
+  if (value) {
+    result->SetString(kHostIdConfigPath, *value);
   }
-  if (config->GetString(kXmppLoginConfigPath, &value)) {
-    result->SetString(kXmppLoginConfigPath, value);
+
+  value = host_config->FindStringKey(kXmppLoginConfigPath);
+  if (value) {
+    result->SetString(kXmppLoginConfigPath, *value);
   }
+
   return result;
 }
 
@@ -189,29 +195,39 @@ void DaemonControllerDelegateLinux::SetConfigAndStart(
     return;
   }
 
-  // Finally start the host.
-  std::vector<std::string> args = {"--enable-and-start"};
+  if (start_host_after_setup) {
+    // Finally start the host.
+    std::vector<std::string> args = {"--enable-and-start"};
 
-  // TODO(rkjnsn): At this point, the host is configured and just requires an
-  // administrator to enable and start it. If that fails here, e.g., due to no
-  // policy kit agent running, it might be nice to tell the user what they need
-  // to do so they can perform the last step manually (or have an administrator
-  // do it, if the user isn't one).
-  DaemonController::AsyncResult result = DaemonController::RESULT_FAILED;
-  if (RunHostScript(args))
-    result = DaemonController::RESULT_OK;
+    // TODO(rkjnsn): At this point, the host is configured and just requires an
+    // administrator to enable and start it. If that fails here, e.g., due to no
+    // policy kit agent running, it might be nice to tell the user what they
+    // need to do so they can perform the last step manually (or have an
+    // administrator do it, if the user isn't one).
+    if (!RunHostScript(args)) {
+      LOG(ERROR) << "Failed to start host.";
+      std::move(done).Run(DaemonController::RESULT_FAILED);
+      return;
+    }
+  }
 
-  std::move(done).Run(result);
+  std::move(done).Run(DaemonController::RESULT_OK);
 }
 
 void DaemonControllerDelegateLinux::UpdateConfig(
     std::unique_ptr<base::DictionaryValue> config,
     DaemonController::CompletionCallback done) {
-  std::unique_ptr<base::DictionaryValue> new_config(
+  absl::optional<base::Value> new_config(
       HostConfigFromJsonFile(GetConfigPath()));
-  if (new_config)
-    new_config->MergeDictionary(config.get());
-  if (!new_config || !HostConfigToJsonFile(*new_config, GetConfigPath())) {
+  if (!new_config.has_value()) {
+    LOG(ERROR) << "Failed to read existing config file.";
+    std::move(done).Run(DaemonController::RESULT_FAILED);
+    return;
+  }
+
+  new_config->MergeDictionary(config.get());
+
+  if (!HostConfigToJsonFile(new_config.value(), GetConfigPath())) {
     LOG(ERROR) << "Failed to update config file.";
     std::move(done).Run(DaemonController::RESULT_FAILED);
     return;
@@ -246,6 +262,11 @@ DaemonControllerDelegateLinux::GetUsageStatsConsent() {
   consent.allowed = false;
   consent.set_by_policy = false;
   return consent;
+}
+
+void DaemonControllerDelegateLinux::set_start_host_after_setup(
+    bool start_host) {
+  start_host_after_setup = start_host;
 }
 
 scoped_refptr<DaemonController> DaemonController::Create() {

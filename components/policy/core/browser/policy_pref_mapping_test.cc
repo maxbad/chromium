@@ -10,12 +10,14 @@
 #include <string>
 #include <vector>
 
+#include "base/command_line.h"
 #include "base/containers/contains.h"
+#include "base/containers/flat_set.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/json/json_reader.h"
 #include "base/logging.h"
-#include "base/macros.h"
+#include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/values.h"
@@ -27,15 +29,24 @@
 #include "components/policy/policy_constants.h"
 #include "components/prefs/pref_service.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "url/gurl.h"
 
 namespace policy {
 
 namespace {
 
-// The name of the template example in policy_test_cases.json that does not need
+// The name of the instructions key in policy_test_cases.json that does not need
 // to be parsed.
-const char kTemplateSampleTest[] = "-- Template --";
+const char kInstructionKeyName[] = "-- Instructions --";
+
+// The name of the switch to filter the testcases by
+// ${policy_name}[.optionalTestNameSuffix]. Several names could be passed
+// separated by colon. (For example --test_policy_to_pref_mappings_filter=\
+// AuthNegotiateDelegateByKdcPolicy:\
+// BuiltInDnsClientEnabled.FeatureEnabledByDefault
+const char kPolicyToPrefMappingsFilterSwitch[] =
+    "test_policy_to_pref_mappings_filter";
 
 enum class PrefLocation {
   kUserProfile,
@@ -51,7 +62,7 @@ PrefLocation GetPrefLocation(const base::Value& settings) {
     return PrefLocation::kLocalState;
   if (*location == "signin_profile")
     return PrefLocation::kSigninProfile;
-  NOTREACHED() << "Unknown pref location: " << *location;
+  ADD_FAILURE() << "Unknown pref location: " << *location;
   return PrefLocation::kUserProfile;
 }
 
@@ -62,17 +73,37 @@ std::string GetPolicyName(const std::string& policy_name_decorated) {
   return policy_name_decorated;
 }
 
-// TODO(https://crbug.com/1192629): Revisit it after all chromeos policies
-// touching lacros will get their handlers in place.
-#if !BUILDFLAG(IS_CHROMEOS_LACROS)
+PrefService* GetPrefServiceForLocation(PrefLocation location,
+                                       PrefService* local_state,
+                                       PrefService* user_prefs,
+                                       PrefService* signin_profile_prefs) {
+  switch (location) {
+    case PrefLocation::kUserProfile:
+      return user_prefs;
+    case PrefLocation::kSigninProfile:
+      return signin_profile_prefs;
+    case PrefLocation::kLocalState:
+      return local_state;
+    default:
+      ADD_FAILURE() << "Unhandled pref location: "
+                    << static_cast<int>(location);
+  }
+  return nullptr;
+}
+
 void CheckPrefHasValue(const PrefService::Preference* pref,
                        const base::Value* expected_value) {
-  EXPECT_TRUE(pref->GetValue()->Equals(expected_value))
-      << *pref->GetValue() << " != " << *expected_value;
+  ASSERT_TRUE(pref);
+
+  const base::Value* pref_value = pref->GetValue();
+  ASSERT_TRUE(pref->GetValue());
+  ASSERT_TRUE(expected_value);
+  EXPECT_EQ(*pref_value, *expected_value);
 }
 
 void CheckPrefHasDefaultValue(const PrefService::Preference* pref,
                               const base::Value* expected_value = nullptr) {
+  ASSERT_TRUE(pref);
   EXPECT_TRUE(pref->IsDefaultValue());
   EXPECT_TRUE(pref->IsUserModifiable());
   EXPECT_FALSE(pref->IsUserControlled());
@@ -83,28 +114,28 @@ void CheckPrefHasDefaultValue(const PrefService::Preference* pref,
 }
 
 void CheckPrefHasRecommendedValue(const PrefService::Preference* pref,
-                                  const base::Value* expected_value = nullptr) {
+                                  const base::Value* expected_value) {
+  ASSERT_TRUE(pref);
+  ASSERT_TRUE(expected_value);
   EXPECT_FALSE(pref->IsDefaultValue());
   EXPECT_TRUE(pref->IsUserModifiable());
   EXPECT_FALSE(pref->IsUserControlled());
   EXPECT_FALSE(pref->IsManaged());
   EXPECT_TRUE(pref->IsRecommended());
-  if (expected_value)
-    CheckPrefHasValue(pref, expected_value);
+  CheckPrefHasValue(pref, expected_value);
 }
 
 void CheckPrefHasMandatoryValue(const PrefService::Preference* pref,
-                                const base::Value* expected_value = nullptr) {
+                                const base::Value* expected_value) {
+  ASSERT_TRUE(pref);
+  ASSERT_TRUE(expected_value);
   EXPECT_FALSE(pref->IsDefaultValue());
   EXPECT_FALSE(pref->IsUserModifiable());
   EXPECT_FALSE(pref->IsUserControlled());
   EXPECT_TRUE(pref->IsManaged());
   EXPECT_FALSE(pref->IsRecommended());
-  if (expected_value)
-    CheckPrefHasValue(pref, expected_value);
+  CheckPrefHasValue(pref, expected_value);
 }
-
-#endif  // BUILDFLAG(IS_CHROMEOS_LACROS)
 
 // Contains the testing details for a single pref affected by one or multiple
 // policies. This is part of the data loaded from
@@ -113,16 +144,24 @@ class PrefTestCase {
  public:
   explicit PrefTestCase(const std::string& name, const base::Value& settings) {
     const base::Value* value = settings.FindKey("value");
+    const base::Value* default_value = settings.FindKey("default_value");
     location_ = GetPrefLocation(settings);
     check_for_mandatory_ =
         settings.FindBoolKey("check_for_mandatory").value_or(true);
     check_for_recommended_ =
         settings.FindBoolKey("check_for_recommended").value_or(true);
-    expect_default_ = settings.FindBoolKey("expect_default").value_or(false);
 
     pref_ = name;
     if (value)
       value_ = value->CreateDeepCopy();
+    if (default_value)
+      default_value_ = default_value->CreateDeepCopy();
+
+    if (value && default_value) {
+      ADD_FAILURE()
+          << "only one of |value| or |default_value| should be used for pref "
+          << name;
+    }
   }
 
   ~PrefTestCase() = default;
@@ -130,23 +169,24 @@ class PrefTestCase {
   PrefTestCase& operator=(const PrefTestCase& other) = delete;
 
   const std::string& pref() const { return pref_; }
+
   const base::Value* value() const { return value_.get(); }
+  const base::Value* default_value() const { return default_value_.get(); }
 
   PrefLocation location() const { return location_; }
 
   bool check_for_mandatory() const { return check_for_mandatory_; }
-
   bool check_for_recommended() const { return check_for_recommended_; }
-
-  bool expect_default() const { return expect_default_; }
 
  private:
   std::string pref_;
-  std::unique_ptr<base::Value> value_;
   PrefLocation location_;
   bool check_for_mandatory_;
   bool check_for_recommended_;
-  bool expect_default_;
+
+  // At most one of these will be set.
+  std::unique_ptr<base::Value> value_;
+  std::unique_ptr<base::Value> default_value_;
 };
 
 // Contains the testing details for a single pref affected by a policy. This is
@@ -165,9 +205,12 @@ class PolicyPrefMappingTest {
     if (policies_settings)
       policies_settings_ = policies_settings->Clone();
     if (prefs) {
-      for (const auto& pref_setting : prefs->DictItems())
+      for (auto pref_setting : prefs->DictItems())
         prefs_.push_back(std::make_unique<PrefTestCase>(pref_setting.first,
                                                         pref_setting.second));
+    }
+    if (prefs_.empty()) {
+      ADD_FAILURE() << "missing |prefs|";
     }
     const base::Value* required_preprocessor_macros_value =
         mapping.FindListKey("required_preprocessor_macros");
@@ -243,6 +286,8 @@ class PolicyTestCase {
     is_official_only_ = test_case.FindBoolKey("official_only").value_or(false);
     can_be_recommended_ =
         test_case.FindBoolKey("can_be_recommended").value_or(false);
+    has_reason_for_missing_test_ =
+        test_case.FindStringKey("reason_for_missing_test") != nullptr;
 
     const base::Value* os_list = test_case.FindListKey("os");
     if (os_list) {
@@ -257,7 +302,7 @@ class PolicyTestCase {
     if (policy_pref_mapping_tests) {
       for (const auto& mapping : policy_pref_mapping_tests->GetList()) {
         if (mapping.is_dict()) {
-          policy_pref_mapping_test_.push_back(
+          policy_pref_mapping_tests_.push_back(
               std::make_unique<PolicyPrefMappingTest>(mapping));
         }
       }
@@ -274,23 +319,39 @@ class PolicyTestCase {
 
   bool can_be_recommended() const { return can_be_recommended_; }
 
+  bool has_reason_for_missing_test() const {
+    return has_reason_for_missing_test_;
+  }
+
   bool IsOsSupported() const {
-#if defined(OS_WIN)
-    const std::string os("win");
+#if defined(OS_ANDROID)
+    const std::string os("android");
+#elif BUILDFLAG(IS_CHROMEOS_ASH)
+    const std::string os("chromeos_ash");
+#elif BUILDFLAG(IS_CHROMEOS_LACROS)
+    const std::string os("chromeos_lacros");
 #elif defined(OS_IOS)
     const std::string os("ios");
-#elif defined(OS_MAC)
-    const std::string os("mac");
-#elif defined(OS_CHROMEOS)
-    const std::string os("chromeos");
 #elif defined(OS_LINUX)
     const std::string os("linux");
+#elif defined(OS_MAC)
+    const std::string os("mac");
+#elif defined(OS_WIN)
+    const std::string os("win");
 #else
 #error "Unknown platform"
 #endif
     return base::Contains(supported_os_, os);
   }
-  void AddSupportedOs(const std::string& os) { supported_os_.push_back(os); }
+
+  bool IsOsCovered() const {
+#if defined(OS_CHROMEOS)
+    return base::Contains(supported_os_, "chromeos_ash") ||
+           base::Contains(supported_os_, "chromeos_lacros");
+#else
+    return IsOsSupported();
+#endif
+  }
 
   bool IsSupported() const {
 #if !BUILDFLAG(GOOGLE_CHROME_BRANDING)
@@ -301,16 +362,20 @@ class PolicyTestCase {
   }
 
   const std::vector<std::unique_ptr<PolicyPrefMappingTest>>&
-  policy_pref_mapping_test() const {
-    return policy_pref_mapping_test_;
+  policy_pref_mapping_tests() const {
+    return policy_pref_mapping_tests_;
   }
+
+  bool HasSupportedOs() const { return !supported_os_.empty(); }
 
  private:
   std::string name_;
   bool is_official_only_;
   bool can_be_recommended_;
+  bool has_reason_for_missing_test_;
   std::vector<std::string> supported_os_;
-  std::vector<std::unique_ptr<PolicyPrefMappingTest>> policy_pref_mapping_test_;
+  std::vector<std::unique_ptr<PolicyPrefMappingTest>>
+      policy_pref_mapping_tests_;
 };
 
 // Parses all policy test cases and makes them available in a map.
@@ -324,7 +389,7 @@ class PolicyTestCases {
     base::ScopedAllowBlockingForTesting allow_blocking;
     std::string json;
     if (!base::ReadFileToString(test_case_path, &json)) {
-      ADD_FAILURE();
+      ADD_FAILURE() << "Error reading: " << test_case_path;
       return;
     }
     base::DictionaryValue* dict = nullptr;
@@ -335,9 +400,9 @@ class PolicyTestCases {
                     << parsed_json.error_message;
       return;
     }
-    for (const auto& it : dict->DictItems()) {
+    for (auto it : dict->DictItems()) {
       const std::string policy_name = GetPolicyName(it.first);
-      if (policy_name == kTemplateSampleTest)
+      if (policy_name == kInstructionKeyName)
         continue;
       auto policy_test_case =
           std::make_unique<PolicyTestCase>(it.first, it.second);
@@ -362,9 +427,6 @@ class PolicyTestCases {
   PolicyTestCaseMap policy_test_cases_;
 };
 
-// TODO(https://crbug.com/1192629): Revisit it after all chromeos policies
-// touching lacros will get their handlers in place.
-#if !BUILDFLAG(IS_CHROMEOS_LACROS)
 struct PolicySettings {
   PolicySource source = PolicySource::POLICY_SOURCE_CLOUD;
   PolicyScope scope = PolicyScope::POLICY_SCOPE_USER;
@@ -387,11 +449,9 @@ PolicySettings GetPolicySettings(const std::string& policy,
     else if (*source == "active_directory")
       settings.source = POLICY_SOURCE_ACTIVE_DIRECTORY;
     else if (*source == "local_account_override")
-      settings.source = POLICY_SOURCE_DEVICE_LOCAL_ACCOUNT_OVERRIDE;
+      settings.source = POLICY_SOURCE_DEVICE_LOCAL_ACCOUNT_OVERRIDE_DEPRECATED;
     else if (*source == "platform")
       settings.source = POLICY_SOURCE_PLATFORM;
-    else if (*source == "priority_cloud")
-      settings.source = POLICY_SOURCE_PRIORITY_CLOUD;
     else if (*source == "merged")
       settings.source = POLICY_SOURCE_MERGED;
     else if (*source == "cloud_from_ash")
@@ -417,7 +477,7 @@ void SetProviderPolicy(MockConfigurationPolicyProvider* provider,
 #if defined(OS_CHROMEOS)
   SetEnterpriseUsersDefaults(&policy_map);
 #endif  // defined(OS_CHROMEOS)
-  for (const auto& it : policies.DictItems()) {
+  for (auto it : policies.DictItems()) {
     const PolicyDetails* policy_details = GetChromePolicyDetails(it.first);
     const PolicySettings policy_settings =
         GetPolicySettings(it.first, policies_settings);
@@ -431,7 +491,23 @@ void SetProviderPolicy(MockConfigurationPolicyProvider* provider,
   }
   provider->UpdateChromePolicy(policy_map);
 }
-#endif  // BUILDFLAG(IS_CHROMEOS_LACROS)
+
+absl::optional<base::flat_set<std::string>> GetTestFilter() {
+  if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
+          kPolicyToPrefMappingsFilterSwitch)) {
+    return absl::nullopt;
+  }
+
+  std::string value =
+      base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+          kPolicyToPrefMappingsFilterSwitch);
+  auto list = base::SplitString(value, ":", base::TRIM_WHITESPACE,
+                                base::SPLIT_WANT_NONEMPTY);
+  if (list.empty())
+    return absl::nullopt;
+
+  return base::flat_set<std::string>(std::move(list));
+}
 
 }  // namespace
 
@@ -452,21 +528,26 @@ void VerifyAllPoliciesHaveATestCase(const base::FilePath& test_case_path) {
       continue;
     }
 
-    bool has_test_case_for_this_os = false;
+    bool has_test_case_or_reason_for_this_os = false;
+    bool has_reason_for_all_os = false;
     for (const auto& test_case : policy->second) {
-      has_test_case_for_this_os |= test_case->IsSupported();
-      if (has_test_case_for_this_os)
-        break;
-    }
+      EXPECT_TRUE(test_case->has_reason_for_missing_test() ||
+                  !test_case->policy_pref_mapping_tests().empty())
+          << "Test case " << test_case->name()
+          << " has empty list of test cases (policy_pref_mapping_tests). Add "
+             "tests or use reason_for_missing_test.";
 
-    // This can only be a warning as many policies are not really testable
-    // this way and only present as a single line in the file.
-    // Although they could at least contain the "os" fields.
-    // See http://crbug.com/791125.
-    LOG_IF(WARNING, !has_test_case_for_this_os)
+      if (test_case->HasSupportedOs()) {
+        has_test_case_or_reason_for_this_os |= test_case->IsOsCovered();
+      } else {
+        has_reason_for_all_os |= test_case->has_reason_for_missing_test();
+      }
+    }
+    EXPECT_TRUE(has_test_case_or_reason_for_this_os || has_reason_for_all_os)
         << "Policy " << policy->first
-        << " is marked as supported on this OS in policy_templates.json but "
-        << "there is no test for this platform in policy_test_cases.json.";
+        << " should either provide a test case for all supported operating "
+           "systems (see policy_templates.json) or provide a "
+           "reason_for_missing_test.";
   }
 }
 
@@ -482,76 +563,72 @@ void VerifyPolicyToPrefMappings(const base::FilePath& test_case_path,
 
   const PreprocessorMacrosChecker preprocessor_macros_checker;
   const PolicyTestCases test_cases(test_case_path);
+
+  auto test_filter = GetTestFilter();
+
   for (const auto& policy : test_cases) {
+    SCOPED_TRACE(::testing::Message() << "Policy name: " << policy.first);
     for (const auto& test_case : policy.second) {
-      const auto& pref_mappings = test_case->policy_pref_mapping_test();
-      if (!chrome_schema.GetKnownProperty(policy.first).valid()) {
-        // If the policy is supported on this platform according to the test it
-        // should be known otherwise we signal this as a failure.
-        // =====================================================================
-        // !NOTE! If you see this assertion after changing Chrome's VERSION most
-        // probably the mentioned policy was deprecated and deleted. Verify this
-        // in policy_templates.json and remove the corresponding test entry
-        // in policy_test_cases.json. Don't completely delete it from there just
-        // replace it's definition with a single "note" value stating its
-        // deprecation date (see other examples present in the file already).
-        // =====================================================================
-        EXPECT_FALSE(test_case->IsSupported())
+      if (test_filter.has_value() &&
+          !base::Contains(test_filter.value(), test_case->name())) {
+        // Skip policy based on the filter.
+        continue;
+      }
+
+      if (!chrome_schema.GetKnownProperty(policy.first).valid() &&
+          test_case->IsSupported()) {
+        // Print warning message if a deprecated policy is still supported by
+        // the test file.
+        LOG(WARNING)
             << "Policy " << policy.first
             << " is marked as supported on this OS but does not exist in the "
             << "Chrome policy schema.";
         continue;
       }
 
-      if (!test_case->IsSupported() || pref_mappings.empty())
+      if (!test_case->IsSupported() ||
+          test_case->has_reason_for_missing_test()) {
         continue;
+      }
 
-// TODO(https://crbug.com/1192629): Revisit it after all chromeos policies
-// touching lacros will get their handlers in place.
-#if !BUILDFLAG(IS_CHROMEOS_LACROS)
-      for (const auto& pref_mapping : pref_mappings) {
+      for (size_t i = 0; i < test_case->policy_pref_mapping_tests().size();
+           ++i) {
+        const auto& pref_mapping = test_case->policy_pref_mapping_tests()[i];
+        SCOPED_TRACE(::testing::Message() << "Mapping test index " << i);
+
+        EXPECT_FALSE(pref_mapping->prefs().empty())
+            << "Test #" << i << " for " << test_case->name()
+            << " is missing pref values to check for";
+
+        if (!preprocessor_macros_checker.SupportsTest(pref_mapping.get())) {
+          LOG(INFO) << "Test #" << i << " for " << test_case->name()
+                    << " skipped due to preprocessor macros";
+          continue;
+        }
+
         for (const auto& pref_case : pref_mapping->prefs()) {
-          const bool check_recommended = test_case->can_be_recommended() &&
-                                         pref_case->check_for_recommended();
-          const bool check_mandatory = pref_case->check_for_mandatory();
-
-          EXPECT_TRUE(check_recommended || check_mandatory)
-              << "pref mapping test for " << policy.first << "(pref "
-              << pref_case->pref()
-              << ") has to either be for recommended/mandatory or both";
-
-          PrefService* prefs = nullptr;
-          switch (pref_case->location()) {
-            case PrefLocation::kUserProfile:
-              prefs = user_prefs;
-              break;
-            case PrefLocation::kSigninProfile:
-              prefs = signin_profile_prefs;
-              break;
-            case PrefLocation::kLocalState:
-              prefs = local_state;
-              break;
-            default:
-              NOTREACHED() << "Unhandled pref location: "
-                           << static_cast<int>(pref_case->location());
-          }
-
+          SCOPED_TRACE(::testing::Message() << "Pref: " << pref_case->pref());
+          PrefService* prefs =
+              GetPrefServiceForLocation(pref_case->location(), local_state,
+                                        user_prefs, signin_profile_prefs);
           // Skip preference mapping if required PrefService was not provided.
           if (!prefs)
             continue;
 
-          LOG(INFO) << "Testing policy " << policy.first << " (pref "
-                    << pref_case->pref() << " with "
-                    << ((check_recommended) ? "recommended" : "")
-                    << ((check_recommended && check_mandatory) ? " & " : "")
-                    << ((check_mandatory) ? "mandatory" : "")
-                    << " policy values)";
+          const bool check_recommended = test_case->can_be_recommended() &&
+                                         pref_case->check_for_recommended();
+          const bool check_mandatory = pref_case->check_for_mandatory();
 
-          if (!preprocessor_macros_checker.SupportsTest(pref_mapping.get())) {
-            LOG(INFO) << " Skipping policy_pref_mapping_test because of "
-                      << "preprocessor macros";
-            continue;
-          }
+          LOG(INFO) << "policy: " << test_case->name()
+                    << "\t test_case_index: " << i
+                    << "\t pref_name: " << pref_case->pref()
+                    << "\t check_mandatory: " << check_mandatory
+                    << "\t check_recommended: " << check_recommended;
+
+          EXPECT_TRUE(check_recommended || check_mandatory)
+              << "pref has to be checked for recommended and/or mandatory "
+                 "values";
+
           // The preference must have been registered.
           const PrefService::Preference* pref =
               prefs->FindPreference(pref_case->pref());
@@ -562,13 +639,27 @@ void VerifyPolicyToPrefMappings(const base::FilePath& test_case_path,
           prefs->ClearPref(pref_case->pref());
           CheckPrefHasDefaultValue(pref);
 
+          const base::Value& policies = pref_mapping->policies();
+
           const base::Value* expected_value = pref_case->value();
+          bool expect_value_to_be_default = false;
+          if (!expected_value && pref_case->default_value()) {
+            expected_value = pref_case->default_value();
+            expect_value_to_be_default = true;
+          }
+          if (!expected_value && policies.DictSize() == 1) {
+            // If no value/default value is specified, fall back to the policy
+            // value (if only one policy is set).
+            expected_value = &policies.DictItems().begin()->second;
+            expect_value_to_be_default = false;
+          }
+          ASSERT_TRUE(expected_value);
 
           if (check_recommended) {
             ASSERT_NO_FATAL_FAILURE(SetProviderPolicy(
-                provider, pref_mapping->policies(),
-                pref_mapping->policies_settings(), POLICY_LEVEL_RECOMMENDED));
-            if (pref_case->expect_default()) {
+                provider, policies, pref_mapping->policies_settings(),
+                POLICY_LEVEL_RECOMMENDED));
+            if (expect_value_to_be_default) {
               CheckPrefHasDefaultValue(pref, expected_value);
             } else {
               CheckPrefHasRecommendedValue(pref, expected_value);
@@ -577,9 +668,9 @@ void VerifyPolicyToPrefMappings(const base::FilePath& test_case_path,
 
           if (check_mandatory) {
             ASSERT_NO_FATAL_FAILURE(SetProviderPolicy(
-                provider, pref_mapping->policies(),
-                pref_mapping->policies_settings(), POLICY_LEVEL_MANDATORY));
-            if (pref_case->expect_default()) {
+                provider, policies, pref_mapping->policies_settings(),
+                POLICY_LEVEL_MANDATORY));
+            if (expect_value_to_be_default) {
               CheckPrefHasDefaultValue(pref, expected_value);
             } else {
               CheckPrefHasMandatoryValue(pref, expected_value);
@@ -587,7 +678,6 @@ void VerifyPolicyToPrefMappings(const base::FilePath& test_case_path,
           }
         }
       }
-#endif  // BUILDFLAG(IS_CHROMEOS_LACROS)
     }
   }
 }

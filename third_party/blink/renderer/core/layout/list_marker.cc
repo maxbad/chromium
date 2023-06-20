@@ -5,12 +5,12 @@
 #include "third_party/blink/renderer/core/layout/list_marker.h"
 
 #include "third_party/blink/renderer/core/css/counter_style.h"
+#include "third_party/blink/renderer/core/css/resolver/style_resolver.h"
 #include "third_party/blink/renderer/core/layout/layout_image_resource_style_image.h"
 #include "third_party/blink/renderer/core/layout/layout_inside_list_marker.h"
 #include "third_party/blink/renderer/core/layout/layout_list_item.h"
 #include "third_party/blink/renderer/core/layout/layout_list_marker_image.h"
 #include "third_party/blink/renderer/core/layout/layout_outside_list_marker.h"
-#include "third_party/blink/renderer/core/layout/list_marker_text.h"
 #include "third_party/blink/renderer/core/layout/ng/inline/layout_ng_text_combine.h"
 #include "third_party/blink/renderer/core/layout/ng/list/layout_ng_inside_list_marker.h"
 #include "third_party/blink/renderer/core/layout/ng/list/layout_ng_list_item.h"
@@ -176,22 +176,34 @@ ListMarker::MarkerTextType ListMarker::MarkerText(
     case ListStyleCategory::kSymbol: {
       const CounterStyle& counter_style =
           GetCounterStyle(marker.GetDocument(), style);
-      if (format == kWithPrefixSuffix)
-        text->Append(counter_style.GetPrefix());
-      text->Append(counter_style.GenerateRepresentation(0));
-      if (format == kWithPrefixSuffix)
-        text->Append(counter_style.GetSuffix());
+      switch (format) {
+        case kWithPrefixSuffix:
+          text->Append(
+              counter_style.GenerateRepresentationWithPrefixAndSuffix(0));
+          break;
+        case kWithoutPrefixSuffix:
+          text->Append(counter_style.GenerateRepresentation(0));
+          break;
+        case kAlternativeText:
+          text->Append(counter_style.GenerateTextAlternative(0));
+      }
       return kSymbolValue;
     }
     case ListStyleCategory::kLanguage: {
       int value = ListItemValue(*list_item);
       const CounterStyle& counter_style =
           GetCounterStyle(marker.GetDocument(), style);
-      if (format == kWithPrefixSuffix)
-        text->Append(counter_style.GetPrefix());
-      text->Append(counter_style.GenerateRepresentation(value));
-      if (format == kWithPrefixSuffix)
-        text->Append(counter_style.GetSuffix());
+      switch (format) {
+        case kWithPrefixSuffix:
+          text->Append(
+              counter_style.GenerateRepresentationWithPrefixAndSuffix(value));
+          break;
+        case kWithoutPrefixSuffix:
+          text->Append(counter_style.GenerateRepresentation(value));
+          break;
+        case kAlternativeText:
+          text->Append(counter_style.GenerateTextAlternative(value));
+      }
       return kOrdinalValue;
     }
   }
@@ -216,11 +228,19 @@ String ListMarker::MarkerTextWithoutSuffix(const LayoutObject& marker) const {
 String ListMarker::TextAlternative(const LayoutObject& marker) const {
   DCHECK_EQ(Get(&marker), this);
   DCHECK_NE(marker_text_type_, kUnresolved);
-  if (marker_text_type_ == kNotText || marker_text_type_ == kUnresolved) {
-    // For accessibility, return the marker string in the logical order even in
-    // RTL, reflecting speech order.
+  // For accessibility, return the marker string in the logical order even in
+  // RTL, reflecting speech order.
+  if (marker_text_type_ == kNotText)
     return MarkerTextWithSuffix(marker);
+
+  if (RuntimeEnabledFeatures::CSSAtRuleCounterStyleSpeakAsDescriptorEnabled()) {
+    StringBuilder text;
+    MarkerText(marker, &text, kAlternativeText);
+    return text.ToString();
   }
+
+  if (marker_text_type_ == kUnresolved)
+    return MarkerTextWithSuffix(marker);
   return GetTextChild(marker).PlainText();
 }
 
@@ -242,7 +262,10 @@ void ListMarker::UpdateMarkerContentIfNeeded(LayoutObject& marker) {
       if (!child->IsLayoutImage() ||
           To<LayoutImage>(child)->ImageResource()->ImagePtr() !=
               list_style_image->Data()) {
-        child->Destroy();
+        if (UNLIKELY(IsA<LayoutNGTextCombine>(child->Parent())))
+          child->Parent()->Destroy();
+        else
+          child->Destroy();
         child = nullptr;
       }
     }
@@ -267,7 +290,7 @@ void ListMarker::UpdateMarkerContentIfNeeded(LayoutObject& marker) {
     return;
   }
 
-  if (!style.GetListStyleType()) {
+  if (!style.ListStyleType()) {
     marker_text_type_ = kNotText;
     return;
   }
@@ -310,7 +333,11 @@ LayoutUnit ListMarker::WidthOfSymbol(const ComputedStyle& style) {
   DCHECK(font_data);
   if (!font_data)
     return LayoutUnit();
-  const AtomicString& name = style.GetListStyleType()->GetCounterStyleName();
+  if (UNLIKELY(style.SpecifiedFontSize() == 0)) {
+    // See http://crbug.com/1228157
+    return LayoutUnit();
+  }
+  const AtomicString& name = style.ListStyleType()->GetCounterStyleName();
   if (name == "disclosure-open" || name == "disclosure-closed")
     return DisclosureSymbolSize(style);
   return LayoutUnit((font_data->GetFontMetrics().Ascent() * 2 / 3 + 1) / 2 + 2);
@@ -327,7 +354,7 @@ std::pair<LayoutUnit, LayoutUnit> ListMarker::InlineMarginsForInside(
   switch (GetListStyleCategory(document, list_item_style)) {
     case ListStyleCategory::kSymbol: {
       const AtomicString& name =
-          list_item_style.GetListStyleType()->GetCounterStyleName();
+          list_item_style.ListStyleType()->GetCounterStyleName();
       if (name == "disclosure-open" || name == "disclosure-closed") {
         return {LayoutUnit(), LayoutUnit(kClosureMarkerMarginEm *
                                          marker_style.SpecifiedFontSize())};
@@ -364,7 +391,7 @@ std::pair<LayoutUnit, LayoutUnit> ListMarker::InlineMarginsForOutside(
           return {};
         const FontMetrics& font_metrics = font_data->GetFontMetrics();
         const AtomicString& name =
-            list_item_style.GetListStyleType()->GetCounterStyleName();
+            list_item_style.ListStyleType()->GetCounterStyleName();
         LayoutUnit offset =
             (name == "disclosure-open" || name == "disclosure-closed")
                 ? DisclosureSymbolSize(marker_style)
@@ -393,7 +420,7 @@ LayoutRect ListMarker::RelativeSymbolMarkerRect(const ComputedStyle& style,
   // http://crbug.com/543193
   const FontMetrics& font_metrics = font_data->GetFontMetrics();
   const int ascent = font_metrics.Ascent();
-  const AtomicString& name = style.GetListStyleType()->GetCounterStyleName();
+  const AtomicString& name = style.ListStyleType()->GetCounterStyleName();
   if (name == "disclosure-open" || name == "disclosure-closed") {
     LayoutUnit marker_size = DisclosureSymbolSize(style);
     relative_rect = LayoutRect(LayoutUnit(), ascent - marker_size, marker_size,
@@ -412,15 +439,15 @@ LayoutRect ListMarker::RelativeSymbolMarkerRect(const ComputedStyle& style,
 
 const CounterStyle& ListMarker::GetCounterStyle(Document& document,
                                                 const ComputedStyle& style) {
-  DCHECK(style.GetListStyleType());
-  DCHECK(style.GetListStyleType()->IsCounterStyle());
-  return style.GetListStyleType()->GetCounterStyle(document);
+  DCHECK(style.ListStyleType());
+  DCHECK(style.ListStyleType()->IsCounterStyle());
+  return style.ListStyleType()->GetCounterStyle(document);
 }
 
 ListMarker::ListStyleCategory ListMarker::GetListStyleCategory(
     Document& document,
     const ComputedStyle& style) {
-  const ListStyleTypeData* list_style = style.GetListStyleType();
+  const ListStyleTypeData* list_style = style.ListStyleType();
   if (!list_style)
     return ListStyleCategory::kNone;
   if (list_style->IsString())

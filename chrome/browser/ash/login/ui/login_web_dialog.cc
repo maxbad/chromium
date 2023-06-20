@@ -20,12 +20,11 @@
 #include "ui/gfx/native_widget_types.h"
 #include "ui/views/widget/widget.h"
 
-using content::WebContents;
-using content::WebUIMessageHandler;
-
-namespace chromeos {
-
+namespace ash {
 namespace {
+
+using ::content::WebContents;
+using ::content::WebUIMessageHandler;
 
 constexpr gfx::Insets kMinMargins{64, 64};
 constexpr gfx::Size kMinSize{128, 128};
@@ -145,7 +144,7 @@ bool LoginWebDialog::ShouldShowDialogTitle() const {
 }
 
 bool LoginWebDialog::HandleContextMenu(
-    content::RenderFrameHost* render_frame_host,
+    content::RenderFrameHost& render_frame_host,
     const content::ContextMenuParams& params) {
   // Disable context menu.
   return true;
@@ -183,4 +182,4 @@ bool LoginWebDialog::AcceleratorPressed(const ui::Accelerator& accelerator) {
   return false;
 }
 
-}  // namespace chromeos
+}  // namespace ash

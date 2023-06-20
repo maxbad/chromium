@@ -12,7 +12,6 @@
 #include <vector>
 
 #include "base/compiler_specific.h"
-#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "base/sequence_checker.h"
 #include "gpu/config/gpu_driver_bug_workarounds.h"
@@ -52,6 +51,12 @@ class MEDIA_MOJO_EXPORT MojoVideoEncodeAcceleratorService
       CreateAndInitializeVideoEncodeAcceleratorCallback create_vea_callback,
       const gpu::GpuPreferences& gpu_preferences,
       const gpu::GpuDriverBugWorkarounds& gpu_workarounds);
+
+  MojoVideoEncodeAcceleratorService(const MojoVideoEncodeAcceleratorService&) =
+      delete;
+  MojoVideoEncodeAcceleratorService& operator=(
+      const MojoVideoEncodeAcceleratorService&) = delete;
+
   ~MojoVideoEncodeAcceleratorService() override;
 
   // mojom::VideoEncodeAccelerator impl.
@@ -64,7 +69,10 @@ class MEDIA_MOJO_EXPORT MojoVideoEncodeAcceleratorService
               EncodeCallback callback) override;
   void UseOutputBitstreamBuffer(int32_t bitstream_buffer_id,
                                 mojo::ScopedSharedBufferHandle buffer) override;
-  void RequestEncodingParametersChange(
+  void RequestEncodingParametersChangeWithBitrate(
+      const media::Bitrate& bitrate_allocation,
+      uint32_t framerate) override;
+  void RequestEncodingParametersChangeWithLayers(
       const media::VideoBitrateAllocation& bitrate_allocation,
       uint32_t framerate) override;
   void IsFlushSupported(IsFlushSupportedCallback callback) override;
@@ -100,8 +108,6 @@ class MEDIA_MOJO_EXPORT MojoVideoEncodeAcceleratorService
   SEQUENCE_CHECKER(sequence_checker_);
 
   base::WeakPtrFactory<MojoVideoEncodeAcceleratorService> weak_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(MojoVideoEncodeAcceleratorService);
 };
 
 }  // namespace media

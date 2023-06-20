@@ -6,14 +6,13 @@
 
 #include "base/bind.h"
 #include "base/containers/contains.h"
+#include "base/containers/cxx20_erase.h"
 #include "base/logging.h"
-#include "base/stl_util.h"
 
 namespace ash {
 
 // Define timeout for issued sign_request_id.
-constexpr base::TimeDelta kSignRequestIdTimeout =
-    base::TimeDelta::FromMinutes(10);
+constexpr base::TimeDelta kSignRequestIdTimeout = base::Minutes(10);
 
 PinDialogManager::PinDialogManager() = default;
 

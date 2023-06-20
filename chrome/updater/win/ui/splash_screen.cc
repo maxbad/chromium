@@ -9,9 +9,9 @@
 
 #include "base/cxx17_backports.h"
 #include "base/logging.h"
-#include "chrome/updater/win/ui/constants.h"
 #include "chrome/updater/win/ui/ui.h"
-#include "chrome/updater/win/ui/util.h"
+#include "chrome/updater/win/ui/ui_constants.h"
+#include "chrome/updater/win/ui/ui_util.h"
 
 namespace updater {
 namespace ui {
@@ -29,7 +29,7 @@ constexpr int kAlphaScales[] = {0, 30, 47, 62, 75, 85, 93, kDefaultAlphaScale};
 
 uint8_t AlphaScaleToAlphaValue(int alpha_scale) {
   DCHECK(alpha_scale >= 0 && alpha_scale <= 100);
-  return uint8_t{alpha_scale * 255 / 100};
+  return static_cast<uint8_t>(alpha_scale * 255 / 100);
 }
 
 }  // namespace

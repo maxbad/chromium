@@ -9,8 +9,8 @@
 #include "base/json/json_reader.h"
 #include "base/location.h"
 #include "base/memory/ptr_util.h"
-#include "base/single_thread_task_runner.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "chromeos/dbus/shill/shill_manager_client.h"
@@ -73,6 +73,8 @@ const char NetworkConnectionHandler::kErrorSimLocked[] = "sim-locked";
 const char NetworkConnectionHandler::kErrorCellularDeviceBusy[] =
     "cellular-device-busy";
 const char NetworkConnectionHandler::kErrorConnectTimeout[] = "connect-timeout";
+const char NetworkConnectionHandler::kConnectableCellularTimeout[] =
+    "connectable-timeout";
 
 NetworkConnectionHandler::NetworkConnectionHandler()
     : tether_delegate_(nullptr) {}

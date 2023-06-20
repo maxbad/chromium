@@ -4,6 +4,7 @@
 
 #include "chrome/browser/media/router/discovery/dial/device_description_service.h"
 #include "base/bind.h"
+#include "base/containers/cxx20_erase.h"
 
 #include <map>
 #include <memory>
@@ -15,7 +16,6 @@
 #endif
 
 #include "base/metrics/histogram_macros.h"
-#include "base/stl_util.h"
 #include "chrome/browser/media/router/discovery/dial/device_description_fetcher.h"
 #include "chrome/browser/media/router/discovery/dial/safe_dial_device_description_parser.h"
 #include "net/base/ip_address.h"
@@ -117,9 +117,9 @@ void DeviceDescriptionService::GetDeviceDescriptions(
   // Start a clean up timer.
   if (!clean_up_timer_) {
     clean_up_timer_ = std::make_unique<base::RepeatingTimer>();
-    clean_up_timer_->Start(
-        FROM_HERE, base::TimeDelta::FromMinutes(kCacheCleanUpTimeoutMins), this,
-        &DeviceDescriptionService::CleanUpCacheEntries);
+    clean_up_timer_->Start(FROM_HERE, base::Minutes(kCacheCleanUpTimeoutMins),
+                           this,
+                           &DeviceDescriptionService::CleanUpCacheEntries);
   }
 }
 
@@ -213,7 +213,7 @@ void DeviceDescriptionService::OnParsedDeviceDescription(
 
   CacheEntry cached_description_data;
   cached_description_data.expire_time =
-      GetNow() + base::TimeDelta::FromHours(kDeviceDescriptionCacheTimeHours);
+      GetNow() + base::Hours(kDeviceDescriptionCacheTimeHours);
   cached_description_data.config_id = device_data.config_id();
   cached_description_data.description_data = device_description;
   description_cache_.insert(

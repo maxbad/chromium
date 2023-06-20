@@ -10,7 +10,6 @@
 #include <vector>
 
 #include "base/containers/span.h"
-#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "content/common/content_export.h"
@@ -19,7 +18,6 @@
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/receiver_set.h"
 #include "services/data_decoder/public/cpp/data_decoder.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/blink/public/mojom/webauthn/virtual_authenticator.mojom.h"
 
 namespace content {
@@ -34,6 +32,10 @@ class CONTENT_EXPORT VirtualAuthenticator
  public:
   explicit VirtualAuthenticator(
       const blink::test::mojom::VirtualAuthenticatorOptions& options);
+
+  VirtualAuthenticator(const VirtualAuthenticator&) = delete;
+  VirtualAuthenticator& operator=(const VirtualAuthenticator&) = delete;
+
   ~VirtualAuthenticator() override;
 
   void AddReceiver(
@@ -139,8 +141,6 @@ class CONTENT_EXPORT VirtualAuthenticator
   mojo::ReceiverSet<blink::test::mojom::VirtualAuthenticator> receiver_set_;
 
   base::WeakPtrFactory<VirtualAuthenticator> weak_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(VirtualAuthenticator);
 };
 
 }  // namespace content

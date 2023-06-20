@@ -12,23 +12,15 @@
 
 #include "base/callback.h"
 #include "base/gtest_prod_util.h"
-#include "base/macros.h"
 #include "base/scoped_observation.h"
+#include "build/build_config.h"
 #include "content/browser/bad_message.h"
-#include "content/browser/bluetooth/bluetooth_allowed_devices.h"
-#include "content/browser/bluetooth/web_bluetooth_pairing_manager.h"
 #include "content/browser/bluetooth/web_bluetooth_pairing_manager_delegate.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/bluetooth_delegate.h"
 #include "content/public/browser/bluetooth_scanning_prompt.h"
-#include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "device/bluetooth/bluetooth_adapter.h"
-#include "device/bluetooth/bluetooth_discovery_session.h"
-#include "device/bluetooth/bluetooth_gatt_connection.h"
-#include "device/bluetooth/bluetooth_gatt_notify_session.h"
-#include "device/bluetooth/bluetooth_remote_gatt_characteristic.h"
-#include "device/bluetooth/bluetooth_remote_gatt_service.h"
 #include "mojo/public/cpp/bindings/associated_remote.h"
 #include "mojo/public/cpp/bindings/pending_associated_remote.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
@@ -40,15 +32,24 @@ namespace url {
 class Origin;
 }  // namespace url
 
+namespace device {
+class BluetoothDiscoverySession;
+class BluetoothGattConnection;
+class BluetoothGattNotifySession;
+class BluetoothRemoteGattCharacteristic;
+class BluetoothUUID;
+}  // namespace device
+
 namespace content {
 
+class BluetoothAllowedDevices;
 class BluetoothDeviceChooserController;
 class BluetoothDeviceScanningPromptController;
 struct CacheQueryResult;
 class FrameConnectedBluetoothDevices;
 struct GATTNotifySessionAndCharacteristicClient;
-class RenderFrameHost;
 class RenderProcessHost;
+class WebBluetoothPairingManager;
 
 bool HasValidFilter(
     const absl::optional<
@@ -79,6 +80,10 @@ class CONTENT_EXPORT WebBluetoothServiceImpl
   WebBluetoothServiceImpl(
       RenderFrameHost* render_frame_host,
       mojo::PendingReceiver<blink::mojom::WebBluetoothService> receiver);
+
+  WebBluetoothServiceImpl(const WebBluetoothServiceImpl&) = delete;
+  WebBluetoothServiceImpl& operator=(const WebBluetoothServiceImpl&) = delete;
+
   ~WebBluetoothServiceImpl() override;
 
   void CrashRendererAndClosePipe(bad_message::BadMessageReason reason);
@@ -105,6 +110,11 @@ class CONTENT_EXPORT WebBluetoothServiceImpl
   void OnPermissionRevoked(const url::Origin& origin) override;
   content::RenderFrameHost* GetRenderFrameHost() override;
 
+#if PAIR_BLUETOOTH_ON_DEMAND()
+  void SetPairingManagerForTesting(
+      std::unique_ptr<WebBluetoothPairingManager> pairing_manager);
+#endif  // PAIR_BLUETOOTH_ON_DEMAND()
+
  private:
   FRIEND_TEST_ALL_PREFIXES(WebBluetoothServiceImplTest,
                            ClearStateDuringRequestDevice);
@@ -123,6 +133,15 @@ class CONTENT_EXPORT WebBluetoothServiceImpl
                            BluetoothScanningPermissionRevokedWhenFocusIsLost);
   FRIEND_TEST_ALL_PREFIXES(WebBluetoothServiceImplTest,
                            ReadCharacteristicValueErrorWithValueIgnored);
+  FRIEND_TEST_ALL_PREFIXES(WebBluetoothServiceImplBrowserTest,
+                           NoShowBluetoothScanningPromptInPrerendering);
+  FRIEND_TEST_ALL_PREFIXES(WebBluetoothServiceImplTest,
+                           DeferredStartNotifySession);
+#if PAIR_BLUETOOTH_ON_DEMAND()
+  FRIEND_TEST_ALL_PREFIXES(WebBluetoothServiceImplBondingTest,
+                           ReadCharacteristicValueNotAuthorized);
+#endif  // PAIR_BLUETOOTH_ON_DEMAND()
+
   friend class FrameConnectedBluetoothDevicesTest;
   friend class WebBluetoothServiceImplTest;
   using PrimaryServicesRequestCallback =
@@ -132,6 +151,7 @@ class CONTENT_EXPORT WebBluetoothServiceImpl
   class AdvertisementClient;
   class WatchAdvertisementsClient;
   class ScanningClient;
+  struct DeferredStartNotificationData;
 
   // WebContentsObserver:
   // These functions should always check that the affected RenderFrameHost
@@ -207,6 +227,11 @@ class CONTENT_EXPORT WebBluetoothServiceImpl
       mojo::PendingAssociatedRemote<
           blink::mojom::WebBluetoothCharacteristicClient> client,
       RemoteCharacteristicStartNotificationsCallback callback) override;
+  void RemoteCharacteristicStartNotificationsInternal(
+      const std::string& characteristic_instance_id,
+      mojo::AssociatedRemote<blink::mojom::WebBluetoothCharacteristicClient>
+          client,
+      RemoteCharacteristicStartNotificationsCallback callback) override;
   void RemoteCharacteristicStopNotifications(
       const std::string& characteristic_instance_id,
       RemoteCharacteristicStopNotificationsCallback callback) override;
@@ -216,7 +241,7 @@ class CONTENT_EXPORT WebBluetoothServiceImpl
       const absl::optional<device::BluetoothUUID>& characteristics_uuid,
       RemoteCharacteristicGetDescriptorsCallback callback) override;
   void RemoteDescriptorReadValue(
-      const std::string& characteristic_instance_id,
+      const std::string& descriptor_instance_id,
       RemoteDescriptorReadValueCallback callback) override;
   void RemoteDescriptorWriteValue(
       const std::string& descriptor_instance_id,
@@ -290,19 +315,17 @@ class CONTENT_EXPORT WebBluetoothServiceImpl
                    const std::string& device_id);
 
   // Callbacks for BluetoothDevice::CreateGattConnection.
-  void OnCreateGATTConnectionSuccess(
+  void OnCreateGATTConnection(
       const blink::WebBluetoothDeviceId& device_id,
       base::TimeTicks start_time,
       mojo::AssociatedRemote<blink::mojom::WebBluetoothServerClient> client,
       RemoteServerConnectCallback callback,
-      std::unique_ptr<device::BluetoothGattConnection> connection);
-  void OnCreateGATTConnectionFailed(
-      base::TimeTicks start_time,
-      RemoteServerConnectCallback callback,
-      device::BluetoothDevice::ConnectErrorCode error_code);
+      std::unique_ptr<device::BluetoothGattConnection> connection,
+      absl::optional<device::BluetoothDevice::ConnectErrorCode> error_code);
 
   // Callbacks for BluetoothRemoteGattCharacteristic::ReadRemoteCharacteristic.
   void OnCharacteristicReadValue(
+      const std::string& characteristic_instance_id,
       RemoteCharacteristicReadValueCallback callback,
       absl::optional<device::BluetoothGattService::GattErrorCode> error_code,
       const std::vector<uint8_t>& value);
@@ -311,17 +334,19 @@ class CONTENT_EXPORT WebBluetoothServiceImpl
   void OnCharacteristicWriteValueSuccess(
       RemoteCharacteristicWriteValueCallback callback);
   void OnCharacteristicWriteValueFailed(
+      const std::string& characteristic_instance_id,
+      const std::vector<uint8_t>& value,
+      blink::mojom::WebBluetoothWriteType write_type,
       RemoteCharacteristicWriteValueCallback callback,
       device::BluetoothGattService::GattErrorCode error_code);
 
   // Callbacks for BluetoothRemoteGattCharacteristic::StartNotifySession.
   void OnStartNotifySessionSuccess(
-      mojo::AssociatedRemote<blink::mojom::WebBluetoothCharacteristicClient>
-          client,
       RemoteCharacteristicStartNotificationsCallback callback,
       std::unique_ptr<device::BluetoothGattNotifySession> notify_session);
   void OnStartNotifySessionFailed(
       RemoteCharacteristicStartNotificationsCallback callback,
+      const std::string& characteristic_instance_id,
       device::BluetoothGattService::GattErrorCode error_code);
 
   // Callback for BluetoothGattNotifySession::Stop.
@@ -331,6 +356,7 @@ class CONTENT_EXPORT WebBluetoothServiceImpl
 
   // Callbacks for BluetoothRemoteGattDescriptor::ReadRemoteDescriptor.
   void OnDescriptorReadValue(
+      const std::string& descriptor_instance_id,
       RemoteDescriptorReadValueCallback callback,
       absl::optional<device::BluetoothGattService::GattErrorCode> error_code,
       const std::vector<uint8_t>& value);
@@ -339,6 +365,8 @@ class CONTENT_EXPORT WebBluetoothServiceImpl
   void OnDescriptorWriteValueSuccess(
       RemoteDescriptorWriteValueCallback callback);
   void OnDescriptorWriteValueFailed(
+      const std::string& descriptor_instance_id,
+      const std::vector<uint8_t>& value,
       RemoteDescriptorWriteValueCallback callback,
       device::BluetoothGattService::GattErrorCode error_code);
 
@@ -353,6 +381,10 @@ class CONTENT_EXPORT WebBluetoothServiceImpl
   // Queries the platform cache for a Device with |device_id| for |origin|.
   // Fills in the |outcome| field and the |device| field if successful.
   CacheQueryResult QueryCacheForDevice(
+      const blink::WebBluetoothDeviceId& device_id);
+
+  // Return the cached BluetoothDevice for the given |device_id|.
+  device::BluetoothDevice* GetCachedDevice(
       const blink::WebBluetoothDeviceId& device_id);
 
   // Queries the platform cache for a Service with |service_instance_id|. Fills
@@ -403,11 +435,19 @@ class CONTENT_EXPORT WebBluetoothServiceImpl
   // WebBluetoothPairingManagerDelegate implementation:
   blink::WebBluetoothDeviceId GetCharacteristicDeviceID(
       const std::string& characteristic_instance_id) override;
-  void PairDevice(
-      const blink::WebBluetoothDeviceId& device_id,
-      device::BluetoothDevice::PairingDelegate* pairing_delegate,
-      base::OnceClosure callback,
-      device::BluetoothDevice::ConnectErrorCallback error_callback) override;
+  blink::WebBluetoothDeviceId GetDescriptorDeviceId(
+      const std::string& descriptor_instance_id) override;
+  blink::WebBluetoothDeviceId GetWebBluetoothDeviceId(
+      const std::string& device_address) override;
+  void PairDevice(const blink::WebBluetoothDeviceId& device_id,
+                  device::BluetoothDevice::PairingDelegate* pairing_delegate,
+                  device::BluetoothDevice::ConnectCallback callback) override;
+  void CancelPairing(const blink::WebBluetoothDeviceId& device_id) override;
+  void SetPinCode(const blink::WebBluetoothDeviceId& device_id,
+                  const std::string& pincode) override;
+  void PromptForBluetoothCredentials(
+      const std::u16string& device_identifier,
+      BluetoothCredentialsCallback callback) override;
 
   // Used to open a BluetoothChooser and start a device discovery session.
   std::unique_ptr<BluetoothDeviceChooserController> device_chooser_controller_;
@@ -434,6 +474,11 @@ class CONTENT_EXPORT WebBluetoothServiceImpl
   std::unordered_map<std::string,
                      std::unique_ptr<GATTNotifySessionAndCharacteristicClient>>
       characteristic_id_to_notify_session_;
+  // Map characteristic instance ID to deferred startNotification data.
+  std::unordered_map<
+      std::string,
+      base::queue<std::unique_ptr<DeferredStartNotificationData>>>
+      characteristic_id_to_deferred_start_;
 
   // The RFH that owns this instance.
   RenderFrameHost* render_frame_host_;
@@ -471,6 +516,10 @@ class CONTENT_EXPORT WebBluetoothServiceImpl
   // packets.
   bool accept_all_advertisements_ = false;
 
+#if PAIR_BLUETOOTH_ON_DEMAND()
+  std::unique_ptr<WebBluetoothPairingManager> pairing_manager_;
+#endif
+
   // The lifetime of this instance is exclusively managed by the RFH that owns
   // it so we use a "Receiver" as opposed to a "SelfOwnedReceiver" which deletes
   // the service on pipe connection errors.
@@ -482,10 +531,7 @@ class CONTENT_EXPORT WebBluetoothServiceImpl
                           &BluetoothDelegate::RemoveFramePermissionObserver>
       observer_{this};
 
-  WebBluetoothPairingManager pairing_manager_;
   base::WeakPtrFactory<WebBluetoothServiceImpl> weak_ptr_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(WebBluetoothServiceImpl);
 };
 
 }  // namespace content

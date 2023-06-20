@@ -6,18 +6,16 @@
 
 #include <memory>
 
-#include "base/time/time.h"
+#include "ash/constants/ash_pref_names.h"
 #include "chrome/browser/ash/login/quick_unlock/auth_token.h"
 #include "chrome/browser/ash/login/quick_unlock/fingerprint_storage.h"
 #include "chrome/browser/ash/login/quick_unlock/pin_storage_prefs.h"
 #include "chrome/browser/ash/login/quick_unlock/quick_unlock_utils.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/pref_names.h"
 #include "components/prefs/pref_service.h"
 
-namespace chromeos {
+namespace ash {
 namespace quick_unlock {
-
 namespace {
 
 base::TimeDelta GetStrongAuthTimeout(PrefService* pref_service) {
@@ -50,17 +48,12 @@ void QuickUnlockStorage::MarkStrongAuth() {
 bool QuickUnlockStorage::HasStrongAuth() const {
   if (last_strong_auth_.is_null())
     return false;
-  return TimeSinceLastStrongAuth() < GetStrongAuthTimeout(profile_->GetPrefs());
+  return clock_->Now() < TimeOfNextStrongAuth();
 }
 
-base::TimeDelta QuickUnlockStorage::TimeSinceLastStrongAuth() const {
+base::Time QuickUnlockStorage::TimeOfNextStrongAuth() const {
   DCHECK(!last_strong_auth_.is_null());
-  return clock_->Now() - last_strong_auth_;
-}
-
-base::TimeDelta QuickUnlockStorage::TimeUntilNextStrongAuth() const {
-  DCHECK(!last_strong_auth_.is_null());
-  return GetStrongAuthTimeout(profile_->GetPrefs()) - TimeSinceLastStrongAuth();
+  return last_strong_auth_ + GetStrongAuthTimeout(profile_->GetPrefs());
 }
 
 bool QuickUnlockStorage::IsFingerprintAuthenticationAvailable() const {
@@ -101,4 +94,4 @@ void QuickUnlockStorage::Shutdown() {
 }
 
 }  // namespace quick_unlock
-}  // namespace chromeos
+}  // namespace ash

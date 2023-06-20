@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include "base/command_line.h"
 #include "base/containers/contains.h"
 #include "base/containers/flat_set.h"
 #include "base/logging.h"
@@ -160,7 +161,7 @@ SupportedCodecs GetVP9Codecs(
         supported_vp9_codecs |= media::EME_CODEC_VP9_PROFILE2;
         break;
       default:
-        DVLOG(1) << "Unexpected " << GetCodecName(media::VideoCodec::kCodecVP9)
+        DVLOG(1) << "Unexpected " << GetCodecName(media::VideoCodec::kVP9)
                  << " profile: " << GetProfileName(profile);
         break;
     }
@@ -169,11 +170,18 @@ SupportedCodecs GetVP9Codecs(
   return supported_vp9_codecs;
 }
 
-#if BUILDFLAG(ENABLE_PLATFORM_HEVC) && BUILDFLAG(IS_CHROMEOS_ASH)
+#if BUILDFLAG(ENABLE_PLATFORM_HEVC)
 SupportedCodecs GetHevcCodecs(
     const std::vector<media::VideoCodecProfile>& profiles) {
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+  if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kLacrosEnablePlatformHevc)) {
+    return media::EME_CODEC_NONE;
+  }
+#endif  // BUILDFLAG(IS_CHROMEOS_LACROS)
+
+  // If no profiles are specified, then all are supported.
   if (profiles.empty()) {
-    // If no profiles are specified, then all are supported.
     return media::EME_CODEC_HEVC_PROFILE_MAIN |
            media::EME_CODEC_HEVC_PROFILE_MAIN10;
   }
@@ -188,7 +196,7 @@ SupportedCodecs GetHevcCodecs(
         supported_hevc_codecs |= media::EME_CODEC_HEVC_PROFILE_MAIN10;
         break;
       default:
-        DVLOG(1) << "Unexpected " << GetCodecName(media::VideoCodec::kCodecHEVC)
+        DVLOG(1) << "Unexpected " << GetCodecName(media::VideoCodec::kHEVC)
                  << " profile: " << GetProfileName(profile);
         break;
     }
@@ -196,25 +204,24 @@ SupportedCodecs GetHevcCodecs(
 
   return supported_hevc_codecs;
 }
-#endif  // BUILDFLAG(ENABLE_PLATFORM_HEVC) && BUILDFLAG(IS_CHROMEOS_ASH)
+#endif  // BUILDFLAG(ENABLE_PLATFORM_HEVC)
 
-SupportedCodecs GetSupportedCodecs(const media::CdmCapability& capability,
-                                   bool is_secure) {
+SupportedCodecs GetSupportedCodecs(const media::CdmCapability& capability) {
   SupportedCodecs supported_codecs = media::EME_CODEC_NONE;
 
   for (const auto& codec : capability.audio_codecs) {
     switch (codec) {
-      case media::AudioCodec::kCodecOpus:
+      case media::AudioCodec::kOpus:
         supported_codecs |= media::EME_CODEC_OPUS;
         break;
-      case media::AudioCodec::kCodecVorbis:
+      case media::AudioCodec::kVorbis:
         supported_codecs |= media::EME_CODEC_VORBIS;
         break;
-      case media::AudioCodec::kCodecFLAC:
+      case media::AudioCodec::kFLAC:
         supported_codecs |= media::EME_CODEC_FLAC;
         break;
 #if BUILDFLAG(USE_PROPRIETARY_CODECS)
-      case media::AudioCodec::kCodecAAC:
+      case media::AudioCodec::kAAC:
         supported_codecs |= media::EME_CODEC_AAC;
         break;
 #endif  // BUILDFLAG(USE_PROPRIETARY_CODECS)
@@ -228,34 +235,23 @@ SupportedCodecs GetSupportedCodecs(const media::CdmCapability& capability,
   // with some video codecs.
   for (const auto& codec : capability.video_codecs) {
     switch (codec.first) {
-      case media::VideoCodec::kCodecVP8:
+      case media::VideoCodec::kVP8:
         supported_codecs |= media::EME_CODEC_VP8;
         break;
-      case media::VideoCodec::kCodecVP9:
+      case media::VideoCodec::kVP9:
         supported_codecs |= GetVP9Codecs(codec.second);
         break;
-        break;
-      case media::VideoCodec::kCodecAV1:
+      case media::VideoCodec::kAV1:
         supported_codecs |= media::EME_CODEC_AV1;
         break;
 #if BUILDFLAG(USE_PROPRIETARY_CODECS)
-      case media::VideoCodec::kCodecH264:
+      case media::VideoCodec::kH264:
         supported_codecs |= media::EME_CODEC_AVC1;
         break;
 #endif  // BUILDFLAG(USE_PROPRIETARY_CODECS)
 #if BUILDFLAG(ENABLE_PLATFORM_HEVC)
-      case media::VideoCodec::kCodecHEVC:
-#if BUILDFLAG(IS_CHROMEOS_ASH)
-        if (is_secure && base::FeatureList::IsEnabled(
-                             chromeos::features::kCdmFactoryDaemon)) {
-          supported_codecs |= GetHevcCodecs(codec.second);
-        }
-#elif defined(OS_WIN)
-        if (is_secure) {
-          supported_codecs |= media::EME_CODEC_HEVC_PROFILE_MAIN;
-          supported_codecs |= media::EME_CODEC_HEVC_PROFILE_MAIN10;
-        }
-#endif  // BUILDFLAG(IS_CHROMEOS_ASH) || defined(OS_WIN)
+      case media::VideoCodec::kHEVC:
+        supported_codecs |= GetHevcCodecs(codec.second);
         break;
 #endif  // BUILDFLAG(ENABLE_PLATFORM_HEVC)
       default:
@@ -282,7 +278,7 @@ EmeSessionTypeSupport GetPersistentLicenseSupport(bool supported_by_the_cdm) {
   }
 
 // On ChromeOS, platform verification is similar to CDM host verification.
-#if BUILDFLAG(ENABLE_CDM_HOST_VERIFICATION) || BUILDFLAG(IS_CHROMEOS_ASH)
+#if BUILDFLAG(ENABLE_CDM_HOST_VERIFICATION) || defined(OS_CHROMEOS)
   bool cdm_host_verification_potentially_supported = true;
 #else
   bool cdm_host_verification_potentially_supported = false;
@@ -295,7 +291,7 @@ EmeSessionTypeSupport GetPersistentLicenseSupport(bool supported_by_the_cdm) {
     return EmeSessionTypeSupport::NOT_SUPPORTED;
   }
 
-#if BUILDFLAG(IS_CHROMEOS_ASH)
+#if defined(OS_CHROMEOS)
   // On ChromeOS, platform verification (similar to CDM host verification)
   // requires identifier to be allowed.
   // TODO(jrummell): Currently the ChromeOS CDM does not require storage ID
@@ -309,7 +305,7 @@ EmeSessionTypeSupport GetPersistentLicenseSupport(bool supported_by_the_cdm) {
   // Storage ID not implemented, so no support for persistent license.
   DVLOG(2) << __func__ << ": Not supported without CDM storage ID.";
   return EmeSessionTypeSupport::NOT_SUPPORTED;
-#endif  // BUILDFLAG(IS_CHROMEOS_ASH)
+#endif  // defined(OS_CHROMEOS)
 }
 
 void AddWidevine(
@@ -335,8 +331,7 @@ void AddWidevine(
   bool cdm_supports_persistent_license = false;
 
   if (capability->sw_secure_capability) {
-    codecs = GetSupportedCodecs(capability->sw_secure_capability.value(),
-                                /*is_secure=*/false);
+    codecs = GetSupportedCodecs(capability->sw_secure_capability.value());
     encryption_schemes = capability->sw_secure_capability->encryption_schemes;
     if (!base::Contains(capability->sw_secure_capability->session_types,
                         media::CdmSessionType::kTemporary)) {
@@ -350,8 +345,8 @@ void AddWidevine(
   }
 
   if (capability->hw_secure_capability) {
-    hw_secure_codecs = GetSupportedCodecs(
-        capability->hw_secure_capability.value(), /*is_secure=*/true);
+    hw_secure_codecs =
+        GetSupportedCodecs(capability->hw_secure_capability.value());
     hw_secure_encryption_schemes =
         capability->hw_secure_capability->encryption_schemes;
     if (!base::Contains(capability->hw_secure_capability->session_types,
@@ -371,7 +366,7 @@ void AddWidevine(
   auto max_audio_robustness = Robustness::SW_SECURE_CRYPTO;
   auto max_video_robustness = Robustness::SW_SECURE_DECODE;
 
-#if BUILDFLAG(IS_CHROMEOS_ASH)
+#if defined(OS_CHROMEOS)
   // On ChromeOS, we support HW_SECURE_ALL even without hardware secure codecs.
   // See WidevineKeySystemProperties::GetRobustnessConfigRule().
   max_audio_robustness = Robustness::HW_SECURE_ALL;
@@ -389,7 +384,7 @@ void AddWidevine(
   // Others.
   auto persistent_state_support = EmeFeatureSupport::REQUESTABLE;
   auto distinctive_identifier_support = EmeFeatureSupport::NOT_SUPPORTED;
-#if BUILDFLAG(IS_CHROMEOS_ASH) || defined(OS_WIN)
+#if defined(OS_CHROMEOS) || defined(OS_WIN)
   distinctive_identifier_support = EmeFeatureSupport::REQUESTABLE;
 #endif
 

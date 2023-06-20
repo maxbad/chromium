@@ -165,9 +165,9 @@ class OutsideSettingsCSPDelegate final
     // nothing for workers/worklets.
   }
 
-  void AddInspectorIssue(mojom::blink::InspectorIssueInfoPtr info) override {
+  void AddInspectorIssue(AuditsIssue issue) override {
     DCHECK_CALLED_ON_VALID_THREAD(worker_thread_checker_);
-    global_scope_for_logging_->AddInspectorIssue(std::move(info));
+    global_scope_for_logging_->AddInspectorIssue(std::move(issue));
   }
 
  private:
@@ -252,6 +252,10 @@ void WorkerOrWorkletGlobalScope::CountUse(WebFeature feature) {
   ReportingProxy().CountFeature(feature);
 }
 
+void WorkerOrWorkletGlobalScope::CountDeprecation(WebFeature feature) {
+  Deprecation::CountDeprecation(this, feature);
+}
+
 ResourceLoadScheduler::ThrottleOptionOverride
 WorkerOrWorkletGlobalScope::GetThrottleOptionOverride() const {
   return ResourceLoadScheduler::ThrottleOptionOverride::kNone;
@@ -282,11 +286,12 @@ void WorkerOrWorkletGlobalScope::InitializeWebFetchContextIfNeeded() {
   }
 }
 
-ResourceFetcher* WorkerOrWorkletGlobalScope::EnsureFetcher() {
+ResourceFetcher* WorkerOrWorkletGlobalScope::Fetcher() {
   DCHECK(IsContextThread());
   // Worklets don't support subresource fetch.
   DCHECK(IsWorkerGlobalScope());
 
+  // Check if the fetcher has already been initialized, otherwise initialize it.
   if (inside_settings_resource_fetcher_)
     return inside_settings_resource_fetcher_;
 
@@ -324,7 +329,7 @@ ResourceFetcher* WorkerOrWorkletGlobalScope::CreateFetcherInternal(
         GetTaskRunner(TaskType::kNetworkingUnfreezable),
         MakeGarbageCollected<LoaderFactoryForWorker>(*this,
                                                      web_worker_fetch_context_),
-        this, nullptr /* back_forward_cache_loader_helper */);
+        this, MakeGarbageCollected<BackForwardCacheLoaderHelperImpl>(*this));
     init.use_counter = MakeGarbageCollected<DetachableUseCounter>(this);
     init.console_logger = MakeGarbageCollected<DetachableConsoleLogger>(this);
 
@@ -363,14 +368,6 @@ ResourceFetcher* WorkerOrWorkletGlobalScope::CreateFetcherInternal(
     fetcher->SetDefersLoading(LoaderFreezeMode::kStrict);
   resource_fetchers_.insert(fetcher);
   return fetcher;
-}
-
-ResourceFetcher* WorkerOrWorkletGlobalScope::Fetcher() const {
-  DCHECK(IsContextThread());
-  // Worklets don't support subresource fetch.
-  DCHECK(IsWorkerGlobalScope());
-  DCHECK(inside_settings_resource_fetcher_);
-  return inside_settings_resource_fetcher_;
 }
 
 ResourceFetcher* WorkerOrWorkletGlobalScope::CreateOutsideSettingsFetcher(

@@ -20,13 +20,16 @@ Animator::Animator(v8::Isolate* isolate,
                    const String& name,
                    WorkletAnimationOptions options,
                    const Vector<absl::optional<base::TimeDelta>>& local_times,
-                   const Vector<Timing>& timings)
+                   const Vector<Timing>& timings,
+                   const Vector<Timing::NormalizedTiming>& normalized_timings)
     : definition_(definition),
       instance_(isolate, instance),
       name_(name),
       options_(options),
       group_effect_(
-          MakeGarbageCollected<WorkletGroupEffect>(local_times, timings)) {
+          MakeGarbageCollected<WorkletGroupEffect>(local_times,
+                                                   timings,
+                                                   normalized_timings)) {
   DCHECK_GE(local_times.size(), 1u);
 }
 
@@ -44,7 +47,7 @@ bool Animator::Animate(
     AnimationWorkletDispatcherOutput::AnimationState* output) {
   DCHECK(!std::isnan(current_time));
 
-  v8::Local<v8::Value> instance = instance_.NewLocal(isolate);
+  v8::Local<v8::Value> instance = instance_.Get(isolate);
   if (IsUndefinedOrNull(instance))
     return false;
 
@@ -80,6 +83,16 @@ Vector<Timing> Animator::GetTimings() const {
   return timings;
 }
 
+Vector<Timing::NormalizedTiming> Animator::GetNormalizedTimings() const {
+  Vector<Timing::NormalizedTiming> normalized_timings;
+  normalized_timings.ReserveInitialCapacity(
+      group_effect_->getChildren().size());
+  for (const auto& effect : group_effect_->getChildren()) {
+    normalized_timings.push_back(effect->NormalizedTiming());
+  }
+  return normalized_timings;
+}
+
 bool Animator::IsStateful() const {
   return definition_->IsStateful();
 }
@@ -89,7 +102,7 @@ v8::Local<v8::Value> Animator::State(v8::Isolate* isolate,
   if (!IsStateful())
     return v8::Undefined(isolate);
 
-  v8::Local<v8::Value> instance = instance_.NewLocal(isolate);
+  v8::Local<v8::Value> instance = instance_.Get(isolate);
   DCHECK(!IsUndefinedOrNull(instance));
 
   v8::TryCatch try_catch(isolate);

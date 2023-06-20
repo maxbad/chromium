@@ -21,11 +21,18 @@ class MockCommitDeferringCondition;
 class MockCommitDeferringConditionWrapper {
  public:
   explicit MockCommitDeferringConditionWrapper(bool is_ready_to_commit);
+
+  MockCommitDeferringConditionWrapper(
+      const MockCommitDeferringConditionWrapper&) = delete;
+  MockCommitDeferringConditionWrapper& operator=(
+      const MockCommitDeferringConditionWrapper&) = delete;
+
   ~MockCommitDeferringConditionWrapper();
   std::unique_ptr<MockCommitDeferringCondition> PassToDelegate();
   void CallResumeClosure();
   bool WasInvoked() const;
   bool IsDestroyed() const;
+  void WaitUntilInvoked();
 
  private:
   void WillCommitNavigationCalled(base::OnceClosure resume_closure);
@@ -34,11 +41,11 @@ class MockCommitDeferringConditionWrapper {
   base::WeakPtr<MockCommitDeferringCondition> weak_condition_;
 
   base::OnceClosure resume_closure_;
+  base::OnceClosure invoked_closure_;
 
   bool did_call_will_commit_navigation_ = false;
 
   base::WeakPtrFactory<MockCommitDeferringConditionWrapper> weak_factory_{this};
-  DISALLOW_COPY_AND_ASSIGN(MockCommitDeferringConditionWrapper);
 };
 
 class MockCommitDeferringCondition : public CommitDeferringCondition {
@@ -65,17 +72,19 @@ class MockCommitDeferringCondition : public CommitDeferringCondition {
   base::WeakPtrFactory<MockCommitDeferringCondition> weak_factory_{this};
 };
 
-// This class will montior navigations in the given WebContents and register
-// the given CommitDeferringCondition into any starting navigation.
-class MockCommitDeferringConditionInstaller : public WebContentsObserver {
+// This class will register the given CommitDeferringCondition into any starting
+// navigation. The mock condition will be installed to run after real
+// conditions.
+class MockCommitDeferringConditionInstaller {
  public:
-  MockCommitDeferringConditionInstaller(
-      WebContents* web_contents,
+  explicit MockCommitDeferringConditionInstaller(
       std::unique_ptr<MockCommitDeferringCondition> condition);
-  ~MockCommitDeferringConditionInstaller() override;
+  ~MockCommitDeferringConditionInstaller();
 
-  void DidStartNavigation(NavigationHandle* handle) override;
+ private:
+  std::unique_ptr<CommitDeferringCondition> Install();
 
+  const int generator_id_;
   std::unique_ptr<MockCommitDeferringCondition> condition_;
 };
 

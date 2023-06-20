@@ -32,11 +32,11 @@ import org.chromium.chrome.browser.signin.services.ProfileDataCache;
 import org.chromium.chrome.browser.signin.services.SigninManager;
 import org.chromium.chrome.browser.signin.services.SigninManager.SignInStateObserver;
 import org.chromium.chrome.browser.signin.services.SigninMetricsUtils;
-import org.chromium.chrome.browser.signin.ui.SignOutDialogFragment;
-import org.chromium.chrome.browser.signin.ui.SignOutDialogFragment.SignOutDialogListener;
-import org.chromium.chrome.browser.signin.ui.SigninUtils;
 import org.chromium.chrome.browser.superviseduser.FilteringBehavior;
-import org.chromium.chrome.browser.sync.ProfileSyncService;
+import org.chromium.chrome.browser.sync.SyncService;
+import org.chromium.chrome.browser.ui.signin.SignOutDialogFragment;
+import org.chromium.chrome.browser.ui.signin.SignOutDialogFragment.SignOutDialogListener;
+import org.chromium.chrome.browser.ui.signin.SigninUtils;
 import org.chromium.components.browser_ui.settings.ChromeBasePreference;
 import org.chromium.components.browser_ui.settings.SettingsLauncher;
 import org.chromium.components.prefs.PrefService;
@@ -86,11 +86,11 @@ public class AccountManagementFragment extends PreferenceFragmentCompat
     private Profile mProfile;
     private String mSignedInAccountName;
     private ProfileDataCache mProfileDataCache;
-    private @Nullable ProfileSyncService.SyncSetupInProgressHandle mSyncSetupInProgressHandle;
+    private @Nullable SyncService.SyncSetupInProgressHandle mSyncSetupInProgressHandle;
 
     @Override
     public void onCreatePreferences(Bundle savedState, String rootKey) {
-        ProfileSyncService syncService = ProfileSyncService.get();
+        SyncService syncService = SyncService.get();
         if (syncService != null) {
             // Prevent sync settings changes from taking effect until the user leaves this screen.
             mSyncSetupInProgressHandle = syncService.getSetupInProgressHandle();
@@ -175,7 +175,7 @@ public class AccountManagementFragment extends PreferenceFragmentCompat
         configureSignOutSwitch();
         configureChildAccountPreferences();
 
-        AccountManagerFacadeProvider.getInstance().tryGetGoogleAccounts(this::updateAccountsList);
+        AccountManagerFacadeProvider.getInstance().getAccounts().then(this::updateAccountsList);
     }
 
     private boolean canAddAccounts() {
@@ -195,7 +195,7 @@ public class AccountManagementFragment extends PreferenceFragmentCompat
             signOutPreference.setTitle(
                     IdentityServicesProvider.get()
                                     .getIdentityManager(Profile.getLastUsedRegularProfile())
-                                    .hasPrimaryAccount()
+                                    .hasPrimaryAccount(ConsentLevel.SYNC)
                             ? R.string.sign_out_and_turn_off_sync
                             : R.string.sign_out);
             signOutPreference.setOnPreferenceClickListener(preference -> {
@@ -273,6 +273,11 @@ public class AccountManagementFragment extends PreferenceFragmentCompat
 
     private void updateAccountsList(List<Account> accounts) {
         PreferenceCategory accountsCategory = findPreference(PREF_ACCOUNTS_CATEGORY);
+        if (accountsCategory == null) {
+            // This pref is dynamically added/removed many times, so it might not be present by now.
+            // More details can be found in crbug/1221491.
+            return;
+        }
         accountsCategory.removeAll();
 
         accountsCategory.addPreference(
@@ -368,7 +373,7 @@ public class AccountManagementFragment extends PreferenceFragmentCompat
     // ProfileDataCache.Observer implementation:
     @Override
     public void onProfileDataUpdated(String accountEmail) {
-        AccountManagerFacadeProvider.getInstance().tryGetGoogleAccounts(this::updateAccountsList);
+        AccountManagerFacadeProvider.getInstance().getAccounts().then(this::updateAccountsList);
     }
 
     // SignOutDialogListener implementation:
@@ -376,10 +381,9 @@ public class AccountManagementFragment extends PreferenceFragmentCompat
     public void onSignOutClicked(boolean forceWipeUserData) {
         // In case the user reached this fragment without being signed in, we guard the sign out so
         // we do not hit a native crash.
-        if (IdentityServicesProvider.get()
+        if (!IdentityServicesProvider.get()
                         .getIdentityManager(Profile.getLastUsedRegularProfile())
-                        .getPrimaryAccountInfo(ConsentLevel.SIGNIN)
-                == null) {
+                        .hasPrimaryAccount(ConsentLevel.SIGNIN)) {
             return;
         }
         final DialogFragment clearDataProgressDialog = new ClearDataProgressDialog();

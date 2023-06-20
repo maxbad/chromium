@@ -5,16 +5,20 @@
 // clang-format off
 // #import 'chrome://os-settings/chromeos/lazy_load.js';
 
-// #import {TestBrowserProxy} from '../../test_browser_proxy.m.js';
+// #import {TestBrowserProxy} from '../../test_browser_proxy.js';
 // #import {loadTimeData} from 'chrome://resources/js/load_time_data.m.js';
 // #import {flush} from'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 // #import {assertEquals, assertFalse, assertTrue} from '../../chai_assert.js';
 // #import {assert} from 'chrome://resources/js/assert.m.js';
 // #import {getDeepActiveElement} from 'chrome://resources/js/util.m.js';
-// #import {Router, routes, PeripheralDataAccessBrowserProxyImpl} from 'chrome://os-settings/chromeos/os_settings.js';
+// #import {SecureDnsMode, SecureDnsUiManagementMode, Router, routes, PeripheralDataAccessBrowserProxyImpl, DataAccessPolicyState} from 'chrome://os-settings/chromeos/os_settings.js';
 // #import {FakeQuickUnlockPrivate} from './fake_quick_unlock_private.m.js';
-// #import {waitAfterNextRender} from 'chrome://test/test_util.m.js';
+// #import {waitAfterNextRender} from 'chrome://test/test_util.js';
 // clang-format on
+
+const crosSettingPrefName = 'cros.device.peripheral_data_access_enabled';
+const localStatePrefName =
+    'settings.local_state_device_pci_data_access_enabled';
 
 /**
  * @implements {settings.PeripheralDataAccessBrowserProxy}
@@ -23,13 +27,35 @@ class TestPeripheralDataAccessBrowserProxy extends TestBrowserProxy {
   constructor() {
     super([
       'isThunderboltSupported',
+      'getPolicyState',
     ]);
+
+    /** @type {DataAccessPolicyState} */
+    this.policy_state_ = {
+      prefName: crosSettingPrefName,
+      isUserConfigurable: false
+    };
   }
 
   /** @override */
   isThunderboltSupported() {
     this.methodCalled('isThunderboltSupported');
     return Promise.resolve(/*supported=*/ true);
+  }
+
+  /** @override */
+  getPolicyState() {
+    this.methodCalled('getPolicyState');
+    return Promise.resolve(this.policy_state_);
+  }
+
+  /**
+   * @param {String} pref_name
+   * @param {Boolean} is_user_configurable
+   */
+  setPolicyState(pref_name, is_user_configurable) {
+    this.policy_state_.prefName = pref_name;
+    this.policy_state_.isUserConfigurable = is_user_configurable;
   }
 }
 
@@ -73,7 +99,6 @@ suite('PrivacyPageTests', function() {
   test('Suggested content, pref disabled', async () => {
     privacyPage = document.createElement('os-settings-privacy-page');
     document.body.appendChild(privacyPage);
-
     Polymer.dom.flush();
 
     // The default state of the pref is disabled.
@@ -96,6 +121,14 @@ suite('PrivacyPageTests', function() {
           }
         }
       },
+      'dns_over_https': {
+        'mode': {
+          value: SecureDnsMode.AUTOMATIC
+        },
+        'templates': {
+          value: ''
+        }
+      }
     };
 
     Polymer.dom.flush();
@@ -106,10 +139,6 @@ suite('PrivacyPageTests', function() {
   });
 
   test('Deep link to verified access', async () => {
-    loadTimeData.overrideValues({
-      isDeepLinkingEnabled: true,
-    });
-
     const params = new URLSearchParams;
     params.append('settingId', '1101');
     settings.Router.getInstance().navigateTo(
@@ -117,12 +146,45 @@ suite('PrivacyPageTests', function() {
 
     Polymer.dom.flush();
 
-    const deepLinkElement =
-        privacyPage.$$('#enableVerifiedAccess').$$('cr-toggle');
+    const deepLinkElement = privacyPage.$$('#enableVerifiedAccess')
+                                .shadowRoot.querySelector('cr-toggle');
     await test_util.waitAfterNextRender(deepLinkElement);
     assertEquals(
         deepLinkElement, getDeepActiveElement(),
         'Verified access toggle should be focused for settingId=1101.');
+  });
+
+  test('Deep link to guest browsing on users page', async () => {
+    const params = new URLSearchParams;
+    params.append('settingId', '1104');
+    settings.Router.getInstance().navigateTo(settings.routes.ACCOUNTS, params);
+
+    Polymer.dom.flush();
+
+    const deepLinkElement = privacyPage.$$('settings-users-page')
+                                .shadowRoot.querySelector('#allowGuestBrowsing')
+                                .shadowRoot.querySelector('cr-toggle');
+    await test_util.waitAfterNextRender(deepLinkElement);
+    assertEquals(
+        deepLinkElement, getDeepActiveElement(),
+        'Allow guest browsing should be focused for settingId=1104.');
+  });
+
+  test('Deep link to show usernames on sign in on users page', async () => {
+    const params = new URLSearchParams;
+    params.append('settingId', '1105');
+    settings.Router.getInstance().navigateTo(settings.routes.ACCOUNTS, params);
+
+    Polymer.dom.flush();
+
+    const deepLinkElement =
+        privacyPage.$$('settings-users-page')
+            .shadowRoot.querySelector('#showUserNamesOnSignIn')
+            .shadowRoot.querySelector('cr-toggle');
+    await test_util.waitAfterNextRender(deepLinkElement);
+    assertEquals(
+        deepLinkElement, getDeepActiveElement(),
+        'Allow guest browsing should be focused for settingId=1105.');
   });
 
   test('Fingerprint dialog closes when token expires', async () => {
@@ -132,11 +194,8 @@ suite('PrivacyPageTests', function() {
 
     privacyPage = document.createElement('os-settings-privacy-page');
     document.body.appendChild(privacyPage);
-    await test_util.waitAfterNextRender(privacyPage);
 
-    if (!privacyPage.isAccountManagementFlowsV2Enabled_) {
-      return;
-    }
+    await test_util.waitAfterNextRender(privacyPage);
 
     const quickUnlockPrivateApi = new settings.FakeQuickUnlockPrivate();
     privacyPage.authToken_ = quickUnlockPrivateApi.getFakeToken();
@@ -195,7 +254,7 @@ suite('PrivacePageTest_OfficialBuild', async () => {
         }
       }
     },
-  };
+   };
 
   /** @type {?TestPeripheralDataAccessBrowserProxy} */
   let browserProxy = null;
@@ -221,10 +280,6 @@ suite('PrivacePageTest_OfficialBuild', async () => {
   });
 
   test('Deep link to send usage stats', async () => {
-    loadTimeData.overrideValues({
-      isDeepLinkingEnabled: true,
-    });
-
     const params = new URLSearchParams;
     params.append('settingId', '1103');
     settings.Router.getInstance().navigateTo(
@@ -232,7 +287,8 @@ suite('PrivacePageTest_OfficialBuild', async () => {
 
     Polymer.dom.flush();
 
-    const deepLinkElement = privacyPage.$$('#enable-logging').$$('cr-toggle');
+    const deepLinkElement =
+        privacyPage.$$('#enable-logging').shadowRoot.querySelector('cr-toggle');
     await test_util.waitAfterNextRender(deepLinkElement);
     assertEquals(
         deepLinkElement, getDeepActiveElement(),
@@ -253,7 +309,16 @@ suite('PeripheralDataAccessTest', function() {
         }
       }
     },
-  };
+    'settings': {'local_state_device_pci_data_access_enabled': {value: false}},
+    'dns_over_https': {
+      'mode': {
+        value: SecureDnsMode.AUTOMATIC
+      },
+      'templates': {
+        value: ''
+      }
+     },
+   };
 
   /** @type {?TestPeripheralDataAccessBrowserProxy} */
   let browserProxy = null;
@@ -265,15 +330,6 @@ suite('PeripheralDataAccessTest', function() {
     loadTimeData.overrideValues({
       pciguardUiEnabled: true,
     });
-
-    privacyPage = document.createElement('os-settings-privacy-page');
-    privacyPage.prefs = Object.assign({}, prefs_);
-    document.body.appendChild(privacyPage);
-    Polymer.dom.flush();
-
-    await browserProxy.whenCalled('isThunderboltSupported');
-    await test_util.waitAfterNextRender();
-    Polymer.dom.flush();
   });
 
   teardown(function() {
@@ -281,9 +337,22 @@ suite('PeripheralDataAccessTest', function() {
     settings.Router.getInstance().resetRouteForTesting();
   });
 
+  async function setUpPage(pref_name, is_user_configurable) {
+    browserProxy.setPolicyState(pref_name, is_user_configurable);
+    privacyPage = document.createElement('os-settings-privacy-page');
+    privacyPage.prefs = Object.assign({}, prefs_);
+    document.body.appendChild(privacyPage);
+    Polymer.dom.flush();
+
+    await browserProxy.whenCalled('getPolicyState');
+    await test_util.waitAfterNextRender();
+    Polymer.dom.flush();
+  }
+
   test('DialogOpensOnToggle', async () => {
+    await setUpPage(crosSettingPrefName, /**is_user_configurable=*/ true);
     // The default state is checked.
-    const toggle = privacyPage.$$('#peripheralDataAccessProtection');
+    const toggle = privacyPage.$$('#crosSettingDataAccessToggle');
     assertTrue(!!toggle);
     assertTrue(toggle.checked);
 
@@ -312,8 +381,9 @@ suite('PeripheralDataAccessTest', function() {
   });
 
   test('DisableClicked', async () => {
+    await setUpPage(crosSettingPrefName, /**is_user_configurable=*/ true);
     // The default state is checked.
-    const toggle = privacyPage.$$('#peripheralDataAccessProtection');
+    const toggle = privacyPage.$$('#crosSettingDataAccessToggle');
     assertTrue(!!toggle);
     assertTrue(toggle.checked);
 
@@ -336,28 +406,66 @@ suite('PeripheralDataAccessTest', function() {
     assertFalse(toggle.checked);
   });
 
-  test('PolicyEnforced', async () => {
-    // Update the backing pref to enabled.
-    privacyPage.prefs = {
-      'cros': {
-        'device': {
-          'peripheral_data_access_enabled':
-              {value: false, enforcement: 'ENFORCED'}
-        }
-      },
-    };
-
+  test('managedAndConfigurablePrefIsToggleable', async () => {
+    await setUpPage(localStatePrefName, /**is_user_configurable=*/ true);
     Polymer.dom.flush();
 
+    // Ensure only the local state toggle appears.
+    assertTrue(privacyPage.$$('#crosSettingDataAccessToggle').hidden);
+
     // The default state is checked.
-    const toggle = privacyPage.$$('#peripheralDataAccessProtection');
+    const toggle = privacyPage.$$('#localStateDataAccessToggle');
+
+    // The default state is checked.
     assertTrue(!!toggle);
     assertTrue(toggle.checked);
 
-    // Attempting to switch the toggle off will result in nothing happening.
+    // Attempting to switch the toggle off will result in the warning dialog
+    // appearing.
     toggle.click();
+    Polymer.dom.flush();
+
+    await test_util.waitAfterNextRender(privacyPage);
+
+    const dialog = privacyPage.$$('#protectionDialog').$.warningDialog;
+    assertTrue(dialog.open);
+
+    // Ensure that the toggle is still checked.
     assertTrue(toggle.checked);
 
+    // Click on the dialog's cancel button and expect the toggle to switch back
+    // to enabled.
+    const cancelButton = dialog.querySelector('#cancelButton');
+    cancelButton.click();
+    Polymer.dom.flush();
+    assertFalse(dialog.open);
+
+    // The toggle should not have changed position.
+    assertTrue(toggle.checked);
+  });
+
+  test('managedAndNonConfigurablePrefIsNotToggleable', async () => {
+    await setUpPage(localStatePrefName, /**is_user_configurable=*/ false);
+    Polymer.dom.flush();
+
+    // Ensure only the local state toggle appears.
+    assertTrue(privacyPage.$$('#crosSettingDataAccessToggle').hidden);
+
+    // The default state is checked.
+    const toggle = privacyPage.$$('#localStateDataAccessToggle');
+
+    // The default state is checked.
+    assertTrue(!!toggle);
+    assertTrue(toggle.checked);
+
+    // Attempting to switch the toggle off will result in the warning dialog
+    // appearing.
+    toggle.click();
+    Polymer.dom.flush();
+
+    await test_util.waitAfterNextRender(privacyPage);
+
+    // Dialog should not appear since the toggle is disabled.
     const dialog = privacyPage.$$('#protectionDialog');
     assertFalse(!!dialog);
   });

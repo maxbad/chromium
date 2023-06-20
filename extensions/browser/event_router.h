@@ -12,6 +12,7 @@
 
 #include "base/callback.h"
 #include "base/compiler_specific.h"
+#include "base/gtest_prod_util.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
@@ -41,13 +42,13 @@ class GURL;
 namespace content {
 class BrowserContext;
 class RenderProcessHost;
-}
+}  // namespace content
 
-namespace chromeos {
+namespace ash {
 namespace file_system_provider {
 class FileSystemProviderProvidedFileSystemTest;
-}
-}  // namespace chromeos
+}  // namespace file_system_provider
+}  // namespace ash
 
 namespace extensions {
 class Extension;
@@ -142,6 +143,10 @@ class EventRouter : public KeyedService,
   // incognito context. |extension_prefs| may be NULL in tests.
   EventRouter(content::BrowserContext* browser_context,
               ExtensionPrefs* extension_prefs);
+
+  EventRouter(const EventRouter&) = delete;
+  EventRouter& operator=(const EventRouter&) = delete;
+
   ~EventRouter() override;
 
   // mojom::EventRouter:
@@ -161,7 +166,7 @@ class EventRouter : public KeyedService,
                                        const GURL& worker_scope_url,
                                        const std::string& name) override;
 
-  void AddFilteredListenerForMainThread(const std::string& extension_id,
+  void AddFilteredListenerForMainThread(mojom::EventListenerParamPtr param,
                                         const std::string& name,
                                         base::Value filter,
                                         bool add_lazy_listener) override;
@@ -190,7 +195,7 @@ class EventRouter : public KeyedService,
                                           const GURL& worker_scope_url,
                                           const std::string& name) override;
 
-  void RemoveFilteredListenerForMainThread(const std::string& extension_id,
+  void RemoveFilteredListenerForMainThread(mojom::EventListenerParamPtr param,
                                            const std::string& name,
                                            base::Value filter,
                                            bool remove_lazy_listener) override;
@@ -254,7 +259,7 @@ class EventRouter : public KeyedService,
   void AddFilteredEventListener(
       const std::string& event_name,
       content::RenderProcessHost* process,
-      const std::string& extension_id,
+      mojom::EventListenerParamPtr param,
       absl::optional<ServiceWorkerIdentifier> sw_identifier,
       const base::DictionaryValue& filter,
       bool add_lazy_listener);
@@ -264,7 +269,7 @@ class EventRouter : public KeyedService,
   void RemoveFilteredEventListener(
       const std::string& event_name,
       content::RenderProcessHost* process,
-      const std::string& extension_id,
+      mojom::EventListenerParamPtr param,
       absl::optional<ServiceWorkerIdentifier> sw_identifier,
       const base::DictionaryValue& filter,
       bool remove_lazy_listener);
@@ -325,7 +330,7 @@ class EventRouter : public KeyedService,
  private:
   friend class EventRouterFilterTest;
   friend class EventRouterTest;
-  friend class chromeos::file_system_provider::
+  friend class ash::file_system_provider::
       FileSystemProviderProvidedFileSystemTest;
   friend class UpdateInstallGateTest;
   friend class DownloadExtensionTest;
@@ -495,8 +500,6 @@ class EventRouter : public KeyedService,
       receivers_;
 
   base::WeakPtrFactory<EventRouter> weak_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(EventRouter);
 };
 
 struct Event {

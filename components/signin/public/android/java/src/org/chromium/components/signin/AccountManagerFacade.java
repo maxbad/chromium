@@ -17,6 +17,7 @@ import androidx.annotation.WorkerThread;
 import com.google.common.base.Optional;
 
 import org.chromium.base.Callback;
+import org.chromium.base.Promise;
 
 import java.util.List;
 
@@ -30,8 +31,14 @@ public interface AccountManagerFacade {
     interface ChildAccountStatusListener {
         /**
          * The method is called when child account status is ready.
+         *
+         * @param status The status of the account.
+         * @param childAccount The child account if status != {@link Status.NOT_CHILD}; null
+         *         otherwise.
+         *
+         * TODO(crbug.com/1258563): consider refactoring this interface to use Promises.
          */
-        void onStatusReady(@ChildAccountStatus.Status int status);
+        void onStatusReady(@ChildAccountStatus.Status int status, @Nullable Account childAccount);
     }
 
     /**
@@ -49,27 +56,17 @@ public interface AccountManagerFacade {
     void removeObserver(AccountsChangeObserver observer);
 
     /**
-     * Retrieves all Google accounts on the device from the cache.
-     * Returns an empty array if an error occurs while getting account list.
-     * If the cache is not yet populated, the optional will be empty.
-     */
-    @AnyThread
-    Optional<List<Account>> getGoogleAccounts();
-
-    /**
-     * Retrieves all Google accounts on the device.
-     * Returns an empty array if an error occurs while getting account list.
-     * This method is blocking, use {@link #getGoogleAccounts()} instead.
-     */
-    @AnyThread
-    @Deprecated
-    List<Account> tryGetGoogleAccounts();
-
-    /**
-     * Asynchronous version of {@link #getGoogleAccounts()}.
+     * Retrieves all the accounts on the device.
+     * The {@link Promise} will be fulfilled once the accounts cache will be populated.
+     * If an error occurs while getting account list, the returned {@link Promise} will wrap an
+     * empty array.
+     *
+     * Since a different {@link Promise} will be returned every time the accounts get updated,
+     * this makes it a bad candidate for end users to cache the {@link Promise} locally unless
+     * the end users are awaiting the current list of accounts only.
      */
     @MainThread
-    void tryGetGoogleAccounts(final Callback<List<Account>> callback);
+    Promise<List<Account>> getAccounts();
 
     /**
      * @return Whether or not there is an account authenticator for Google accounts.
@@ -127,14 +124,6 @@ public interface AccountManagerFacade {
     @MainThread
     void updateCredentials(
             Account account, Activity activity, @Nullable Callback<Boolean> callback);
-
-    /**
-     * Gets profile data source.
-     * @return {@link ProfileDataSource} if it is supported by implementation, null otherwise.
-     */
-    @MainThread
-    @Nullable
-    ProfileDataSource getProfileDataSource();
 
     /**
      * Returns the Gaia id for the account associated with the given email address.

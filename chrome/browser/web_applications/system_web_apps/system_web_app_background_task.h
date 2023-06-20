@@ -14,9 +14,9 @@
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/web_applications/components/web_app_url_loader.h"
-#include "chrome/browser/web_applications/components/web_application_info.h"
 #include "chrome/browser/web_applications/system_web_apps/system_web_app_types.h"
+#include "chrome/browser/web_applications/web_app_url_loader.h"
+#include "chrome/browser/web_applications/web_application_info.h"
 #include "components/prefs/pref_change_registrar.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
@@ -76,6 +76,11 @@ class SystemAppBackgroundTask {
 
   // For up to an hour.
   static const int kIdlePollMaxTimeToWaitSeconds = 3600;
+
+  // The duration we polled for before becoming idle and starting the background
+  // task.
+  static constexpr char kBackgroundStartDelayHistogramName[] =
+      "Webapp.SystemApps.BackgroundTaskStartDelay";
 
   SystemAppBackgroundTask(Profile* profile,
                           const SystemAppBackgroundTaskInfo& info);

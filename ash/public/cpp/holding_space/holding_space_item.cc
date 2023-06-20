@@ -5,10 +5,12 @@
 #include "ash/public/cpp/holding_space/holding_space_item.h"
 
 #include "ash/public/cpp/holding_space/holding_space_image.h"
+#include "ash/strings/grit/ash_strings.h"
+#include "base/json/values_util.h"
 #include "base/memory/ptr_util.h"
 #include "base/strings/strcat.h"
 #include "base/unguessable_token.h"
-#include "base/util/values/values_util.h"
+#include "ui/base/l10n/l10n_util.h"
 
 namespace ash {
 
@@ -37,7 +39,8 @@ HoldingSpaceItem::~HoldingSpaceItem() {
 bool HoldingSpaceItem::operator==(const HoldingSpaceItem& rhs) const {
   return type_ == rhs.type_ && id_ == rhs.id_ && file_path_ == rhs.file_path_ &&
          file_system_url_ == rhs.file_system_url_ && text_ == rhs.text_ &&
-         *image_ == *rhs.image_ && progress_ == rhs.progress_;
+         secondary_text_ == rhs.secondary_text_ && *image_ == *rhs.image_ &&
+         progress_ == rhs.progress_ && paused_ == rhs.paused_;
 }
 
 // static
@@ -47,7 +50,8 @@ std::unique_ptr<HoldingSpaceItem> HoldingSpaceItem::CreateFileBackedItem(
     const GURL& file_system_url,
     ImageResolver image_resolver) {
   return CreateFileBackedItem(type, file_path, file_system_url,
-                              /*progress=*/1.f, std::move(image_resolver));
+                              HoldingSpaceProgress(),
+                              std::move(image_resolver));
 }
 
 // static
@@ -55,15 +59,15 @@ std::unique_ptr<HoldingSpaceItem> HoldingSpaceItem::CreateFileBackedItem(
     Type type,
     const base::FilePath& file_path,
     const GURL& file_system_url,
-    const absl::optional<float>& progress,
+    const HoldingSpaceProgress& progress,
     ImageResolver image_resolver) {
   DCHECK(!file_system_url.is_empty());
 
   // Note: std::make_unique does not work with private constructors.
   return base::WrapUnique(new HoldingSpaceItem(
       type, /*id=*/base::UnguessableToken::Create().ToString(), file_path,
-      file_system_url, file_path.BaseName().LossyDisplayName(),
-      std::move(image_resolver).Run(type, file_path), progress));
+      file_system_url, std::move(image_resolver).Run(type, file_path),
+      progress));
 }
 
 // static
@@ -80,6 +84,7 @@ bool HoldingSpaceItem::IsDownload(HoldingSpaceItem::Type type) {
     case Type::kScan:
     case Type::kScreenRecording:
     case Type::kScreenshot:
+    case Type::kPhoneHubCameraRoll:
       return false;
   }
 }
@@ -99,8 +104,8 @@ std::unique_ptr<HoldingSpaceItem> HoldingSpaceItem::Deserialize(
   // NOTE: `std::make_unique` does not work with private constructors.
   return base::WrapUnique(new HoldingSpaceItem(
       type, DeserializeId(dict), file_path,
-      /*file_system_url=*/GURL(), file_path.BaseName().LossyDisplayName(),
-      std::move(image_resolver).Run(type, file_path), /*progress=*/1.f));
+      /*file_system_url=*/GURL(),
+      std::move(image_resolver).Run(type, file_path), HoldingSpaceProgress()));
 }
 
 // static
@@ -126,7 +131,7 @@ base::FilePath HoldingSpaceItem::DeserializeFilePath(
   DCHECK(version.has_value() && version.value() == kVersion);
 
   const absl::optional<base::FilePath> file_path =
-      util::ValueToFilePath(dict.FindPath(kFilePathPath));
+      base::ValueToFilePath(dict.FindPath(kFilePathPath));
   DCHECK(file_path.has_value());
 
   return file_path.value();
@@ -140,7 +145,7 @@ base::DictionaryValue HoldingSpaceItem::Serialize() const {
   dict.SetIntPath(kVersionPath, kVersion);
   dict.SetIntPath(kTypePath, static_cast<int>(type_));
   dict.SetStringPath(kIdPath, id_);
-  dict.SetPath(kFilePathPath, util::FilePathToValue(file_path_));
+  dict.SetPath(kFilePathPath, base::FilePathToValue(file_path_));
   return dict;
 }
 
@@ -166,29 +171,63 @@ bool HoldingSpaceItem::SetBackingFile(const base::FilePath& file_path,
 
   file_path_ = file_path;
   file_system_url_ = file_system_url;
-  text_ = file_path.BaseName().LossyDisplayName();
   image_->UpdateBackingFilePath(file_path);
 
   return true;
 }
 
-bool HoldingSpaceItem::IsInProgress() const {
-  return progress_ != 1.f;
+std::u16string HoldingSpaceItem::GetText() const {
+  return text_.value_or(file_path_.BaseName().LossyDisplayName());
 }
 
-bool HoldingSpaceItem::SetProgress(const absl::optional<float>& progress) {
-  // NOTE: Progress can only be updated for in progress items.
-  if (progress_ == progress || !IsInProgress())
+bool HoldingSpaceItem::SetText(const absl::optional<std::u16string>& text) {
+  if (text_ == text)
     return false;
 
-  if (progress.has_value()) {
-    DCHECK_GE(progress.value(), 0.f);
-    DCHECK_LE(progress.value(), 1.f);
-  }
+  text_ = text;
+  return true;
+}
+
+bool HoldingSpaceItem::SetSecondaryText(
+    const absl::optional<std::u16string>& secondary_text) {
+  if (secondary_text_ == secondary_text)
+    return false;
+
+  secondary_text_ = secondary_text;
+  return true;
+}
+
+std::u16string HoldingSpaceItem::GetAccessibleName() const {
+  if (accessible_name_)
+    return accessible_name_.value();
+
+  const std::u16string text = GetText();
+
+  if (!secondary_text_)
+    return text;
+
+  return l10n_util::GetStringFUTF16(
+      IDS_ASH_HOLDING_SPACE_ITEM_A11Y_NAME_AND_TOOLTIP, text,
+      secondary_text_.value());
+}
+
+bool HoldingSpaceItem::SetAccessibleName(
+    const absl::optional<std::u16string>& accessible_name) {
+  if (accessible_name_ == accessible_name)
+    return false;
+
+  accessible_name_ = accessible_name;
+  return true;
+}
+
+bool HoldingSpaceItem::SetProgress(const HoldingSpaceProgress& progress) {
+  // NOTE: Progress can only be updated for in progress items.
+  if (progress_ == progress || progress_.IsComplete())
+    return false;
 
   progress_ = progress;
 
-  if (progress_ == 1.f)
+  if (progress_.IsComplete())
     paused_ = false;
 
   return true;
@@ -212,6 +251,7 @@ bool HoldingSpaceItem::IsScreenCapture() const {
     case Type::kPinnedFile:
     case Type::kPrintedPdf:
     case Type::kScan:
+    case Type::kPhoneHubCameraRoll:
       return false;
   }
 }
@@ -221,7 +261,7 @@ bool HoldingSpaceItem::IsPaused() const {
 }
 
 bool HoldingSpaceItem::SetPaused(bool paused) {
-  if (!IsInProgress() || paused_ == paused)
+  if (paused_ == paused || progress_.IsComplete())
     return false;
 
   paused_ = paused;
@@ -232,20 +272,13 @@ HoldingSpaceItem::HoldingSpaceItem(Type type,
                                    const std::string& id,
                                    const base::FilePath& file_path,
                                    const GURL& file_system_url,
-                                   const std::u16string& text,
                                    std::unique_ptr<HoldingSpaceImage> image,
-                                   const absl::optional<float>& progress)
+                                   const HoldingSpaceProgress& progress)
     : type_(type),
       id_(id),
       file_path_(file_path),
       file_system_url_(file_system_url),
-      text_(text),
       image_(std::move(image)),
-      progress_(progress) {
-  if (progress_.has_value()) {
-    DCHECK_GE(progress_.value(), 0.f);
-    DCHECK_LE(progress_.value(), 1.f);
-  }
-}
+      progress_(progress) {}
 
 }  // namespace ash

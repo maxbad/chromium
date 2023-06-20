@@ -5,6 +5,7 @@
 #include "components/segmentation_platform/internal/database/segment_info_database.h"
 
 #include "base/callback_helpers.h"
+#include "base/containers/contains.h"
 #include "base/strings/string_number_conversions.h"
 
 namespace segmentation_platform {
@@ -30,25 +31,42 @@ void SegmentInfoDatabase::Initialize(SuccessCallback callback) {
                      weak_ptr_factory_.GetWeakPtr(), std::move(callback)));
 }
 
-void SegmentInfoDatabase::GetAllSegmentInfo(AllSegmentInfoCallback callback) {
+void SegmentInfoDatabase::GetAllSegmentInfo(
+    MultipleSegmentInfoCallback callback) {
   database_->LoadEntries(
-      base::BindOnce(&SegmentInfoDatabase::OnAllSegmentInfoLoaded,
+      base::BindOnce(&SegmentInfoDatabase::OnMultipleSegmentInfoLoaded,
                      weak_ptr_factory_.GetWeakPtr(), std::move(callback)));
 }
 
-void SegmentInfoDatabase::OnAllSegmentInfoLoaded(
-    AllSegmentInfoCallback callback,
+void SegmentInfoDatabase::OnMultipleSegmentInfoLoaded(
+    MultipleSegmentInfoCallback callback,
     bool success,
     std::unique_ptr<std::vector<proto::SegmentInfo>> all_infos) {
   std::vector<std::pair<OptimizationTarget, proto::SegmentInfo>> pairs;
   if (success && all_infos) {
     for (auto& info : *all_infos.get()) {
-      DCHECK(info.has_segment_id());
       pairs.emplace_back(std::make_pair(info.segment_id(), std::move(info)));
     }
   }
 
   std::move(callback).Run(pairs);
+}
+
+void SegmentInfoDatabase::GetSegmentInfoForSegments(
+    const std::vector<OptimizationTarget>& segment_ids,
+    MultipleSegmentInfoCallback callback) {
+  std::vector<std::string> keys;
+  for (OptimizationTarget target : segment_ids)
+    keys.emplace_back(ToString(target));
+
+  database_->LoadEntriesWithFilter(
+      base::BindRepeating(
+          [](const std::vector<std::string>& key_dict, const std::string& key) {
+            return base::Contains(key_dict, key);
+          },
+          keys),
+      base::BindOnce(&SegmentInfoDatabase::OnMultipleSegmentInfoLoaded,
+                     weak_ptr_factory_.GetWeakPtr(), std::move(callback)));
 }
 
 void SegmentInfoDatabase::GetSegmentInfo(OptimizationTarget segment_id,
@@ -85,9 +103,10 @@ void SegmentInfoDatabase::UpdateSegment(
                            std::move(keys_to_delete), std::move(callback));
 }
 
-void SegmentInfoDatabase::SaveSegmentResult(OptimizationTarget segment_id,
-                                            proto::PredictionResult* result,
-                                            SuccessCallback callback) {
+void SegmentInfoDatabase::SaveSegmentResult(
+    OptimizationTarget segment_id,
+    absl::optional<proto::PredictionResult> result,
+    SuccessCallback callback) {
   GetSegmentInfo(
       segment_id,
       base::BindOnce(&SegmentInfoDatabase::OnGetSegmentInfoForUpdatingResults,
@@ -96,7 +115,7 @@ void SegmentInfoDatabase::SaveSegmentResult(OptimizationTarget segment_id,
 }
 
 void SegmentInfoDatabase::OnGetSegmentInfoForUpdatingResults(
-    proto::PredictionResult* result,
+    absl::optional<proto::PredictionResult> result,
     SuccessCallback callback,
     absl::optional<proto::SegmentInfo> segment_info) {
   // Ignore results if the metadata no longer exists.
@@ -106,7 +125,7 @@ void SegmentInfoDatabase::OnGetSegmentInfoForUpdatingResults(
   }
 
   // Update results.
-  if (result) {
+  if (result.has_value()) {
     segment_info->mutable_prediction_result()->CopyFrom(*result);
   } else {
     segment_info->clear_prediction_result();

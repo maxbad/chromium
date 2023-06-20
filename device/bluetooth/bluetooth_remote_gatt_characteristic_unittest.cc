@@ -52,8 +52,8 @@ class BluetoothRemoteGattCharacteristicTest :
     InitWithFakeAdapter();
     StartLowEnergyDiscoverySession();
     device_ = SimulateLowEnergyDevice(3);
-    device_->CreateGattConnection(GetGattConnectionCallback(Call::EXPECTED),
-                                  GetConnectErrorCallback(Call::NOT_EXPECTED));
+    device_->CreateGattConnection(
+        GetGattConnectionCallback(Call::EXPECTED, Result::SUCCESS));
     SimulateGattConnection(device_);
     base::RunLoop().RunUntilIdle();
 
@@ -194,10 +194,10 @@ TEST_F(BluetoothRemoteGattCharacteristicTest, MAYBE_GetIdentifier) {
   // 2 devices to verify unique IDs across them.
   BluetoothDevice* device1 = SimulateLowEnergyDevice(3);
   BluetoothDevice* device2 = SimulateLowEnergyDevice(4);
-  device1->CreateGattConnection(GetGattConnectionCallback(Call::EXPECTED),
-                                GetConnectErrorCallback(Call::NOT_EXPECTED));
-  device2->CreateGattConnection(GetGattConnectionCallback(Call::EXPECTED),
-                                GetConnectErrorCallback(Call::NOT_EXPECTED));
+  device1->CreateGattConnection(
+      GetGattConnectionCallback(Call::EXPECTED, Result::SUCCESS));
+  device2->CreateGattConnection(
+      GetGattConnectionCallback(Call::EXPECTED, Result::SUCCESS));
   SimulateGattConnection(device1);
   SimulateGattConnection(device2);
   base::RunLoop().RunUntilIdle();
@@ -269,8 +269,8 @@ TEST_F(BluetoothRemoteGattCharacteristicTest, MAYBE_GetUUID) {
   InitWithFakeAdapter();
   StartLowEnergyDiscoverySession();
   BluetoothDevice* device = SimulateLowEnergyDevice(3);
-  device->CreateGattConnection(GetGattConnectionCallback(Call::EXPECTED),
-                               GetConnectErrorCallback(Call::NOT_EXPECTED));
+  device->CreateGattConnection(
+      GetGattConnectionCallback(Call::EXPECTED, Result::SUCCESS));
   SimulateGattConnection(device);
   base::RunLoop().RunUntilIdle();
   SimulateGattServicesDiscovered(
@@ -318,8 +318,8 @@ TEST_F(BluetoothRemoteGattCharacteristicTest, MAYBE_GetProperties) {
   InitWithFakeAdapter();
   StartLowEnergyDiscoverySession();
   BluetoothDevice* device = SimulateLowEnergyDevice(3);
-  device->CreateGattConnection(GetGattConnectionCallback(Call::EXPECTED),
-                               GetConnectErrorCallback(Call::NOT_EXPECTED));
+  device->CreateGattConnection(
+      GetGattConnectionCallback(Call::EXPECTED, Result::SUCCESS));
   SimulateGattConnection(device);
   base::RunLoop().RunUntilIdle();
   SimulateGattServicesDiscovered(
@@ -2807,6 +2807,46 @@ TEST_F(BluetoothRemoteGattCharacteristicTest,
   EXPECT_EQ(BluetoothGattService::GATT_ERROR_FAILED, last_gatt_error_code_);
 }
 
+#if defined(OS_ANDROID) || defined(OS_MAC)
+#define MAYBE_StartNotifySessionDisconnectOnError \
+  StartNotifySessionDisconnectOnError
+#else
+#define MAYBE_StartNotifySessionDisconnectOnError \
+  DISABLED_StartNotifySessionDisconnectOnError
+#endif
+// Test that a GATT disconnect in a StartNotifications error callback will
+// behave correctly. Regression test for crbug.com/1107577.
+#if defined(OS_WIN)
+TEST_P(BluetoothRemoteGattCharacteristicTestWinrtOnly,
+       StartNotifySessionDisconnectOnError) {
+#else
+TEST_F(BluetoothRemoteGattCharacteristicTest,
+       MAYBE_StartNotifySessionDisconnectOnError) {
+#endif
+  if (!PlatformSupportsLowEnergy()) {
+    LOG(WARNING) << "Low Energy Bluetooth unavailable, skipping unit test.";
+    return;
+  }
+  ASSERT_NO_FATAL_FAILURE(
+      FakeCharacteristicBoilerplate(/* properties: NOTIFY */ 0x10));
+
+  base::RunLoop start_notifications_loop;
+  characteristic1_->StartNotifySession(
+      base::BindLambdaForTesting(
+          [&start_notifications_loop](
+              std::unique_ptr<BluetoothGattNotifySession> notify_session) {
+            ADD_FAILURE() << "Unexpected startNotifications success.";
+            start_notifications_loop.Quit();
+          }),
+      base::BindLambdaForTesting(
+          [&](BluetoothGattService::GattErrorCode error_code) {
+            start_notifications_loop.Quit();
+            ASSERT_FALSE(gatt_connections_.empty());
+            gatt_connections_[0]->Disconnect();
+          }));
+  start_notifications_loop.Run();
+}
+
 #if defined(OS_ANDROID)
 #define MAYBE_StartNotifySession_AfterDeleted StartNotifySession_AfterDeleted
 #else
@@ -4607,8 +4647,8 @@ TEST_F(BluetoothRemoteGattCharacteristicTest,
   InitWithFakeAdapter();
   StartLowEnergyDiscoverySession();
   BluetoothDevice* device = SimulateLowEnergyDevice(3);
-  device->CreateGattConnection(GetGattConnectionCallback(Call::EXPECTED),
-                               GetConnectErrorCallback(Call::NOT_EXPECTED));
+  device->CreateGattConnection(
+      GetGattConnectionCallback(Call::EXPECTED, Result::SUCCESS));
 
   TestBluetoothAdapterObserver observer(adapter_);
 
@@ -4669,8 +4709,8 @@ TEST_F(BluetoothRemoteGattCharacteristicTest, ExtraDidDiscoverDescriptorsCall) {
   InitWithFakeAdapter();
   StartLowEnergyDiscoverySession();
   BluetoothDevice* device = SimulateLowEnergyDevice(3);
-  device->CreateGattConnection(GetGattConnectionCallback(Call::EXPECTED),
-                               GetConnectErrorCallback(Call::NOT_EXPECTED));
+  device->CreateGattConnection(
+      GetGattConnectionCallback(Call::EXPECTED, Result::SUCCESS));
 
   TestBluetoothAdapterObserver observer(adapter_);
 

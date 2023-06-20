@@ -242,8 +242,7 @@ TEST_F(NGTableAlgorithmHelpersTest, ComputeGridInlineMinMax) {
 
 TEST_F(NGTableAlgorithmHelpersTest, DistributeRowspanCellToRows) {
   NGTableTypes::CellBlockConstraint cell_block_constraint{
-      LayoutUnit(300),      LayoutUnit(), NGBoxStrut(), 0, 0, 3,
-      EVerticalAlign::kTop, true};
+      LayoutUnit(300), NGBoxStrut(), 0, 0, 3, true};
   NGTableTypes::RowspanCell rowspan_cell = NGTableTypes::CreateRowspanCell(
       0, 3, &cell_block_constraint, absl::nullopt);
   NGTableTypes::Rows rows;
@@ -304,7 +303,7 @@ TEST_F(NGTableAlgorithmHelpersTest, DistributeTableBlockSizeToSections) {
   sections.push_back(MakeSection(&rows, 100));
   NGTableAlgorithmHelpers::DistributeTableBlockSizeToSections(
       LayoutUnit(), LayoutUnit(500), &sections, &rows);
-  EXPECT_EQ(sections[0].block_size, LayoutUnit(0));
+  EXPECT_EQ(sections[0].block_size, LayoutUnit(400));
 
   // Sections with % block size grow to percentage.
   sections.Shrink(0);
@@ -328,8 +327,8 @@ TEST_F(NGTableAlgorithmHelpersTest, DistributeTableBlockSizeToSections) {
   // TODO(atotic) Is this what we want? FF/Edge/Legacy all disagree.
   NGTableAlgorithmHelpers::DistributeTableBlockSizeToSections(
       LayoutUnit(), LayoutUnit(1000), &sections, &rows);
-  EXPECT_EQ(sections[0].block_size, LayoutUnit(750));
-  EXPECT_EQ(sections[1].block_size, LayoutUnit(250));
+  EXPECT_EQ(sections[0].block_size, LayoutUnit(300));
+  EXPECT_EQ(sections[1].block_size, LayoutUnit(700));
 
   // If there is a constrained section, and an unconstrained section,
   // unconstrained section grows.

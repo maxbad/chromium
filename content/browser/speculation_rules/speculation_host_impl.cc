@@ -4,22 +4,26 @@
 
 #include "content/browser/speculation_rules/speculation_host_impl.h"
 
-#include "content/browser/prerender/prerender_processor.h"
+#include "content/browser/prerender/prerender_attributes.h"
+#include "content/browser/prerender/prerender_host_registry.h"
+#include "content/browser/renderer_host/render_frame_host_delegate.h"
 #include "content/browser/renderer_host/render_frame_host_impl.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_delegate.h"
 #include "content/public/common/content_client.h"
+#include "content/public/common/referrer.h"
 #include "mojo/public/cpp/bindings/message.h"
 #include "third_party/blink/public/common/features.h"
-#include "url/origin.h"
+#include "third_party/blink/public/mojom/web_feature/web_feature.mojom.h"
 
 namespace content {
 
 namespace {
 
-// Returns true if all candidates pass the inspection.
-bool InspectCandidates(
+bool CandidatesAreValid(
     std::vector<blink::mojom::SpeculationCandidatePtr>& candidates) {
-  for (auto& candidate : candidates) {
+  for (const auto& candidate : candidates) {
     // These non-http candidates should be filtered out in Blink and
     // SpeculationHostImpl should not see them. If SpeculationHostImpl receives
     // non-http candidates, it may mean the renderer process has a bug
@@ -38,7 +42,6 @@ bool InspectCandidates(
 void SpeculationHostImpl::Bind(
     RenderFrameHost* frame_host,
     mojo::PendingReceiver<blink::mojom::SpeculationHost> receiver) {
-  // Note: Currently SpeculationHostImpl doesn't trigger prerendering.
   // TODO(crbug.com/1190338): Allow SpeculationHostDelegate to participate in
   // this feature check.
   if (!base::FeatureList::IsEnabled(
@@ -50,25 +53,47 @@ void SpeculationHostImpl::Bind(
     return;
   }
 
-  // DocumentServiceBase will destroy this on pipe closure or frame destruction.
+  // DocumentService will destroy this on pipe closure or frame destruction.
   new SpeculationHostImpl(frame_host, std::move(receiver));
 }
 
 SpeculationHostImpl::SpeculationHostImpl(
     RenderFrameHost* frame_host,
     mojo::PendingReceiver<blink::mojom::SpeculationHost> receiver)
-    : DocumentServiceBase(frame_host, std::move(receiver)) {
+    : DocumentService(frame_host, std::move(receiver)),
+      WebContentsObserver(WebContents::FromRenderFrameHost(frame_host)) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   delegate_ = GetContentClient()->browser()->CreateSpeculationHostDelegate(
       *render_frame_host());
+  if (blink::features::IsPrerender2Enabled()) {
+    auto* rfhi = static_cast<RenderFrameHostImpl*>(frame_host);
+    registry_ = rfhi->delegate()->GetPrerenderHostRegistry()->GetWeakPtr();
+  }
 }
 
-SpeculationHostImpl::~SpeculationHostImpl() = default;
+SpeculationHostImpl::~SpeculationHostImpl() {
+  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
+  CancelStartedPrerenders();
+}
+
+void SpeculationHostImpl::PrimaryPageChanged(Page& page) {
+  // Listen to the change of the primary page. Since only the primary page can
+  // trigger speculationrules, the change of the primary page indicates that the
+  // trigger associated with this host is destroyed, so the browser should
+  // cancel the prerenders that are initiated by it.
+  // We cannot do it in the destructor only, because DocumentService can be
+  // deleted asynchronously, but we want to make sure to cancel prerendering
+  // before the next primary page swaps in so that the next page can trigger a
+  // new prerender without hitting the max number of running prerenders.
+  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
+  CancelStartedPrerenders();
+}
 
 void SpeculationHostImpl::UpdateSpeculationCandidates(
     std::vector<blink::mojom::SpeculationCandidatePtr> candidates) {
-  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-  if (!InspectCandidates(candidates))
+  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
+  if (!CandidatesAreValid(candidates))
     return;
 
   // Only handle messages from an active main frame.
@@ -81,48 +106,49 @@ void SpeculationHostImpl::UpdateSpeculationCandidates(
   if (delegate_)
     delegate_->ProcessCandidates(candidates);
 
-  if (!blink::features::IsPrerender2Enabled() || candidates.empty())
-    return;
+  ProcessCandidatesForPrerender(candidates);
+}
 
-  // Limit the number of started prerenders to one. If
-  // `prerender_processor_` is not null, it means `this` has started a
-  // prerender, and should ignore other prerender candidates.
-  // TODO(crbug.com/1197133): Cancel the started prerender and start a new
-  // one if the score of the new candidate is higher than the started one's.
-  // TODO(crbug.com/1197133): Record the cancellation reason via UMA.
-  if (prerender_processor_) {
+void SpeculationHostImpl::ProcessCandidatesForPrerender(
+    const std::vector<blink::mojom::SpeculationCandidatePtr>& candidates) {
+  if (!registry_ || candidates.empty())
+    return;
+  DCHECK(blink::features::IsPrerender2Enabled());
+  WebContentsDelegate* web_contents_delegate =
+      content::WebContents::FromRenderFrameHost(render_frame_host())
+          ->GetDelegate();
+  if (!web_contents_delegate ||
+      !web_contents_delegate->IsPrerender2Supported()) {
     return;
   }
 
-  // Find the first prerender candidate, since we limit the number of started
-  // prerenders to one.
-  // TODO(crbug.com/1197133): Find the candidate with the highest score.
-  // TODO(crbug.com/1176054): Support cross-origin prerendering.
-  // TODO(crbug.com/1197133): Record the cancellation reason of no same-origin
-  // candidates via UMA.
-  const auto prerender_filter =
-      [&](const blink::mojom::SpeculationCandidatePtr& it) {
-        return it->action == blink::mojom::SpeculationAction::kPrerender &&
-               origin().IsSameOriginWith(url::Origin::Create(it->url));
-      };
-  const auto candidate_it =
-      std::find_if(candidates.begin(), candidates.end(), prerender_filter);
-  if (candidate_it == candidates.end())
-    return;
-
   auto* rfhi = static_cast<RenderFrameHostImpl*>(render_frame_host());
-  prerender_processor_ = std::make_unique<PrerenderProcessor>(*rfhi);
-  const blink::mojom::SpeculationCandidatePtr& candidate = *candidate_it;
+  for (const auto& it : candidates) {
+    if (it->action != blink::mojom::SpeculationAction::kPrerender)
+      continue;
 
-  // TODO(https://crbug.com/1197133): Set up the field of size.
-  auto attributes = blink::mojom::PrerenderAttributes::New();
-  attributes->url = candidate->url;
-  // TODO(https://crbug.com/1197133): Set up the referrer field appropriately.
-  attributes->referrer = blink::mojom::Referrer::New();
-  attributes->trigger_type =
-      blink::mojom::PrerenderTriggerType::kSpeculationRule;
+    GetContentClient()->browser()->LogWebFeatureForCurrentPage(
+        rfhi, blink::mojom::WebFeature::kSpeculationRulesPrerender);
 
-  prerender_processor_->Start(std::move(attributes));
+    auto* web_contents = WebContents::FromRenderFrameHost(rfhi);
+    int prerender_host_id = registry_->CreateAndStartHost(
+        PrerenderAttributes(
+            it->url, PrerenderTriggerType::kSpeculationRule,
+            Referrer(*(it->referrer)), rfhi->GetLastCommittedOrigin(),
+            rfhi->GetLastCommittedURL(), rfhi->GetProcess()->GetID(),
+            rfhi->GetFrameToken(), rfhi->GetPageUkmSourceId()),
+        *web_contents);
+    if (prerender_host_id != RenderFrameHost::kNoFrameTreeNodeId)
+      started_prerender_host_ids_.insert(prerender_host_id);
+  }
+}
+
+void SpeculationHostImpl::CancelStartedPrerenders() {
+  if (registry_) {
+    for (const auto id : started_prerender_host_ids_)
+      registry_->OnTriggerDestroyed(id);
+    started_prerender_host_ids_.clear();
+  }
 }
 
 }  // namespace content

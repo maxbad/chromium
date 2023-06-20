@@ -11,6 +11,7 @@
 #include "gpu/command_buffer/common/sync_token.h"
 #include "third_party/blink/renderer/platform/geometry/int_size.h"
 #include "third_party/blink/renderer/platform/graphics/gpu/dawn_control_client_holder.h"
+#include "third_party/blink/renderer/platform/graphics/gpu/webgpu_mailbox_texture.h"
 #include "third_party/blink/renderer/platform/platform_export.h"
 #include "third_party/blink/renderer/platform/wtf/functional.h"
 #include "third_party/blink/renderer/platform/wtf/ref_counted.h"
@@ -40,10 +41,23 @@ class PLATFORM_EXPORT WebGPUSwapBufferProvider
       WGPUTextureFormat format);
   ~WebGPUSwapBufferProvider() override;
 
+  viz::ResourceFormat Format() const { return format_; }
+  const gfx::Size& Size() const;
   cc::Layer* CcLayer();
-  void SetFilterQuality(SkFilterQuality);
+  void SetFilterQuality(cc::PaintFlags::FilterQuality);
   void Neuter();
   WGPUTexture GetNewTexture(const IntSize& size);
+
+  struct WebGPUMailboxTextureAndSize {
+    scoped_refptr<WebGPUMailboxTexture> mailbox_texture;
+    gfx::Size size;
+
+    WebGPUMailboxTextureAndSize(
+        scoped_refptr<WebGPUMailboxTexture> mailbox_texture,
+        gfx::Size size)
+        : mailbox_texture(std::move(mailbox_texture)), size(size) {}
+  };
+  WebGPUMailboxTextureAndSize GetLastWebGPUMailboxTextureAndSize() const;
 
   base::WeakPtr<WebGraphicsContext3DProviderWrapper> GetContextProviderWeakPtr()
       const;
@@ -59,31 +73,30 @@ class PLATFORM_EXPORT WebGPUSwapBufferProvider
  private:
   // Holds resources and synchronization for one of the swapchain images.
   struct SwapBuffer {
-    SwapBuffer(WebGPUSwapBufferProvider*,
-               gpu::Mailbox mailbox,
-               gpu::SyncToken creation_token,
-               gfx::Size size);
+    SwapBuffer(
+        base::WeakPtr<WebGraphicsContext3DProviderWrapper> context_provider,
+        gpu::Mailbox mailbox,
+        gpu::SyncToken creation_token,
+        gfx::Size size);
+    SwapBuffer(const SwapBuffer&) = delete;
+    SwapBuffer& operator=(const SwapBuffer&) = delete;
     ~SwapBuffer();
 
     gfx::Size size;
     gpu::Mailbox mailbox;
 
-    // A reference back to the swap buffers so that the destructor can access
-    // data in the swap buffers. This is a weak reference since the swap buffer
-    // is held alive by both the provider and the TransferableResource. If the
-    // swap chain gets destroyed, the TransferableResource release CB
-    // keeps the in-flight swap buffer alive.
-    WebGPUSwapBufferProvider* swap_buffers = nullptr;
+    // A weak ptr to the context provider so that the destructor can
+    // destroy shared images.
+    base::WeakPtr<WebGraphicsContext3DProviderWrapper> context_provider;
 
     // A token signaled when the previous user of the image is finished using
     // it. It could be WebGPU, the compositor or the shared image creation.
     gpu::SyncToken access_finished_token;
-
-   private:
-    DISALLOW_COPY_AND_ASSIGN(SwapBuffer);
   };
 
   std::unique_ptr<WebGPUSwapBufferProvider::SwapBuffer> NewOrRecycledSwapBuffer(
+      gpu::SharedImageInterface* sii,
+      base::WeakPtr<WebGraphicsContext3DProviderWrapper> context_provider,
       const gfx::Size& size);
 
   void RecycleSwapBuffer(std::unique_ptr<SwapBuffer> swap_buffer);
@@ -105,7 +118,10 @@ class PLATFORM_EXPORT WebGPUSwapBufferProvider
   static constexpr int kMaxRecycledSwapBuffers = 3;
 
   WTF::Vector<std::unique_ptr<SwapBuffer>> unused_swap_buffers_;
+  std::unique_ptr<SwapBuffer> last_swap_buffer_;
 
+  uint32_t wire_device_id_ = 0;
+  uint32_t wire_device_generation_ = 0;
   uint32_t wire_texture_id_ = 0;
   uint32_t wire_texture_generation_ = 0;
   std::unique_ptr<SwapBuffer> current_swap_buffer_;

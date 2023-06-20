@@ -7,7 +7,6 @@
 
 #include <vector>
 
-#include "base/macros.h"
 #include "chrome/browser/ui/task_manager/task_manager_table_model.h"
 #include "ui/base/metadata/metadata_header_macros.h"
 #include "ui/base/models/simple_menu_model.h"
@@ -60,7 +59,7 @@ class TaskManagerView : public TableViewDelegate,
   // views::DialogDelegateView:
   views::View* GetInitiallyFocusedView() override;
   bool ExecuteWindowsCommand(int command_id) override;
-  gfx::ImageSkia GetWindowIcon() override;
+  ui::ImageModel GetWindowIcon() override;
   std::string GetWindowName() const override;
   bool Accept() override;
   bool IsDialogButtonEnabled(ui::DialogButton button) const override;

@@ -6,12 +6,12 @@
 #define COMPONENTS_VIZ_SERVICE_DISPLAY_EMBEDDER_SKIA_OUTPUT_DEVICE_BUFFER_QUEUE_H_
 
 #include <memory>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
 #include "base/cancelable_callback.h"
 #include "base/containers/flat_set.h"
-#include "base/macros.h"
 #include "components/viz/service/display_embedder/output_presenter.h"
 #include "components/viz/service/display_embedder/skia_output_device.h"
 #include "components/viz/service/viz_service_export.h"
@@ -31,7 +31,8 @@ class VIZ_SERVICE_EXPORT SkiaOutputDeviceBufferQueue : public SkiaOutputDevice {
       gpu::SharedImageRepresentationFactory* representation_factory,
       gpu::MemoryTracker* memory_tracker,
       const DidSwapBufferCompleteCallback& did_swap_buffer_complete_callback,
-      bool needs_background_image);
+      bool needs_background_image,
+      bool supports_non_backed_solid_color_images);
 
   ~SkiaOutputDeviceBufferQueue() override;
 
@@ -54,8 +55,10 @@ class VIZ_SERVICE_EXPORT SkiaOutputDeviceBufferQueue : public SkiaOutputDevice {
                gfx::BufferFormat format,
                gfx::OverlayTransform transform) override;
   SkSurface* BeginPaint(
+      bool allocate_frame_buffer,
       std::vector<GrBackendSemaphore>* end_semaphores) override;
   void EndPaint() override;
+  void ReleaseOneFrameBuffer() override;
 
   bool IsPrimaryPlaneOverlay() const override;
   void SchedulePrimaryPlane(
@@ -127,11 +130,27 @@ class VIZ_SERVICE_EXPORT SkiaOutputDeviceBufferQueue : public SkiaOutputDevice {
   // key.
   base::flat_set<OverlayData, OverlayDataComparator> overlays_;
 
+#if defined(USE_OZONE)
+  const gpu::Mailbox GetImageMailboxForColor(const SkColor& color);
+
+  // All in-flight solid color images are held in this container until a swap
+  // buffer with the identifying mailbox releases them.
+  base::flat_map<gpu::Mailbox,
+                 std::pair<SkColor, std::unique_ptr<OutputPresenter::Image>>>
+      solid_color_images_;
+
+  std::unordered_multimap<SkColor, std::unique_ptr<OutputPresenter::Image>>
+      solid_color_cache_;
+#endif
   // Set to true if no image is to be used for the primary plane of this frame.
   bool current_frame_has_no_primary_plane_ = false;
   // Whether the platform needs an occluded background image. Wayland needs it
   // for opaque accelerated widgets and event wiring.
   bool needs_background_image_ = false;
+  // Whether the platform supports non-backed solid color overlays. The Wayland
+  // backend is able to delegate these overlays without buffer backings
+  // depending on the availability of a certain protocol.
+  bool supports_non_backed_solid_color_images_ = false;
   // A 4x4 small image that will be scaled to cover an opaque region.
   std::unique_ptr<OutputPresenter::Image> background_image_;
   // Set to true if background has been scheduled in a frame.

@@ -43,9 +43,8 @@ class NetworkState;
 //   (2) Inhibit cellular scans.
 //   (3) Request installed profiles from Hermes.
 //   (4) Enable the relevant profile.
-//   (5) Request installed profiles again.
-//   (6) Uninhibit cellular scans.
-//   (7) Wait until the associated NetworkState becomes connectable.
+//   (5) Uninhibit cellular scans.
+//   (6) Wait until the associated NetworkState becomes connectable.
 //
 // Note that if this class receives multiple connection requests, it processes
 // them in FIFO order.
@@ -101,7 +100,9 @@ class COMPONENT_EXPORT(CHROMEOS_NETWORK) CellularConnectionHandler
   FRIEND_TEST_ALL_PREFIXES(CellularConnectionHandlerTest,
                            FailsRequestingInstalledProfiles);
   FRIEND_TEST_ALL_PREFIXES(CellularConnectionHandlerTest,
-                           TimeoutWaitingForConnectable);
+                           TimeoutWaitingForConnectable_ESim);
+  FRIEND_TEST_ALL_PREFIXES(CellularConnectionHandlerTest,
+                           TimeoutWaitingForConnectable_PSim);
   FRIEND_TEST_ALL_PREFIXES(CellularConnectionHandlerTest, Success);
   FRIEND_TEST_ALL_PREFIXES(CellularConnectionHandlerTest,
                            Success_AlreadyEnabled);
@@ -135,7 +136,6 @@ class COMPONENT_EXPORT(CHROMEOS_NETWORK) CellularConnectionHandler
     kInhibitingScans,
     kRequestingProfilesBeforeEnabling,
     kEnablingProfile,
-    kRequestingProfilesAfterEnabling,
     kWaitingForConnectable
   };
   friend std::ostream& operator<<(std::ostream& stream,

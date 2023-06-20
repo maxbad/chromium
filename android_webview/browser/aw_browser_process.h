@@ -17,7 +17,7 @@
 #include "components/prefs/pref_change_registrar.h"
 #include "components/prefs/pref_service.h"
 #include "components/safe_browsing/android/remote_database_manager.h"
-#include "components/safe_browsing/core/triggers/trigger_manager.h"
+#include "components/safe_browsing/content/browser/triggers/trigger_manager.h"
 #include "content/public/browser/network_service_instance.h"
 #include "net/log/net_log.h"
 #include "services/network/network_service.h"
@@ -38,6 +38,10 @@ class VisibilityMetricsLogger;
 class AwBrowserProcess {
  public:
   AwBrowserProcess(AwFeatureListCreator* aw_feature_list_creator);
+
+  AwBrowserProcess(const AwBrowserProcess&) = delete;
+  AwBrowserProcess& operator=(const AwBrowserProcess&) = delete;
+
   ~AwBrowserProcess();
 
   static AwBrowserProcess* GetInstance();
@@ -113,8 +117,6 @@ class AwBrowserProcess {
 
   std::unique_ptr<VisibilityMetricsLogger> visibility_metrics_logger_;
   std::unique_ptr<AwContentsLifecycleNotifier> aw_contents_lifecycle_notifier_;
-
-  DISALLOW_COPY_AND_ASSIGN(AwBrowserProcess);
 };
 
 }  // namespace android_webview

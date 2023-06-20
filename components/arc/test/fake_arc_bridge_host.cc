@@ -28,12 +28,15 @@
 #include "components/arc/mojom/ime.mojom.h"
 #include "components/arc/mojom/input_method_manager.mojom.h"
 #include "components/arc/mojom/intent_helper.mojom.h"
+#include "components/arc/mojom/keyboard_shortcut.mojom.h"
 #include "components/arc/mojom/keymaster.mojom.h"
 #include "components/arc/mojom/kiosk.mojom.h"
 #include "components/arc/mojom/lock_screen.mojom.h"
 #include "components/arc/mojom/media_session.mojom.h"
+#include "components/arc/mojom/memory.mojom.h"
 #include "components/arc/mojom/metrics.mojom.h"
 #include "components/arc/mojom/midis.mojom.h"
+#include "components/arc/mojom/nearby_share.mojom.h"
 #include "components/arc/mojom/net.mojom.h"
 #include "components/arc/mojom/notifications.mojom.h"
 #include "components/arc/mojom/obb_mounter.mojom.h"
@@ -54,8 +57,6 @@
 #include "components/arc/mojom/tts.mojom.h"
 #include "components/arc/mojom/usb_host.mojom.h"
 #include "components/arc/mojom/video.mojom.h"
-#include "components/arc/mojom/voice_interaction_arc_home.mojom.h"
-#include "components/arc/mojom/voice_interaction_framework.mojom.h"
 #include "components/arc/mojom/volume_mounter.mojom.h"
 #include "components/arc/mojom/wake_lock.mojom.h"
 #include "components/arc/mojom/wallpaper.mojom.h"
@@ -149,6 +150,10 @@ void FakeArcBridgeHost::OnInputMethodManagerInstanceReady(
 void FakeArcBridgeHost::OnIntentHelperInstanceReady(
     mojo::PendingRemote<mojom::IntentHelperInstance> intent_helper_remote) {}
 
+void FakeArcBridgeHost::OnKeyboardShortcutInstanceReady(
+    mojo::PendingRemote<mojom::KeyboardShortcutInstance>
+        keyboard_shortcut_remote) {}
+
 void FakeArcBridgeHost::OnKeymasterInstanceReady(
     mojo::PendingRemote<mojom::KeymasterInstance> keymaster_remote) {}
 
@@ -161,11 +166,17 @@ void FakeArcBridgeHost::OnLockScreenInstanceReady(
 void FakeArcBridgeHost::OnMediaSessionInstanceReady(
     mojo::PendingRemote<mojom::MediaSessionInstance> media_sesssion_remote) {}
 
+void FakeArcBridgeHost::OnMemoryInstanceReady(
+    mojo::PendingRemote<mojom::MemoryInstance> memory_remote) {}
+
 void FakeArcBridgeHost::OnMetricsInstanceReady(
     mojo::PendingRemote<mojom::MetricsInstance> metrics_remote) {}
 
 void FakeArcBridgeHost::OnMidisInstanceReady(
     mojo::PendingRemote<mojom::MidisInstance> midis_remote) {}
+
+void FakeArcBridgeHost::OnNearbyShareInstanceReady(
+    mojo::PendingRemote<mojom::NearbyShareInstance> nearby_share_remote) {}
 
 void FakeArcBridgeHost::OnNetInstanceReady(
     mojo::PendingRemote<mojom::NetInstance> net_remote) {}
@@ -234,13 +245,6 @@ void FakeArcBridgeHost::OnUsbHostInstanceReady(
 
 void FakeArcBridgeHost::OnVideoInstanceReady(
     mojo::PendingRemote<mojom::VideoInstance> video_remote) {}
-
-void FakeArcBridgeHost::OnVoiceInteractionArcHomeInstanceReady(
-    mojo::PendingRemote<mojom::VoiceInteractionArcHomeInstance> home_remote) {}
-
-void FakeArcBridgeHost::OnVoiceInteractionFrameworkInstanceReady(
-    mojo::PendingRemote<mojom::VoiceInteractionFrameworkInstance>
-        framework_remote) {}
 
 void FakeArcBridgeHost::OnVolumeMounterInstanceReady(
     mojo::PendingRemote<mojom::VolumeMounterInstance> volume_mounter_remote) {}

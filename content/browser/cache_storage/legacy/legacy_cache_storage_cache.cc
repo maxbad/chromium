@@ -18,7 +18,6 @@
 #include "base/containers/flat_map.h"
 #include "base/files/file_path.h"
 #include "base/guid.h"
-#include "base/macros.h"
 #include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
@@ -441,10 +440,15 @@ blink::mojom::FetchAPIResponsePtr CreateResponse(
     padding = storage::ComputeRandomResponsePadding();
   }
 
-  // Note that |has_range_requested| can be safely set to false since it only
-  // affects HTTP 206 (Partial) responses, which are blocked from cache storage.
-  // See https://fetch.spec.whatwg.org/#main-fetch for usage of
-  // |has_range_requested|.
+  bool request_include_credentials =
+      metadata.response().has_request_include_credentials()
+          ? metadata.response().request_include_credentials()
+          : true;
+
+  // While we block most partial responses from being stored, we can have
+  // partial responses for bgfetch or opaque responses.
+  bool has_range_requested = headers.contains(net::HttpRequestHeaders::kRange);
+
   return blink::mojom::FetchAPIResponse::New(
       url_list, metadata.response().status_code(),
       metadata.response().status_text(),
@@ -462,7 +466,8 @@ blink::mojom::FetchAPIResponsePtr CreateResponse(
       static_cast<net::HttpResponseInfo::ConnectionInfo>(
           metadata.response().connection_info()),
       alpn_negotiated_protocol, metadata.response().was_fetched_via_spdy(),
-      /*has_range_requested=*/false, /*auth_challenge_info=*/absl::nullopt);
+      has_range_requested, /*auth_challenge_info=*/absl::nullopt,
+      request_include_credentials);
 }
 
 int64_t CalculateSideDataPadding(
@@ -524,6 +529,9 @@ struct LegacyCacheStorageCache::QueryCacheContext {
         query_types(query_types),
         matches(std::make_unique<QueryCacheResults>()) {}
 
+  QueryCacheContext(const QueryCacheContext&) = delete;
+  QueryCacheContext& operator=(const QueryCacheContext&) = delete;
+
   ~QueryCacheContext() = default;
 
   // Input to QueryCache
@@ -538,13 +546,10 @@ struct LegacyCacheStorageCache::QueryCacheContext {
 
   // Output of QueryCache
   std::unique_ptr<std::vector<QueryCacheResult>> matches;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(QueryCacheContext);
 };
 
 struct LegacyCacheStorageCache::BatchInfo {
-  int remaining_operations = 0;
+  size_t remaining_operations = 0;
   VerboseErrorCallback callback;
   absl::optional<std::string> message;
   const int64_t trace_id = 0;
@@ -693,7 +698,7 @@ void LegacyCacheStorageCache::WriteSideData(ErrorCallback callback,
   // GetUsageAndQuota is called before entering a scheduled operation since it
   // can call Size, another scheduled operation.
   quota_manager_proxy_->GetUsageAndQuota(
-      storage_key_.origin(), blink::mojom::StorageType::kTemporary,
+      storage_key_, blink::mojom::StorageType::kTemporary,
       scheduler_task_runner_,
       base::BindOnce(&LegacyCacheStorageCache::WriteSideDataDidGetQuota,
                      weak_ptr_factory_.GetWeakPtr(), std::move(callback), url,
@@ -781,7 +786,7 @@ void LegacyCacheStorageCache::BatchOperation(
     // Put runs, the cache might already be full and the usage will be larger
     // than it's supposed to be.
     quota_manager_proxy_->GetUsageAndQuota(
-        storage_key_.origin(), blink::mojom::StorageType::kTemporary,
+        storage_key_, blink::mojom::StorageType::kTemporary,
         scheduler_task_runner_,
         base::BindOnce(&LegacyCacheStorageCache::BatchDidGetUsageAndQuota,
                        weak_ptr_factory_.GetWeakPtr(), std::move(operations),
@@ -890,6 +895,7 @@ void LegacyCacheStorageCache::BatchDidOneOperation(BatchInfo& batch_status,
   if (!batch_status.callback)
     return;
 
+  DCHECK_GT(batch_status.remaining_operations, 0u);
   batch_status.remaining_operations--;
 
   if (error != CacheStorageError::kSuccess) {
@@ -996,9 +1002,7 @@ size_t LegacyCacheStorageCache::EstimatedStructSize(
   return size;
 }
 
-LegacyCacheStorageCache::~LegacyCacheStorageCache() {
-  quota_manager_proxy_->NotifyOriginNoLongerInUse(storage_key_.origin());
-}
+LegacyCacheStorageCache::~LegacyCacheStorageCache() = default;
 
 void LegacyCacheStorageCache::SetSchedulerForTesting(
     std::unique_ptr<CacheStorageScheduler> scheduler) {
@@ -1035,7 +1039,7 @@ LegacyCacheStorageCache::LegacyCacheStorageCache(
               owner,
               std::move(blob_storage_context))),
       memory_only_(path.empty()) {
-  DCHECK(!storage_key_.opaque());
+  DCHECK(!storage_key_.origin().opaque());
   DCHECK(quota_manager_proxy_.get());
 
   if (cache_size_ != CacheStorage::kSizeUnknown &&
@@ -1043,8 +1047,6 @@ LegacyCacheStorageCache::LegacyCacheStorageCache(
     // The size of this cache has already been reported to the QuotaManager.
     last_reported_size_ = cache_size_ + cache_padding_;
   }
-
-  quota_manager_proxy_->NotifyOriginInUse(storage_key_.origin());
 }
 
 void LegacyCacheStorageCache::QueryCache(
@@ -1867,7 +1869,7 @@ void LegacyCacheStorageCache::PutDidCreateEntry(
   put_context->cache_entry.reset(result.ReleaseEntry());
 
   if (rv != net::OK) {
-    quota_manager_proxy_->NotifyWriteFailed(storage_key_.origin());
+    quota_manager_proxy_->NotifyWriteFailed(storage_key_);
     PutComplete(std::move(put_context), CacheStorageError::kErrorExists);
     return;
   }
@@ -1885,7 +1887,13 @@ void LegacyCacheStorageCache::PutDidCreateEntry(
   }
 
   proto::CacheResponse* response_metadata = metadata.mutable_response();
-  DCHECK_NE(put_context->response->status_code, net::HTTP_PARTIAL_CONTENT);
+  if (owner_ != storage::mojom::CacheStorageOwner::kBackgroundFetch &&
+      put_context->response->response_type !=
+          network::mojom::FetchResponseType::kOpaque &&
+      put_context->response->response_type !=
+          network::mojom::FetchResponseType::kOpaqueRedirect) {
+    DCHECK_NE(put_context->response->status_code, net::HTTP_PARTIAL_CONTENT);
+  }
   response_metadata->set_status_code(put_context->response->status_code);
   response_metadata->set_status_text(put_context->response->status_text);
   response_metadata->set_response_type(FetchResponseTypeToProtoResponseType(
@@ -1929,6 +1937,8 @@ void LegacyCacheStorageCache::PutDidCreateEntry(
         storage_key_, response_metadata, put_context->side_data_blob_size);
   }
   response_metadata->set_side_data_padding(side_data_padding);
+  response_metadata->set_request_include_credentials(
+      put_context->response->request_include_credentials);
 
   // Get a temporary copy of the entry pointer before passing it in base::Bind.
   disk_cache::Entry* temp_entry_ptr = put_context->cache_entry.get();
@@ -1953,7 +1963,7 @@ void LegacyCacheStorageCache::PutDidWriteHeaders(
                          TRACE_EVENT_FLAG_FLOW_IN | TRACE_EVENT_FLAG_FLOW_OUT);
 
   if (rv != expected_bytes) {
-    quota_manager_proxy_->NotifyWriteFailed(storage_key_.origin());
+    quota_manager_proxy_->NotifyWriteFailed(storage_key_);
     PutComplete(
         std::move(put_context),
         MakeErrorStorage(ErrorStorageType::kPutDidWriteHeadersWrongBytes));
@@ -2188,9 +2198,9 @@ void LegacyCacheStorageCache::UpdateCacheSizeGotSize(
   last_reported_size_ = PaddedCacheSize();
 
   quota_manager_proxy_->NotifyStorageModified(
-      CacheStorageQuotaClient::GetClientTypeFromOwner(owner_),
-      storage_key_.origin(), blink::mojom::StorageType::kTemporary, size_delta,
-      base::Time::Now(), scheduler_task_runner_,
+      CacheStorageQuotaClient::GetClientTypeFromOwner(owner_), storage_key_,
+      blink::mojom::StorageType::kTemporary, size_delta, base::Time::Now(),
+      scheduler_task_runner_,
       base::BindOnce(
           &LegacyCacheStorageCache::UpdateCacheSizeNotifiedStorageModified,
           weak_ptr_factory_.GetWeakPtr(), std::move(callback)));
@@ -2524,7 +2534,7 @@ void LegacyCacheStorageCache::InitBackend() {
           base::BindOnce(
               &LegacyCacheStorageCache::InitDidCreateBackend,
               weak_ptr_factory_.GetWeakPtr(),
-              scheduler_->WrapCallbackToRunNext(id, base::DoNothing::Once()))));
+              scheduler_->WrapCallbackToRunNext(id, base::BindOnce([] {})))));
 }
 
 void LegacyCacheStorageCache::InitDidCreateBackend(

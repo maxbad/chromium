@@ -11,7 +11,6 @@
 
 #include "base/containers/circular_deque.h"
 #include "base/containers/flat_set.h"
-#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
@@ -60,6 +59,9 @@ class CONTENT_EXPORT VideoCaptureManager
       std::unique_ptr<VideoCaptureProvider> video_capture_provider,
       base::RepeatingCallback<void(const std::string&)> emit_log_message_cb,
       ScreenlockMonitor* monitor = nullptr);
+
+  VideoCaptureManager(const VideoCaptureManager&) = delete;
+  VideoCaptureManager& operator=(const VideoCaptureManager&) = delete;
 
   // AddVideoCaptureObserver() can be called only before any devices are opened.
   // RemoveAllVideoCaptureObservers() can be called only after all devices
@@ -191,6 +193,13 @@ class CONTENT_EXPORT VideoCaptureManager
   void OnDeviceLaunchAborted() override;
   void OnDeviceConnectionLost(VideoCaptureController* controller) override;
 
+  bool is_idle_close_timer_running_for_testing() const {
+    return idle_close_timer_.IsRunning();
+  }
+  void set_idle_close_timeout_for_testing(base::TimeDelta timeout) {
+    idle_close_timeout_ = timeout;
+  }
+
  private:
   class CaptureDeviceStartRequest;
 
@@ -258,10 +267,10 @@ class CONTENT_EXPORT VideoCaptureManager
   void MaybePostDesktopCaptureWindowId(
       const media::VideoCaptureSessionId& session_id);
 
-#if defined(OS_ANDROID)
   void ReleaseDevices();
   void ResumeDevices();
 
+#if defined(OS_ANDROID)
   std::unique_ptr<base::android::ApplicationStatusListener>
       app_status_listener_;
   bool application_state_has_running_activities_;
@@ -316,7 +325,10 @@ class CONTENT_EXPORT VideoCaptureManager
   std::map<media::VideoCaptureSessionId, gfx::NativeViewId>
       notification_window_ids_;
 
-  DISALLOW_COPY_AND_ASSIGN(VideoCaptureManager);
+  // Closes video device capture sessions after a timeout. Idle timeout value
+  // chosen based on UMA metrics. See https://crbug.com/1163105#c28
+  base::TimeDelta idle_close_timeout_ = base::Seconds(15);
+  base::OneShotTimer idle_close_timer_;
 };
 
 }  // namespace content

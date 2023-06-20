@@ -35,11 +35,14 @@
 #include <utility>
 
 #include "base/dcheck_is_on.h"
+#include "base/gtest_prod_util.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/timer/elapsed_timer.h"
 #include "services/metrics/public/cpp/ukm_source_id.h"
 #include "services/network/public/mojom/referrer_policy.mojom-blink-forward.h"
+#include "services/network/public/mojom/restricted_cookie_manager.mojom-blink-forward.h"
 #include "services/network/public/mojom/web_sandbox_flags.mojom-blink-forward.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/blink/public/common/metrics/document_update_reason.h"
 #include "third_party/blink/public/mojom/federated_learning/floc.mojom-blink-forward.h"
 #include "third_party/blink/public/mojom/frame/color_scheme.mojom-blink-forward.h"
@@ -63,7 +66,8 @@
 #include "third_party/blink/renderer/core/dom/tree_scope.h"
 #include "third_party/blink/renderer/core/dom/user_action_element_set.h"
 #include "third_party/blink/renderer/core/editing/forward.h"
-#include "third_party/blink/renderer/core/frame/fragment_directive.h"
+#include "third_party/blink/renderer/core/fragment_directive/fragment_directive.h"
+#include "third_party/blink/renderer/core/html/forms/listed_element.h"
 #include "third_party/blink/renderer/core/html/parser/parser_synchronization_policy.h"
 #include "third_party/blink/renderer/core/loader/font_preload_manager.h"
 #include "third_party/blink/renderer/platform/heap_observer_set.h"
@@ -73,6 +77,7 @@
 #include "third_party/blink/renderer/platform/timer.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
 #include "third_party/blink/renderer/platform/wtf/casting.h"
+#include "third_party/blink/renderer/platform/wtf/gc_plugin_ignore.h"
 #include "third_party/blink/renderer/platform/wtf/hash_set.h"
 
 namespace base {
@@ -152,6 +157,7 @@ class HTMLElement;
 class HTMLFrameOwnerElement;
 class HTMLHeadElement;
 class HTMLLinkElement;
+class HTMLMetaElement;
 class HTMLPopupElement;
 class HasMatchedCacheScope;
 class HitTestRequest;
@@ -162,6 +168,7 @@ class IntersectionObserverController;
 class LayoutView;
 class LazyLoadImageObserver;
 class LiveNodeListBase;
+class ListedElement;
 class LocalDOMWindow;
 class LocalFrame;
 class LocalFrameView;
@@ -207,6 +214,7 @@ class TreeWalker;
 class TrustedHTML;
 class V8NodeFilter;
 class V8UnionElementCreationOptionsOrString;
+class V8UnionStringOrTrustedHTML;
 class ViewportData;
 class VisitedLinkState;
 class WebMouseEvent;
@@ -242,8 +250,6 @@ enum DocumentClass {
   kSVGDocumentClass = 1 << 5,
   kXMLDocumentClass = 1 << 6,
 };
-
-enum ShadowCascadeOrder { kShadowCascadeNone, kShadowCascade };
 
 using DocumentClassFlags = unsigned char;
 
@@ -479,6 +485,11 @@ class CORE_EXPORT Document : public ContainerNode,
   HTMLCollection* WindowNamedItems(const AtomicString& name);
   DocumentNameCollection* DocumentNamedItems(const AtomicString& name);
   HTMLCollection* DocumentAllNamedItems(const AtomicString& name);
+
+  // The unassociated listed elements are listed elements that are not
+  // associated to a <form> element.
+  const ListedElement::List& UnassociatedListedElements() const;
+  void MarkUnassociatedListedElementsDirty();
 
   // "defaultView" attribute defined in HTML spec.
   DOMWindow* defaultView() const;
@@ -1041,6 +1052,10 @@ class CORE_EXPORT Document : public ContainerNode,
   void setCookie(const String&, ExceptionState&);
   bool CookiesEnabled() const;
 
+  void SetCookieManager(
+      mojo::PendingRemote<network::mojom::blink::RestrictedCookieManager>
+          cookie_manager);
+
   const AtomicString& referrer() const;
 
   String domain() const;
@@ -1144,8 +1159,14 @@ class CORE_EXPORT Document : public ContainerNode,
   // See "core/editing/commands/document_exec_command.cc" for implementations.
   bool execCommand(const String& command,
                    bool show_ui,
+                   const V8UnionStringOrTrustedHTML* value,
+                   ExceptionState&);
+
+  bool execCommand(const String& command,
+                   bool show_ui,
                    const String& value,
                    ExceptionState&);
+
   bool IsRunningExecCommand() const { return is_running_exec_command_; }
   bool queryCommandEnabled(const String& command, ExceptionState&);
   bool queryCommandIndeterm(const String& command, ExceptionState&);
@@ -1194,7 +1215,8 @@ class CORE_EXPORT Document : public ContainerNode,
 
   Vector<IconURL> IconURLs(int icon_types_mask);
 
-  absl::optional<Color> ThemeColor() const;
+  void UpdateThemeColorCache();
+  absl::optional<Color> ThemeColor();
 
   // Returns the HTMLLinkElement currently in use for the Web Manifest.
   // Returns null if there is no such element.
@@ -1333,10 +1355,14 @@ class CORE_EXPORT Document : public ContainerNode,
 
   const DocumentTiming& GetTiming() const { return document_timing_; }
 
+  bool ShouldMarkFontPerformance() const {
+    return !IsInitialEmptyDocument() && !IsXMLDocument();
+  }
+
   int RequestAnimationFrame(FrameCallback*);
   void CancelAnimationFrame(int id);
-  void ServiceScriptedAnimations(
-      base::TimeTicks monotonic_animation_start_time);
+  void ServiceScriptedAnimations(base::TimeTicks monotonic_animation_start_time,
+                                 bool can_throttle = false);
 
   int RequestIdleCallback(IdleTask*, const IdleRequestOptions*);
   void CancelIdleCallback(int id);
@@ -1404,6 +1430,9 @@ class CORE_EXPORT Document : public ContainerNode,
   // This hides all visible popups up to, but not including,
   // |endpoint|. If |endpoint| is nullptr, all popups are hidden.
   void HideAllPopupsUntil(const HTMLPopupElement* endpoint);
+  // This hides the provided popup, if it is showing. This will also
+  // hide all popups above |popup| in the popup stack.
+  void HidePopupIfShowing(const HTMLPopupElement* popup);
 
   // A non-null template_document_host_ implies that |this| was created by
   // EnsureTemplateDocument().
@@ -1467,14 +1496,9 @@ class CORE_EXPORT Document : public ContainerNode,
   SnapCoordinator& GetSnapCoordinator();
   void PerformScrollSnappingTasks();
 
-  ShadowCascadeOrder GetShadowCascadeOrder() const {
-    return shadow_cascade_order_;
-  }
-  void SetShadowCascadeOrder(ShadowCascadeOrder);
+  void SetContainsShadowRoot() { may_contain_shadow_roots_ = true; }
 
-  bool ContainsShadowTree() const {
-    return shadow_cascade_order_ == ShadowCascadeOrder::kShadowCascade;
-  }
+  bool MayContainShadowRoots() const { return may_contain_shadow_roots_; }
 
   RootScrollerController& GetRootScrollerController() const {
     DCHECK(root_scroller_controller_);
@@ -1531,8 +1555,10 @@ class CORE_EXPORT Document : public ContainerNode,
   bool IsSlotAssignmentRecalcForbidden() {
     return slot_assignment_recalc_forbidden_recursion_depth_ > 0;
   }
-#else
-  bool IsSlotAssignmentRecalcForbidden() { return false; }
+#endif
+
+#if EXPENSIVE_DCHECKS_ARE_ON()
+  void AssertLayoutTreeUpdatedAfterLayout();
 #endif
 
   unsigned& FlatTreeTraversalForbiddenRecursionDepth() {
@@ -1566,7 +1592,7 @@ class CORE_EXPORT Document : public ContainerNode,
 
   // Deferred compositor commits are disallowed by default, and are only allowed
   // for same-origin navigations to an html document fetched with http.
-  bool DeferredCompositorCommitIsAllowed() {
+  bool DeferredCompositorCommitIsAllowed() const {
     return deferred_compositor_commit_is_allowed_;
   }
   void SetDeferredCompositorCommitIsAllowed(bool new_value) {
@@ -1579,6 +1605,9 @@ class CORE_EXPORT Document : public ContainerNode,
   bool IsInWebAppScope() const;
 
   ComputedAccessibleNode* GetOrCreateComputedAccessibleNode(AXID ax_id);
+
+  // Return true if any accessibility contexts have been enabled.
+  bool IsAccessibilityEnabled() const { return !ax_contexts_.IsEmpty(); }
 
   bool HaveRenderBlockingResourcesLoaded() const;
 
@@ -1602,6 +1631,7 @@ class CORE_EXPORT Document : public ContainerNode,
 
   // Use counter related functions.
   void CountUse(mojom::WebFeature feature) final;
+  void CountDeprecation(mojom::WebFeature feature) final;
   void CountUse(mojom::WebFeature feature) const;
   void CountProperty(CSSPropertyID property_id) const;
   void CountAnimatedProperty(CSSPropertyID property_id) const;
@@ -1639,11 +1669,6 @@ class CORE_EXPORT Document : public ContainerNode,
     return !pending_javascript_urls_.IsEmpty();
   }
 
-  String GetFragmentDirective() const { return fragment_directive_string_; }
-  bool UseCountFragmentDirective() const {
-    return use_count_fragment_directive_;
-  }
-
   void ApplyScrollRestorationLogic();
 
   void MarkHasFindInPageRequest();
@@ -1668,9 +1693,6 @@ class CORE_EXPORT Document : public ContainerNode,
 
   void IncrementAsyncScriptCount() { async_script_count_++; }
   void RecordAsyncScriptCount();
-
-  void MarkFirstPaint();
-  void MaybeExecuteDelayedAsyncScripts();
 
   enum class DeclarativeShadowRootAllowState : uint8_t {
     kNotSet,
@@ -1733,7 +1755,21 @@ class CORE_EXPORT Document : public ContainerNode,
                            BeforeMatchExpandedHiddenMatchableUkm);
   FRIEND_TEST_ALL_PREFIXES(TextFinderSimTest,
                            BeforeMatchExpandedHiddenMatchableUkmNoHandler);
-  class NetworkStateObserver;
+
+  // Listed elements that are not associated to a <form> element.
+  class UnassociatedListedElementsList {
+    DISALLOW_NEW();
+
+   public:
+    void MarkDirty();
+    const ListedElement::List& Get(const Document& owner);
+    void Trace(Visitor*) const;
+
+   private:
+    ListedElement::List list_;
+    // Set this flag if the stored unassociated listed elements were changed.
+    bool dirty_ = false;
+  };
 
   friend class AXContext;
   void AddAXContext(AXContext*);
@@ -1756,13 +1792,22 @@ class CORE_EXPORT Document : public ContainerNode,
   void ScheduleLayoutTreeUpdate();
 
   bool NeedsFullLayoutTreeUpdate() const;
+  bool ParentFrameNeedsLayoutTreeUpdate() const;
+
+  // See UpdateStyleAndLayoutTreeForThisDocument for an explanation of
+  // the "ForThisDocument" suffix.
+  //
+  // These functions do not take into account dirtiness of parent frames:
+  // they are assumed to be clean. If it isn't possible to guarantee
+  // clean parent frames, use Needs[Full]LayoutTreeUpdate() instead.
+  bool NeedsLayoutTreeUpdateForThisDocument() const;
+  bool NeedsFullLayoutTreeUpdateForThisDocument() const;
 
   void UpdateUseShadowTreesIfNeeded();
   void EvaluateMediaQueryListIfNeeded();
 
   void UpdateStyleInvalidationIfNeeded();
   void UpdateStyle();
-  void NotifyLayoutTreeOfSubtreeChanges();
   bool ChildrenCanHaveStyle() const final;
 
   // Objects and embeds depend on "being rendered" for delaying the load event.
@@ -1790,8 +1835,6 @@ class CORE_EXPORT Document : public ContainerNode,
   bool ChildTypeAllowed(NodeType) const final;
   Node* Clone(Document&, CloneChildrenFlag) const override;
   void CloneDataFromDocument(const Document&);
-
-  ShadowCascadeOrder shadow_cascade_order_ = kShadowCascadeNone;
 
   void UpdateTitle(const String&);
   void DispatchDidReceiveTitle();
@@ -1875,7 +1918,7 @@ class CORE_EXPORT Document : public ContainerNode,
   Vector<base::OnceClosure> will_dispatch_prerenderingchange_callbacks_;
 
   // The callback list for post-prerendering activation step.
-  // https://jeremyroman.github.io/alternate-loading-modes/#document-post-prerendering-activation-steps-list
+  // https://wicg.github.io/nav-speculation/prerendering.html#document-post-prerendering-activation-steps-list
   Vector<base::OnceClosure> post_prerendering_activation_callbacks_;
 
   bool evaluate_media_queries_on_style_recalc_;
@@ -2002,6 +2045,10 @@ class CORE_EXPORT Document : public ContainerNode,
   bool have_explicitly_disabled_dns_prefetch_;
   bool contains_plugins_;
 
+  // Set to true whenever shadow root is attached to document. Does not
+  // get reset if all roots are removed.
+  bool may_contain_shadow_roots_ = false;
+
   // https://html.spec.whatwg.org/C/dynamic-markup-insertion.html#ignore-destructive-writes-counter
   unsigned ignore_destructive_write_count_;
   // https://html.spec.whatwg.org/C/dynamic-markup-insertion.html#throw-on-dynamic-markup-insertion-counter
@@ -2066,14 +2113,14 @@ class CORE_EXPORT Document : public ContainerNode,
   // the stack and cleared upon leaving its allocated scope. Hence it
   // is acceptable not to trace it -- should a conservative GC occur,
   // the cache object's references will be traced by a stack walk.
-  GC_PLUGIN_IGNORE("461878")
+  GC_PLUGIN_IGNORE("https://crbug.com/461878")
   NthIndexCache* nth_index_cache_ = nullptr;
 
   // This is an untraced pointer to the cache-scoped object that is first
   // allocated on the stack. It is set upon the first object being allocated
   // on the stack, and cleared upon leaving its allocated scope. The object's
   // references will be traced by a stack walk.
-  GC_PLUGIN_IGNORE("669058")
+  GC_PLUGIN_IGNORE("https://crbug.com/669058")
   HasMatchedCacheScope* has_matched_cache_scope_ = nullptr;
 
   DocumentClassFlags document_classes_;
@@ -2084,7 +2131,7 @@ class CORE_EXPORT Document : public ContainerNode,
   bool is_srcdoc_document_;
   bool is_mobile_document_;
 
-  LayoutView* layout_view_;
+  Member<LayoutView> layout_view_;
 
   // The last element in |top_layer_elements_| is topmost in the top layer
   // stack and is thus the one that will be visually on top.
@@ -2152,7 +2199,7 @@ class CORE_EXPORT Document : public ContainerNode,
 
   Member<PropertyRegistry> property_registry_;
 
-  Member<NetworkStateObserver> network_state_observer_;
+  UnassociatedListedElementsList unassociated_listed_elements_;
 
   // |ukm_recorder_| and |source_id_| will allow objects that are part of
   // the document to record UKM.
@@ -2240,10 +2287,7 @@ class CORE_EXPORT Document : public ContainerNode,
 
   bool is_for_markup_sanitization_ = false;
 
-  String fragment_directive_string_;
   Member<FragmentDirective> fragment_directive_;
-
-  bool use_count_fragment_directive_ = false;
 
   HeapHashMap<WeakMember<Element>, Member<ExplicitlySetAttrElementsMap>>
       element_explicitly_set_attr_elements_map_;
@@ -2272,7 +2316,6 @@ class CORE_EXPORT Document : public ContainerNode,
   Member<FontPreloadManager> font_preload_manager_;
 
   int async_script_count_ = 0;
-  bool first_paint_recorded_ = false;
 
   DeclarativeShadowRootAllowState declarative_shadow_root_allow_state_ =
       DeclarativeShadowRootAllowState::kNotSet;
@@ -2280,6 +2323,10 @@ class CORE_EXPORT Document : public ContainerNode,
   WeakMember<Node> find_in_page_active_match_node_;
 
   Member<DocumentData> data_;
+
+  // List of meta[name=theme-color] elements cached used when getting theme
+  // color.
+  HeapVector<Member<HTMLMetaElement>> meta_theme_color_elements_;
 
   // If you want to add new data members to blink::Document, please reconsider
   // if the members really should be in blink::Document.  document.h is a very
@@ -2327,7 +2374,7 @@ struct DowncastTraits<Document> {
 
 #ifndef NDEBUG
 // Outside the blink namespace for ease of invocation from gdb.
-CORE_EXPORT void showLiveDocumentInstances();
+CORE_EXPORT void ShowLiveDocumentInstances();
 #endif
 
 #endif  // THIRD_PARTY_BLINK_RENDERER_CORE_DOM_DOCUMENT_H_

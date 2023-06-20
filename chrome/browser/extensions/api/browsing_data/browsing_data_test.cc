@@ -30,6 +30,7 @@
 #include "mojo/public/cpp/bindings/callback_helpers.h"
 #include "net/cookies/canonical_cookie.h"
 #include "net/cookies/cookie_inclusion_status.h"
+#include "services/network/public/mojom/cookie_manager.mojom.h"
 #include "url/gurl.h"
 
 using extension_function_test_utils::RunFunctionAndReturnSingleResult;
@@ -108,11 +109,12 @@ IN_PROC_BROWSER_TEST_F(ExtensionBrowsingDataTest, Syncing) {
   sync_service->GetUserSettings()->SetFirstSetupComplete(
       syncer::SyncFirstSetupCompleteSource::BASIC_FLOW);
 
-  ASSERT_EQ(sync_ui_util::SYNCED, sync_ui_util::GetStatus(profile));
+  ASSERT_EQ(SyncStatusMessageType::kSynced, GetSyncStatusMessageType(profile));
   // Clear browsing data.
   auto function = base::MakeRefCounted<BrowsingDataRemoveFunction>();
-  EXPECT_EQ(NULL, RunFunctionAndReturnSingleResult(
-                      function.get(), kRemoveEverythingArguments, browser()));
+  EXPECT_EQ(nullptr,
+            RunFunctionAndReturnSingleResult(
+                function.get(), kRemoveEverythingArguments, browser()));
   // Check that the Sync token was not revoked.
   EXPECT_TRUE(identity_manager->HasAccountWithRefreshToken(
       primary_account_info.account_id));
@@ -143,11 +145,12 @@ IN_PROC_BROWSER_TEST_F(ExtensionBrowsingDataTest, SyncError) {
               CREDENTIALS_REJECTED_BY_SERVER));
 
   // Sync is not running.
-  ASSERT_NE(sync_ui_util::SYNCED, sync_ui_util::GetStatus(profile));
+  ASSERT_NE(SyncStatusMessageType::kSynced, GetSyncStatusMessageType(profile));
   // Clear browsing data.
   auto function = base::MakeRefCounted<BrowsingDataRemoveFunction>();
-  EXPECT_EQ(NULL, RunFunctionAndReturnSingleResult(
-                      function.get(), kRemoveEverythingArguments, browser()));
+  EXPECT_EQ(nullptr,
+            RunFunctionAndReturnSingleResult(
+                function.get(), kRemoveEverythingArguments, browser()));
   // Check that the account was not removed and Sync was paused.
   EXPECT_TRUE(
       identity_manager->HasAccountWithRefreshToken(account_info.account_id));
@@ -171,8 +174,9 @@ IN_PROC_BROWSER_TEST_F(ExtensionBrowsingDataTest, NotSyncing) {
       signin::MakeAccountAvailable(identity_manager, kAccountEmail);
   // Clear browsing data.
   auto function = base::MakeRefCounted<BrowsingDataRemoveFunction>();
-  EXPECT_EQ(NULL, RunFunctionAndReturnSingleResult(
-                      function.get(), kRemoveEverythingArguments, browser()));
+  EXPECT_EQ(nullptr,
+            RunFunctionAndReturnSingleResult(
+                function.get(), kRemoveEverythingArguments, browser()));
   // Check that the account was removed.
   EXPECT_FALSE(
       identity_manager->HasAccountWithRefreshToken(account_info.account_id));

@@ -41,6 +41,10 @@ class AXObjectCacheImpl;
 class AXImageMapLink final : public AXNodeObject {
  public:
   explicit AXImageMapLink(HTMLAreaElement*, AXObjectCacheImpl&);
+
+  AXImageMapLink(const AXImageMapLink&) = delete;
+  AXImageMapLink& operator=(const AXImageMapLink&) = delete;
+
   ~AXImageMapLink() override;
   void Trace(Visitor*) const override;
 
@@ -67,13 +71,11 @@ class AXImageMapLink final : public AXNodeObject {
   static AXObject* GetAXObjectForImageMap(AXObjectCacheImpl& cache, Node* area);
   void GetRelativeBounds(AXObject** out_container,
                          FloatRect& out_bounds_in_container,
-                         SkMatrix44& out_container_transform,
+                         skia::Matrix44& out_container_transform,
                          bool* clips_children = nullptr) const override;
 
  private:
   bool IsImageMapLink() const override;
-
-  DISALLOW_COPY_AND_ASSIGN(AXImageMapLink);
 };
 
 template <>

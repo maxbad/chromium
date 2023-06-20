@@ -21,8 +21,11 @@
 #include "components/update_client/update_client_errors.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 
-namespace android_webview {
+namespace base {
+class TimeTicks;
+}
 
+namespace android_webview {
 using RegisterComponentsCallback =
     base::RepeatingCallback<bool(const update_client::CrxComponent&)>;
 
@@ -34,13 +37,14 @@ class AwComponentUpdateService {
  public:
   static AwComponentUpdateService* GetInstance();
 
-  // Callback used for updating components, with an int that represents how many
-  // components were actually updated.
+  // Callback used for updating components, with an int that represents how
+  // many components were actually updated.
   using UpdateCallback = base::OnceCallback<void(int)>;
 
-  void StartComponentUpdateService(UpdateCallback finished_callback);
+  void StartComponentUpdateService(UpdateCallback finished_callback,
+                                   bool on_demand_update);
   bool RegisterComponent(const update_client::CrxComponent& component);
-  void CheckForUpdates(UpdateCallback on_finished);
+  void CheckForUpdates(UpdateCallback on_finished, bool on_demand_update);
 
   void IncrementComponentsUpdatedCount();
 
@@ -68,8 +72,8 @@ class AwComponentUpdateService {
       const std::string& id) const;
   std::vector<absl::optional<update_client::CrxComponent>> GetCrxComponents(
       const std::vector<std::string>& ids);
-  void ScheduleUpdatesOfRegisteredComponents(
-      UpdateCallback on_finished_updates);
+  void ScheduleUpdatesOfRegisteredComponents(UpdateCallback on_finished_updates,
+                                             bool on_demand_update);
 
   // Virtual for testing.
   virtual void RegisterComponents(RegisterComponentsCallback register_callback,
@@ -80,10 +84,11 @@ class AwComponentUpdateService {
   // A collection of every registered component.
   base::flat_map<std::string, update_client::CrxComponent> components_;
 
-  // Maintains the order in which components have been registered. The position
-  // of a component id in this sequence indicates the priority of the component.
-  // The sooner the component gets registered, the higher its priority, and
-  // the closer this component is to the beginning of the vector.
+  // Maintains the order in which components have been registered. The
+  // position of a component id in this sequence indicates the priority of the
+  // component. The sooner the component gets registered, the higher its
+  // priority, and the closer this component is to the beginning of the
+  // vector.
   std::vector<std::string> components_order_;
 
   void RecordComponentsUpdated(UpdateCallback on_finished,

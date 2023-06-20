@@ -101,6 +101,13 @@ NavigatorManagedData::GetManagedConfigurationService() {
 
 void NavigatorManagedData::OnServiceConnectionError() {
   device_api_service_.reset();
+
+  // We should reset managed configuration service only it actually got
+  // disconnected.
+  if (managed_configuration_service_.is_bound() &&
+      !managed_configuration_service_.is_connected()) {
+    managed_configuration_service_.reset();
+  }
   // Resolve all pending promises with a failure.
   for (ScriptPromiseResolver* resolver : pending_promises_) {
     resolver->Reject(
@@ -116,6 +123,9 @@ ScriptPromise NavigatorManagedData::getManagedConfiguration(
   pending_promises_.insert(resolver);
 
   ScriptPromise promise = resolver->Promise();
+  if (!GetExecutionContext()) {
+    return promise;
+  }
   GetManagedConfigurationService()->GetManagedConfiguration(
       keys, WTF::Bind(&NavigatorManagedData::OnConfigurationReceived,
                       WrapWeakPersistent(this), WrapPersistent(resolver)));
@@ -127,6 +137,9 @@ ScriptPromise NavigatorManagedData::getDirectoryId(ScriptState* script_state) {
   pending_promises_.insert(resolver);
 
   ScriptPromise promise = resolver->Promise();
+  if (!GetExecutionContext()) {
+    return promise;
+  }
   GetService()->GetDirectoryId(WTF::Bind(
       &NavigatorManagedData::OnAttributeReceived, WrapWeakPersistent(this),
       WrapPersistent(script_state), WrapPersistent(resolver)));
@@ -138,6 +151,9 @@ ScriptPromise NavigatorManagedData::getHostname(ScriptState* script_state) {
   pending_promises_.insert(resolver);
 
   ScriptPromise promise = resolver->Promise();
+  if (!GetExecutionContext()) {
+    return promise;
+  }
   GetService()->GetHostname(WTF::Bind(
       &NavigatorManagedData::OnAttributeReceived, WrapWeakPersistent(this),
       WrapPersistent(script_state), WrapPersistent(resolver)));
@@ -149,6 +165,9 @@ ScriptPromise NavigatorManagedData::getSerialNumber(ScriptState* script_state) {
   pending_promises_.insert(resolver);
 
   ScriptPromise promise = resolver->Promise();
+  if (!GetExecutionContext()) {
+    return promise;
+  }
   GetService()->GetSerialNumber(WTF::Bind(
       &NavigatorManagedData::OnAttributeReceived, WrapWeakPersistent(this),
       WrapPersistent(script_state), WrapPersistent(resolver)));
@@ -161,6 +180,9 @@ ScriptPromise NavigatorManagedData::getAnnotatedAssetId(
   pending_promises_.insert(resolver);
 
   ScriptPromise promise = resolver->Promise();
+  if (!GetExecutionContext()) {
+    return promise;
+  }
   GetService()->GetAnnotatedAssetId(WTF::Bind(
       &NavigatorManagedData::OnAttributeReceived, WrapWeakPersistent(this),
       WrapPersistent(script_state), WrapPersistent(resolver)));
@@ -173,6 +195,9 @@ ScriptPromise NavigatorManagedData::getAnnotatedLocation(
   pending_promises_.insert(resolver);
 
   ScriptPromise promise = resolver->Promise();
+  if (!GetExecutionContext()) {
+    return promise;
+  }
   GetService()->GetAnnotatedLocation(WTF::Bind(
       &NavigatorManagedData::OnAttributeReceived, WrapWeakPersistent(this),
       WrapPersistent(script_state), WrapPersistent(resolver)));
@@ -229,6 +254,10 @@ void NavigatorManagedData::OnConfigurationChanged() {
 void NavigatorManagedData::AddedEventListener(
     const AtomicString& event_type,
     RegisteredEventListener& registered_listener) {
+  if (!GetExecutionContext()) {
+    return;
+  }
+
   EventTargetWithInlineData::AddedEventListener(event_type,
                                                 registered_listener);
   if (event_type == event_type_names::kManagedconfigurationchange) {

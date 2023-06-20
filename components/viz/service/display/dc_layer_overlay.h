@@ -9,13 +9,13 @@
 
 #include "base/containers/flat_map.h"
 #include "base/memory/ref_counted.h"
-#include "base/single_thread_task_runner.h"
+#include "base/task/single_thread_task_runner.h"
 #include "components/viz/common/quads/aggregated_render_pass.h"
 #include "components/viz/service/display/aggregated_frame.h"
 #include "components/viz/service/viz_service_export.h"
 #include "gpu/command_buffer/common/mailbox.h"
+#include "skia/ext/skia_matrix_44.h"
 #include "third_party/skia/include/core/SkColor.h"
-#include "third_party/skia/include/core/SkMatrix44.h"
 #include "ui/gfx/geometry/rect_f.h"
 #include "ui/gfx/hdr_metadata.h"
 #include "ui/gfx/video_types.h"
@@ -85,6 +85,10 @@ class VIZ_SERVICE_EXPORT DCLayerOverlayProcessor
       const DebugRendererSettings* debug_settings,
       int allowed_yuv_overlay_count,
       bool skip_initialization_for_testing = false);
+
+  DCLayerOverlayProcessor(const DCLayerOverlayProcessor&) = delete;
+  DCLayerOverlayProcessor& operator=(const DCLayerOverlayProcessor&) = delete;
+
   virtual ~DCLayerOverlayProcessor();
 
   // Virtual for testing.
@@ -157,6 +161,7 @@ class VIZ_SERVICE_EXPORT DCLayerOverlayProcessor
   // Reference to the global viz singleton.
   const DebugRendererSettings* const debug_settings_;
 
+  bool previous_frame_underlay_is_opaque_ = true;
   gfx::RectF previous_display_rect_;
   std::vector<size_t> damages_to_be_removed_;
 
@@ -173,8 +178,6 @@ class VIZ_SERVICE_EXPORT DCLayerOverlayProcessor
   SurfaceDamageRectList surface_damage_rect_list_;
 
   scoped_refptr<base::SingleThreadTaskRunner> viz_task_runner_;
-
-  DISALLOW_COPY_AND_ASSIGN(DCLayerOverlayProcessor);
 };
 
 }  // namespace viz

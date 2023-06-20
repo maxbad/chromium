@@ -16,6 +16,7 @@
 #include "base/scoped_observation.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
+#include "build/branding_buildflags.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
 #include "chrome/browser/devtools/devtools_window.h"
@@ -70,7 +71,7 @@ class InfoBarContainerView;
 class LocationBarView;
 class SidePanel;
 class StatusBubbleViews;
-class TabSearchButton;
+class TabSearchBubbleHost;
 class TabStrip;
 class TabStripRegionView;
 class ToolbarButtonProvider;
@@ -80,6 +81,16 @@ class TopContainerView;
 class TopControlsSlideControllerTest;
 class WebContentsCloseHandler;
 class WebUITabStripContainerView;
+
+#if BUILDFLAG(GOOGLE_CHROME_BRANDING)
+namespace lens {
+class LensSidePanelController;
+}  // namespace lens
+#endif
+
+#if BUILDFLAG(ENABLE_SIDE_SEARCH)
+class SideSearchBrowserController;
+#endif  // BUILDFLAG(ENABLE_SIDE_SEARCH)
 
 namespace ui {
 class NativeTheme;
@@ -178,6 +189,8 @@ class BrowserView : public BrowserWindow,
 
   SidePanel* right_aligned_side_panel() { return right_aligned_side_panel_; }
 
+  SidePanel* lens_side_panel() { return lens_side_panel_; }
+
   SidePanel* left_aligned_side_panel_for_testing() {
     return left_aligned_side_panel_;
   }
@@ -185,6 +198,22 @@ class BrowserView : public BrowserWindow,
   ExtensionsSidePanelController* extensions_side_panel_controller() {
     return extensions_side_panel_controller_.get();
   }
+
+#if BUILDFLAG(GOOGLE_CHROME_BRANDING)
+  lens::LensSidePanelController* lens_side_panel_controller() {
+    return lens_side_panel_controller_.get();
+  }
+  // Creates the Lens side panel controller.
+  void CreateLensSidePanelController();
+  // Deletes the Lens side panel controller.
+  void DeleteLensSidePanelController();
+#endif
+
+#if BUILDFLAG(ENABLE_SIDE_SEARCH)
+  SideSearchBrowserController* side_search_controller() {
+    return side_search_controller_.get();
+  }
+#endif  // BUILDFLAG(ENABLE_SIDE_SEARCH)
 
   void set_contents_border_widget(views::Widget* contents_border_widget) {
     GetBrowserViewLayout()->set_contents_border_widget(contents_border_widget);
@@ -232,8 +261,8 @@ class BrowserView : public BrowserWindow,
     return weak_ptr_factory_.GetWeakPtr();
   }
 
-  // Accessor for the BrowserView's TabSearchButton instance.
-  TabSearchButton* GetTabSearchButton();
+  // Accessor for the BrowserView's TabSearchBubbleHost instance.
+  TabSearchBubbleHost* GetTabSearchBubbleHost();
 
   // Returns true if various window components are visible.
   bool GetTabStripVisible() const;
@@ -342,6 +371,10 @@ class BrowserView : public BrowserWindow,
   base::CallbackListSubscription AddOnLinkOpeningFromGestureCallback(
       OnLinkOpeningFromGestureCallback callback);
 
+  // Returns true when an app's effective display mode is
+  // window-controls-overlay.
+  bool AppUsesWindowControlsOverlay() const;
+
   // Returns true when the window controls overlay should be displayed instead
   // of a full titlebar. This is only supported for desktop web apps.
   bool IsWindowControlsOverlayEnabled() const;
@@ -407,6 +440,7 @@ class BrowserView : public BrowserWindow,
       ExclusiveAccessBubbleType bubble_type,
       ExclusiveAccessBubbleHideCallback bubble_first_hide_callback,
       bool force_update) override;
+  bool IsExclusiveAccessBubbleDisplayed() const override;
   void OnExclusiveAccessUserInput() override;
   bool ShouldHideUIForFullscreen() const override;
   bool IsFullscreen() const override;
@@ -429,6 +463,7 @@ class BrowserView : public BrowserWindow,
   void FocusBookmarksToolbar() override;
   void FocusInactivePopupForAccessibility() override;
   void RotatePaneFocus(bool forwards) override;
+  void FocusWebContentsPane() override;
   void DestroyBrowser() override;
   bool IsBookmarkBarVisible() const override;
   bool IsBookmarkBarAnimating() const override;
@@ -446,18 +481,27 @@ class BrowserView : public BrowserWindow,
       const absl::optional<url::Origin>& initiating_origin,
       IntentPickerResponse callback) override;
   void ShowBookmarkBubble(const GURL& url, bool already_bookmarked) override;
+  sharing_hub::ScreenshotCapturedBubble* ShowScreenshotCapturedBubble(
+      content::WebContents* contents,
+      const gfx::Image& image,
+      sharing_hub::ScreenshotCapturedBubbleController* controller) override;
   qrcode_generator::QRCodeGeneratorBubbleView* ShowQRCodeGeneratorBubble(
       content::WebContents* contents,
       qrcode_generator::QRCodeGeneratorBubbleController* controller,
-      const GURL& url) override;
+      const GURL& url,
+      bool show_back_button) override;
   send_tab_to_self::SendTabToSelfBubbleView* ShowSendTabToSelfBubble(
       content::WebContents* contents,
       send_tab_to_self::SendTabToSelfBubbleController* controller,
       bool is_user_gesture) override;
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+  views::Button* GetSharingHubIconButton() override;
+#else
   sharing_hub::SharingHubBubbleView* ShowSharingHubBubble(
       content::WebContents* contents,
       sharing_hub::SharingHubBubbleController* controller,
       bool is_user_gesture) override;
+#endif
   ShowTranslateBubbleResult ShowTranslateBubble(
       content::WebContents* contents,
       translate::TranslateStep step,
@@ -491,13 +535,14 @@ class BrowserView : public BrowserWindow,
   void ShowAvatarBubbleFromAvatarButton(
       AvatarBubbleMode mode,
       signin_metrics::AccessPoint access_point,
-      bool is_source_keyboard) override;
+      bool is_source_accelerator) override;
   void MaybeShowProfileSwitchIPH() override;
   void ShowHatsDialog(
       const std::string& site_id,
       base::OnceClosure success_callback,
       base::OnceClosure failure_callback,
-      const std::map<std::string, bool>& product_specific_data) override;
+      const SurveyBitsData& product_specific_bits_data,
+      const SurveyStringData& product_specific_string_data) override;
   ExclusiveAccessContext* GetExclusiveAccessContext() override;
   std::string GetWorkspace() const override;
   bool IsVisibleOnAllWorkspaces() const override;
@@ -514,8 +559,11 @@ class BrowserView : public BrowserWindow,
   BookmarkBarView* GetBookmarkBarView() const;
   LocationBarView* GetLocationBarView() const;
 
-  void ShowInProductHelpPromo(InProductHelpFeature iph_feature) override;
   FeaturePromoController* GetFeaturePromoController() override;
+
+  void ShowIncognitoClearBrowsingDataDialog() override;
+
+  void ShowIncognitoHistoryDisclaimerDialog() override;
 
   // TabStripModelObserver:
   void OnTabStripModelChanged(
@@ -537,8 +585,8 @@ class BrowserView : public BrowserWindow,
   std::u16string GetAccessibleWindowTitle() const override;
   views::View* GetInitiallyFocusedView() override;
   bool ShouldShowWindowTitle() const override;
-  gfx::ImageSkia GetWindowAppIcon() override;
-  gfx::ImageSkia GetWindowIcon() override;
+  ui::ImageModel GetWindowAppIcon() override;
+  ui::ImageModel GetWindowIcon() override;
   bool ExecuteWindowsCommand(int command_id) override;
   std::string GetWindowName() const override;
   void SaveWindowPlacement(const gfx::Rect& bounds,
@@ -658,6 +706,7 @@ class BrowserView : public BrowserWindow,
   FRIEND_TEST_ALL_PREFIXES(BrowserViewTest, BrowserView);
   FRIEND_TEST_ALL_PREFIXES(BrowserViewTest, AccessibleWindowTitle);
   class AccessibilityModeObserver;
+  class SidePanelButtonHighlighter;
 
   // If the browser is in immersive full screen mode, it will reveal the
   // tabstrip for a short duration. This is useful for shortcuts that perform
@@ -801,6 +850,16 @@ class BrowserView : public BrowserWindow,
   // mode changes.
   void MaybeShowWebUITabStripIPH();
 
+  // Attempts to show in-product help for the reading list as moved into the
+  // side panel. Should be called when the IPH backend is initialized or
+  // whenever the touch mode changes.
+  void MaybeShowReadingListInSidePanelIPH();
+
+  void UpdateWindowControlsOverlayEnabled();
+
+  // Updates the visibility of the Window Controls Overlay toggle button.
+  void UpdateWindowControlsOverlayToggleVisible();
+
   // The BrowserFrame that hosts this view.
   BrowserFrame* frame_ = nullptr;
 
@@ -903,6 +962,26 @@ class BrowserView : public BrowserWindow,
   std::unique_ptr<ExtensionsSidePanelController>
       extensions_side_panel_controller_;
 
+  // The Lens side panel.
+  SidePanel* lens_side_panel_ = nullptr;
+
+  // TODO(pbos): Move this functionality into SidePanel when multiple "panels"
+  // are managed within the same object.
+  // Observer object managing the button highlight of the side-panel button
+  // inside ToolbarView. Must outlive the button whose highlight it's managing
+  // as well as the side panels it's observing.
+  std::unique_ptr<SidePanelButtonHighlighter> side_panel_button_highlighter_;
+
+#if BUILDFLAG(GOOGLE_CHROME_BRANDING)
+  // A controller that handles content hosted in the Lens side panel.
+  std::unique_ptr<lens::LensSidePanelController> lens_side_panel_controller_;
+#endif
+
+  // Controls the browser window's side panel for the Side Search feature.
+#if BUILDFLAG(ENABLE_SIDE_SEARCH)
+  std::unique_ptr<SideSearchBrowserController> side_search_controller_;
+#endif  // BUILDFLAG(ENABLE_SIDE_SEARCH)
+
   // Provides access to the toolbar buttons this browser view uses. Buttons may
   // appear in a hosted app frame or in a tabbed UI toolbar.
   ToolbarButtonProvider* toolbar_button_provider_ = nullptr;
@@ -1004,6 +1083,9 @@ class BrowserView : public BrowserWindow,
   // tab loading animation.
   absl::optional<ui::ThroughputTracker> loading_animation_tracker_;
 #endif
+
+  bool window_controls_overlay_enabled_ = false;
+  bool should_show_window_controls_overlay_toggle_ = false;
 
   mutable base::WeakPtrFactory<BrowserView> weak_ptr_factory_{this};
 };

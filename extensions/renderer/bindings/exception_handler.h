@@ -9,7 +9,6 @@
 
 #include "base/macros.h"
 #include "extensions/renderer/bindings/api_binding_types.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "v8/include/v8.h"
 
 namespace extensions {
@@ -20,6 +19,10 @@ namespace extensions {
 class ExceptionHandler {
  public:
   ExceptionHandler(const binding::AddConsoleError& add_console_error);
+
+  ExceptionHandler(const ExceptionHandler&) = delete;
+  ExceptionHandler& operator=(const ExceptionHandler&) = delete;
+
   ~ExceptionHandler();
 
   // Handles an exception in the given |context|. |message| is a message to
@@ -46,8 +49,6 @@ class ExceptionHandler {
   v8::Local<v8::Function> GetCustomHandler(v8::Local<v8::Context> context);
 
   binding::AddConsoleError add_console_error_;
-
-  DISALLOW_COPY_AND_ASSIGN(ExceptionHandler);
 };
 
 }  // namespace extensions

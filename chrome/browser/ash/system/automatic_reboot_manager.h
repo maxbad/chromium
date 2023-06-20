@@ -8,7 +8,6 @@
 #include <memory>
 
 #include "base/compiler_specific.h"
-#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/scoped_observation.h"
@@ -17,7 +16,7 @@
 #include "base/timer/timer.h"
 #include "chrome/browser/ash/system/automatic_reboot_manager_observer.h"
 #include "chromeos/dbus/power/power_manager_client.h"
-#include "chromeos/dbus/update_engine_client.h"
+#include "chromeos/dbus/update_engine/update_engine_client.h"
 #include "components/prefs/pref_change_registrar.h"
 #include "components/session_manager/core/session_manager.h"
 #include "components/session_manager/core/session_manager_observer.h"
@@ -81,6 +80,10 @@ class AutomaticRebootManager : public PowerManagerClient::Observer,
                                public content::NotificationObserver {
  public:
   explicit AutomaticRebootManager(const base::TickClock* clock);
+
+  AutomaticRebootManager(const AutomaticRebootManager&) = delete;
+  AutomaticRebootManager& operator=(const AutomaticRebootManager&) = delete;
+
   ~AutomaticRebootManager() override;
 
   AutomaticRebootManagerObserver::Reason reboot_reason() const {
@@ -179,8 +182,6 @@ class AutomaticRebootManager : public PowerManagerClient::Observer,
       session_manager_observation_{this};
 
   base::WeakPtrFactory<AutomaticRebootManager> weak_ptr_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(AutomaticRebootManager);
 };
 
 }  // namespace system

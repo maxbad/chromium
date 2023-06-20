@@ -27,12 +27,13 @@
 #include "base/logging.h"
 #include "base/path_service.h"
 #include "base/run_loop.h"
-#include "base/single_thread_task_runner.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/post_task.h"
+#include "base/task/single_thread_task_runner.h"
+#include "base/test/bind.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "build/build_config.h"
 #include "cc/paint/skia_paint_canvas.h"
@@ -458,12 +459,11 @@ class WebTestControlHost::WebTestWindowObserver : WebContentsObserver {
     // If the WebContents was already set up before given to the Shell, it may
     // have a set of RenderFrames already, and we need to notify about them
     // here.
-    if (web_contents->GetMainFrame()->IsRenderFrameLive()) {
-      for (RenderFrameHost* frame : web_contents->GetAllFrames()) {
-        if (frame->IsRenderFrameLive())
-          RenderFrameCreated(frame);
-      }
-    }
+    web_contents->ForEachRenderFrameHost(
+        base::BindLambdaForTesting([&](RenderFrameHost* render_frame_host) {
+          if (render_frame_host->IsRenderFrameLive())
+            RenderFrameCreated(render_frame_host);
+        }));
   }
 
  private:
@@ -588,7 +588,7 @@ bool WebTestControlHost::PrepareForWebTest(const TestInfo& test_info) {
   // Tests should always start with the browser controls hidden.
   // TODO(danakj): We no longer run web tests on android, and this is an android
   // feature, so maybe this isn't needed anymore.
-  main_window_->web_contents()->GetMainFrame()->UpdateBrowserControlsState(
+  main_window_->web_contents()->UpdateBrowserControlsState(
       cc::BrowserControlsState::kBoth, cc::BrowserControlsState::kHidden,
       false);
 
@@ -795,15 +795,18 @@ void WebTestControlHost::InitiateCaptureDump(
   if (!renderer_dump_result_->layout) {
     DCHECK_EQ(0, waiting_for_layout_dumps_);
 
-    for (RenderFrameHost* rfh : main_window_->web_contents()->GetAllFrames()) {
-      if (!rfh->IsRenderFrameLive())
-        continue;
+    main_window_->web_contents()->ForEachRenderFrameHost(
+        base::BindLambdaForTesting([&](RenderFrameHost* render_frame_host) {
+          if (!render_frame_host->IsRenderFrameLive())
+            return;
 
-      ++waiting_for_layout_dumps_;
-      GetWebTestRenderFrameRemote(rfh)->DumpFrameLayout(base::BindOnce(
-          &WebTestControlHost::OnDumpFrameLayoutResponse,
-          weak_factory_.GetWeakPtr(), rfh->GetFrameTreeNodeId()));
-    }
+          ++waiting_for_layout_dumps_;
+          GetWebTestRenderFrameRemote(render_frame_host)
+              ->DumpFrameLayout(
+                  base::BindOnce(&WebTestControlHost::OnDumpFrameLayoutResponse,
+                                 weak_factory_.GetWeakPtr(),
+                                 render_frame_host->GetFrameTreeNodeId()));
+        }));
   }
 
   if (capture_pixels) {
@@ -886,7 +889,7 @@ void WebTestControlHost::CompositeNodeQueueThen(
     }
 
     frame = composite_all_frames_node_queue_.front()->render_frame_host;
-    GlobalFrameRoutingId routing_id =
+    GlobalRenderFrameHostId routing_id =
         composite_all_frames_node_queue_.front()->render_frame_host_id;
     composite_all_frames_node_queue_.pop();
 
@@ -930,58 +933,38 @@ WebTestControlHost::Node* WebTestControlHost::BuildFrameTree(
     return it == composite_all_frames_node_storage_.end() ? nullptr : it->get();
   };
 
-  Node* outer_root = nullptr;
-  std::vector<WebContents*> all_web_contents(1, web_contents);
-  for (unsigned i = 0; i < all_web_contents.size(); i++) {
-    WebContents* contents = all_web_contents[i];
+  //  Collect all live frames in web_contents.
+  std::vector<RenderFrameHost*> frames;
+  web_contents->GetMainFrame()->ForEachRenderFrameHost(
+      base::BindLambdaForTesting([&](RenderFrameHost* render_frame_host) {
+        if (render_frame_host->IsRenderFrameLive())
+          frames.push_back(render_frame_host);
+      }));
 
-    //  Collect all live frames in contents.
-    std::vector<RenderFrameHost*> frames;
-    for (auto* frame : contents->GetAllFrames()) {
-      if (frame->IsRenderFrameLive())
-        frames.push_back(frame);
-    }
-
-    // Add all of the frames to storage.
-    for (auto* frame : frames) {
-      DCHECK(!node_for_frame(frame)) << "Frame seen multiple times.";
-      composite_all_frames_node_storage_.emplace_back(
-          std::make_unique<Node>(frame));
-    }
-
-    // Construct a tree rooted at |root|.
-    Node* root = nullptr;
-    for (auto* frame : frames) {
-      Node* node = node_for_frame(frame);
-      DCHECK(node);
-      if (!frame->GetParent()) {
-        DCHECK(!root) << "Multiple roots found.";
-        root = node;
-      } else {
-        Node* parent = node_for_frame(frame->GetParent());
-        DCHECK(parent);
-        parent->children.push_back(node);
-      }
-    }
-    DCHECK(root) << "No root found.";
-
-    // Connect the inner root to the outer node.
-    if (auto* outer_frame = contents->GetOuterWebContentsFrame()) {
-      Node* parent = node_for_frame(outer_frame);
-      DCHECK(parent);
-      parent->children.push_back(root);
-    } else {
-      DCHECK(!outer_root) << "Multiple outer roots found.";
-      outer_root = root;
-    }
-
-    // Traverse all inner contents.
-    for (auto* inner_contents : contents->GetInnerWebContents())
-      all_web_contents.push_back(inner_contents);
+  // Add all of the frames to storage.
+  for (auto* frame : frames) {
+    DCHECK(!node_for_frame(frame)) << "Frame seen multiple times.";
+    composite_all_frames_node_storage_.emplace_back(
+        std::make_unique<Node>(frame));
   }
-  DCHECK(outer_root) << "No outer root found";
 
-  return outer_root;
+  // Construct a tree rooted at |root|.
+  Node* root = nullptr;
+  for (auto* frame : frames) {
+    Node* node = node_for_frame(frame);
+    DCHECK(node);
+    if (!frame->GetParentOrOuterDocument()) {
+      DCHECK(!root) << "Multiple roots found.";
+      root = node;
+    } else {
+      Node* parent = node_for_frame(frame->GetParentOrOuterDocument());
+      DCHECK(parent);
+      parent->children.push_back(node);
+    }
+  }
+  DCHECK(root) << "No root found.";
+
+  return root;
 }
 
 bool WebTestControlHost::IsMainWindow(WebContents* web_contents) const {
@@ -1072,7 +1055,8 @@ void WebTestControlHost::RenderViewHostChanged(RenderViewHost* old_host,
                                                RenderViewHost* new_host) {
   // Notifies the main frame of |old_host| that it is deactivated while it's
   // kept alive in back-forward cache.
-  GetWebTestRenderFrameRemote(old_host->GetMainFrame())->OnDeactivated();
+  RenderViewHostImpl* rvhi = static_cast<RenderViewHostImpl*>(old_host);
+  GetWebTestRenderFrameRemote(rvhi->GetMainRenderFrameHost())->OnDeactivated();
 }
 
 void WebTestControlHost::RenderViewDeleted(RenderViewHost* render_view_host) {
@@ -1148,7 +1132,7 @@ void WebTestControlHost::DiscardMainWindow() {
   // We don't want to leak any open windows when we finish a test, and the next
   // test will create its own |main_window_|. So at this point we close all
   // Shell windows, to avoid using the potentially-bad pointer.
-  Shell::CloseAllWindows();
+  CloseAllWindows();
 
   // Then we immediately end the current test instead of timing out. This is
   // like ReportResults() except we report only messages added to the
@@ -1277,20 +1261,27 @@ void WebTestControlHost::OnDumpFrameLayoutResponse(int frame_tree_node_id,
 
   // Stitch the frame-specific results in the right order.
   std::string stitched_layout_dump;
-  for (auto* render_frame_host : web_contents()->GetAllFrames()) {
-    auto it =
-        frame_to_layout_dump_map_.find(render_frame_host->GetFrameTreeNodeId());
-    if (it != frame_to_layout_dump_map_.end()) {
-      const std::string& dump = it->second;
-      stitched_layout_dump.append(dump);
-    }
-  }
+  web_contents()->GetMainFrame()->ForEachRenderFrameHost(
+      base::BindLambdaForTesting([&](RenderFrameHost* render_frame_host) {
+        auto it = frame_to_layout_dump_map_.find(
+            render_frame_host->GetFrameTreeNodeId());
+        if (it != frame_to_layout_dump_map_.end()) {
+          stitched_layout_dump.append(it->second);
+        }
+      }));
 
   layout_dump_.emplace(std::move(stitched_layout_dump));
   ReportResults();
 }
 
 void WebTestControlHost::OnPixelDumpCaptured(const SkBitmap& snapshot) {
+  // In the test: test_runner/notify_done_and_defered_close_dump_surface.html,
+  // the |main_window_| is closed while waiting for the pixel dump. When this
+  // happens, every window is closed and while pumping the message queue,
+  // OnPixelDumpCaptured is called with an empty snapshot.
+  if (!main_window_)
+    return;
+
   DCHECK(!snapshot.drawsNothing());
   pixel_dump_ = snapshot;
   waiting_for_pixel_results_ = false;
@@ -1627,7 +1618,7 @@ void WebTestControlHost::SimulateWebNotificationClick(
     const absl::optional<std::u16string>& reply) {
   auto* client = WebTestContentBrowserClient::Get();
   auto* context = client->GetWebTestBrowserContext();
-  auto* service = client->GetPlatformNotificationService(context);
+  auto* service = context->GetPlatformNotificationService();
   static_cast<MockPlatformNotificationService*>(service)->SimulateClick(
       title,
       action_index == std::numeric_limits<int32_t>::min()
@@ -1640,7 +1631,7 @@ void WebTestControlHost::SimulateWebNotificationClose(const std::string& title,
                                                       bool by_user) {
   auto* client = WebTestContentBrowserClient::Get();
   auto* context = client->GetWebTestBrowserContext();
-  auto* service = client->GetPlatformNotificationService(context);
+  auto* service = context->GetPlatformNotificationService();
   static_cast<MockPlatformNotificationService*>(service)->SimulateClose(
       title, by_user);
 }
@@ -1815,6 +1806,14 @@ void WebTestControlHost::DidFinishNavigation(NavigationHandle* navigation) {
   if (navigation->GetURL() != GURL(kAboutBlankResetWebTest))
     return;
 
+  // During fuzzing, the |main_window_| might close itself using window.close().
+  // This might happens after the end of the test, during the cleanup phase. In
+  // this case, the pending about:blank navigation might be canceled, within the
+  // |main_window_| destructor. It is no longer safe to access |main_window_|
+  // here. See https://crbug.com/1221183
+  if (!navigation->HasCommitted())
+    return;
+
   // Request additional web test specific cleanup in the renderer process:
   content::WebContentsImpl* web_contents =
       static_cast<WebContentsImpl*>(main_window_->web_contents());
@@ -1868,6 +1867,15 @@ void WebTestControlHost::CloseTestOpenedWindows() {
     if (shell != main_window_)
       shell->Close();
   }
+  secondary_window_ = nullptr;
+  base::RunLoop().RunUntilIdle();
+}
+
+void WebTestControlHost::CloseAllWindows() {
+  DevToolsAgentHost::DetachAllClients();
+  while (!Shell::windows().empty())
+    Shell::windows().back()->Close();
+  main_window_ = nullptr;
   secondary_window_ = nullptr;
   base::RunLoop().RunUntilIdle();
 }
@@ -1935,7 +1943,8 @@ void WebTestControlHost::BindWebTestControlHostForRenderer(
 
 mojo::AssociatedRemote<mojom::WebTestRenderFrame>&
 WebTestControlHost::GetWebTestRenderFrameRemote(RenderFrameHost* frame) {
-  GlobalFrameRoutingId key(frame->GetProcess()->GetID(), frame->GetRoutingID());
+  GlobalRenderFrameHostId key(frame->GetProcess()->GetID(),
+                              frame->GetRoutingID());
   if (web_test_render_frame_map_.find(key) ==
       web_test_render_frame_map_.end()) {
     mojo::AssociatedRemote<mojom::WebTestRenderFrame>& new_ptr =
@@ -1969,7 +1978,7 @@ WebTestControlHost::GetWebTestRenderThreadRemote(RenderProcessHost* process) {
 }
 
 void WebTestControlHost::HandleWebTestRenderFrameRemoteError(
-    const GlobalFrameRoutingId& key) {
+    const GlobalRenderFrameHostId& key) {
   web_test_render_frame_map_.erase(key);
 }
 

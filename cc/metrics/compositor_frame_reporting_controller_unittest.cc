@@ -193,23 +193,23 @@ class CompositorFrameReportingControllerTest : public testing::Test {
     args_ = viz::BeginFrameArgs();
     args_.frame_id = frame_id;
     args_.frame_time = AdvanceNowByMs(10);
-    args_.interval = base::TimeDelta::FromMilliseconds(16);
+    args_.interval = base::Milliseconds(16);
     current_id_ = frame_id;
     return args_;
   }
 
   std::unique_ptr<BeginMainFrameMetrics> BuildBlinkBreakdown() {
     auto breakdown = std::make_unique<BeginMainFrameMetrics>();
-    breakdown->handle_input_events = base::TimeDelta::FromMicroseconds(10);
-    breakdown->animate = base::TimeDelta::FromMicroseconds(9);
-    breakdown->style_update = base::TimeDelta::FromMicroseconds(8);
-    breakdown->layout_update = base::TimeDelta::FromMicroseconds(7);
-    breakdown->compositing_inputs = base::TimeDelta::FromMicroseconds(6);
-    breakdown->prepaint = base::TimeDelta::FromMicroseconds(5);
-    breakdown->compositing_assignments = base::TimeDelta::FromMicroseconds(4);
-    breakdown->paint = base::TimeDelta::FromMicroseconds(3);
-    breakdown->composite_commit = base::TimeDelta::FromMicroseconds(2);
-    breakdown->update_layers = base::TimeDelta::FromMicroseconds(1);
+    breakdown->handle_input_events = base::Microseconds(10);
+    breakdown->animate = base::Microseconds(9);
+    breakdown->style_update = base::Microseconds(8);
+    breakdown->layout_update = base::Microseconds(7);
+    breakdown->compositing_inputs = base::Microseconds(6);
+    breakdown->prepaint = base::Microseconds(5);
+    breakdown->compositing_assignments = base::Microseconds(4);
+    breakdown->paint = base::Microseconds(3);
+    breakdown->composite_commit = base::Microseconds(2);
+    breakdown->update_layers = base::Microseconds(1);
 
     // Advance now by the sum of the breakdowns.
     AdvanceNowByMs(10 + 9 + 8 + 7 + 6 + 5 + 4 + 3 + 2 + 1);
@@ -233,19 +233,18 @@ class CompositorFrameReportingControllerTest : public testing::Test {
   }
 
   base::TimeTicks AdvanceNowByMs(int64_t advance_ms) {
-    test_tick_clock_.Advance(base::TimeDelta::FromMicroseconds(advance_ms));
+    test_tick_clock_.Advance(base::Microseconds(advance_ms));
     return test_tick_clock_.NowTicks();
   }
 
   std::unique_ptr<EventMetrics> CreateEventMetrics(
       ui::EventType type,
-      absl::optional<EventMetrics::ScrollUpdateType> scroll_update_type,
-      absl::optional<ui::ScrollInputType> scroll_input_type) {
+      absl::optional<EventMetrics::GestureParams> gesture_params =
+          absl::nullopt) {
     const base::TimeTicks event_time = AdvanceNowByMs(10);
     AdvanceNowByMs(10);
     std::unique_ptr<EventMetrics> metrics = EventMetrics::CreateForTesting(
-        type, scroll_update_type, scroll_input_type, event_time,
-        &test_tick_clock_);
+        type, gesture_params, event_time, &test_tick_clock_);
     if (metrics) {
       AdvanceNowByMs(10);
       metrics->SetDispatchStageTimestamp(
@@ -978,34 +977,34 @@ TEST_F(CompositorFrameReportingControllerTest, BlinkBreakdown) {
       "CompositorLatency.SendBeginMainFrameToCommit", 1);
   histogram_tester.ExpectUniqueSample(
       "CompositorLatency.SendBeginMainFrameToCommit.HandleInputEvents",
-      base::TimeDelta::FromMicroseconds(10).InMilliseconds(), 1);
+      base::Microseconds(10).InMilliseconds(), 1);
   histogram_tester.ExpectUniqueSample(
       "CompositorLatency.SendBeginMainFrameToCommit.Animate",
-      base::TimeDelta::FromMicroseconds(9).InMilliseconds(), 1);
+      base::Microseconds(9).InMilliseconds(), 1);
   histogram_tester.ExpectUniqueSample(
       "CompositorLatency.SendBeginMainFrameToCommit.StyleUpdate",
-      base::TimeDelta::FromMicroseconds(8).InMilliseconds(), 1);
+      base::Microseconds(8).InMilliseconds(), 1);
   histogram_tester.ExpectUniqueSample(
       "CompositorLatency.SendBeginMainFrameToCommit.LayoutUpdate",
-      base::TimeDelta::FromMicroseconds(7).InMilliseconds(), 1);
+      base::Microseconds(7).InMilliseconds(), 1);
   histogram_tester.ExpectUniqueSample(
       "CompositorLatency.SendBeginMainFrameToCommit.CompositingInputs",
-      base::TimeDelta::FromMicroseconds(6).InMilliseconds(), 1);
+      base::Microseconds(6).InMilliseconds(), 1);
   histogram_tester.ExpectUniqueSample(
       "CompositorLatency.SendBeginMainFrameToCommit.Prepaint",
-      base::TimeDelta::FromMicroseconds(5).InMilliseconds(), 1);
+      base::Microseconds(5).InMilliseconds(), 1);
   histogram_tester.ExpectUniqueSample(
       "CompositorLatency.SendBeginMainFrameToCommit.CompositingAssignments",
-      base::TimeDelta::FromMicroseconds(4).InMilliseconds(), 1);
+      base::Microseconds(4).InMilliseconds(), 1);
   histogram_tester.ExpectUniqueSample(
       "CompositorLatency.SendBeginMainFrameToCommit.Paint",
-      base::TimeDelta::FromMicroseconds(3).InMilliseconds(), 1);
+      base::Microseconds(3).InMilliseconds(), 1);
   histogram_tester.ExpectUniqueSample(
       "CompositorLatency.SendBeginMainFrameToCommit.CompositeCommit",
-      base::TimeDelta::FromMicroseconds(2).InMilliseconds(), 1);
+      base::Microseconds(2).InMilliseconds(), 1);
   histogram_tester.ExpectUniqueSample(
       "CompositorLatency.SendBeginMainFrameToCommit.UpdateLayers",
-      base::TimeDelta::FromMicroseconds(1).InMilliseconds(), 1);
+      base::Microseconds(1).InMilliseconds(), 1);
   histogram_tester.ExpectTotalCount(
       "CompositorLatency.SendBeginMainFrameToCommit.BeginMainSentToStarted", 1);
 }
@@ -1025,8 +1024,7 @@ TEST_F(CompositorFrameReportingControllerTest, ReportingMissedDeadlineFrame1) {
       1, current_id_, current_id_, {}, /*has_missing_content=*/false);
   viz::FrameTimingDetails details = {};
   details.presentation_feedback.timestamp =
-      args_.frame_time + args_.interval * 1.5 -
-      base::TimeDelta::FromMicroseconds(100);
+      args_.frame_time + args_.interval * 1.5 - base::Microseconds(100);
   reporting_controller_.DidPresentCompositorFrame(1, details);
 
   histogram_tester.ExpectTotalCount(
@@ -1064,8 +1062,7 @@ TEST_F(CompositorFrameReportingControllerTest, ReportingMissedDeadlineFrame2) {
       1, current_id_, current_id_, {}, /*has_missing_content=*/false);
   viz::FrameTimingDetails details = {};
   details.presentation_feedback.timestamp =
-      args_.frame_time + args_.interval * 1.5 +
-      base::TimeDelta::FromMicroseconds(100);
+      args_.frame_time + args_.interval * 1.5 + base::Microseconds(100);
   reporting_controller_.DidPresentCompositorFrame(1, details);
 
   histogram_tester.ExpectTotalCount(
@@ -1084,6 +1081,34 @@ TEST_F(CompositorFrameReportingControllerTest, ReportingMissedDeadlineFrame2) {
   histogram_tester.ExpectBucketCount("CompositorLatency.Type", 1, 1);
   // Dropped cases.
   histogram_tester.ExpectBucketCount("CompositorLatency.Type", 2, 0);
+}
+
+// If a compositor animation takes too long and throttles draw
+TEST_F(CompositorFrameReportingControllerTest, LongCompositorAnimation) {
+  base::HistogramTester histogram_tester;
+
+  SimulatePresentCompositorFrame();
+
+  reporting_controller_.WillBeginImplFrame(args_);
+  reporting_controller_.OnFinishImplFrame(current_id_);
+  reporting_controller_.DidSubmitCompositorFrame(
+      1, current_id_, last_activated_id_, {}, /*has_missing_content=*/false);
+  viz::FrameTimingDetails details = {};
+  reporting_controller_.DidPresentCompositorFrame(*current_token_, details);
+
+  IncrementCurrentId();
+  reporting_controller_.WillBeginImplFrame(args_);
+  reporting_controller_.OnFinishImplFrame(current_id_);
+  reporting_controller_.DidNotProduceFrame(args_.frame_id,
+                                           FrameSkippedReason::kDrawThrottled);
+
+  IncrementCurrentId();
+  // Flushing the last no damage frame.
+  reporting_controller_.WillBeginImplFrame(args_);
+  reporting_controller_.OnFinishImplFrame(current_id_);
+
+  EXPECT_EQ(3u, dropped_counter_.total_frames());
+  EXPECT_EQ(1u, dropped_counter_.total_dropped());
 }
 
 // Testing CompositorLatency.Type metrics
@@ -1123,9 +1148,9 @@ TEST_F(CompositorFrameReportingControllerTest,
   base::HistogramTester histogram_tester;
 
   std::unique_ptr<EventMetrics> event_metrics_ptrs[] = {
-      CreateEventMetrics(ui::ET_TOUCH_PRESSED, absl::nullopt, absl::nullopt),
-      CreateEventMetrics(ui::ET_TOUCH_MOVED, absl::nullopt, absl::nullopt),
-      CreateEventMetrics(ui::ET_TOUCH_MOVED, absl::nullopt, absl::nullopt),
+      CreateEventMetrics(ui::ET_TOUCH_PRESSED),
+      CreateEventMetrics(ui::ET_TOUCH_MOVED),
+      CreateEventMetrics(ui::ET_TOUCH_MOVED),
   };
   EXPECT_THAT(event_metrics_ptrs, Each(NotNull()));
   EventMetrics::List events_metrics(
@@ -1162,17 +1187,23 @@ TEST_F(CompositorFrameReportingControllerTest,
     const base::HistogramBase::Sample latency_ms;
   } expected_latencies[] = {
       {"EventLatency.TouchPressed.TotalLatency",
-       (presentation_time - event_times[0]).InMicroseconds()},
+       static_cast<base::HistogramBase::Sample>(
+           (presentation_time - event_times[0]).InMicroseconds())},
       {"EventLatency.TouchMoved.TotalLatency",
-       (presentation_time - event_times[1]).InMicroseconds()},
+       static_cast<base::HistogramBase::Sample>(
+           (presentation_time - event_times[1]).InMicroseconds())},
       {"EventLatency.TouchMoved.TotalLatency",
-       (presentation_time - event_times[2]).InMicroseconds()},
+       static_cast<base::HistogramBase::Sample>(
+           (presentation_time - event_times[2]).InMicroseconds())},
       {"EventLatency.TotalLatency",
-       (presentation_time - event_times[0]).InMicroseconds()},
+       static_cast<base::HistogramBase::Sample>(
+           (presentation_time - event_times[0]).InMicroseconds())},
       {"EventLatency.TotalLatency",
-       (presentation_time - event_times[1]).InMicroseconds()},
+       static_cast<base::HistogramBase::Sample>(
+           (presentation_time - event_times[1]).InMicroseconds())},
       {"EventLatency.TotalLatency",
-       (presentation_time - event_times[2]).InMicroseconds()},
+       static_cast<base::HistogramBase::Sample>(
+           (presentation_time - event_times[2]).InMicroseconds())},
   };
   for (const auto& expected_latency : expected_latencies) {
     histogram_tester.ExpectBucketCount(expected_latency.name,
@@ -1186,15 +1217,25 @@ TEST_F(CompositorFrameReportingControllerTest,
        EventLatencyScrollTotalForPresentedFrameReported) {
   base::HistogramTester histogram_tester;
 
+  const bool kScrollIsInertial = true;
+  const bool kScrollIsNotInertial = false;
   std::unique_ptr<EventMetrics> event_metrics_ptrs[] = {
-      CreateEventMetrics(ui::ET_GESTURE_SCROLL_BEGIN, absl::nullopt,
-                         ui::ScrollInputType::kWheel),
+      CreateEventMetrics(
+          ui::ET_GESTURE_SCROLL_BEGIN,
+          EventMetrics::GestureParams(ui::ScrollInputType::kWheel,
+                                      kScrollIsNotInertial)),
       CreateEventMetrics(ui::ET_GESTURE_SCROLL_UPDATE,
-                         EventMetrics::ScrollUpdateType::kStarted,
-                         ui::ScrollInputType::kWheel),
+                         EventMetrics::GestureParams(
+                             ui::ScrollInputType::kWheel, kScrollIsNotInertial,
+                             EventMetrics::ScrollUpdateType::kStarted)),
       CreateEventMetrics(ui::ET_GESTURE_SCROLL_UPDATE,
-                         EventMetrics::ScrollUpdateType::kContinued,
-                         ui::ScrollInputType::kWheel),
+                         EventMetrics::GestureParams(
+                             ui::ScrollInputType::kWheel, kScrollIsNotInertial,
+                             EventMetrics::ScrollUpdateType::kContinued)),
+      CreateEventMetrics(ui::ET_GESTURE_SCROLL_UPDATE,
+                         EventMetrics::GestureParams(
+                             ui::ScrollInputType::kWheel, kScrollIsInertial,
+                             EventMetrics::ScrollUpdateType::kContinued)),
   };
   EXPECT_THAT(event_metrics_ptrs, Each(NotNull()));
   EventMetrics::List events_metrics(
@@ -1227,7 +1268,10 @@ TEST_F(CompositorFrameReportingControllerTest,
        1},
       {"EventLatency.GestureScrollUpdate.Wheel.TotalLatency", 1},
       {"EventLatency.GestureScrollUpdate.Wheel.TotalLatencyToSwapBegin", 1},
-      {"EventLatency.TotalLatency", 3},
+      {"EventLatency.InertialGestureScrollUpdate.Wheel.TotalLatency", 1},
+      {"EventLatency.InertialGestureScrollUpdate.Wheel.TotalLatencyToSwapBegin",
+       1},
+      {"EventLatency.TotalLatency", 4},
   };
   for (const auto& expected_count : expected_counts) {
     histogram_tester.ExpectTotalCount(expected_count.name,
@@ -1242,17 +1286,109 @@ TEST_F(CompositorFrameReportingControllerTest,
     const base::HistogramBase::Sample latency_ms;
   } expected_latencies[] = {
       {"EventLatency.GestureScrollBegin.Wheel.TotalLatency",
-       (presentation_time - event_times[0]).InMicroseconds()},
+       static_cast<base::HistogramBase::Sample>(
+           (presentation_time - event_times[0]).InMicroseconds())},
       {"EventLatency.GestureScrollBegin.Wheel.TotalLatencyToSwapBegin",
-       (swap_begin_time - event_times[0]).InMicroseconds()},
+       static_cast<base::HistogramBase::Sample>(
+           (swap_begin_time - event_times[0]).InMicroseconds())},
       {"EventLatency.FirstGestureScrollUpdate.Wheel.TotalLatency",
-       (presentation_time - event_times[1]).InMicroseconds()},
+       static_cast<base::HistogramBase::Sample>(
+           (presentation_time - event_times[1]).InMicroseconds())},
       {"EventLatency.FirstGestureScrollUpdate.Wheel.TotalLatencyToSwapBegin",
-       (swap_begin_time - event_times[1]).InMicroseconds()},
+       static_cast<base::HistogramBase::Sample>(
+           (swap_begin_time - event_times[1]).InMicroseconds())},
       {"EventLatency.GestureScrollUpdate.Wheel.TotalLatency",
-       (presentation_time - event_times[2]).InMicroseconds()},
+       static_cast<base::HistogramBase::Sample>(
+           (presentation_time - event_times[2]).InMicroseconds())},
       {"EventLatency.GestureScrollUpdate.Wheel.TotalLatencyToSwapBegin",
-       (swap_begin_time - event_times[2]).InMicroseconds()},
+       static_cast<base::HistogramBase::Sample>(
+           (swap_begin_time - event_times[2]).InMicroseconds())},
+      {"EventLatency.InertialGestureScrollUpdate.Wheel.TotalLatency",
+       static_cast<base::HistogramBase::Sample>(
+           (presentation_time - event_times[3]).InMicroseconds())},
+      {"EventLatency.InertialGestureScrollUpdate.Wheel.TotalLatencyToSwapBegin",
+       static_cast<base::HistogramBase::Sample>(
+           (swap_begin_time - event_times[3]).InMicroseconds())},
+  };
+  for (const auto& expected_latency : expected_latencies) {
+    histogram_tester.ExpectBucketCount(expected_latency.name,
+                                       expected_latency.latency_ms, 1);
+  }
+}
+
+// Tests that EventLatency total latency histograms are reported properly for
+// pinch events when a frame is presented to the user.
+TEST_F(CompositorFrameReportingControllerTest,
+       EventLatencyPinchTotalForPresentedFrameReported) {
+  base::HistogramTester histogram_tester;
+
+  std::unique_ptr<EventMetrics> event_metrics_ptrs[] = {
+      CreateEventMetrics(
+          ui::ET_GESTURE_PINCH_BEGIN,
+          EventMetrics::GestureParams(ui::ScrollInputType::kWheel)),
+      CreateEventMetrics(
+          ui::ET_GESTURE_PINCH_UPDATE,
+          EventMetrics::GestureParams(ui::ScrollInputType::kWheel)),
+      CreateEventMetrics(
+          ui::ET_GESTURE_PINCH_BEGIN,
+          EventMetrics::GestureParams(ui::ScrollInputType::kTouchscreen)),
+      CreateEventMetrics(
+          ui::ET_GESTURE_PINCH_UPDATE,
+          EventMetrics::GestureParams(ui::ScrollInputType::kTouchscreen)),
+  };
+  EXPECT_THAT(event_metrics_ptrs, Each(NotNull()));
+  EventMetrics::List events_metrics(
+      std::make_move_iterator(std::begin(event_metrics_ptrs)),
+      std::make_move_iterator(std::end(event_metrics_ptrs)));
+  std::vector<base::TimeTicks> event_times = GetEventTimestamps(events_metrics);
+
+  // Submit a compositor frame and notify CompositorFrameReporter of the events
+  // affecting the frame.
+  SimulateSubmitCompositorFrame({std::move(events_metrics), {}});
+
+  // Present the submitted compositor frame to the user.
+  viz::FrameTimingDetails details;
+  details.received_compositor_frame_timestamp = AdvanceNowByMs(10);
+  details.draw_start_timestamp = AdvanceNowByMs(10);
+  details.swap_timings.swap_start = AdvanceNowByMs(10);
+  details.swap_timings.swap_end = AdvanceNowByMs(10);
+  details.presentation_feedback.timestamp = AdvanceNowByMs(10);
+  reporting_controller_.DidPresentCompositorFrame(*current_token_, details);
+
+  // Verify that EventLatency histograms are recorded.
+  struct {
+    const char* name;
+    const base::HistogramBase::Count count;
+  } expected_counts[] = {
+      {"EventLatency.GesturePinchBegin.Touchpad.TotalLatency", 1},
+      {"EventLatency.GesturePinchUpdate.Touchpad.TotalLatency", 1},
+      {"EventLatency.GesturePinchBegin.Touchscreen.TotalLatency", 1},
+      {"EventLatency.GesturePinchUpdate.Touchscreen.TotalLatency", 1},
+      {"EventLatency.TotalLatency", 4},
+  };
+  for (const auto& expected_count : expected_counts) {
+    histogram_tester.ExpectTotalCount(expected_count.name,
+                                      expected_count.count);
+  }
+
+  const base::TimeTicks presentation_time =
+      details.presentation_feedback.timestamp;
+  struct {
+    const char* name;
+    const base::HistogramBase::Sample latency_ms;
+  } expected_latencies[] = {
+      {"EventLatency.GesturePinchBegin.Touchpad.TotalLatency",
+       static_cast<base::HistogramBase::Sample>(
+           (presentation_time - event_times[0]).InMicroseconds())},
+      {"EventLatency.GesturePinchUpdate.Touchpad.TotalLatency",
+       static_cast<base::HistogramBase::Sample>(
+           (presentation_time - event_times[1]).InMicroseconds())},
+      {"EventLatency.GesturePinchBegin.Touchscreen.TotalLatency",
+       static_cast<base::HistogramBase::Sample>(
+           (presentation_time - event_times[2]).InMicroseconds())},
+      {"EventLatency.GesturePinchUpdate.Touchscreen.TotalLatency",
+       static_cast<base::HistogramBase::Sample>(
+           (presentation_time - event_times[3]).InMicroseconds())},
   };
   for (const auto& expected_latency : expected_latencies) {
     histogram_tester.ExpectBucketCount(expected_latency.name,
@@ -1267,9 +1403,9 @@ TEST_F(CompositorFrameReportingControllerTest,
   base::HistogramTester histogram_tester;
 
   std::unique_ptr<EventMetrics> event_metrics_ptrs[] = {
-      CreateEventMetrics(ui::ET_TOUCH_PRESSED, absl::nullopt, absl::nullopt),
-      CreateEventMetrics(ui::ET_TOUCH_MOVED, absl::nullopt, absl::nullopt),
-      CreateEventMetrics(ui::ET_TOUCH_MOVED, absl::nullopt, absl::nullopt),
+      CreateEventMetrics(ui::ET_TOUCH_PRESSED),
+      CreateEventMetrics(ui::ET_TOUCH_MOVED),
+      CreateEventMetrics(ui::ET_TOUCH_MOVED),
   };
   EXPECT_THAT(event_metrics_ptrs, Each(NotNull()));
   EventMetrics::List events_metrics(
@@ -1311,17 +1447,23 @@ TEST_F(CompositorFrameReportingControllerTest,
     const base::HistogramBase::Sample latency_ms;
   } expected_latencies[] = {
       {"EventLatency.TouchPressed.TotalLatency",
-       (presentation_time - event_times[0]).InMicroseconds()},
+       static_cast<base::HistogramBase::Sample>(
+           (presentation_time - event_times[0]).InMicroseconds())},
       {"EventLatency.TouchMoved.TotalLatency",
-       (presentation_time - event_times[1]).InMicroseconds()},
+       static_cast<base::HistogramBase::Sample>(
+           (presentation_time - event_times[1]).InMicroseconds())},
       {"EventLatency.TouchMoved.TotalLatency",
-       (presentation_time - event_times[2]).InMicroseconds()},
+       static_cast<base::HistogramBase::Sample>(
+           (presentation_time - event_times[2]).InMicroseconds())},
       {"EventLatency.TotalLatency",
-       (presentation_time - event_times[0]).InMicroseconds()},
+       static_cast<base::HistogramBase::Sample>(
+           (presentation_time - event_times[0]).InMicroseconds())},
       {"EventLatency.TotalLatency",
-       (presentation_time - event_times[1]).InMicroseconds()},
+       static_cast<base::HistogramBase::Sample>(
+           (presentation_time - event_times[1]).InMicroseconds())},
       {"EventLatency.TotalLatency",
-       (presentation_time - event_times[2]).InMicroseconds()},
+       static_cast<base::HistogramBase::Sample>(
+           (presentation_time - event_times[2]).InMicroseconds())},
   };
   for (const auto& expected_latency : expected_latencies) {
     histogram_tester.ExpectBucketCount(expected_latency.name,
@@ -1365,7 +1507,7 @@ TEST_F(CompositorFrameReportingControllerTest,
   // R2C has been presented, but it is blocked on R2M to know whether R2C
   // contains partial update, or complete updates. So it is kept alive.
   EXPECT_EQ(2u, dropped_counter_.total_frames());
-  EXPECT_EQ(1u, dropped_counter_.total_main_dropped());
+  EXPECT_EQ(1u, dropped_counter_.total_partial());
   EXPECT_EQ(1u, reporting_controller_.GetBlockingReportersCount());
   EXPECT_EQ(1u, reporting_controller_.GetBlockedReportersCount());
 
@@ -1402,7 +1544,7 @@ TEST_F(CompositorFrameReportingControllerTest,
 
   // At this point no frame has been completed, yet.
   EXPECT_EQ(0u, dropped_counter_.total_frames());
-  EXPECT_EQ(0u, dropped_counter_.total_compositor_dropped());
+  EXPECT_EQ(0u, dropped_counter_.total_dropped());
 
   // Start yet another frame that has impl-thread update and submit it, but with
   // failed presentation. The reporter for this frame should become dependent of
@@ -1427,7 +1569,7 @@ TEST_F(CompositorFrameReportingControllerTest,
 
   // At this point 1 frame has been completed and it's a dropped frame.
   EXPECT_EQ(1u, dropped_counter_.total_frames());
-  EXPECT_EQ(1u, dropped_counter_.total_compositor_dropped());
+  EXPECT_EQ(1u, dropped_counter_.total_dropped());
 
   reporting_controller_.ResetReporters();
   reporting_controller_.SetDroppedFrameCounter(nullptr);
@@ -1438,13 +1580,13 @@ TEST_F(CompositorFrameReportingControllerTest,
   // Submit and present two compositor frames.
   SimulatePresentCompositorFrame();
   EXPECT_EQ(1u, dropped_counter_.total_frames());
-  EXPECT_EQ(0u, dropped_counter_.total_main_dropped());
-  EXPECT_EQ(0u, dropped_counter_.total_compositor_dropped());
+  EXPECT_EQ(0u, dropped_counter_.total_partial());
+  EXPECT_EQ(0u, dropped_counter_.total_dropped());
 
   SimulatePresentCompositorFrame();
   EXPECT_EQ(2u, dropped_counter_.total_frames());
-  EXPECT_EQ(0u, dropped_counter_.total_main_dropped());
-  EXPECT_EQ(0u, dropped_counter_.total_compositor_dropped());
+  EXPECT_EQ(0u, dropped_counter_.total_partial());
+  EXPECT_EQ(0u, dropped_counter_.total_dropped());
 
   // Now skip over a few frames, and submit + present another frame.
   const uint32_t kSkipFrames = 5;
@@ -1452,8 +1594,8 @@ TEST_F(CompositorFrameReportingControllerTest,
     IncrementCurrentId();
   SimulatePresentCompositorFrame();
   EXPECT_EQ(3u + kSkipFrames, dropped_counter_.total_frames());
-  EXPECT_EQ(0u, dropped_counter_.total_main_dropped());
-  EXPECT_EQ(kSkipFrames, dropped_counter_.total_compositor_dropped());
+  EXPECT_EQ(0u, dropped_counter_.total_partial());
+  EXPECT_EQ(kSkipFrames, dropped_counter_.total_dropped());
 
   // Stop requesting frames, skip over a few frames, and submit + present
   // another frame. There should no new dropped frames.
@@ -1463,8 +1605,8 @@ TEST_F(CompositorFrameReportingControllerTest,
     IncrementCurrentId();
   SimulatePresentCompositorFrame();
   EXPECT_EQ(1u, dropped_counter_.total_frames());
-  EXPECT_EQ(0u, dropped_counter_.total_main_dropped());
-  EXPECT_EQ(0u, dropped_counter_.total_compositor_dropped());
+  EXPECT_EQ(0u, dropped_counter_.total_partial());
+  EXPECT_EQ(0u, dropped_counter_.total_dropped());
 
   reporting_controller_.ResetReporters();
   reporting_controller_.SetDroppedFrameCounter(nullptr);
@@ -1475,13 +1617,13 @@ TEST_F(CompositorFrameReportingControllerTest,
   // Submit and present two compositor frames.
   SimulatePresentCompositorFrame();
   EXPECT_EQ(1u, dropped_counter_.total_frames());
-  EXPECT_EQ(0u, dropped_counter_.total_main_dropped());
-  EXPECT_EQ(0u, dropped_counter_.total_compositor_dropped());
+  EXPECT_EQ(0u, dropped_counter_.total_partial());
+  EXPECT_EQ(0u, dropped_counter_.total_dropped());
 
   SimulatePresentCompositorFrame();
   EXPECT_EQ(2u, dropped_counter_.total_frames());
-  EXPECT_EQ(0u, dropped_counter_.total_main_dropped());
-  EXPECT_EQ(0u, dropped_counter_.total_compositor_dropped());
+  EXPECT_EQ(0u, dropped_counter_.total_partial());
+  EXPECT_EQ(0u, dropped_counter_.total_dropped());
 
   // Now skip over a 101 frames (It should be ignored as it more than 100)
   // and submit + present another frame.
@@ -1491,8 +1633,8 @@ TEST_F(CompositorFrameReportingControllerTest,
     IncrementCurrentId();
   SimulatePresentCompositorFrame();
   EXPECT_EQ(3u + kSkipFramesActual, dropped_counter_.total_frames());
-  EXPECT_EQ(0u, dropped_counter_.total_main_dropped());
-  EXPECT_EQ(kSkipFramesActual, dropped_counter_.total_compositor_dropped());
+  EXPECT_EQ(0u, dropped_counter_.total_partial());
+  EXPECT_EQ(kSkipFramesActual, dropped_counter_.total_dropped());
 }
 
 TEST_F(CompositorFrameReportingControllerTest,
@@ -1512,7 +1654,7 @@ TEST_F(CompositorFrameReportingControllerTest,
   reporting_controller_.WillBeginImplFrame(args_1);
   reporting_controller_.WillBeginMainFrame(args_1);
   reporting_controller_.OnFinishImplFrame(current_id_1);
-  EXPECT_EQ(0u, dropped_counter_.total_compositor_dropped());
+  EXPECT_EQ(0u, dropped_counter_.total_dropped());
   reporting_controller_.DidNotProduceFrame(args_1.frame_id,
                                            FrameSkippedReason::kWaitingOnMain);
 
@@ -1530,23 +1672,23 @@ TEST_F(CompositorFrameReportingControllerTest,
   EXPECT_EQ(3u, reporting_controller_.GetBlockedReportersCount());
 
   // All frames are waiting for the main frame
-  EXPECT_EQ(0u, dropped_counter_.total_main_dropped());
-  EXPECT_EQ(0u, dropped_counter_.total_compositor_dropped());
+  EXPECT_EQ(0u, dropped_counter_.total_partial());
+  EXPECT_EQ(0u, dropped_counter_.total_dropped());
   EXPECT_EQ(0u, dropped_counter_.total_frames());
 
   reporting_controller_.BeginMainFrameAborted(
       args_1.frame_id, CommitEarlyOutReason::FINISHED_NO_UPDATES);
   reporting_controller_.DidNotProduceFrame(args_1.frame_id,
                                            FrameSkippedReason::kNoDamage);
-  EXPECT_EQ(0u, dropped_counter_.total_compositor_dropped());
+  EXPECT_EQ(0u, dropped_counter_.total_dropped());
 
   // New reporters replace older reporters
   reporting_controller_.WillBeginImplFrame(args_4);
   reporting_controller_.WillBeginMainFrame(args_4);
 
   EXPECT_EQ(4u, dropped_counter_.total_frames());
-  EXPECT_EQ(0u, dropped_counter_.total_main_dropped());
-  EXPECT_EQ(0u, dropped_counter_.total_compositor_dropped());
+  EXPECT_EQ(0u, dropped_counter_.total_partial());
+  EXPECT_EQ(0u, dropped_counter_.total_dropped());
 }
 
 TEST_F(CompositorFrameReportingControllerTest,
@@ -1559,13 +1701,13 @@ TEST_F(CompositorFrameReportingControllerTest,
   // Submit and present two compositor frames.
   SimulatePresentCompositorFrame();
   EXPECT_EQ(1u, dropped_counter_.total_frames());
-  EXPECT_EQ(0u, dropped_counter_.total_main_dropped());
-  EXPECT_EQ(0u, dropped_counter_.total_compositor_dropped());
+  EXPECT_EQ(0u, dropped_counter_.total_partial());
+  EXPECT_EQ(0u, dropped_counter_.total_dropped());
 
   SimulatePresentCompositorFrame();
   EXPECT_EQ(2u, dropped_counter_.total_frames());
-  EXPECT_EQ(0u, dropped_counter_.total_main_dropped());
-  EXPECT_EQ(0u, dropped_counter_.total_compositor_dropped());
+  EXPECT_EQ(0u, dropped_counter_.total_partial());
+  EXPECT_EQ(0u, dropped_counter_.total_dropped());
 
   // Now skip over a few frames, and submit + present another frame.
   const uint32_t kSkipFrames_1 = 5;
@@ -1573,8 +1715,8 @@ TEST_F(CompositorFrameReportingControllerTest,
     IncrementCurrentId();
   SimulatePresentCompositorFrame();
   EXPECT_EQ(3u + kSkipFrames_1, dropped_counter_.total_frames());
-  EXPECT_EQ(0u, dropped_counter_.total_main_dropped());
-  EXPECT_EQ(kSkipFrames_1, dropped_counter_.total_compositor_dropped());
+  EXPECT_EQ(0u, dropped_counter_.total_partial());
+  EXPECT_EQ(kSkipFrames_1, dropped_counter_.total_dropped());
   EXPECT_EQ(kSkipFrames_1, dropped_counter_.total_smoothness_dropped());
 
   // Now skip over a few frames which are not affecting smoothness.
@@ -1586,9 +1728,8 @@ TEST_F(CompositorFrameReportingControllerTest,
   SimulatePresentCompositorFrame();  // Present another frame.
   EXPECT_EQ(4u + kSkipFrames_1 + kSkipFrames_2,
             dropped_counter_.total_frames());
-  EXPECT_EQ(0u, dropped_counter_.total_main_dropped());
-  EXPECT_EQ(kSkipFrames_1 + kSkipFrames_2,
-            dropped_counter_.total_compositor_dropped());
+  EXPECT_EQ(0u, dropped_counter_.total_partial());
+  EXPECT_EQ(kSkipFrames_1 + kSkipFrames_2, dropped_counter_.total_dropped());
   EXPECT_EQ(kSkipFrames_1, dropped_counter_.total_smoothness_dropped());
 
   // Now skip over a few frames more frames which are affecting smoothness.
@@ -1600,9 +1741,9 @@ TEST_F(CompositorFrameReportingControllerTest,
   SimulatePresentCompositorFrame();  // Present another frame.
   EXPECT_EQ(5u + kSkipFrames_1 + kSkipFrames_2 + kSkipFrames_3,
             dropped_counter_.total_frames());
-  EXPECT_EQ(0u, dropped_counter_.total_main_dropped());
+  EXPECT_EQ(0u, dropped_counter_.total_partial());
   EXPECT_EQ(kSkipFrames_1 + kSkipFrames_2 + kSkipFrames_3,
-            dropped_counter_.total_compositor_dropped());
+            dropped_counter_.total_dropped());
   EXPECT_EQ(kSkipFrames_1 + kSkipFrames_3,
             dropped_counter_.total_smoothness_dropped());
 }
@@ -1612,13 +1753,13 @@ TEST_F(CompositorFrameReportingControllerTest,
   // Submit and present two compositor frames.
   SimulatePresentCompositorFrame();
   EXPECT_EQ(1u, dropped_counter_.total_frames());
-  EXPECT_EQ(0u, dropped_counter_.total_main_dropped());
-  EXPECT_EQ(0u, dropped_counter_.total_compositor_dropped());
+  EXPECT_EQ(0u, dropped_counter_.total_partial());
+  EXPECT_EQ(0u, dropped_counter_.total_dropped());
 
   SimulatePresentCompositorFrame();
   EXPECT_EQ(2u, dropped_counter_.total_frames());
-  EXPECT_EQ(0u, dropped_counter_.total_main_dropped());
-  EXPECT_EQ(0u, dropped_counter_.total_compositor_dropped());
+  EXPECT_EQ(0u, dropped_counter_.total_partial());
+  EXPECT_EQ(0u, dropped_counter_.total_dropped());
 
   // Now skip over a few frames, and submit + present another frame.
   const uint32_t kTotalFrames = 5;
@@ -1629,9 +1770,8 @@ TEST_F(CompositorFrameReportingControllerTest,
   SimulatePresentCompositorFrame();
   EXPECT_EQ(3u + kTotalFrames - kThrottledFrames,
             dropped_counter_.total_frames());
-  EXPECT_EQ(0u, dropped_counter_.total_main_dropped());
-  EXPECT_EQ(kTotalFrames - kThrottledFrames,
-            dropped_counter_.total_compositor_dropped());
+  EXPECT_EQ(0u, dropped_counter_.total_partial());
+  EXPECT_EQ(kTotalFrames - kThrottledFrames, dropped_counter_.total_dropped());
 }
 
 TEST_F(CompositorFrameReportingControllerTest,
@@ -1644,7 +1784,7 @@ TEST_F(CompositorFrameReportingControllerTest,
     reporting_controller_.BeginMainFrameAborted(
         current_id_, CommitEarlyOutReason::FINISHED_NO_UPDATES);
   }
-  EXPECT_EQ(0u, dropped_counter_.total_compositor_dropped());
+  EXPECT_EQ(0u, dropped_counter_.total_dropped());
 
   // Start a few begin-main-frames, but abort the main-frames due to no damage.
   for (int i = 0; i < 5; ++i) {
@@ -1656,7 +1796,7 @@ TEST_F(CompositorFrameReportingControllerTest,
     SimulateSubmitCompositorFrame({});
   }
   SimulatePresentCompositorFrame();
-  EXPECT_EQ(5u, dropped_counter_.total_compositor_dropped());
+  EXPECT_EQ(5u, dropped_counter_.total_dropped());
 }
 
 // Verifies that presentation feedbacks that arrive out of order are handled
@@ -1680,7 +1820,7 @@ TEST_F(CompositorFrameReportingControllerTest,
                                      gfx::PresentationFeedback::kFailure};
   reporting_controller_.DidPresentCompositorFrame(frame_token_2, details_2);
   DCHECK_EQ(1u, dropped_counter_.total_frames());
-  DCHECK_EQ(1u, dropped_counter_.total_compositor_dropped());
+  DCHECK_EQ(1u, dropped_counter_.total_dropped());
 
   // Send a successful presentation feedback for frame 3. This should drop frame
   // 1.
@@ -1688,7 +1828,54 @@ TEST_F(CompositorFrameReportingControllerTest,
   details_3.presentation_feedback.timestamp = AdvanceNowByMs(10);
   reporting_controller_.DidPresentCompositorFrame(frame_token_3, details_3);
   DCHECK_EQ(3u, dropped_counter_.total_frames());
-  DCHECK_EQ(2u, dropped_counter_.total_compositor_dropped());
+  DCHECK_EQ(2u, dropped_counter_.total_dropped());
+}
+
+TEST_F(CompositorFrameReportingControllerTest,
+       NewMainThreadUpdateNotReportedAsDropped) {
+  auto thread_type_main = FrameSequenceMetrics::ThreadType::kMain;
+  reporting_controller_.SetThreadAffectsSmoothness(thread_type_main,
+                                                   /*affects_smoothness=*/true);
+  dropped_counter_.OnFcpReceived();
+  dropped_counter_.SetTimeFcpReceivedForTesting(args_.frame_time);
+
+  SimulateBeginMainFrame();
+  reporting_controller_.OnFinishImplFrame(current_id_);
+  reporting_controller_.DidSubmitCompositorFrame(1u, current_id_, {}, {},
+                                                 /*has_missing_content=*/false);
+  viz::FrameTimingDetails details = {};
+  details.presentation_feedback.timestamp = AdvanceNowByMs(10);
+  reporting_controller_.DidPresentCompositorFrame(1u, details);
+  // Starts a new frame and submit it prior to commit
+
+  reporting_controller_.WillCommit();
+  reporting_controller_.DidCommit();
+
+  const auto previous_id = current_id_;
+
+  SimulateBeginMainFrame();
+  reporting_controller_.OnFinishImplFrame(current_id_);
+
+  // Starts a new frame and submit it prior to its commit, but the older frame
+  // has new updates which would be activated and submitted now.
+  reporting_controller_.WillActivate();
+  reporting_controller_.DidActivate();
+
+  reporting_controller_.DidSubmitCompositorFrame(
+      1u, current_id_, previous_id, {}, /*has_missing_content=*/false);
+  details.presentation_feedback.timestamp = AdvanceNowByMs(10);
+  reporting_controller_.DidPresentCompositorFrame(1u, details);
+
+  reporting_controller_.WillCommit();
+  reporting_controller_.DidCommit();
+
+  SimulatePresentCompositorFrame();
+
+  // There are two frames with partial updates
+  EXPECT_EQ(2u, dropped_counter_.total_partial());
+  // Which one is accompanied with new main thread update so only one affects
+  // smoothness
+  EXPECT_EQ(1u, dropped_counter_.total_smoothness_dropped());
 }
 
 }  // namespace

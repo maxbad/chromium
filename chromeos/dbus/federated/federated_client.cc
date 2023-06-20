@@ -7,7 +7,6 @@
 #include <memory>
 
 #include "base/bind.h"
-#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "chromeos/dbus/federated/fake_federated_client.h"
 #include "dbus/bus.h"
@@ -25,6 +24,8 @@ class FederatedClientImpl : public FederatedClient {
  public:
   FederatedClientImpl() = default;
   ~FederatedClientImpl() override = default;
+  FederatedClientImpl(const FederatedClientImpl&) = delete;
+  FederatedClientImpl& operator=(const FederatedClientImpl&) = delete;
 
   // FederatedClient:
   void BootstrapMojoConnection(
@@ -48,8 +49,6 @@ class FederatedClientImpl : public FederatedClient {
   }
 
  private:
-  dbus::ObjectProxy* federated_service_proxy_ = nullptr;
-
   // Passes the success/failure of `dbus_response` on to `result_callback`.
   void OnBootstrapMojoConnectionResponse(
       base::OnceCallback<void(bool success)> result_callback,
@@ -58,10 +57,9 @@ class FederatedClientImpl : public FederatedClient {
     std::move(result_callback).Run(success);
   }
 
+  dbus::ObjectProxy* federated_service_proxy_ = nullptr;
   // Must be last class member.
   base::WeakPtrFactory<FederatedClientImpl> weak_ptr_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(FederatedClientImpl);
 };
 
 }  // namespace

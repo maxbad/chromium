@@ -10,8 +10,8 @@
 
 #include "base/debug/crash_logging.h"
 #include "base/location.h"
-#include "base/single_thread_task_runner.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "content/public/renderer/content_renderer_client.h"
@@ -453,14 +453,6 @@ bool PepperWebPluginImpl::GetPrintPresetOptionsFromDocument(
   return instance_->GetPrintPresetOptionsFromDocument(preset_options);
 }
 
-bool PepperWebPluginImpl::IsPdfPlugin() {
-  // Re-entrancy may cause JS to try to execute script on the plugin before it
-  // is fully initialized. See: crbug.com/715747.
-  if (!instance_)
-    return false;
-  return instance_->IsPdfPlugin();
-}
-
 bool PepperWebPluginImpl::CanRotateView() {
   // Re-entrancy may cause JS to try to execute script on the plugin before it
   // is fully initialized. See: crbug.com/715747.
@@ -469,7 +461,7 @@ bool PepperWebPluginImpl::CanRotateView() {
   return instance_->CanRotateView();
 }
 
-void PepperWebPluginImpl::RotateView(RotationType type) {
+void PepperWebPluginImpl::RotateView(blink::WebPlugin::RotationType type) {
   // Re-entrancy may cause JS to try to execute script on the plugin before it
   // is fully initialized. See: crbug.com/715747.
   if (instance_)

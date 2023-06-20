@@ -99,7 +99,7 @@ namespace chromeos {
 
 class LoginApitest : public LoginScreenApitestBase {
  public:
-  LoginApitest() : LoginScreenApitestBase(version_info::Channel::STABLE) {}
+  LoginApitest() : LoginScreenApitestBase(version_info::Channel::CANARY) {}
 
   LoginApitest(const LoginApitest&) = delete;
 
@@ -199,12 +199,11 @@ class LoginApitest : public LoginScreenApitestBase {
   }
 
   // Also checks that session is locked.
-  void LockScreen() { screen_locker_tester_.Lock(); }
+  void LockScreen() { ScreenLockerTester().Lock(); }
 
  private:
-  chromeos::LocalPolicyTestServerMixin local_policy_mixin_{&mixin_host_};
+  ash::LocalPolicyTestServerMixin local_policy_mixin_{&mixin_host_};
   base::DictionaryValue config_;
-  ScreenLockerTester screen_locker_tester_;
 };
 
 IN_PROC_BROWSER_TEST_F(LoginApitest, LaunchManagedGuestSession) {

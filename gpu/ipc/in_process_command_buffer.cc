@@ -20,7 +20,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/sequence_checker.h"
-#include "base/single_thread_task_runner.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
@@ -85,7 +85,6 @@
 #endif
 
 #if defined(USE_OZONE)
-#include "ui/base/ui_base_features.h"
 #include "ui/ozone/public/ozone_platform.h"
 #include "ui/ozone/public/platform_window_surface.h"
 #include "ui/ozone/public/surface_factory_ozone.h"
@@ -298,7 +297,7 @@ gpu::ContextResult InProcessCommandBuffer::Initialize(
   // would be kept alive by VizProcessContextProvider. If no |task_sequence| is
   // passed in, create one here.
   if (task_sequence) {
-    task_sequence_ = task_sequence;
+    task_sequence_ = std::move(task_sequence);
   } else {
     task_scheduler_holder_ =
         std::make_unique<gpu::GpuTaskSchedulerHelper>(task_executor_);
@@ -450,8 +449,7 @@ gpu::ContextResult InProcessCommandBuffer::InitializeOnGpuThread(
           break;
       }
 #if defined(USE_OZONE)
-      if (features::IsUsingOzonePlatform() &&
-          params.surface_handle != gpu::kNullSurfaceHandle) {
+      if (params.surface_handle != gpu::kNullSurfaceHandle) {
         window_surface_ =
             ui::OzonePlatform::GetInstance()
                 ->GetSurfaceFactoryOzone()
@@ -560,11 +558,6 @@ gpu::ContextResult InProcessCommandBuffer::InitializeOnGpuThread(
       if (!context_state_->IsGLInitialized()) {
         context_state_->InitializeGL(task_executor_->gpu_preferences(),
                                      context_group_->feature_info());
-      }
-
-      if (base::ThreadTaskRunnerHandle::IsSet()) {
-        gr_cache_controller_.emplace(context_state_.get(),
-                                     base::ThreadTaskRunnerHandle::Get());
       }
 
       context_ = context_state_->context();
@@ -697,7 +690,6 @@ bool InProcessCommandBuffer::DestroyOnGpuThread() {
     surface_->PrepareToDestroy(have_context);
 
   if (decoder_) {
-    gr_cache_controller_.reset();
     decoder_->Destroy(have_context);
     decoder_.reset();
   }
@@ -1224,8 +1216,7 @@ void InProcessCommandBuffer::OnSwapBuffers(uint64_t swap_id, uint32_t flags) {
 
 void InProcessCommandBuffer::ScheduleGrContextCleanup() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(gpu_sequence_checker_);
-  if (gr_cache_controller_)
-    gr_cache_controller_->ScheduleGrContextCleanup();
+  context_state_->ScheduleGrContextCleanup();
 }
 
 void InProcessCommandBuffer::HandleReturnData(base::span<const uint8_t> data) {
@@ -1445,7 +1436,8 @@ void InProcessCommandBuffer::DidCreateAcceleratedSurfaceChildWindow(
 #endif
 
 void InProcessCommandBuffer::DidSwapBuffersComplete(
-    SwapBuffersCompleteParams params) {
+    SwapBuffersCompleteParams params,
+    gfx::GpuFenceHandle release_fence) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(gpu_sequence_checker_);
 
   auto& pending_swap = pending_swap_completed_params_.front();
@@ -1459,7 +1451,7 @@ void InProcessCommandBuffer::DidSwapBuffersComplete(
 
   PostOrRunClientCallback(base::BindOnce(
       &InProcessCommandBuffer::DidSwapBuffersCompleteOnOriginThread,
-      client_thread_weak_ptr_, std::move(params)));
+      client_thread_weak_ptr_, std::move(params), std::move(release_fence)));
 }
 
 const gles2::FeatureInfo* InProcessCommandBuffer::GetFeatureInfo() const {
@@ -1485,10 +1477,12 @@ void InProcessCommandBuffer::BufferPresented(
 }
 
 void InProcessCommandBuffer::DidSwapBuffersCompleteOnOriginThread(
-    SwapBuffersCompleteParams params) {
+    SwapBuffersCompleteParams params,
+    gfx::GpuFenceHandle release_fence) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(client_sequence_checker_);
   if (gpu_control_client_)
-    gpu_control_client_->OnGpuControlSwapBuffersCompleted(params);
+    gpu_control_client_->OnGpuControlSwapBuffersCompleted(
+        params, std::move(release_fence));
 }
 
 void InProcessCommandBuffer::BufferPresentedOnOriginThread(

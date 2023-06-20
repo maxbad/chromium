@@ -13,8 +13,7 @@
 #include "base/hash/md5_constexpr.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_macros.h"
-#include "base/single_thread_task_runner.h"
-#include "base/stl_util.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "base/timer/elapsed_timer.h"
@@ -167,11 +166,13 @@ void Scheduler::Sequence::SetEnabled(bool enabled) {
     return;
   enabled_ = enabled;
   if (enabled) {
-    TRACE_EVENT_ASYNC_BEGIN1("gpu", "SequenceEnabled", this, "sequence_id",
-                             sequence_id_.GetUnsafeValue());
+    TRACE_EVENT_NESTABLE_ASYNC_BEGIN1("gpu", "SequenceEnabled",
+                                      TRACE_ID_LOCAL(this), "sequence_id",
+                                      sequence_id_.GetUnsafeValue());
   } else {
-    TRACE_EVENT_ASYNC_END1("gpu", "SequenceEnabled", this, "sequence_id",
-                           sequence_id_.GetUnsafeValue());
+    TRACE_EVENT_NESTABLE_ASYNC_END1("gpu", "SequenceEnabled",
+                                    TRACE_ID_LOCAL(this), "sequence_id",
+                                    sequence_id_.GetUnsafeValue());
   }
   scheduler_->TryScheduleSequence(this);
 }
@@ -573,7 +574,8 @@ void Scheduler::TryScheduleSequence(Sequence* sequence) {
     std::push_heap(scheduling_queue.begin(), scheduling_queue.end(),
                    &SchedulingState::Comparator);
     if (!thread_state.running) {
-      TRACE_EVENT_NESTABLE_ASYNC_BEGIN0("gpu", "Scheduler::Running", this);
+      TRACE_EVENT_NESTABLE_ASYNC_BEGIN0("gpu", "Scheduler::Running",
+                                        TRACE_ID_LOCAL(this));
       thread_state.running = true;
       run_next_task_scheduled_ = base::TimeTicks::Now();
       task_runner->PostTask(FROM_HERE, base::BindOnce(&Scheduler::RunNextTask,
@@ -614,16 +616,16 @@ void Scheduler::RunNextTask() {
   base::AutoLock auto_lock(lock_);
   UMA_HISTOGRAM_CUSTOM_MICROSECONDS_TIMES(
       "GPU.Scheduler.ThreadSuspendedTime",
-      base::TimeTicks::Now() - run_next_task_scheduled_,
-      base::TimeDelta::FromMicroseconds(10), base::TimeDelta::FromSeconds(30),
-      100);
+      base::TimeTicks::Now() - run_next_task_scheduled_, base::Microseconds(10),
+      base::Seconds(30), 100);
   auto* task_runner = base::ThreadTaskRunnerHandle::Get().get();
 
   SchedulingState state;
   {
     auto& scheduling_queue = RebuildSchedulingQueueIfNeeded(task_runner);
     if (scheduling_queue.empty()) {
-      TRACE_EVENT_NESTABLE_ASYNC_END0("gpu", "Scheduler::Running", this);
+      TRACE_EVENT_NESTABLE_ASYNC_END0("gpu", "Scheduler::Running",
+                                      TRACE_ID_LOCAL(this));
       per_thread_state_map_[task_runner].running = false;
       return;
     }
@@ -642,15 +644,13 @@ void Scheduler::RunNextTask() {
 
   UMA_HISTOGRAM_CUSTOM_MICROSECONDS_TIMES(
       "GPU.Scheduler.TaskDependencyTime",
-      sequence->FrontTaskWaitingDependencyDelta(),
-      base::TimeDelta::FromMicroseconds(10), base::TimeDelta::FromSeconds(30),
-      100);
+      sequence->FrontTaskWaitingDependencyDelta(), base::Microseconds(10),
+      base::Seconds(30), 100);
 
   UMA_HISTOGRAM_CUSTOM_MICROSECONDS_TIMES(
       "GPU.Scheduler.TaskSchedulingDelayTime",
-      sequence->FrontTaskSchedulingDelay(),
-      base::TimeDelta::FromMicroseconds(10), base::TimeDelta::FromSeconds(30),
-      100);
+      sequence->FrontTaskSchedulingDelay(), base::Microseconds(10),
+      base::Seconds(30), 100);
 
   base::OnceClosure closure;
   uint32_t order_num = sequence->BeginTask(&closure);
@@ -705,14 +705,14 @@ void Scheduler::RunNextTask() {
   }
 
   UMA_HISTOGRAM_CUSTOM_MICROSECONDS_TIMES(
-      "GPU.Scheduler.RunTaskTime", task_timer.Elapsed(),
-      base::TimeDelta::FromMicroseconds(10), base::TimeDelta::FromSeconds(30),
-      100);
+      "GPU.Scheduler.RunTaskTime", task_timer.Elapsed(), base::Microseconds(10),
+      base::Seconds(30), 100);
 
   // Avoid scheduling another RunNextTask if we're done with all tasks.
   auto& scheduling_queue = RebuildSchedulingQueueIfNeeded(task_runner);
   if (scheduling_queue.empty()) {
-    TRACE_EVENT_NESTABLE_ASYNC_END0("gpu", "Scheduler::Running", this);
+    TRACE_EVENT_NESTABLE_ASYNC_END0("gpu", "Scheduler::Running",
+                                    TRACE_ID_LOCAL(this));
     per_thread_state_map_[task_runner].running = false;
     return;
   }

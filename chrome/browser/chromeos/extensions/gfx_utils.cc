@@ -4,6 +4,7 @@
 
 #include "chrome/browser/chromeos/extensions/gfx_utils.h"
 
+#include "base/containers/cxx20_erase.h"
 #include "base/cxx17_backports.h"
 #include "base/lazy_instance.h"
 #include "chrome/browser/ash/profiles/profile_helper.h"
@@ -38,7 +39,7 @@ const struct {
     {"com.google.android.gm", extension_misc::kGmailAppId},
     {"com.google.android.gm", "bjdhhokmhgelphffoafoejjmlfblpdha"},
     // Google Drive
-    {"com.google.android.apps.docs", extension_misc::kDriveHostedAppId},
+    {"com.google.android.apps.docs", extension_misc::kGoogleDriveAppId},
     {"com.google.android.apps.docs", "mdhnphfgagkpdhndljccoackjjhghlif"},
     // Google Maps
     {"com.google.android.apps.maps", "lneaknkopdijkpnocmklfnjbeapigfbh"},
@@ -49,7 +50,7 @@ const struct {
     {"com.google.android.calendar", "fpgfohogebplgnamlafljlcidjedbdeb"},
     // Google Docs
     {"com.google.android.apps.docs.editors.docs",
-     extension_misc::kGoogleDocAppId},
+     extension_misc::kGoogleDocsAppId},
     {"com.google.android.apps.docs.editors.docs",
      "npnjdccdffhdndcbeappiamcehbhjibf"},
     // Google Slides
@@ -114,6 +115,9 @@ class AppDualBadgeMap {
     }
   }
 
+  AppDualBadgeMap(const AppDualBadgeMap&) = delete;
+  AppDualBadgeMap& operator=(const AppDualBadgeMap&) = delete;
+
   std::vector<std::string> GetExtensionIdsForArcPackageName(
       std::string arc_package_name) {
     const auto iter = arc_app_to_extensions_map_.find(arc_package_name);
@@ -132,8 +136,6 @@ class AppDualBadgeMap {
  private:
   ArcAppToExtensionsMap arc_app_to_extensions_map_;
   ExtensionToArcAppMap extension_to_arc_app_map_;
-
-  DISALLOW_COPY_AND_ASSIGN(AppDualBadgeMap);
 };
 
 base::LazyInstance<AppDualBadgeMap>::DestructorAtExit g_dual_badge_map =

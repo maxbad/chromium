@@ -12,13 +12,13 @@
 #include "base/memory/ptr_util.h"
 #include "base/numerics/safe_conversions.h"
 #include "content/browser/devtools/devtools_instrumentation.h"
+#include "content/browser/renderer_host/cross_origin_embedder_policy.h"
 #include "content/browser/service_worker/service_worker_cache_writer.h"
 #include "content/browser/service_worker/service_worker_consts.h"
 #include "content/browser/service_worker/service_worker_context_core.h"
 #include "content/browser/service_worker/service_worker_context_wrapper.h"
 #include "content/browser/service_worker/service_worker_loader_helpers.h"
 #include "content/browser/service_worker/service_worker_version.h"
-#include "content/browser/url_loader_factory_getter.h"
 #include "content/common/service_worker/service_worker_utils.h"
 #include "content/public/browser/url_loader_throttles.h"
 #include "content/public/common/content_features.h"
@@ -27,6 +27,7 @@
 #include "net/base/net_errors.h"
 #include "net/cert/cert_status_flags.h"
 #include "net/http/http_response_info.h"
+#include "services/network/public/mojom/early_hints.mojom.h"
 #include "services/network/public/mojom/url_response_head.mojom.h"
 #include "third_party/blink/public/common/loader/throttling_url_loader.h"
 
@@ -60,7 +61,7 @@ ServiceWorkerNewScriptLoader::CreateAndStart(
     const net::MutableNetworkTrafficAnnotationTag& traffic_annotation,
     int64_t cache_resource_id,
     bool is_throttle_needed,
-    const GlobalFrameRoutingId& requesting_frame_id) {
+    const GlobalRenderFrameHostId& requesting_frame_id) {
   return base::WrapUnique(new ServiceWorkerNewScriptLoader(
       request_id, options, original_request, std::move(client), version,
       loader_factory, traffic_annotation, cache_resource_id, is_throttle_needed,
@@ -79,7 +80,7 @@ ServiceWorkerNewScriptLoader::ServiceWorkerNewScriptLoader(
     const net::MutableNetworkTrafficAnnotationTag& traffic_annotation,
     int64_t cache_resource_id,
     bool is_throttle_needed,
-    const GlobalFrameRoutingId& requesting_frame_id)
+    const GlobalRenderFrameHostId& requesting_frame_id)
     : request_url_(original_request.url),
       is_main_script_(original_request.destination ==
                           network::mojom::RequestDestination::kServiceWorker &&
@@ -240,7 +241,7 @@ void ServiceWorkerNewScriptLoader::OnReceiveResponse(
     bool has_header = response_head->headers->EnumerateHeader(
         nullptr, ServiceWorkerConsts::kServiceWorkerAllowed,
         &service_worker_allowed);
-    if (!ServiceWorkerUtils::IsPathRestrictionSatisfied(
+    if (!service_worker_loader_helpers::IsPathRestrictionSatisfied(
             version_->scope(), request_url_,
             has_header ? &service_worker_allowed : nullptr, &error_message)) {
       CommitCompleted(
@@ -251,7 +252,7 @@ void ServiceWorkerNewScriptLoader::OnReceiveResponse(
 
     version_->set_cross_origin_embedder_policy(
         response_head->parsed_headers
-            ? response_head->parsed_headers->cross_origin_embedder_policy
+            ? CoepFromMainResponse(request_url_, response_head.get())
             : network::CrossOriginEmbedderPolicy());
 
     if (response_head->network_accessed)

@@ -9,13 +9,12 @@
 #include <vector>
 
 #include "base/memory/weak_ptr.h"
-#include "base/no_destructor.h"
 #include "build/build_config.h"
 #include "chrome/browser/ui/autofill/autofill_popup_controller.h"
 #include "components/autofill/core/browser/ui/suggestion.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "ui/gfx/geometry/rect_f.h"
-#include "ui/gfx/test/gfx_util.h"
+#include "ui/gfx/test/scoped_default_font_description.h"
 
 namespace autofill {
 
@@ -37,8 +36,8 @@ class MockAutofillPopupController
   MOCK_CONST_METHOD0(container_view, gfx::NativeView());
   MOCK_CONST_METHOD0(GetWebContents, content::WebContents*());
   const gfx::RectF& element_bounds() const override {
-    static base::NoDestructor<gfx::RectF> bounds({100, 100, 250, 50});
-    return *bounds;
+    static const gfx::RectF bounds(100, 100, 250, 50);
+    return bounds;
   }
   MOCK_CONST_METHOD0(IsRTL, bool());
 

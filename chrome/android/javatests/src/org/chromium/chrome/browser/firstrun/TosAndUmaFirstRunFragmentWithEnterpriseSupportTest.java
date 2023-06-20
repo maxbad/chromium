@@ -17,7 +17,6 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
 import android.content.res.Configuration;
-import android.os.Bundle;
 import android.os.SystemClock;
 import android.support.test.InstrumentationRegistry;
 import android.view.View;
@@ -44,16 +43,17 @@ import org.chromium.base.Callback;
 import org.chromium.base.CommandLine;
 import org.chromium.base.metrics.RecordHistogram;
 import org.chromium.base.test.util.CallbackHelper;
+import org.chromium.base.test.util.CommandLineFlags;
 import org.chromium.base.test.util.Criteria;
 import org.chromium.base.test.util.CriteriaHelper;
 import org.chromium.base.test.util.DisabledTest;
 import org.chromium.base.test.util.Feature;
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.customtabs.CustomTabsTestUtils;
+import org.chromium.chrome.browser.enterprise.util.EnterpriseInfo;
 import org.chromium.chrome.browser.flags.ChromeSwitches;
 import org.chromium.chrome.browser.init.BrowserParts;
 import org.chromium.chrome.browser.init.ChromeBrowserInitializer;
-import org.chromium.chrome.browser.policy.EnterpriseInfo;
 import org.chromium.chrome.browser.policy.PolicyServiceFactory;
 import org.chromium.chrome.browser.preferences.ChromePreferenceKeys;
 import org.chromium.chrome.browser.preferences.SharedPreferencesManager;
@@ -76,6 +76,7 @@ import java.util.concurrent.TimeoutException;
  * workflow and UI transition.
  */
 @RunWith(ChromeJUnit4ClassRunner.class)
+@CommandLineFlags.Add({ChromeSwitches.FORCE_DISABLE_SIGNIN_FRE})
 public class TosAndUmaFirstRunFragmentWithEnterpriseSupportTest {
     @IntDef({FragmentState.LOADING, FragmentState.NO_POLICY, FragmentState.HAS_POLICY,
             FragmentState.WAITING_UNTIL_NEXT_PAGE})
@@ -96,12 +97,18 @@ public class TosAndUmaFirstRunFragmentWithEnterpriseSupportTest {
         int SLOWER = 2;
     }
 
-    @Rule
-    public DisableAnimationsTestRule mDisableAnimationsTestRule = new DisableAnimationsTestRule();
+    private static final int RENDER_TEST_REVISION = 2;
+    private static final String RENDER_TEST_REVISION_DESCRIPTION =
+            "Change the button padding and font family.";
 
     @Rule
+    public DisableAnimationsTestRule mDisableAnimationsTestRule = new DisableAnimationsTestRule();
+    @Rule
     public ChromeRenderTestRule mRenderTestRule =
-            ChromeRenderTestRule.Builder.withPublicCorpus().setRevision(1).build();
+            ChromeRenderTestRule.Builder.withPublicCorpus()
+                    .setRevision(RENDER_TEST_REVISION)
+                    .setDescription(RENDER_TEST_REVISION_DESCRIPTION)
+                    .build();
 
     @Mock
     public FirstRunAppRestrictionInfo mMockAppRestrictionInfo;
@@ -162,8 +169,7 @@ public class TosAndUmaFirstRunFragmentWithEnterpriseSupportTest {
         mExitCount = 0;
         FirstRunActivity.setObserverForTest(new FirstRunActivity.FirstRunActivityObserver() {
             @Override
-            public void onCreatePostNativeAndPoliciesPageSequence(
-                    FirstRunActivity caller, Bundle freProperties) {}
+            public void onCreatePostNativeAndPoliciesPageSequence(FirstRunActivity caller) {}
 
             @Override
             public void onAcceptTermsOfService(FirstRunActivity caller) {

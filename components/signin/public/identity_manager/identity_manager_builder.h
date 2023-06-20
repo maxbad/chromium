@@ -20,9 +20,7 @@
 #include "base/callback.h"
 #endif
 
-class AccountTrackerService;
 class PrefService;
-class ProfileOAuth2TokenService;
 class SigninClient;
 
 #if !defined(OS_ANDROID)
@@ -41,17 +39,7 @@ namespace network {
 class NetworkConnectionTracker;
 }
 
-#if BUILDFLAG(IS_CHROMEOS_ASH)
-namespace ash {
-class AccountManager;
-}
-
-namespace account_manager {
-class AccountManagerFacade;
-}
-#endif
-
-#if BUILDFLAG(IS_CHROMEOS_LACROS)
+#if BUILDFLAG(IS_CHROMEOS_ASH) || BUILDFLAG(IS_CHROMEOS_LACROS)
 namespace account_manager {
 class AccountManagerFacade;
 }
@@ -66,27 +54,19 @@ struct IdentityManagerBuildParams {
 
   AccountConsistencyMethod account_consistency =
       AccountConsistencyMethod::kDisabled;
-  std::unique_ptr<AccountTrackerService> account_tracker_service;
   std::unique_ptr<image_fetcher::ImageDecoder> image_decoder;
   PrefService* local_state = nullptr;
   network::NetworkConnectionTracker* network_connection_tracker;
   PrefService* pref_service = nullptr;
   base::FilePath profile_path;
   SigninClient* signin_client = nullptr;
-  std::unique_ptr<ProfileOAuth2TokenService> token_service;
 
 #if !defined(OS_ANDROID)
   bool delete_signin_cookies_on_exit = false;
   scoped_refptr<TokenWebData> token_web_data;
 #endif
 
-#if BUILDFLAG(IS_CHROMEOS_ASH)
-  ash::AccountManager* account_manager = nullptr;
-  account_manager::AccountManagerFacade* account_manager_facade = nullptr;
-  bool is_regular_profile = false;
-#endif
-
-#if BUILDFLAG(IS_CHROMEOS_LACROS)
+#if BUILDFLAG(IS_CHROMEOS_ASH) || BUILDFLAG(IS_CHROMEOS_LACROS)
   account_manager::AccountManagerFacade* account_manager_facade = nullptr;
   bool is_regular_profile = false;
 #endif
@@ -98,8 +78,6 @@ struct IdentityManagerBuildParams {
 #if defined(OS_WIN)
   base::RepeatingCallback<bool()> reauth_callback;
 #endif
-
-  bool allow_access_token_fetch = true;
 };
 
 // Builds all required dependencies to initialize the IdentityManager instance.

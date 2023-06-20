@@ -61,6 +61,10 @@ class TestSearchResult : public ChromeSearchResult {
     SetTitle(base::UTF8ToUTF16(id));
     SetResultType(type);
   }
+
+  TestSearchResult(const TestSearchResult&) = delete;
+  TestSearchResult& operator=(const TestSearchResult&) = delete;
+
   ~TestSearchResult() override {}
 
   // ChromeSearchResult overrides:
@@ -70,8 +74,6 @@ class TestSearchResult : public ChromeSearchResult {
   static int instantiation_count;
 
   int instance_id_;
-
-  DISALLOW_COPY_AND_ASSIGN(TestSearchResult);
 };
 int TestSearchResult::instantiation_count = 0;
 
@@ -129,6 +131,10 @@ class SearchResultRankerTest : public testing::Test {
  public:
   SearchResultRankerTest()
       : task_environment_(base::test::TaskEnvironment::TimeSource::MOCK_TIME) {}
+
+  SearchResultRankerTest(const SearchResultRankerTest&) = delete;
+  SearchResultRankerTest& operator=(const SearchResultRankerTest&) = delete;
+
   ~SearchResultRankerTest() override {}
 
   // testing::Test overrides:
@@ -202,8 +208,6 @@ class SearchResultRankerTest : public testing::Test {
   std::vector<base::Feature> all_feature_flags_ = {
       app_list_features::kEnableAppRanker,
       app_list_features::kEnableZeroStateMixedTypesRanker};
-
-  DISALLOW_COPY_AND_ASSIGN(SearchResultRankerTest);
 };
 
 TEST_F(SearchResultRankerTest, MixedTypesRankersAreDisabledWithFlag) {
@@ -513,7 +517,7 @@ TEST_F(SearchResultRankerTest, ZeroStateStaleResultIgnored) {
                                        HasId("Z2"), HasId("Z3"), HasId("Z4"),
                                        HasId("D1"), HasId("Z5"))));
     // D1 should increment its cache counter.
-    ranker->ZeroStateResultsDisplayed({{"D1", 0.0f}});
+    ranker->ZeroStateResultsDisplayed({{"D1", 0}});
   }
 
   auto results_copy = results;
@@ -574,7 +578,7 @@ TEST_F(SearchResultRankerTest, ZeroStateCacheResetWhenTopResultChanges) {
                                        HasId("Z2"), HasId("Z3"), HasId("Z4"),
                                        HasId("D1"), HasId("Z5"), HasId("D2"))));
     // D1 should increment its cache counter.
-    ranker->ZeroStateResultsDisplayed({{"D1", 0.0f}});
+    ranker->ZeroStateResultsDisplayed({{"D1", 0}});
   }
 
   {

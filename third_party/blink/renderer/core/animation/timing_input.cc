@@ -8,6 +8,7 @@
 #include "third_party/blink/renderer/bindings/core/v8/v8_keyframe_animation_options.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_keyframe_effect_options.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_optional_effect_timing.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_union_cssnumericvalue_string_unrestricteddouble.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_union_keyframeanimationoptions_unrestricteddouble.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_union_keyframeeffectoptions_unrestricteddouble.h"
 #include "third_party/blink/renderer/core/animation/animation_effect.h"
@@ -29,10 +30,10 @@ Timing::PlaybackDirection ConvertPlaybackDirection(const String& direction) {
 }
 
 absl::optional<AnimationTimeDelta> ConvertIterationDuration(
-    const UnrestrictedDoubleOrString& duration) {
-  if (duration.IsUnrestrictedDouble()) {
-    return AnimationTimeDelta::FromMillisecondsD(
-        duration.GetAsUnrestrictedDouble());
+    const V8UnionCSSNumericValueOrStringOrUnrestrictedDouble* duration) {
+  if (duration->IsUnrestrictedDouble()) {
+    return ANIMATION_TIME_DELTA_FROM_MILLISECONDS(
+        duration->GetAsUnrestrictedDouble());
   }
   return absl::nullopt;
 }
@@ -80,7 +81,8 @@ Timing TimingInput::Convert(
       //   their default values and duration set to options.
       EffectTiming* timing_input = EffectTiming::Create();
       timing_input->setDuration(
-          UnrestrictedDoubleOrString::FromUnrestrictedDouble(
+          MakeGarbageCollected<
+              V8UnionCSSNumericValueOrStringOrUnrestrictedDouble>(
               options->GetAsUnrestrictedDouble()));
       return ConvertEffectTiming(timing_input, document, exception_state);
     }
@@ -110,7 +112,8 @@ Timing TimingInput::Convert(
       //   their default values and duration set to options.
       EffectTiming* timing_input = EffectTiming::Create();
       timing_input->setDuration(
-          UnrestrictedDoubleOrString::FromUnrestrictedDouble(
+          MakeGarbageCollected<
+              V8UnionCSSNumericValueOrStringOrUnrestrictedDouble>(
               options->GetAsUnrestrictedDouble()));
       return ConvertEffectTiming(timing_input, document, exception_state);
     }
@@ -146,15 +149,28 @@ bool TimingInput::Update(Timing& timing,
   // https://github.com/w3c/csswg-drafts/issues/247 .
   if (input->hasDuration()) {
     const char* error_message = "duration must be non-negative or auto";
-    if (input->duration().IsUnrestrictedDouble()) {
-      double duration = input->duration().GetAsUnrestrictedDouble();
-      if (std::isnan(duration) || duration < 0) {
-        exception_state.ThrowTypeError(error_message);
+    switch (input->duration()->GetContentType()) {
+      case V8UnionCSSNumericValueOrStringOrUnrestrictedDouble::ContentType::
+          kCSSNumericValue:
+        exception_state.ThrowTypeError(
+            "Setting duration using CSSNumericValue is not supported.");
         return false;
+      case V8UnionCSSNumericValueOrStringOrUnrestrictedDouble::ContentType::
+          kString:
+        if (input->duration()->GetAsString() != "auto") {
+          exception_state.ThrowTypeError(error_message);
+          return false;
+        }
+        break;
+      case V8UnionCSSNumericValueOrStringOrUnrestrictedDouble::ContentType::
+          kUnrestrictedDouble: {
+        double duration = input->duration()->GetAsUnrestrictedDouble();
+        if (std::isnan(duration) || duration < 0) {
+          exception_state.ThrowTypeError(error_message);
+          return false;
+        }
+        break;
       }
-    } else if (input->duration().GetAsString() != "auto") {
-      exception_state.ThrowTypeError(error_message);
-      return false;
     }
   }
 
@@ -178,14 +194,14 @@ bool TimingInput::Update(Timing& timing,
     DCHECK(std::isfinite(input->delay()));
     changed |= UpdateValueIfChanged(
         timing.start_delay,
-        AnimationTimeDelta::FromMillisecondsD(input->delay()));
+        ANIMATION_TIME_DELTA_FROM_MILLISECONDS(input->delay()));
     timing.SetTimingOverride(Timing::kOverrideStartDelay);
   }
   if (input->hasEndDelay()) {
     DCHECK(std::isfinite(input->endDelay()));
     changed |= UpdateValueIfChanged(
         timing.end_delay,
-        AnimationTimeDelta::FromMillisecondsD(input->endDelay()));
+        ANIMATION_TIME_DELTA_FROM_MILLISECONDS(input->endDelay()));
     timing.SetTimingOverride(Timing::kOverrideEndDelay);
   }
   if (input->hasFill()) {

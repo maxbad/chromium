@@ -28,12 +28,9 @@ class COMPONENT_EXPORT(UI_BASE) LinuxUiDelegate {
   virtual LinuxUiBackend GetBackend() const = 0;
 
   // Only implemented on Wayland.
-  virtual bool SetWidgetTransientFor(
+  virtual bool ExportWindowHandle(
       uint32_t parent_widget,
       base::OnceCallback<void(const std::string&)> callback);
-
-  // Only implemented on Wayland.
-  virtual int GetKeyState();
 
  private:
   static LinuxUiDelegate* instance_;

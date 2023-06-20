@@ -34,6 +34,10 @@ class BrowsingDataQuotaHelperTest : public testing::Test {
 
   BrowsingDataQuotaHelperTest() = default;
 
+  BrowsingDataQuotaHelperTest(const BrowsingDataQuotaHelperTest&) = delete;
+  BrowsingDataQuotaHelperTest& operator=(const BrowsingDataQuotaHelperTest&) =
+      delete;
+
   ~BrowsingDataQuotaHelperTest() override = default;
 
   void SetUp() override {
@@ -43,8 +47,8 @@ class BrowsingDataQuotaHelperTest : public testing::Test {
         content::GetIOThreadTaskRunner({}).get(),
         /*quota_change_callback=*/base::DoNothing(),
         /*special_storage_policy=*/nullptr, storage::GetQuotaSettingsFunc());
-    helper_ = base::WrapRefCounted(
-        new BrowsingDataQuotaHelperImpl(quota_manager_.get()));
+    helper_ =
+        base::MakeRefCounted<BrowsingDataQuotaHelperImpl>(quota_manager_.get());
   }
 
   void TearDown() override {
@@ -70,9 +74,10 @@ class BrowsingDataQuotaHelperTest : public testing::Test {
                        weak_factory_.GetWeakPtr()));
   }
 
-  void RegisterClient(base::span<const storage::MockOriginData> origin_data) {
+  void RegisterClient(
+      base::span<const storage::MockStorageKeyData> storage_key_data) {
     auto mock_quota_client = std::make_unique<storage::MockQuotaClient>(
-        quota_manager_->proxy(), origin_data,
+        quota_manager_->proxy(), storage_key_data,
         storage::QuotaClientType::kFileSystem);
     storage::MockQuotaClient* mock_quota_client_ptr = mock_quota_client.get();
 
@@ -84,7 +89,7 @@ class BrowsingDataQuotaHelperTest : public testing::Test {
         {blink::mojom::StorageType::kTemporary,
          blink::mojom::StorageType::kPersistent,
          blink::mojom::StorageType::kSyncable});
-    mock_quota_client_ptr->TouchAllOriginsAndNotify();
+    mock_quota_client_ptr->TouchAllStorageKeysAndNotify();
   }
 
   void SetPersistentHostQuota(const std::string& host, int64_t quota) {
@@ -132,8 +137,6 @@ class BrowsingDataQuotaHelperTest : public testing::Test {
   QuotaInfoArray quota_info_;
   int64_t quota_ = -1;
   base::WeakPtrFactory<BrowsingDataQuotaHelperTest> weak_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(BrowsingDataQuotaHelperTest);
 };
 
 TEST_F(BrowsingDataQuotaHelperTest, Empty) {
@@ -144,7 +147,7 @@ TEST_F(BrowsingDataQuotaHelperTest, Empty) {
 }
 
 TEST_F(BrowsingDataQuotaHelperTest, FetchData) {
-  static const storage::MockOriginData kOrigins[] = {
+  static const storage::MockStorageKeyData kStorageKeys[] = {
       {"http://example.com/", StorageType::kTemporary, 1},
       {"https://example.com/", StorageType::kTemporary, 10},
       {"http://example.com/", StorageType::kPersistent, 100},
@@ -152,7 +155,7 @@ TEST_F(BrowsingDataQuotaHelperTest, FetchData) {
       {"http://example2.com/", StorageType::kTemporary, 1000},
   };
 
-  RegisterClient(kOrigins);
+  RegisterClient(kStorageKeys);
   StartFetching();
   content::RunAllTasksUntilIdle();
   EXPECT_TRUE(fetching_completed());
@@ -165,7 +168,7 @@ TEST_F(BrowsingDataQuotaHelperTest, FetchData) {
 }
 
 TEST_F(BrowsingDataQuotaHelperTest, IgnoreExtensionsAndDevTools) {
-  static const storage::MockOriginData kOrigins[] = {
+  static const storage::MockStorageKeyData kStorageKeys[] = {
       {"http://example.com/", StorageType::kTemporary, 1},
       {"https://example.com/", StorageType::kTemporary, 10},
       {"http://example.com/", StorageType::kPersistent, 100},
@@ -181,7 +184,7 @@ TEST_F(BrowsingDataQuotaHelperTest, IgnoreExtensionsAndDevTools) {
        100000},
   };
 
-  RegisterClient(kOrigins);
+  RegisterClient(kStorageKeys);
   StartFetching();
   content::RunAllTasksUntilIdle();
   EXPECT_TRUE(fetching_completed());

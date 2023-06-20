@@ -6,8 +6,8 @@
 
 #include "base/bind.h"
 #include "base/location.h"
-#include "base/single_thread_task_runner.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "chrome/app/vector_icons/vector_icons.h"
 #include "chrome/browser/ui/autofill/payments/create_card_unmask_prompt_view.h"
@@ -18,20 +18,23 @@
 #include "components/autofill/core/browser/ui/payments/card_unmask_prompt_controller.h"
 #include "components/constrained_window/constrained_window_views.h"
 #include "components/strings/grit/components_strings.h"
+#include "components/vector_icons/vector_icons.h"
 #include "components/web_modal/web_contents_modal_dialog_host.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "components/web_modal/web_contents_modal_dialog_manager_delegate.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/metadata/metadata_impl_macros.h"
+#include "ui/base/models/image_model.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/color/color_id.h"
+#include "ui/color/color_provider.h"
 #include "ui/gfx/geometry/insets.h"
 #include "ui/gfx/paint_vector_icon.h"
-#include "ui/native_theme/native_theme.h"
+#include "ui/gfx/vector_icon_utils.h"
 #include "ui/views/background.h"
 #include "ui/views/border.h"
 #include "ui/views/bubble/bubble_frame_view.h"
-#include "ui/views/controls/button/checkbox.h"
 #include "ui/views/controls/combobox/combobox.h"
 #include "ui/views/controls/image_view.h"
 #include "ui/views/controls/label.h"
@@ -47,22 +50,6 @@
 namespace autofill {
 
 namespace {
-
-class ErrorIconView : public views::ImageView {
- public:
-  METADATA_HEADER(ErrorIconView);
-
-  // views::ImageView:
-  void OnThemeChanged() override {
-    ImageView::OnThemeChanged();
-    const SkColor warning_text_color = views::style::GetColor(
-        *this, ChromeTextContext::CONTEXT_DIALOG_BODY_TEXT_SMALL, STYLE_RED);
-    SetImage(gfx::CreateVectorIcon(kBrowserToolsErrorIcon, warning_text_color));
-  }
-};
-
-BEGIN_METADATA(ErrorIconView, views::ImageView)
-END_METADATA
 
 static views::GridLayout* ResetOverlayLayout(views::View* overlay) {
   views::GridLayout* overlay_layout =
@@ -153,28 +140,29 @@ void CardUnmaskPromptViews::GotVerificationResult(
       SetRetriableErrorMessage(std::u16string());
 
       // Rows cannot be replaced in GridLayout, so we reset it.
-      overlay_->RemoveAllChildViews(/*delete_children=*/true);
+      overlay_->RemoveAllChildViews();
       views::GridLayout* layout = ResetOverlayLayout(overlay_);
 
       // The label of the overlay will now show the error in red.
       auto error_label = std::make_unique<views::Label>(error_message);
-      const SkColor warning_text_color = views::style::GetColor(
-          *error_label, ChromeTextContext::CONTEXT_DIALOG_BODY_TEXT_SMALL,
-          STYLE_RED);
-      error_label->SetEnabledColor(warning_text_color);
+      views::SetCascadingColorProviderColor(error_label.get(),
+                                            views::kCascadingLabelEnabledColor,
+                                            ui::kColorAlertHighSeverity);
       error_label->SetMultiLine(true);
 
       // Replace the throbber with a warning icon. Since this is a permanent
       // error we do not intend to return to a previous state.
-      auto error_icon = std::make_unique<views::ImageView>();
-      error_icon->SetImage(gfx::CreateVectorIcon(
-          kBrowserToolsErrorIcon,
-          GetNativeTheme()->GetSystemColor(
-              ui::NativeTheme::kColorId_AlertSeverityHigh)));
+      auto error_icon =
+          std::make_unique<views::ImageView>(ui::ImageModel::FromVectorIcon(
+              kBrowserToolsErrorIcon, ui::kColorAlertHighSeverity));
 
       layout->StartRow(1.0, 0);
       layout->AddView(std::move(error_icon));
       layout->AddView(std::move(error_label));
+
+      // If it is a virtual card retrieval failure, we will need to update the
+      // window title.
+      GetWidget()->UpdateWindowTitle();
     }
     UpdateButtons();
     DialogModelChanged();
@@ -206,8 +194,6 @@ void CardUnmaskPromptViews::SetRetriableErrorMessage(
 
 void CardUnmaskPromptViews::SetInputsEnabled(bool enabled) {
   cvc_input_->SetEnabled(enabled);
-  if (storage_checkbox_)
-    storage_checkbox_->SetEnabled(enabled);
   month_input_->SetEnabled(enabled);
   year_input_->SetEnabled(enabled);
 }
@@ -230,27 +216,24 @@ views::View* CardUnmaskPromptViews::GetContentsView() {
 
 void CardUnmaskPromptViews::AddedToWidget() {
   GetBubbleFrameView()->SetTitleView(
-      std::make_unique<TitleWithIconAndSeparatorView>(GetWindowTitle()));
+      std::make_unique<TitleWithIconAndSeparatorView>(
+          GetWindowTitle(), TitleWithIconAndSeparatorView::Icon::GOOGLE_PAY));
 }
 
 void CardUnmaskPromptViews::OnThemeChanged() {
   views::BubbleDialogDelegateView::OnThemeChanged();
-  SkColor bg_color = GetNativeTheme()->GetSystemColor(
-      ui::NativeTheme::kColorId_DialogBackground);
+  const auto* color_provider = GetColorProvider();
+  SkColor bg_color = color_provider->GetColor(ui::kColorDialogBackground);
   overlay_->SetBackground(views::CreateSolidBackground(bg_color));
   if (overlay_label_) {
     overlay_label_->SetBackgroundColor(bg_color);
-    overlay_label_->SetEnabledColor(GetNativeTheme()->GetSystemColor(
-        ui::NativeTheme::kColorId_ThrobberSpinningColor));
+    overlay_label_->SetEnabledColor(
+        color_provider->GetColor(ui::kColorThrobber));
   }
 }
 
 std::u16string CardUnmaskPromptViews::GetWindowTitle() const {
   return controller_->GetWindowTitle();
-}
-
-void CardUnmaskPromptViews::DeleteDelegate() {
-  delete this;
 }
 
 bool CardUnmaskPromptViews::IsDialogButtonEnabled(
@@ -289,7 +272,6 @@ bool CardUnmaskPromptViews::Accept() {
       year_input_->GetVisible()
           ? year_input_->GetTextForRow(year_input_->GetSelectedIndex())
           : std::u16string(),
-      storage_checkbox_ ? storage_checkbox_->GetChecked() : false,
       /*enable_fido_auth=*/false);
   return false;
 }
@@ -406,7 +388,10 @@ void CardUnmaskPromptViews::InitIfNecessary() {
       views::BoxLayout::CrossAxisAlignment::kCenter);
 
   temporary_error->SetVisible(false);
-  temporary_error->AddChildView(std::make_unique<ErrorIconView>());
+  temporary_error->AddChildView(
+      std::make_unique<views::ImageView>(ui::ImageModel::FromVectorIcon(
+          vector_icons::kErrorIcon, ui::kColorAlertHighSeverity,
+          gfx::GetDefaultSizeOfVectorIcon(vector_icons::kErrorIcon))));
 
   auto error_label = std::make_unique<views::Label>(
       std::u16string(), ChromeTextContext::CONTEXT_DIALOG_BODY_TEXT_SMALL,
@@ -451,8 +436,13 @@ void CardUnmaskPromptViews::UpdateButtons() {
   // In permanent error state, only the "close" button is shown.
   AutofillClient::PaymentsRpcResult result =
       controller_->GetVerificationResult();
-  bool has_ok = result != AutofillClient::PERMANENT_FAILURE &&
-                result != AutofillClient::NETWORK_ERROR;
+  bool has_ok =
+      result != AutofillClient::PaymentsRpcResult::kPermanentFailure &&
+      result != AutofillClient::PaymentsRpcResult::kNetworkError &&
+      result !=
+          AutofillClient::PaymentsRpcResult::kVcnRetrievalPermanentFailure &&
+      result != AutofillClient::PaymentsRpcResult::kVcnRetrievalTryAgainFailure;
+
   SetButtons(has_ok ? ui::DIALOG_BUTTON_OK | ui::DIALOG_BUTTON_CANCEL
                     : ui::DIALOG_BUTTON_CANCEL);
   SetButtonLabel(ui::DIALOG_BUTTON_OK, controller_->GetOkButtonLabel());

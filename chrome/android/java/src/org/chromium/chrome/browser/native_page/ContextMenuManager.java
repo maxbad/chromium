@@ -4,6 +4,7 @@
 
 package org.chromium.chrome.browser.native_page;
 
+import android.content.Context;
 import android.view.ContextMenu;
 import android.view.Menu;
 import android.view.MenuItem;
@@ -17,6 +18,7 @@ import org.chromium.base.metrics.RecordUserAction;
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.offlinepages.OfflinePageBridge;
 import org.chromium.chrome.browser.tasks.tab_management.TabUiFeatureUtilities;
+import org.chromium.chrome.browser.ui.native_page.TouchEnabledDelegate;
 import org.chromium.ui.base.WindowAndroid.OnCloseContextMenuListener;
 import org.chromium.ui.mojom.WindowOpenDisposition;
 import org.chromium.url.GURL;
@@ -35,8 +37,7 @@ public class ContextMenuManager implements OnCloseContextMenuListener {
     @IntDef({ContextMenuItemId.SEARCH, ContextMenuItemId.OPEN_IN_NEW_TAB,
             ContextMenuItemId.OPEN_IN_NEW_TAB_IN_GROUP, ContextMenuItemId.OPEN_IN_INCOGNITO_TAB,
             ContextMenuItemId.OPEN_IN_NEW_WINDOW, ContextMenuItemId.SAVE_FOR_OFFLINE,
-            ContextMenuItemId.ADD_TO_MY_APPS, ContextMenuItemId.REMOVE,
-            ContextMenuItemId.LEARN_MORE})
+            ContextMenuItemId.ADD_TO_MY_APPS, ContextMenuItemId.REMOVE})
     @Retention(RetentionPolicy.SOURCE)
     public @interface ContextMenuItemId {
         // The order of the items will be based on the value of their ID. So if new items are added,
@@ -50,9 +51,8 @@ public class ContextMenuManager implements OnCloseContextMenuListener {
         int SAVE_FOR_OFFLINE = 5;
         int ADD_TO_MY_APPS = 6;
         int REMOVE = 7;
-        int LEARN_MORE = 8;
 
-        int NUM_ENTRIES = 9;
+        int NUM_ENTRIES = 8;
     }
 
     private final NativePageNavigationDelegate mNavigationDelegate;
@@ -127,12 +127,6 @@ public class ContextMenuManager implements OnCloseContextMenuListener {
     }
 
     /**
-     * Delegate used by the {@link ContextMenuManager} to disable touch events on the outer view
-     * while the context menu is open.
-     */
-    public interface TouchEnabledDelegate { void setTouchEnabled(boolean enabled); }
-
-    /**
      * @param navigationDelegate The {@link NativePageNavigationDelegate} for handling navigation
      *                           events.
      * @param touchEnabledDelegate The {@link TouchEnabledDelegate} for handling whether touch
@@ -171,16 +165,18 @@ public class ContextMenuManager implements OnCloseContextMenuListener {
                     && shouldShowItem(ContextMenuItemId.OPEN_IN_NEW_TAB_IN_GROUP, delegate)) {
                 if (TabUiFeatureUtilities.showContextMenuOpenNewTabInGroupItemFirst()) {
                     menu.add(Menu.NONE, ContextMenuItemId.OPEN_IN_NEW_TAB_IN_GROUP, Menu.NONE,
-                                getResourceIdForMenuItem(
+                                getResourceIdForMenuItem(associatedView.getContext(),
                                         ContextMenuItemId.OPEN_IN_NEW_TAB_IN_GROUP))
                             .setOnMenuItemClickListener(listener);
-                    menu.add(Menu.NONE, itemId, Menu.NONE, getResourceIdForMenuItem(itemId))
+                    menu.add(Menu.NONE, itemId, Menu.NONE,
+                                getResourceIdForMenuItem(associatedView.getContext(), itemId))
                             .setOnMenuItemClickListener(listener);
                 } else {
-                    menu.add(Menu.NONE, itemId, Menu.NONE, getResourceIdForMenuItem(itemId))
+                    menu.add(Menu.NONE, itemId, Menu.NONE,
+                                getResourceIdForMenuItem(associatedView.getContext(), itemId))
                             .setOnMenuItemClickListener(listener);
                     menu.add(Menu.NONE, ContextMenuItemId.OPEN_IN_NEW_TAB_IN_GROUP, Menu.NONE,
-                                getResourceIdForMenuItem(
+                                getResourceIdForMenuItem(associatedView.getContext(),
                                         ContextMenuItemId.OPEN_IN_NEW_TAB_IN_GROUP))
                             .setOnMenuItemClickListener(listener);
                 }
@@ -188,7 +184,8 @@ public class ContextMenuManager implements OnCloseContextMenuListener {
                 continue;
             }
 
-            menu.add(Menu.NONE, itemId, Menu.NONE, getResourceIdForMenuItem(itemId))
+            menu.add(Menu.NONE, itemId, Menu.NONE,
+                        getResourceIdForMenuItem(associatedView.getContext(), itemId))
                     .setOnMenuItemClickListener(listener);
             hasItems = true;
         }
@@ -269,8 +266,6 @@ public class ContextMenuManager implements OnCloseContextMenuListener {
             }
             case ContextMenuItemId.REMOVE:
                 return true;
-            case ContextMenuItemId.LEARN_MORE:
-                return true;
             case ContextMenuItemId.ADD_TO_MY_APPS:
                 return false;
             default:
@@ -281,11 +276,12 @@ public class ContextMenuManager implements OnCloseContextMenuListener {
 
     /**
      * Returns resource id of a string that should be displayed for menu item with given item id.
+     * @param context The activity context.
      */
-    protected @StringRes int getResourceIdForMenuItem(@ContextMenuItemId int id) {
+    protected @StringRes int getResourceIdForMenuItem(Context context, @ContextMenuItemId int id) {
         switch (id) {
             case ContextMenuItemId.OPEN_IN_NEW_TAB:
-                return (TabUiFeatureUtilities.isTabGroupsAndroidEnabled()
+                return (TabUiFeatureUtilities.isTabGroupsAndroidEnabled(context)
                                && TabUiFeatureUtilities.ENABLE_TAB_GROUP_AUTO_CREATION.getValue()
                                && mNavigationDelegate.isOpenInNewTabInGroupEnabled())
                         ? R.string.contextmenu_open_in_new_tab_group
@@ -300,8 +296,6 @@ public class ContextMenuManager implements OnCloseContextMenuListener {
                 return R.string.contextmenu_save_link;
             case ContextMenuItemId.REMOVE:
                 return R.string.remove;
-            case ContextMenuItemId.LEARN_MORE:
-                return R.string.learn_more;
         }
         assert false;
         return 0;
@@ -338,10 +332,6 @@ public class ContextMenuManager implements OnCloseContextMenuListener {
             case ContextMenuItemId.REMOVE:
                 delegate.removeItem();
                 RecordUserAction.record(mUserActionPrefix + ".ContextMenu.RemoveItem");
-                return true;
-            case ContextMenuItemId.LEARN_MORE:
-                mNavigationDelegate.navigateToHelpPage();
-                RecordUserAction.record(mUserActionPrefix + ".ContextMenu.LearnMore");
                 return true;
             default:
                 return false;

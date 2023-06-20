@@ -31,7 +31,6 @@
 #include "base/sys_byteorder.h"
 #include "third_party/blink/renderer/bindings/core/v8/to_v8_traits.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_image_bitmap_options.h"
-#include "third_party/blink/renderer/bindings/core/v8/v8_uint8_clamped_array.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_union_float32array_uint16array_uint8clampedarray.h"
 #include "third_party/blink/renderer/core/dom/dom_exception.h"
 #include "third_party/blink/renderer/core/html/canvas/predefined_color_space.h"
@@ -73,6 +72,11 @@ ImageData* ImageData::ValidateAndCreate(
     exception_state.ThrowTypeError("Overload resolution failed.");
     return nullptr;
   }
+  if (params.require_canvas_color_management_v2 &&
+      !RuntimeEnabledFeatures::CanvasColorManagementV2Enabled()) {
+    exception_state.ThrowTypeError("Overload resolution failed.");
+    return nullptr;
+  }
   if (settings && settings->hasColorSpace()) {
     if (!ColorSpaceNameIsValid(settings->colorSpace(), exception_state))
       return nullptr;
@@ -84,7 +88,7 @@ ImageData* ImageData::ValidateAndCreate(
         "The source width is zero or not a number.");
     return nullptr;
   }
-  size.SetWidth(width);
+  size.set_width(width);
   if (height) {
     if (!*height) {
       exception_state.ThrowDOMException(
@@ -92,7 +96,7 @@ ImageData* ImageData::ValidateAndCreate(
           "The source height is zero or not a number.");
       return nullptr;
     }
-    size.SetHeight(*height);
+    size.set_height(*height);
   }
 
   // Ensure the size does not overflow.
@@ -101,8 +105,8 @@ ImageData* ImageData::ValidateAndCreate(
     // Please note that the number "4" in the means number of channels required
     // to describe a pixel, namely, red, green, blue and alpha.
     base::CheckedNumeric<unsigned> size_in_elements_checked = 4;
-    size_in_elements_checked *= size.Width();
-    size_in_elements_checked *= size.Height();
+    size_in_elements_checked *= size.width();
+    size_in_elements_checked *= size.height();
     if (!params.context_2d_error_mode) {
       if (!size_in_elements_checked.IsValid()) {
         exception_state.ThrowDOMException(
@@ -194,7 +198,7 @@ ImageData* ImageData::ValidateAndCreate(
         return nullptr;
       }
     } else {
-      size.SetHeight(expected_height);
+      size.set_height(expected_height);
     }
   }
 
@@ -257,8 +261,8 @@ NotShared<DOMArrayBufferView> ImageData::AllocateAndValidateDataArray(
 ImageData* ImageData::CreateForTest(const IntSize& size) {
   base::CheckedNumeric<unsigned> data_size =
       StorageFormatBytesPerPixel(kUint8ClampedArrayStorageFormat);
-  data_size *= size.Width();
-  data_size *= size.Height();
+  data_size *= size.width();
+  data_size *= size.height();
   if (!data_size.IsValid() ||
       data_size.ValueOrDie() > v8::TypedArray::kMaxLength)
     return nullptr;
@@ -461,8 +465,8 @@ ImageData::ImageData(const IntSize& size,
       settings_(ImageDataSettings::Create()),
       color_space_(color_space),
       storage_format_(storage_format) {
-  DCHECK_GE(size.Width(), 0);
-  DCHECK_GE(size.Height(), 0);
+  DCHECK_GE(size.width(), 0);
+  DCHECK_GE(size.height(), 0);
   DCHECK(data);
 
   data_u8_.Clear();
@@ -481,7 +485,7 @@ ImageData::ImageData(const IntSize& size,
       data_u8_ = data;
       DCHECK(data_u8_);
       SECURITY_CHECK(
-          (base::CheckedNumeric<size_t>(size.Width()) * size.Height() * 4)
+          (base::CheckedNumeric<size_t>(size.width()) * size.height() * 4)
               .ValueOrDie() <= data_u8_->length());
       data_ = MakeGarbageCollected<V8ImageDataArray>(data_u8_);
       break;
@@ -491,7 +495,7 @@ ImageData::ImageData(const IntSize& size,
       data_u16_ = data;
       DCHECK(data_u16_);
       SECURITY_CHECK(
-          (base::CheckedNumeric<size_t>(size.Width()) * size.Height() * 4)
+          (base::CheckedNumeric<size_t>(size.width()) * size.height() * 4)
               .ValueOrDie() <= data_u16_->length());
       data_ = MakeGarbageCollected<V8ImageDataArray>(data_u16_);
       break;
@@ -501,7 +505,7 @@ ImageData::ImageData(const IntSize& size,
       data_f32_ = data;
       DCHECK(data_f32_);
       SECURITY_CHECK(
-          (base::CheckedNumeric<size_t>(size.Width()) * size.Height() * 4)
+          (base::CheckedNumeric<size_t>(size.width()) * size.height() * 4)
               .ValueOrDie() <= data_f32_->length());
       data_ = MakeGarbageCollected<V8ImageDataArray>(data_f32_);
       break;

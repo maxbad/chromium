@@ -10,6 +10,8 @@
 #include "content/public/browser/global_request_id.h"
 #include "mojo/public/cpp/system/data_pipe_utils.h"
 #include "services/network/public/cpp/url_loader_completion_status.h"
+#include "services/network/public/mojom/early_hints.mojom.h"
+#include "services/network/public/mojom/url_response_head.mojom.h"
 #include "third_party/blink/public/common/storage_key/storage_key.h"
 
 namespace content {
@@ -65,7 +67,7 @@ ServiceWorkerNewScriptFetcher::ServiceWorkerNewScriptFetcher(
     scoped_refptr<ServiceWorkerVersion> version,
     scoped_refptr<network::SharedURLLoaderFactory> loader_factory,
     blink::mojom::FetchClientSettingsObjectPtr fetch_client_settings_object,
-    const GlobalFrameRoutingId& requesting_frame_id)
+    const GlobalRenderFrameHostId& requesting_frame_id)
     : context_(context),
       version_(std::move(version)),
       loader_factory_(std::move(loader_factory)),

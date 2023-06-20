@@ -24,7 +24,9 @@ public class JUnitTestGURLs {
     // 4. Check logcat output or test exception for the correct serialization String, and place it
     //    in the map.
     public static final String EXAMPLE_URL = "https://www.example.com/";
+    public static final String HTTP_URL = "http://www.example.com/";
     public static final String URL_1 = "https://www.one.com/";
+    public static final String URL_1_NUMERAL = "https://www.1.com/";
     public static final String URL_1_WITH_PATH = "https://www.one.com/some_path.html";
     public static final String URL_2 = "https://www.two.com/";
     public static final String URL_3 = "https://www.three.com/";
@@ -53,9 +55,15 @@ public class JUnitTestGURLs {
         map.put(EXAMPLE_URL,
                 "82,1,true,0,5,0,-1,0,-1,8,15,0,-1,23,1,0,-1,0,-1,"
                         + "false,false,https://www.example.com/");
+        map.put(HTTP_URL,
+                "81,1,true,0,4,0,-1,0,-1,7,15,0,-1,22,1,0,-1,0,-1,"
+                        + "false,false,http://www.example.com/");
         map.put(URL_1,
                 "78,1,true,0,5,0,-1,0,-1,8,11,0,-1,19,1,0,-1,0,-1,"
                         + "false,false,https://www.one.com/");
+        map.put(URL_1_NUMERAL,
+                "75,1,true,0,5,0,-1,0,-1,8,9,0,-1,17,1,0,-1,0,-1,"
+                        + "false,false,https://www.1.com/");
         map.put(URL_1_WITH_PATH,
                 "93,1,true,0,5,0,-1,0,-1,8,11,0,-1,19,15,0,-1,0,-1,"
                         + "false,false,https://www.one.com/some_path.html");

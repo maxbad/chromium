@@ -5,6 +5,7 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_MODULES_BREAKOUT_BOX_MEDIA_STREAM_VIDEO_TRACK_UNDERLYING_SOURCE_H_
 #define THIRD_PARTY_BLINK_RENDERER_MODULES_BREAKOUT_BOX_MEDIA_STREAM_VIDEO_TRACK_UNDERLYING_SOURCE_H_
 
+#include "base/gtest_prod_util.h"
 #include "base/sequence_checker.h"
 #include "third_party/blink/public/web/modules/mediastream/media_stream_video_sink.h"
 #include "third_party/blink/renderer/core/streams/readable_stream_transferring_optimizer.h"
@@ -16,6 +17,7 @@
 namespace blink {
 
 class MediaStreamComponent;
+struct MediaStreamDevice;
 
 class MODULES_EXPORT MediaStreamVideoTrackUnderlyingSource
     : public VideoFrameQueueUnderlyingSource,
@@ -23,6 +25,8 @@ class MODULES_EXPORT MediaStreamVideoTrackUnderlyingSource
  public:
   using CrossThreadFrameQueueSource =
       CrossThreadPersistent<TransferredVideoFrameQueueUnderlyingSource>;
+  static const int kMaxMonitoredFrameCount;
+  static const int kMinMonitoredFrameCount;
 
   explicit MediaStreamVideoTrackUnderlyingSource(
       ScriptState*,
@@ -42,7 +46,14 @@ class MODULES_EXPORT MediaStreamVideoTrackUnderlyingSource
   GetStreamTransferOptimizer();
 
  private:
+  FRIEND_TEST_ALL_PREFIXES(MediaStreamVideoTrackUnderlyingSourceTest,
+                           DeviceIdAndMaxFrameCountForMonitoring);
+  FRIEND_TEST_ALL_PREFIXES(MediaStreamVideoTrackUnderlyingSourceTest,
+                           FrameLimiter);
+
   scoped_refptr<base::SequencedTaskRunner> GetIOTaskRunner();
+  static std::string GetDeviceIdForMonitoring(const MediaStreamDevice& device);
+  static wtf_size_t GetFramePoolSize(const MediaStreamDevice& device);
 
   // FrameQueueUnderlyingSource implementation.
   bool StartFrameDelivery() override;
@@ -55,12 +66,6 @@ class MODULES_EXPORT MediaStreamVideoTrackUnderlyingSource
       scoped_refptr<media::VideoFrame> media_frame,
       std::vector<scoped_refptr<media::VideoFrame>> scaled_media_frames,
       base::TimeTicks estimated_capture_time);
-
-  scoped_refptr<base::SequencedTaskRunner> transferred_runner_;
-  CrossThreadFrameQueueSource transferred_source_;
-
-  // Only accessed on the IO runner.
-  bool was_transferred_ = false;
 
   // Only used to prevent the gargabe collector from reclaiming the media
   // stream track processor that created |this|.

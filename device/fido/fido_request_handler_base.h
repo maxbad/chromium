@@ -196,13 +196,14 @@ class COMPONENT_EXPORT(DEVICE_FIDO) FidoRequestHandlerBase
   FidoRequestHandlerBase(
       FidoDiscoveryFactory* fido_discovery_factory,
       const base::flat_set<FidoTransportProtocol>& available_transports);
+
+  FidoRequestHandlerBase(const FidoRequestHandlerBase&) = delete;
+  FidoRequestHandlerBase& operator=(const FidoRequestHandlerBase&) = delete;
+
   ~FidoRequestHandlerBase() override;
 
-  // Invokes |FidoAuthenticator::InitializeAuthenticator|, followed by
-  // either calling |DispatchRequest| or queuing the authenticator until
-  // |TransportAvailabilityInfo| is ready. |InitializeAuthenticator| sends a
-  // GetInfo command to FidoDeviceAuthenticator instances in order to determine
-  // their protocol versions before a request can be dispatched.
+  // Triggers DispatchRequest() if |active_authenticators_| hold
+  // FidoAuthenticator with given |authenticator_id|.
   void StartAuthenticatorRequest(const std::string& authenticator_id);
 
   // Invokes |FidoAuthenticator::Cancel| on all authenticators, except if
@@ -251,7 +252,7 @@ class COMPONENT_EXPORT(DEVICE_FIDO) FidoRequestHandlerBase
   // Authenticators that return a response in less than this time are likely to
   // have done so without interaction from the user.
   static constexpr base::TimeDelta kMinExpectedAuthenticatorResponseTime =
-      base::TimeDelta::FromMilliseconds(300);
+      base::Milliseconds(300);
 
   // Subclasses implement this method to dispatch their request onto the given
   // FidoAuthenticator. The FidoAuthenticator is owned by this
@@ -305,15 +306,15 @@ class COMPONENT_EXPORT(DEVICE_FIDO) FidoRequestHandlerBase
 
   void MaybeSignalTransportsEnumerated();
 
-  // DispatchOrQueueAuthenticator either calls |DispatchRequest| on the
-  // indicated authenticator, starting the full request flow or, if
-  // TransportAvailabilityInfo is not yet ready, queues the authenticator so
-  // that can be done later.
-  void DispatchOrQueueAuthenticator(std::string authenticator_id);
+  // Invokes FidoAuthenticator::InitializeAuthenticator(), followed by
+  // DispatchRequest(). InitializeAuthenticator() sends a GetInfo command
+  // to FidoDeviceAuthenticator instances in order to determine their protocol
+  // versions before a request can be dispatched.
+  void InitializeAuthenticatorAndDispatchRequest(
+      const std::string& authenticator_id);
   void ConstructBleAdapterPowerManager();
 
   AuthenticatorMap active_authenticators_;
-  base::flat_set<std::string> authenticator_ids_queued_for_dispatch_;
   std::vector<std::unique_ptr<FidoDiscoveryBase>> discoveries_;
   Observer* observer_ = nullptr;
   TransportAvailabilityInfo transport_availability_info_;
@@ -330,7 +331,6 @@ class COMPONENT_EXPORT(DEVICE_FIDO) FidoRequestHandlerBase
   bool internal_authenticator_found_ = false;
 
   base::WeakPtrFactory<FidoRequestHandlerBase> weak_factory_{this};
-  DISALLOW_COPY_AND_ASSIGN(FidoRequestHandlerBase);
 };
 
 }  // namespace device

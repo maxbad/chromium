@@ -9,22 +9,33 @@
 #include "base/debug/task_trace.h"
 #include "base/feature_list.h"
 #include "base/notreached.h"
+#include "base/stl_util.h"
 #include "build/build_config.h"
 #include "components/content_settings/core/common/features.h"
 #include "net/base/net_errors.h"
 #include "net/cookies/cookie_util.h"
+#include "net/cookies/site_for_cookies.h"
 #include "net/cookies/static_cookie_policy.h"
 #include "url/gurl.h"
 
 namespace content_settings {
-namespace {
-bool IsThirdPartyRequest(const GURL& url, const GURL& site_for_cookies) {
+
+// static
+bool CookieSettingsBase::IsThirdPartyRequest(
+    const GURL& url,
+    const net::SiteForCookies& site_for_cookies) {
   net::StaticCookiePolicy policy(
       net::StaticCookiePolicy::BLOCK_ALL_THIRD_PARTY_COOKIES);
-  return policy.CanAccessCookies(
-             url, net::SiteForCookies::FromUrl(site_for_cookies)) != net::OK;
+  return policy.CanAccessCookies(url, site_for_cookies) != net::OK;
 }
-}  // namespace
+
+// static
+GURL CookieSettingsBase::GetFirstPartyURL(
+    const net::SiteForCookies& site_for_cookies,
+    const url::Origin* top_frame_origin) {
+  return top_frame_origin != nullptr ? top_frame_origin->GetURL()
+                                     : site_for_cookies.RepresentativeUrl();
+}
 
 bool CookieSettingsBase::ShouldDeleteCookieOnExit(
     const ContentSettingsForOneType& cookie_settings,
@@ -65,14 +76,9 @@ ContentSetting CookieSettingsBase::GetCookieSetting(
     const GURL& first_party_url,
     content_settings::SettingSource* source) const {
   return GetCookieSettingInternal(
-      url, first_party_url, IsThirdPartyRequest(url, first_party_url), source);
-}
-
-bool CookieSettingsBase::IsCookieAccessAllowed(
-    const GURL& url,
-    const GURL& first_party_url) const {
-  // TODO(https://crbug.com/1203706): remove this after migrating all callers.
-  return IsFullCookieAccessAllowed(url, first_party_url);
+      url, first_party_url,
+      IsThirdPartyRequest(url, net::SiteForCookies::FromUrl(first_party_url)),
+      source);
 }
 
 bool CookieSettingsBase::IsFullCookieAccessAllowed(
@@ -86,20 +92,14 @@ bool CookieSettingsBase::IsFullCookieAccessAllowed(
   return IsAllowed(GetCookieSetting(url, first_party_url, nullptr));
 }
 
-bool CookieSettingsBase::IsCookieAccessAllowed(
-    const GURL& url,
-    const GURL& site_for_cookies,
-    const absl::optional<url::Origin>& top_frame_origin) const {
-  // TODO(https://crbug.com/1203706): remove after migrating all callers.
-  return IsFullCookieAccessAllowed(url, site_for_cookies, top_frame_origin);
-}
-
 bool CookieSettingsBase::IsFullCookieAccessAllowed(
     const GURL& url,
-    const GURL& site_for_cookies,
+    const net::SiteForCookies& site_for_cookies,
     const absl::optional<url::Origin>& top_frame_origin) const {
   ContentSetting setting = GetCookieSettingInternal(
-      url, top_frame_origin ? top_frame_origin->GetURL() : site_for_cookies,
+      url,
+      GetFirstPartyURL(site_for_cookies,
+                       base::OptionalOrNullptr(top_frame_origin)),
       IsThirdPartyRequest(url, site_for_cookies), nullptr);
   return IsAllowed(setting);
 }

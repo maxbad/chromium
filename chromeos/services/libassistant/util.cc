@@ -11,7 +11,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/system/sys_info.h"
 #include "base/values.h"
-#include "build/util/webkit_version.h"
+#include "build/util/chromium_git_revision.h"
 #include "chromeos/assistant/buildflags.h"
 #include "chromeos/assistant/internal/internal_constants.h"
 #include "chromeos/assistant/internal/internal_util.h"
@@ -21,10 +21,10 @@
 #include "chromeos/services/libassistant/constants.h"
 #include "chromeos/services/libassistant/public/cpp/android_app_info.h"
 
+using ::assistant::api::Interaction;
 using chromeos::assistant::shared::ClientInteraction;
 using chromeos::assistant::shared::ClientOpResult;
 using chromeos::assistant::shared::GetDeviceSettingsResult;
-using chromeos::assistant::shared::Interaction;
 using chromeos::assistant::shared::Protobuf;
 using chromeos::assistant::shared::ProviderVerificationResult;
 using chromeos::assistant::shared::ResponseCode;
@@ -42,11 +42,10 @@ void CreateUserAgent(std::string* user_agent) {
   DCHECK(user_agent->empty());
   base::StringAppendF(user_agent,
                       "Mozilla/5.0 (X11; CrOS %s %s; %s) "
-                      "AppleWebKit/%d.%d (KHTML, like Gecko)",
+                      "AppleWebKit/537.36 (KHTML, like Gecko)",
                       base::SysInfo::OperatingSystemArchitecture().c_str(),
                       base::SysInfo::OperatingSystemVersion().c_str(),
-                      base::SysInfo::GetLsbReleaseBoard().c_str(),
-                      WEBKIT_VERSION_MAJOR, WEBKIT_VERSION_MINOR);
+                      base::SysInfo::GetLsbReleaseBoard().c_str());
 
   std::string arc_version = chromeos::version_loader::GetARCVersion();
   if (!arc_version.empty())
@@ -132,6 +131,8 @@ class V1InteractionBuilder {
 
   std::string SerializeAsString() { return interaction_.SerializeAsString(); }
 
+  Interaction Proto() { return interaction_; }
+
  private:
   ClientInteraction* client_interaction() {
     return interaction_.mutable_from_client();
@@ -194,6 +195,15 @@ std::string CreateLibAssistantConfig(
   device.SetKey("model_revision", Value(1));
   config.SetKey("device", std::move(device));
 
+  // Enables Libassistant gRPC server for V2.
+  if (chromeos::assistant::features::IsLibAssistantV2Enabled()) {
+    Value libas_server(Type::DICTIONARY);
+    libas_server.SetKey("libas_server_address",
+                        Value(assistant::kLibassistantServiceAddress));
+    libas_server.SetKey("enable_display_service", Value(true));
+    config.SetKey("libas_server", std::move(libas_server));
+  }
+
   Value discovery(Type::DICTIONARY);
   discovery.SetKey("enable_mdns", Value(false));
   config.SetKey("discovery", std::move(discovery));
@@ -219,9 +229,12 @@ std::string CreateLibAssistantConfig(
     if (ShouldPutLogsInHomeDirectory()) {
       base::FilePath log_path =
           GetBaseAssistantDir().Append(FILE_PATH_LITERAL("log"));
-#if !BUILDFLAG(ENABLE_LIBASSISTANT_SANDBOX)
-      CHECK(base::CreateDirectory(log_path));
-#endif  // BUILDFLAG(ENABLE_LIBASSISTANT_SANDBOX)
+
+      // The directory will be created by LibassistantPreSandboxHook if sandbox
+      // is enabled.
+      if (!assistant::features::IsLibAssistantSandboxEnabled())
+        CHECK(base::CreateDirectory(log_path));
+
       log_dir = log_path.value();
     }
 
@@ -291,7 +304,7 @@ std::string CreateLibAssistantConfig(
   return json;
 }
 
-std::string CreateVerifyProviderResponseInteraction(
+Interaction CreateVerifyProviderResponseInteraction(
     const int interaction_id,
     const std::vector<chromeos::assistant::AndroidAppInfo>& apps_info) {
   // Construct verify provider result proto.
@@ -317,10 +330,10 @@ std::string CreateVerifyProviderResponseInteraction(
       .SetInResponseTo(interaction_id)
       .SetStatusCodeFromEntityFound(any_provider_available)
       .AddResult(assistant::kResultKeyVerifyProvider, result_proto)
-      .SerializeAsString();
+      .Proto();
 }
 
-std::string CreateGetDeviceSettingInteraction(
+Interaction CreateGetDeviceSettingInteraction(
     int interaction_id,
     const std::vector<chromeos::assistant::DeviceSetting>& device_settings) {
   GetDeviceSettingsResult result_proto;
@@ -334,7 +347,78 @@ std::string CreateGetDeviceSettingInteraction(
       .SetInResponseTo(interaction_id)
       .SetStatusCode(ResponseCode::OK)
       .AddResult(/*key=*/assistant::kResultKeyGetDeviceSettings, result_proto)
-      .SerializeAsString();
+      .Proto();
+}
+
+Interaction CreateNotificationRequestInteraction(
+    const std::string& notification_id,
+    const std::string& consistent_token,
+    const std::string& opaque_token,
+    const int action_index) {
+  auto request_param = assistant::CreateNotificationRequestParam(
+      notification_id, consistent_token, opaque_token, action_index);
+
+  return V1InteractionBuilder()
+      .SetClientInputName(assistant::kClientInputRequestNotification)
+      .AddClientInputParams(assistant::kNotificationRequestParamsKey,
+                            request_param)
+      .Proto();
+}
+
+Interaction CreateNotificationDismissedInteraction(
+    const std::string& notification_id,
+    const std::string& consistent_token,
+    const std::string& opaque_token,
+    const std::vector<std::string>& grouping_keys) {
+  auto dismiss_param = assistant::CreateNotificationDismissedParam(
+      notification_id, consistent_token, opaque_token, grouping_keys);
+
+  return V1InteractionBuilder()
+      .SetClientInputName(assistant::kClientInputDismissNotification)
+      .AddClientInputParams(assistant::kNotificationDismissParamsKey,
+                            dismiss_param)
+      .Proto();
+}
+
+Interaction CreateEditReminderInteraction(const std::string& reminder_id) {
+  auto intent_input = assistant::CreateEditReminderParam(reminder_id);
+
+  return V1InteractionBuilder()
+      .SetClientInputName(assistant::kClientInputEditReminder)
+      .AddClientInputParams(assistant::kEditReminderParamsKey, intent_input)
+      .Proto();
+}
+
+Interaction CreateOpenProviderResponseInteraction(const int interaction_id,
+                                                  const bool provider_found) {
+  return V1InteractionBuilder()
+      .SetInResponseTo(interaction_id)
+      .SetStatusCodeFromEntityFound(provider_found)
+      .Proto();
+}
+
+Interaction CreateSendFeedbackInteraction(
+    bool assistant_debug_info_allowed,
+    const std::string& feedback_description,
+    const std::string& screenshot_png) {
+  auto feedback_arg = assistant::CreateFeedbackParam(
+      assistant_debug_info_allowed, feedback_description, screenshot_png);
+
+  return V1InteractionBuilder()
+      .SetClientInputName(assistant::kClientInputText)
+      .AddClientInputParams(
+          assistant::kTextParamsKey,
+          assistant::CreateTextParam(assistant::kFeedbackText))
+      .AddClientInputParams(assistant::kFeedbackParamsKey, feedback_arg)
+      .Proto();
+}
+
+Interaction CreateTextQueryInteraction(const std::string& query) {
+  return V1InteractionBuilder()
+      .SetClientInputName(assistant::kClientInputText)
+      .AddClientInputParams(assistant::kTextParamsKey,
+                            assistant::CreateTextParam(query))
+      .Proto();
 }
 
 }  // namespace libassistant

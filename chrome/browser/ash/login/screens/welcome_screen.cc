@@ -25,10 +25,10 @@
 #include "chrome/browser/ash/login/oobe_screen.h"
 #include "chrome/browser/ash/login/ui/input_events_blocker.h"
 #include "chrome/browser/ash/login/wizard_controller.h"
+#include "chrome/browser/ash/policy/enrollment/enrollment_requisition_manager.h"
 #include "chrome/browser/ash/system/timezone_resolver_manager.h"
 #include "chrome/browser/ash/system/timezone_util.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/chromeos/policy/enrollment_requisition_manager.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/webui/chromeos/login/l10n_util.h"
@@ -86,7 +86,6 @@ constexpr const char kUserActionActivateRemoraRequisition[] =
     "activateRemoraRequisition";
 constexpr const char kUserActionEditDeviceRequisition[] =
     "editDeviceRequisition";
-constexpr const char kUserActionStartOsInstall[] = "startOsInstall";
 
 struct WelcomeScreenA11yUserAction {
   const char* name_;
@@ -166,12 +165,12 @@ std::string WelcomeScreen::GetResultString(Result result) {
   switch (result) {
     case Result::NEXT:
       return "Next";
+    case Result::NEXT_OS_INSTALL:
+      return "StartOsInstall";
     case Result::SETUP_DEMO:
       return "SetupDemo";
     case Result::ENABLE_DEBUGGING:
       return "EnableDebugging";
-    case Result::START_OS_INSTALL:
-      return "StartOsInstall";
   }
 }
 
@@ -229,7 +228,7 @@ void WelcomeScreen::SetApplicationLocaleAndInputMethod(
   // (InputEventsBlocker will live until callback is finished.)
   locale_util::SwitchLanguageCallback callback(base::BindOnce(
       &WelcomeScreen::OnLanguageChangedCallback, weak_factory_.GetWeakPtr(),
-      base::Owned(new chromeos::InputEventsBlocker), input_method));
+      base::Owned(new InputEventsBlocker), input_method));
   locale_util::SwitchLanguage(locale, true /* enableLocaleKeyboardLayouts */,
                               true /* login_layouts_only */,
                               std::move(callback),
@@ -256,7 +255,7 @@ void WelcomeScreen::SetApplicationLocale(const std::string& locale) {
   // (InputEventsBlocker will live until callback is finished.)
   locale_util::SwitchLanguageCallback callback(base::BindOnce(
       &WelcomeScreen::OnLanguageChangedCallback, weak_factory_.GetWeakPtr(),
-      base::Owned(new chromeos::InputEventsBlocker), std::string()));
+      base::Owned(new InputEventsBlocker), std::string()));
   locale_util::SwitchLanguage(locale, true /* enableLocaleKeyboardLayouts */,
                               true /* login_layouts_only */,
                               std::move(callback),
@@ -267,7 +266,7 @@ void WelcomeScreen::SetInputMethod(const std::string& input_method) {
   const std::vector<std::string>& input_methods =
       input_method::InputMethodManager::Get()
           ->GetActiveIMEState()
-          ->GetActiveInputMethodIds();
+          ->GetEnabledInputMethodIds();
   if (input_method.empty() || !base::Contains(input_methods, input_method)) {
     LOG(WARNING) << "The input method is empty or ineligible!";
     return;
@@ -392,7 +391,7 @@ void WelcomeScreen::OnUserAction(const std::string& action_id) {
   }
   if (action_id == kUserActionActivateChromeVoxFromHint) {
     base::UmaHistogramBoolean("OOBE.WelcomeScreen.AcceptChromeVoxHint", true);
-    AccessibilityManager::Get()->EnableSpokenFeedback(true);
+    AccessibilityManager::Get()->EnableSpokenFeedbackWithTutorial();
     return;
   }
   if (action_id == kUserActionDismissChromeVoxHint) {
@@ -411,11 +410,6 @@ void WelcomeScreen::OnUserAction(const std::string& action_id) {
 
   if (action_id == kUserActionEditDeviceRequisition) {
     HandleAccelerator(LoginAcceleratorAction::kEditDeviceRequisition);
-    return;
-  }
-
-  if (action_id == kUserActionStartOsInstall) {
-    OnStartOsInstall();
     return;
   }
 
@@ -515,7 +509,11 @@ void WelcomeScreen::InputMethodChanged(
 
 void WelcomeScreen::OnContinueButtonPressed() {
   demo_mode_detector_.reset();
-  exit_callback_.Run(Result::NEXT);
+
+  if (switches::IsOsInstallAllowed())
+    exit_callback_.Run(Result::NEXT_OS_INSTALL);
+  else
+    exit_callback_.Run(Result::NEXT);
 }
 
 void WelcomeScreen::OnSetupDemoMode() {
@@ -526,11 +524,6 @@ void WelcomeScreen::OnSetupDemoMode() {
 void WelcomeScreen::OnEnableDebugging() {
   demo_mode_detector_.reset();
   exit_callback_.Run(Result::ENABLE_DEBUGGING);
-}
-
-void WelcomeScreen::OnStartOsInstall() {
-  demo_mode_detector_.reset();
-  exit_callback_.Run(Result::START_OS_INSTALL);
 }
 
 void WelcomeScreen::OnLanguageChangedCallback(

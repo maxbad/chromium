@@ -21,7 +21,7 @@
 
 namespace {
 
-constexpr base::TimeDelta kActiveTimeThreshold = base::TimeDelta::FromDays(28);
+constexpr base::TimeDelta kActiveTimeThreshold = base::Days(28);
 
 ProfilePicker::AvailabilityOnStartup GetAvailabilityOnStartup() {
   int availability_on_startup = g_browser_process->local_state()->GetInteger(
@@ -72,8 +72,7 @@ bool ProfilePicker::ShouldShowAtLaunch() {
     return false;
 
   std::vector<ProfileAttributesEntry*> profile_attributes =
-      profile_manager->GetProfileAttributesStorage().GetAllProfilesAttributes(
-          /*include_guest_profile=*/false);
+      profile_manager->GetProfileAttributesStorage().GetAllProfilesAttributes();
   int number_of_active_profiles =
       std::count_if(profile_attributes.begin(), profile_attributes.end(),
                     [](ProfileAttributesEntry* entry) {

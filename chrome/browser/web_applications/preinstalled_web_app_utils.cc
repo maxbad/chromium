@@ -85,7 +85,7 @@ constexpr char kLaunchContainerWindow[] = "window";
 // substring of start_url's existing params then it will not be added a second
 // time.
 // Note that substring matches include "param=a" matching in "some_param=abc".
-// Extend the implementation in AppRegistrar::GetAppLaunchUrl() if this edge
+// Extend the implementation in WebAppRegistrar::GetAppLaunchUrl() if this edge
 // case needs to be handled differently.
 constexpr char kLaunchQueryParams[] = "launch_query_params";
 
@@ -169,6 +169,14 @@ constexpr char kOemInstalled[] = "oem_installed";
 constexpr char kDisableIfTouchScreenWithStylusNotSupported[] =
     "disable_if_touchscreen_with_stylus_not_supported";
 
+void EnsureContains(ListPrefUpdate& update, base::StringPiece value) {
+  for (const base::Value& item : update->GetList()) {
+    if (item.is_string() && item.GetString() == value)
+      return;
+  }
+  update->Append(value);
+}
+
 }  // namespace
 
 OptionsOrError ParseConfig(FileUtilsWrapper& file_utils,
@@ -178,6 +186,7 @@ OptionsOrError ParseConfig(FileUtilsWrapper& file_utils,
   ExternalInstallOptions options(GURL(), DisplayMode::kStandalone,
                                  ExternalInstallSource::kExternalDefault);
   options.require_manifest = true;
+  options.force_reinstall = false;
 
   if (app_config.type() != base::Value::Type::DICTIONARY) {
     return base::StrCat(
@@ -595,7 +604,7 @@ void MarkAppAsMigratedToWebApp(Profile* profile,
   ListPrefUpdate update(profile->GetPrefs(),
                         prefs::kWebAppsMigratedPreinstalledApps);
   if (was_migrated)
-    update->Append(app_id);
+    EnsureContains(update, app_id);
   else
     update->EraseListValue(base::Value(app_id));
 }
@@ -620,7 +629,7 @@ void SetMigrationRun(Profile* profile,
   ListPrefUpdate update(profile->GetPrefs(),
                         prefs::kWebAppsDidMigrateDefaultChromeApps);
   if (was_migrated)
-    update->Append(feature_name);
+    EnsureContains(update, feature_name);
   else
     update->EraseListValue(base::Value(feature_name));
 }
@@ -646,6 +655,6 @@ void MarkPreinstalledAppAsUninstalled(Profile* profile,
     return;
   ListPrefUpdate update(profile->GetPrefs(),
                         prefs::kWebAppsUninstalledDefaultChromeApps);
-  update->Append(app_id);
+  EnsureContains(update, app_id);
 }
 }  // namespace web_app

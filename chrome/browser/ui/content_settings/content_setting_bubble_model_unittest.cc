@@ -45,6 +45,7 @@
 #include "components/strings/grit/components_strings.h"
 #include "components/url_formatter/elide_url.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/test/mock_render_process_host.h"
 #include "content/public/test/web_contents_tester.h"
 #include "services/device/public/cpp/device_features.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -726,19 +727,7 @@ TEST_F(ContentSettingBubbleModelTest, AccumulateMediastreamMicAndCamera) {
   EXPECT_EQ(2U, new_bubble_content.media_menus.size());
 }
 
-class GeolocationContentSettingBubbleModelTest
-    : public ContentSettingBubbleModelTest {
- public:
-  GeolocationContentSettingBubbleModelTest() {
-    scoped_feature_list_.InitAndEnableFeature(
-        features::kMacCoreLocationImplementation);
-  }
-
- private:
-  base::test::ScopedFeatureList scoped_feature_list_;
-};
-
-TEST_F(GeolocationContentSettingBubbleModelTest, Geolocation) {
+TEST_F(ContentSettingBubbleModelTest, Geolocation) {
 #if defined(OS_MAC)
   auto fake_geolocation_manager =
       std::make_unique<device::FakeGeolocationManager>();
@@ -1434,7 +1423,7 @@ TEST_F(ContentSettingBubbleModelTest, PopupBubbleModelListItems) {
   constexpr size_t kItemCount = 3;
   for (size_t i = 1; i <= kItemCount; i++) {
     NavigateParams navigate_params =
-        params.CreateNavigateParams(web_contents());
+        params.CreateNavigateParams(process(), web_contents());
     EXPECT_FALSE(blocked_content::MaybeBlockPopup(
         web_contents(), &url,
         std::make_unique<ChromePopupNavigationDelegate>(

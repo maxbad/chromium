@@ -9,7 +9,7 @@
 #include "base/location.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/metrics/user_metrics.h"
-#include "base/single_thread_task_runner.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "build/build_config.h"
 #include "chrome/browser/app_mode/app_mode_utils.h"
@@ -150,7 +150,8 @@ void FullscreenController::EnterFullscreenModeForTab(
   }
 
   SetTabWithExclusiveAccess(web_contents);
-  requesting_origin_ = requesting_frame->GetLastCommittedURL().GetOrigin();
+  requesting_origin_ =
+      requesting_frame->GetLastCommittedURL().DeprecatedGetOriginAsURL();
 
   ExclusiveAccessContext* exclusive_access_context =
       exclusive_access_manager()->context();
@@ -274,6 +275,8 @@ void FullscreenController::WindowFullscreenStateChanged() {
     toggled_into_fullscreen_ = false;
     extension_caused_fullscreen_ = GURL();
     NotifyTabExclusiveAccessLost();
+  } else {
+    toggled_into_fullscreen_ = true;
   }
 }
 

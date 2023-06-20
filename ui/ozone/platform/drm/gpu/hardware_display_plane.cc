@@ -8,6 +8,7 @@
 #include <drm_mode.h>
 
 #include "base/logging.h"
+#include "base/trace_event/traced_value.h"
 #include "ui/ozone/platform/drm/common/drm_util.h"
 #include "ui/ozone/platform/drm/gpu/drm_device.h"
 #include "ui/ozone/platform/drm/gpu/drm_gpu_util.h"
@@ -35,6 +36,8 @@ void ParseSupportedFormatsAndModifiers(
 }
 
 }  // namespace
+HardwareDisplayPlane::Properties::Properties() = default;
+HardwareDisplayPlane::Properties::~Properties() = default;
 
 HardwareDisplayPlane::HardwareDisplayPlane(uint32_t id) : id_(id) {}
 
@@ -42,6 +45,13 @@ HardwareDisplayPlane::~HardwareDisplayPlane() {}
 
 bool HardwareDisplayPlane::CanUseForCrtc(uint32_t crtc_index) const {
   return crtc_mask_ & (1 << crtc_index);
+}
+
+void HardwareDisplayPlane::AsValueInto(
+    base::trace_event::TracedValue* value) const {
+  value->SetInteger("plane_id", id_);
+  value->SetInteger("owning_crtc", owning_crtc_);
+  value->SetBoolean("in_use", in_use_);
 }
 
 bool HardwareDisplayPlane::Initialize(DrmDevice* drm) {

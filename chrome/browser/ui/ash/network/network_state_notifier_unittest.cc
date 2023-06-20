@@ -8,7 +8,6 @@
 
 #include "ash/public/cpp/test/test_system_tray_client.h"
 #include "ash/strings/grit/ash_strings.h"
-#include "base/macros.h"
 #include "base/memory/ptr_util.h"
 #include "base/run_loop.h"
 #include "chrome/browser/notifications/notification_display_service_tester.h"
@@ -32,6 +31,7 @@
 #include "testing/platform_test.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/chromeos/strings/grit/ui_chromeos_strings.h"
 #include "ui/message_center/public/cpp/notification.h"
 
 namespace chromeos {
@@ -43,12 +43,19 @@ const char kCellular1NetworkName[] = "cellular1";
 const char16_t kCellular1NetworkName16[] = u"cellular1";
 const char kTestEsimProfileName[] = "test_profile_name";
 const char16_t kTestEsimProfileName16[] = u"test_profile_name";
+const char kCellularEsimServicePath[] = "/service/cellular_esim1";
+const char kCellularDevicePath[] = "/device/cellular1";
 
 class NetworkConnectTestDelegate : public NetworkConnect::Delegate {
  public:
   NetworkConnectTestDelegate(
       std::unique_ptr<NetworkStateNotifier> network_state_notifier)
       : network_state_notifier_(std::move(network_state_notifier)) {}
+
+  NetworkConnectTestDelegate(const NetworkConnectTestDelegate&) = delete;
+  NetworkConnectTestDelegate& operator=(const NetworkConnectTestDelegate&) =
+      delete;
+
   ~NetworkConnectTestDelegate() override = default;
 
   // NetworkConnect::Delegate
@@ -68,8 +75,6 @@ class NetworkConnectTestDelegate : public NetworkConnect::Delegate {
 
  private:
   std::unique_ptr<NetworkStateNotifier> network_state_notifier_;
-
-  DISALLOW_COPY_AND_ASSIGN(NetworkConnectTestDelegate);
 };
 
 }  // namespace
@@ -77,6 +82,10 @@ class NetworkConnectTestDelegate : public NetworkConnect::Delegate {
 class NetworkStateNotifierTest : public BrowserWithTestWindowTest {
  public:
   NetworkStateNotifierTest() = default;
+
+  NetworkStateNotifierTest(const NetworkStateNotifierTest&) = delete;
+  NetworkStateNotifierTest& operator=(const NetworkStateNotifierTest&) = delete;
+
   ~NetworkStateNotifierTest() override = default;
 
   void SetUp() override {
@@ -140,6 +149,20 @@ class NetworkStateNotifierTest : public BrowserWithTestWindowTest {
             kAddProfileWithService);
     base::RunLoop().RunUntilIdle();
   }
+
+  void SetCellularDeviceLocked(bool is_locked) {
+    ShillDeviceClient::TestInterface* device_test =
+        network_handler_test_helper_->device_test();
+
+    std::string lock_pin = is_locked ? shill::kSIMLockPin : "";
+    base::Value sim_lock_status(base::Value::Type::DICTIONARY);
+    sim_lock_status.SetKey(shill::kSIMLockTypeProperty, base::Value(lock_pin));
+    device_test->SetDeviceProperty(
+        kCellularDevicePath, shill::kSIMLockStatusProperty,
+        std::move(sim_lock_status), /*notify_changed=*/true);
+    base::RunLoop().RunUntilIdle();
+  }
+
   void SetupDefaultShillState() {
     ShillDeviceClient::TestInterface* device_test =
         network_handler_test_helper_->device_test();
@@ -164,7 +187,6 @@ class NetworkStateNotifierTest : public BrowserWithTestWindowTest {
         kWiFi1ServicePath, shill::kPassphraseProperty, base::Value("failure"));
 
     // Set up Cellular device, and add a single locked network.
-    const char kCellularDevicePath[] = "/device/cellular1";
     const char kCellular1ServicePath[] = "/service/cellular1";
     const char kCellular1Iccid[] = "iccid";
     device_test->AddDevice(kCellularDevicePath, shill::kTypeCellular,
@@ -204,9 +226,6 @@ class NetworkStateNotifierTest : public BrowserWithTestWindowTest {
   std::unique_ptr<NetworkConnectTestDelegate> network_connect_delegate_;
   TestingPrefServiceSimple user_prefs_;
   TestingPrefServiceSimple local_state_;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(NetworkStateNotifierTest);
 };
 
 TEST_F(NetworkStateNotifierTest, WiFiConnectionFailure) {
@@ -233,11 +252,10 @@ TEST_F(NetworkStateNotifierTest, CellularLockedSimConnectionFailure) {
           NetworkStateNotifier::kNetworkConnectNotificationId);
   EXPECT_TRUE(notification);
 
-  EXPECT_EQ(
-      notification->message(),
-      l10n_util::GetStringFUTF16(
-          IDS_NETWORK_CONNECTION_ERROR_MESSAGE, kCellular1NetworkName16,
-          l10n_util::GetStringUTF16(IDS_ASH_STATUS_TRAY_SIM_CARD_LOCKED)));
+  EXPECT_EQ(notification->message(),
+            l10n_util::GetStringFUTF16(
+                IDS_NETWORK_CONNECTION_ERROR_MESSAGE, kCellular1NetworkName16,
+                l10n_util::GetStringUTF16(IDS_NETWORK_LIST_SIM_CARD_LOCKED)));
 
   // Clicking the notification should open SIM unlock settings.
   notification->delegate()->Click(/*button_index=*/absl::nullopt,
@@ -259,11 +277,26 @@ TEST_F(NetworkStateNotifierTest, CellularEsimConnectionFailure) {
           NetworkStateNotifier::kNetworkConnectNotificationId);
   EXPECT_TRUE(notification);
 
-  EXPECT_EQ(
-      notification->message(),
-      l10n_util::GetStringFUTF16(
-          IDS_NETWORK_CONNECTION_ERROR_MESSAGE, kTestEsimProfileName16,
-          l10n_util::GetStringUTF16(IDS_ASH_STATUS_TRAY_SIM_CARD_LOCKED)));
+  EXPECT_EQ(notification->message(),
+            l10n_util::GetStringFUTF16(
+                IDS_NETWORK_CONNECTION_ERROR_MESSAGE, kTestEsimProfileName16,
+                l10n_util::GetStringUTF16(IDS_NETWORK_LIST_SIM_CARD_LOCKED)));
+
+  ShillServiceClient::TestInterface* service_test =
+      ShillServiceClient::Get()->GetTestInterface();
+  service_test->SetServiceProperty(
+      kCellularEsimServicePath, shill::kConnectableProperty, base::Value(true));
+
+  // Set device locked status to false, this will allow for network connection
+  // to succeed.
+  SetCellularDeviceLocked(/*is_locked=*/false);
+  NetworkConnect::Get()->ConnectToNetworkId("esim_guidiccid");
+  base::RunLoop().RunUntilIdle();
+
+  // Notification is removed.
+  notification = tester.GetNotification(
+      NetworkStateNotifier::kNetworkConnectNotificationId);
+  EXPECT_FALSE(notification);
 }
 
 }  // namespace chromeos

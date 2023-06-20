@@ -13,14 +13,13 @@
 
 #include "base/bind.h"
 #include "base/callback_helpers.h"
-#include "base/macros.h"
 #include "base/memory/ptr_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/time/time.h"
 #include "chrome/browser/ash/ownership/owner_settings_service_ash.h"
 #include "chrome/browser/ash/ownership/owner_settings_service_ash_factory.h"
+#include "chrome/browser/ash/policy/core/device_policy_builder.h"
 #include "chrome/browser/ash/settings/device_settings_test_helper.h"
-#include "chrome/browser/chromeos/policy/device_policy_builder.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/ownership/mock_owner_key_util.h"
 #include "components/policy/core/common/cloud/cloud_policy_constants.h"
@@ -78,9 +77,13 @@ class SessionManagerOperationTest : public testing::Test {
         owner_key_util_);
   }
 
+  SessionManagerOperationTest(const SessionManagerOperationTest&) = delete;
+  SessionManagerOperationTest& operator=(const SessionManagerOperationTest&) =
+      delete;
+
   void SetUp() override {
     policy_.payload().mutable_user_allowlist()->add_user_allowlist(
-        "fake-whitelist");
+        "fake-allowlist");
     policy_.Build();
 
     profile_ = std::make_unique<TestingProfile>();
@@ -122,9 +125,6 @@ class SessionManagerOperationTest : public testing::Test {
   OwnerSettingsServiceAsh* service_;
 
   bool validated_;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(SessionManagerOperationTest);
 };
 
 TEST_F(SessionManagerOperationTest, LoadNoPolicyNoKey) {

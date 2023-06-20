@@ -7,8 +7,8 @@
 #include <memory>
 
 #include "ash/accessibility/accessibility_controller_impl.h"
-#include "ash/public/cpp/ash_features.h"
-#include "ash/public/cpp/ash_pref_names.h"
+#include "ash/constants/ash_features.h"
+#include "ash/constants/ash_pref_names.h"
 #include "ash/public/cpp/shelf_config.h"
 #include "ash/public/cpp/stylus_utils.h"
 #include "ash/public/cpp/system_tray_client.h"
@@ -41,11 +41,13 @@
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/compositor/layer.h"
 #include "ui/display/display.h"
+#include "ui/display/manager/display_manager.h"
 #include "ui/display/screen.h"
 #include "ui/events/devices/device_data_manager.h"
 #include "ui/events/devices/stylus_state.h"
 #include "ui/events/event_constants.h"
 #include "ui/gfx/paint_vector_icon.h"
+#include "ui/views/border.h"
 #include "ui/views/controls/image_view.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/controls/separator.h"
@@ -125,6 +127,7 @@ class BatteryView : public views::View {
 
     icon_->SetImage(stylus_battery_delegate_.GetBatteryImage());
     label_->SetVisible(stylus_battery_delegate_.IsBatteryLevelLow() &&
+                       stylus_battery_delegate_.IsBatteryStatusEligible() &&
                        !stylus_battery_delegate_.IsBatteryStatusStale() &&
                        !stylus_battery_delegate_.IsBatteryCharging());
   }
@@ -183,6 +186,9 @@ class TitleView : public views::View {
         kSystemMenuSettingsIcon, IDS_ASH_PALETTE_SETTINGS));
   }
 
+  TitleView(const TitleView&) = delete;
+  TitleView& operator=(const TitleView&) = delete;
+
   ~TitleView() override = default;
 
   // views::View:
@@ -202,8 +208,6 @@ class TitleView : public views::View {
   views::View* settings_button_;
   views::View* help_button_;
   PaletteTray* palette_tray_;
-
-  DISALLOW_COPY_AND_ASSIGN(TitleView);
 };
 
 // Used as a Shell pre-target handler to notify PaletteTray of stylus events.
@@ -212,6 +216,9 @@ class StylusEventHandler : public ui::EventHandler {
   explicit StylusEventHandler(PaletteTray* tray) : palette_tray_(tray) {
     Shell::Get()->AddPreTargetHandler(this);
   }
+
+  StylusEventHandler(const StylusEventHandler&) = delete;
+  StylusEventHandler& operator=(const StylusEventHandler&) = delete;
 
   ~StylusEventHandler() override { Shell::Get()->RemovePreTargetHandler(this); }
 
@@ -224,7 +231,6 @@ class StylusEventHandler : public ui::EventHandler {
 
  private:
   PaletteTray* palette_tray_;
-  DISALLOW_COPY_AND_ASSIGN(StylusEventHandler);
 };
 
 }  // namespace
@@ -246,6 +252,7 @@ PaletteTray::PaletteTray(Shelf* shelf)
   tray_container()->AddChildView(icon_);
 
   Shell::Get()->AddShellObserver(this);
+  Shell::Get()->window_tree_host_manager()->AddObserver(this);
 }
 
 PaletteTray::~PaletteTray() {
@@ -254,6 +261,7 @@ PaletteTray::~PaletteTray() {
 
   ui::DeviceDataManager::GetInstance()->RemoveObserver(this);
   Shell::Get()->RemoveShellObserver(this);
+  Shell::Get()->window_tree_host_manager()->RemoveObserver(this);
 }
 
 // static
@@ -299,9 +307,21 @@ bool PaletteTray::ShouldShowOnDisplay() {
       display::Screen::GetScreen()->GetDisplayNearestWindow(
           widget->GetNativeWindow());
 
+  // Is there a TouchscreenDevice which targets this display or one of
+  // the active mirrors?
+  display::DisplayManager* display_manager = Shell::Get()->display_manager();
+  display::DisplayIdList ids;
+  ids.push_back(display.id());
+  if (display_manager->IsInMirrorMode()) {
+    display::DisplayIdList mirrors =
+        display_manager->GetMirroringDestinationDisplayIdList();
+    ids.insert(ids.end(), mirrors.begin(), mirrors.end());
+    ids.push_back(display_manager->mirroring_source_id());
+  }
   for (const ui::TouchscreenDevice& device :
        ui::DeviceDataManager::GetInstance()->GetTouchscreenDevices()) {
-    if (device.has_stylus && device.target_display_id == display.id()) {
+    if (device.has_stylus && std::find(ids.begin(), ids.end(),
+                                       device.target_display_id) != ids.end()) {
       return true;
     }
   }
@@ -388,6 +408,10 @@ void PaletteTray::OnLockStateChanged(bool locked) {
   }
 }
 
+void PaletteTray::OnDisplayConfigurationChanged() {
+  UpdateIconVisibility();
+}
+
 void PaletteTray::ClickedOutsideBubble() {
   if (num_actions_in_bubble_ == 0) {
     RecordPaletteOptionsUsage(PaletteTrayOptions::PALETTE_CLOSED_NO_ACTION,
@@ -419,6 +443,10 @@ void PaletteTray::OnInputDeviceConfigurationChanged(
   if (input_device_types & ui::InputDeviceEventObserver::kTouchscreen) {
     UpdateIconVisibility();
   }
+}
+
+void PaletteTray::OnTouchDeviceAssociationChanged() {
+  UpdateIconVisibility();
 }
 
 void PaletteTray::OnStylusStateChanged(ui::StylusState stylus_state) {

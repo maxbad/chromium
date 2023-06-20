@@ -33,10 +33,11 @@ const char kUnifiedPlatformWindows[] = "Windows NT 10.0; Win64; x64";
 enum class IncludeAndroidBuildNumber { Include, Exclude };
 enum class IncludeAndroidModel { Include, Exclude };
 
-// Returns the WebKit version, in the form "major.minor (branch@revision)".
+// Returns the (incorrectly named, for historical reasons) WebKit version, in
+// the form "major.minor (@chromium_git_revision)".
 CONTENT_EXPORT std::string GetWebKitVersion();
 
-CONTENT_EXPORT std::string GetWebKitRevision();
+CONTENT_EXPORT std::string GetChromiumGitRevision();
 
 // Builds a string that describes the CPU type when available (or blank
 // otherwise).
@@ -45,6 +46,10 @@ CONTENT_EXPORT std::string BuildCpuInfo();
 // Takes the cpu info (see BuildCpuInfo()) and extracts the architecture for
 // most common cases.
 CONTENT_EXPORT std::string GetLowEntropyCpuArchitecture();
+
+// Takes the cpu info (see BuildCpuInfo()) and extracts the CPU bitness for
+// most common cases.
+CONTENT_EXPORT std::string GetLowEntropyCpuBitness();
 
 // Builds a User-agent compatible string that describes the OS and CPU type.
 // On Android, the string will only include the build number and model if

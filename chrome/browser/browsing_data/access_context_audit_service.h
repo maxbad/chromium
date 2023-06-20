@@ -5,8 +5,9 @@
 #ifndef CHROME_BROWSER_BROWSING_DATA_ACCESS_CONTEXT_AUDIT_SERVICE_H_
 #define CHROME_BROWSER_BROWSING_DATA_ACCESS_CONTEXT_AUDIT_SERVICE_H_
 
+#include "base/gtest_prod_util.h"
 #include "base/scoped_observation.h"
-#include "base/updateable_sequenced_task_runner.h"
+#include "base/task/updateable_sequenced_task_runner.h"
 #include "chrome/browser/browsing_data/access_context_audit_database.h"
 #include "chrome/browser/profiles/profile.h"
 #include "components/browsing_data/content/canonical_cookie_hash.h"
@@ -15,6 +16,7 @@
 #include "components/history/core/browser/history_service_observer.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "content/public/browser/storage_partition.h"
+#include "mojo/public/cpp/bindings/receiver.h"
 #include "net/cookies/cookie_change_dispatcher.h"
 #include "services/network/public/mojom/cookie_manager.mojom.h"
 #include "services/network/public/mojom/network_service.mojom.h"
@@ -70,6 +72,11 @@ class AccessContextAuditService
   };
 
   explicit AccessContextAuditService(Profile* profile);
+
+  AccessContextAuditService(const AccessContextAuditService&) = delete;
+  AccessContextAuditService& operator=(const AccessContextAuditService&) =
+      delete;
+
   ~AccessContextAuditService() override;
 
   // Initialises the Access Context Audit database in |database_dir|, and
@@ -149,6 +156,10 @@ class AccessContextAuditService
   friend class AccessContextAuditThirdPartyDataClearingTest;
   FRIEND_TEST_ALL_PREFIXES(AccessContextAuditThirdPartyDataClearingTest,
                            HistoryDeletion);
+  FRIEND_TEST_ALL_PREFIXES(AccessContextAuditThirdPartyDataClearingTest,
+                           AllHistoryDeletion);
+  FRIEND_TEST_ALL_PREFIXES(AccessContextAuditThirdPartyDataClearingTest,
+                           TimeRangeHistoryDeletion);
 
   // Records accesses for all cookies in |details| against |top_frame_origin|.
   // Should only be accessed via the CookieAccessHelper.
@@ -185,7 +196,6 @@ class AccessContextAuditService
       storage_partition_observation_{this};
 
   base::WeakPtrFactory<AccessContextAuditService> weak_factory_{this};
-  DISALLOW_COPY_AND_ASSIGN(AccessContextAuditService);
 };
 
 #endif  // CHROME_BROWSER_BROWSING_DATA_ACCESS_CONTEXT_AUDIT_SERVICE_H_

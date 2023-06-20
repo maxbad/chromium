@@ -7,10 +7,8 @@
 
 #include <memory>
 #include <string>
-#include <vector>
 
 #include "base/callback.h"
-#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "base/threading/thread_checker.h"
 #include "base/time/time.h"
@@ -73,6 +71,10 @@ class ArcSessionRunner : public ArcSession::Observer {
       base::RepeatingCallback<std::unique_ptr<ArcSession>()>;
 
   explicit ArcSessionRunner(const ArcSessionFactory& factory);
+
+  ArcSessionRunner(const ArcSessionRunner&) = delete;
+  ArcSessionRunner& operator=(const ArcSessionRunner&) = delete;
+
   ~ArcSessionRunner() override;
 
   // Add/Remove an observer.
@@ -115,6 +117,10 @@ class ArcSessionRunner : public ArcSession::Observer {
   using TrimVmMemoryCallback =
       base::OnceCallback<void(bool success, const std::string& failure_reason)>;
   void TrimVmMemory(TrimVmMemoryCallback callback);
+
+  void set_default_device_scale_factor(float scale_factor) {
+    default_device_scale_factor_ = scale_factor;
+  }
 
   // Returns the current ArcSession instance for testing purpose.
   ArcSession* GetArcSessionForTesting() { return arc_session_.get(); }
@@ -173,13 +179,13 @@ class ArcSessionRunner : public ArcSession::Observer {
 
   bool resumed_ = false;
 
+  float default_device_scale_factor_ = 1.0f;
+
   // DemoModeDelegate to be used by ArcSession.
   std::unique_ptr<ArcClientAdapter::DemoModeDelegate> demo_mode_delegate_;
 
   // WeakPtrFactory to use callbacks.
   base::WeakPtrFactory<ArcSessionRunner> weak_ptr_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(ArcSessionRunner);
 };
 
 }  // namespace arc

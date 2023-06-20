@@ -7,7 +7,7 @@
 #include <utility>
 
 #include "base/bind.h"
-#include "base/stl_util.h"
+#include "base/containers/cxx20_erase.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/app_list/arc/arc_app_dialog.h"
@@ -98,6 +98,10 @@ ArcUsbHostPermissionManager::UsbDeviceEntry::UsbDeviceEntry(
       product_id(product_id) {}
 
 ArcUsbHostPermissionManager::UsbDeviceEntry::UsbDeviceEntry(
+    const ArcUsbHostPermissionManager::UsbDeviceEntry& other) = default;
+
+ArcUsbHostPermissionManager::UsbDeviceEntry&
+ArcUsbHostPermissionManager::UsbDeviceEntry::operator=(
     const ArcUsbHostPermissionManager::UsbDeviceEntry& other) = default;
 
 bool ArcUsbHostPermissionManager::UsbDeviceEntry::Matches(

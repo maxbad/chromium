@@ -13,6 +13,9 @@ namespace fileManagerPrivateInternal {
     DOMString fileFullPath;
     boolean fileIsDirectory;
   };
+  dictionary IOTaskParams {
+    DOMString? destinationFolderUrl;
+  };
 
   callback SimpleCallback = void();
   callback ResolveIsolatedEntriesCallback = void(EntryDescription[] entries);
@@ -31,7 +34,7 @@ namespace fileManagerPrivateInternal {
   callback GetUrlCallback = void(DOMString url);
   callback GetUrlCallback = void(DOMString url);
   callback StartCopyCallback = void(long copyId);
-  callback ZipSelectionCallback = void(optional boolean success);
+  callback ZipSelectionCallback = void(long zipId, double totalBytes);
   callback ValidatePathNameLengthCallback = void(boolean result);
   callback GetDirectorySizeCallback = void(double size);
   callback GetRecentFilesCallback = void(EntryDescription[] entries);
@@ -76,17 +79,16 @@ namespace fileManagerPrivateInternal {
     static void pinDriveFile(DOMString url,
                              boolean pin,
                              SimpleCallback callback);
-    static void executeTask(DOMString taskId,
+    static void executeTask(fileManagerPrivate.FileTaskDescriptor descriptor,
                             DOMString[] urls,
                             ExecuteTaskCallback callback);
-    static void setDefaultTask(DOMString taskId,
+    static void setDefaultTask(fileManagerPrivate.FileTaskDescriptor descriptor,
                                DOMString[] urls,
                                DOMString[] mimeTypes,
                                SimpleCallback callback);
     static void getFileTasks(DOMString[] urls,
                              GetFileTasksCallback callback);
     static void getDownloadUrl(DOMString url, GetUrlCallback callback);
-    static void copyImageToClipboard(DOMString url, BooleanCallback callback);
     static void startCopy(DOMString url,
                           DOMString parentUrl,
                           DOMString newName,
@@ -95,7 +97,6 @@ namespace fileManagerPrivateInternal {
                              DOMString[] urls,
                              DOMString destName,
                              ZipSelectionCallback callback);
-    static void cancelZip(DOMString parentUrl, DOMString destName);
     static void validatePathNameLength(
         DOMString parentUrl,
         DOMString name,
@@ -138,5 +139,8 @@ namespace fileManagerPrivateInternal {
         SimpleCallback callback);
     static void toggleAddedToHoldingSpace(DOMString[] urls, boolean add,
                                           optional SimpleCallback callback);
+    static void startIOTask(fileManagerPrivate.IOTaskType type,
+                            DOMString[] urls,
+                            IOTaskParams params);
   };
 };

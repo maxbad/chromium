@@ -9,8 +9,8 @@ component("cpp") {
   defines = [ "IS_ASSISTANT_SERVICE_PUBLIC_IMPL" ]
 
   sources = [
-    "assistant_client.cc",
-    "assistant_client.h",
+    "assistant_browser_delegate.cc",
+    "assistant_browser_delegate.h",
     "assistant_enums.h",
     "assistant_prefs.cc",
     "assistant_prefs.h",
@@ -24,6 +24,8 @@ component("cpp") {
     "device_actions.h",
     "features.cc",
     "features.h",
+    "switches.cc",
+    "switches.h",
   ]
 
   public_deps = [

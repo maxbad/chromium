@@ -8,6 +8,8 @@
 #include "base/strings/string_util.h"
 #include "chrome/browser/buildflags.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/sessions/app_session_service.h"
+#include "chrome/browser/sessions/app_session_service_factory.h"
 #include "chrome/browser/sessions/session_service_base.h"
 #include "chrome/browser/sessions/session_service_factory.h"
 #include "chrome/browser/sessions/session_service_lookup.h"
@@ -18,21 +20,25 @@
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/web_applications/app_browser_controller.h"
-#include "chrome/browser/web_applications/components/app_registrar.h"
-#include "chrome/browser/web_applications/components/web_app_helpers.h"
-#include "chrome/browser/web_applications/components/web_app_provider_base.h"
+#include "chrome/browser/ui/web_applications/system_web_app_ui_utils.h"
+#include "chrome/browser/ui/web_applications/web_app_browser_controller.h"
+#include "chrome/browser/web_applications/system_web_apps/system_web_app_manager.h"
+#include "chrome/browser/web_applications/web_app_helpers.h"
 #include "chrome/browser/web_applications/web_app_provider.h"
+#include "chrome/browser/web_applications/web_app_registrar.h"
 #include "chrome/common/chrome_features.h"
 #include "components/omnibox/browser/location_bar_model.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/content_features.h"
 #include "third_party/blink/public/common/renderer_preferences/renderer_preferences.h"
 #include "url/gurl.h"
 
-#if BUILDFLAG(ENABLE_APP_SESSION_SERVICE)
-#include "chrome/browser/sessions/app_session_service.h"
-#include "chrome/browser/sessions/app_session_service_factory.h"
+#if BUILDFLAG(ENABLE_EXTENSIONS)
+#include "chrome/browser/ui/extensions/hosted_app_browser_controller.h"
+#include "extensions/browser/extension_registry.h"
+#include "extensions/common/extension.h"
 #endif
 
 namespace {
@@ -54,19 +60,17 @@ Browser* ReparentWebContentsIntoAppBrowser(content::WebContents* contents,
   if (source_tabstrip->count() == 1)
     chrome::NewTab(source_browser);
   target_browser->tab_strip_model()->AppendWebContents(
-      source_tabstrip->DetachWebContentsAt(
+      source_tabstrip->DetachWebContentsAtForInsertion(
           source_tabstrip->GetIndexOfWebContents(contents)),
       true);
   target_browser->window()->Show();
 
-#if BUILDFLAG(ENABLE_APP_SESSION_SERVICE)
   // The app window will be registered correctly, however the tab will not
   // be correctly tracked. We need to do a reset to get the tab correctly
   // tracked by the app service.
   AppSessionService* app_service =
       AppSessionServiceFactory::GetForProfile(target_browser->profile());
   app_service->ResetFromCurrentBrowsers();
-#endif
 
   return target_browser;
 }
@@ -76,7 +80,7 @@ Browser* ReparentWebContentsIntoAppBrowser(content::WebContents* contents,
 namespace web_app {
 
 absl::optional<AppId> GetWebAppForActiveTab(Browser* browser) {
-  WebAppProvider* provider = WebAppProvider::Get(browser->profile());
+  WebAppProvider* provider = WebAppProvider::GetForWebApps(browser->profile());
   if (!provider)
     return absl::nullopt;
 
@@ -133,8 +137,8 @@ Browser* ReparentWebContentsIntoAppBrowser(content::WebContents* contents,
   // entered the app's scope. The minimal-ui Back button will be initially
   // disabled if the previous page was outside scope. Packaged apps are not
   // affected.
-  AppRegistrar& registrar =
-      WebAppProviderBase::GetProviderBase(profile)->registrar();
+  WebAppRegistrar& registrar =
+      WebAppProvider::GetForWebApps(profile)->registrar();
   if (registrar.IsInstalled(app_id)) {
     absl::optional<GURL> app_scope = registrar.GetAppScope(app_id);
     if (!app_scope)
@@ -143,7 +147,7 @@ Browser* ReparentWebContentsIntoAppBrowser(content::WebContents* contents,
     PrunePreScopeNavigationHistory(*app_scope, contents);
   }
 
-  if (registrar.IsInExperimentalTabbedWindowMode(app_id)) {
+  if (registrar.IsTabbedWindowModeEnabled(app_id)) {
     for (Browser* browser : *BrowserList::GetInstance()) {
       if (AppBrowserController::IsForWebApp(browser, app_id))
         return ::ReparentWebContentsIntoAppBrowser(contents, browser);
@@ -155,20 +159,6 @@ Browser* ReparentWebContentsIntoAppBrowser(content::WebContents* contents,
       Browser::Create(Browser::CreateParams::CreateForApp(
           GenerateApplicationNameFromAppId(app_id), true /* trusted_source */,
           gfx::Rect(), profile, true /* user_gesture */)));
-}
-
-Browser* ReparentWebContentsForFocusMode(content::WebContents* contents) {
-  DCHECK(base::FeatureList::IsEnabled(features::kFocusMode));
-  Profile* profile = Profile::FromBrowserContext(contents->GetBrowserContext());
-  // TODO(crbug.com/941577): Remove DCHECK when focus mode is permitted in guest
-  // and incognito sessions.
-  DCHECK(!profile->IsOffTheRecord());
-  Browser::CreateParams browser_params(Browser::CreateParams::CreateForApp(
-      GenerateApplicationNameForFocusMode(), true /* trusted_source */,
-      gfx::Rect(), profile, true /* user_gesture */));
-  browser_params.is_focus_mode = true;
-  return ::ReparentWebContentsIntoAppBrowser(contents,
-                                             Browser::Create(browser_params));
 }
 
 void SetAppPrefsForWebContents(content::WebContents* web_contents) {
@@ -183,6 +173,44 @@ void ClearAppPrefsForWebContents(content::WebContents* web_contents) {
   web_contents->SyncRendererPrefs();
 
   web_contents->NotifyPreferencesChanged();
+}
+
+std::unique_ptr<AppBrowserController> MaybeCreateAppBrowserController(
+    Browser* browser) {
+  std::unique_ptr<AppBrowserController> controller;
+  const AppId app_id = GetAppIdFromApplicationName(browser->app_name());
+  auto* const provider =
+      WebAppProvider::GetForLocalAppsUnchecked(browser->profile());
+  if (provider && provider->registrar().IsInstalled(app_id)) {
+    const SystemWebAppDelegate* system_app = nullptr;
+    auto system_app_type =
+        GetSystemWebAppTypeForAppId(browser->profile(), app_id);
+    if (system_app_type) {
+      system_app =
+          provider->system_web_app_manager().GetSystemApp(*system_app_type);
+    }
+    const bool has_tab_strip =
+        (system_app && system_app->ShouldHaveTabStrip()) ||
+        (base::FeatureList::IsEnabled(features::kDesktopPWAsTabStrip) &&
+         provider->registrar().IsTabbedWindowModeEnabled(app_id));
+    controller = std::make_unique<WebAppBrowserController>(
+        *provider, browser, app_id, system_app, has_tab_strip);
+  } else {
+#if BUILDFLAG(ENABLE_EXTENSIONS)
+    const extensions::Extension* extension =
+        extensions::ExtensionRegistry::Get(browser->profile())
+            ->GetExtensionById(app_id,
+                               extensions::ExtensionRegistry::EVERYTHING);
+    if (extension && extension->is_hosted_app() &&
+        !extension->from_bookmark()) {
+      controller =
+          std::make_unique<extensions::HostedAppBrowserController>(browser);
+    }
+#endif
+  }
+  if (controller)
+    controller->Init();
+  return controller;
 }
 
 }  // namespace web_app

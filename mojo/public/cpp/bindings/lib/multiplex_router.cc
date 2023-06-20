@@ -15,9 +15,9 @@
 #include "base/macros.h"
 #include "base/memory/ptr_util.h"
 #include "base/memory/scoped_refptr.h"
-#include "base/sequenced_task_runner.h"
 #include "base/strings/string_util.h"
 #include "base/synchronization/waitable_event.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/types/pass_key.h"
 #include "mojo/public/cpp/bindings/interface_endpoint_client.h"
 #include "mojo/public/cpp/bindings/interface_endpoint_controller.h"
@@ -44,6 +44,9 @@ class MultiplexRouter::InterfaceEndpoint
         peer_closed_(false),
         handle_created_(false),
         client_(nullptr) {}
+
+  InterfaceEndpoint(const InterfaceEndpoint&) = delete;
+  InterfaceEndpoint& operator=(const InterfaceEndpoint&) = delete;
 
   // ---------------------------------------------------------------------------
   // The following public methods are safe to call from any sequence without
@@ -110,6 +113,13 @@ class MultiplexRouter::InterfaceEndpoint
   bool UnregisterExternalSyncWaiter(uint64_t request_id) {
     router_->AssertLockAcquired();
     return requests_with_external_sync_waiter_.erase(request_id) != 0;
+  }
+
+  base::flat_set<uint64_t> UnregisterAllExternalSyncWaiters() {
+    router_->AssertLockAcquired();
+    base::flat_set<uint64_t> request_ids;
+    std::swap(request_ids, requests_with_external_sync_waiter_);
+    return request_ids;
   }
 
   void SignalSyncMessageEvent() {
@@ -240,8 +250,6 @@ class MultiplexRouter::InterfaceEndpoint
   // Guarded by the router's lock. Used to synchronously wait on replies.
   std::unique_ptr<SequenceLocalSyncEventWatcher> sync_watcher_;
   base::flat_set<uint64_t> requests_with_external_sync_waiter_;
-
-  DISALLOW_COPY_AND_ASSIGN(InterfaceEndpoint);
 };
 
 // MessageWrapper objects are always destroyed under the router's lock. On
@@ -256,6 +264,9 @@ class MultiplexRouter::MessageWrapper {
 
   MessageWrapper(MessageWrapper&& other)
       : router_(other.router_), value_(std::move(other.value_)) {}
+
+  MessageWrapper(const MessageWrapper&) = delete;
+  MessageWrapper& operator=(const MessageWrapper&) = delete;
 
   ~MessageWrapper() {
     if (!router_ || value_.IsNull())
@@ -293,8 +304,6 @@ class MultiplexRouter::MessageWrapper {
  private:
   MultiplexRouter* router_ = nullptr;
   Message value_;
-
-  DISALLOW_COPY_AND_ASSIGN(MessageWrapper);
 };
 
 struct MultiplexRouter::Task {
@@ -811,8 +820,17 @@ void MultiplexRouter::OnPipeConnectionError(bool force_async_dispatch) {
     endpoint_vector.push_back(pair.second);
 
   for (const auto& endpoint : endpoint_vector) {
-    if (endpoint->client())
+    if (endpoint->client()) {
+      base::flat_set<uint64_t> request_ids =
+          endpoint->UnregisterAllExternalSyncWaiters();
+      // NOTE: Accessing the InterfaceEndpointClient from off-thread must be
+      // safe here, because the client can only be detached from us while
+      // holding `lock_`.
+      for (uint64_t request_id : request_ids)
+        endpoint->client()->ForgetAsyncRequest(request_id);
+
       tasks_.push_back(Task::CreateNotifyErrorTask(endpoint.get()));
+    }
 
     UpdateEndpointStateMayRemove(endpoint.get(), PEER_ENDPOINT_CLOSED);
   }

@@ -8,7 +8,7 @@
 #include "components/optimization_guide/core/base_model_executor_helpers.h"
 #include "components/optimization_guide/core/model_executor.h"
 #include "components/optimization_guide/core/tflite_op_resolver.h"
-#include "third_party/tflite-support/src/tensorflow_lite_support/cc/task/core/base_task_api.h"
+#include "third_party/tflite_support/src/tensorflow_lite_support/cc/task/core/base_task_api.h"
 
 namespace optimization_guide {
 
@@ -64,8 +64,8 @@ class BaseModelExecutor : public ModelExecutor<OutputType, InputTypes...>,
   }
 
   // InferenceDelegate:
-  void Preprocess(const std::vector<TfLiteTensor*>& input_tensors,
-                  InputTypes... input) override = 0;
+  absl::Status Preprocess(const std::vector<TfLiteTensor*>& input_tensors,
+                          InputTypes... input) override = 0;
   OutputType Postprocess(
       const std::vector<const TfLiteTensor*>& output_tensors) override = 0;
 };

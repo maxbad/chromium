@@ -7,13 +7,12 @@
 
 #include <memory>
 
-#include "base/macros.h"
+#include "base/scoped_observation.h"
 #include "build/build_config.h"
 #include "components/web_modal/web_contents_modal_dialog_host.h"
 #include "components/web_modal/web_contents_modal_dialog_manager_delegate.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
 #include "extensions/browser/extension_host.h"
+#include "extensions/browser/extension_host_registry.h"
 #include "extensions/common/mojom/view_type.mojom.h"
 
 class Browser;
@@ -34,7 +33,7 @@ class ExtensionViewHost
     : public ExtensionHost,
       public web_modal::WebContentsModalDialogManagerDelegate,
       public web_modal::WebContentsModalDialogHost,
-      public content::NotificationObserver {
+      public ExtensionHostRegistry::Observer {
  public:
   // |browser| may be null, since extension views may be bound to TabContents
   // hosted in ExternalTabContainer objects, which do not instantiate Browsers.
@@ -43,6 +42,10 @@ class ExtensionViewHost
                     const GURL& url,
                     mojom::ViewType host_type,
                     Browser* browser);
+
+  ExtensionViewHost(const ExtensionViewHost&) = delete;
+  ExtensionViewHost& operator=(const ExtensionViewHost&) = delete;
+
   ~ExtensionViewHost() override;
 
   Browser* browser() { return browser_; }
@@ -68,7 +71,8 @@ class ExtensionViewHost
   content::WebContents* OpenURLFromTab(
       content::WebContents* source,
       const content::OpenURLParams& params) override;
-  bool ShouldTransferNavigation(bool is_main_frame_navigation) override;
+  bool ShouldAllowRendererInitiatedCrossProcessNavigation(
+      bool is_main_frame_navigation) override;
   content::KeyboardEventProcessingResult PreHandleKeyboardEvent(
       content::WebContents* source,
       const content::NativeWebKeyboardEvent& event) override;
@@ -77,14 +81,12 @@ class ExtensionViewHost
       const content::NativeWebKeyboardEvent& event) override;
   bool PreHandleGestureEvent(content::WebContents* source,
                              const blink::WebGestureEvent& event) override;
-  std::unique_ptr<content::ColorChooser> OpenColorChooser(
-      content::WebContents* web_contents,
-      SkColor color,
-      const std::vector<blink::mojom::ColorSuggestionPtr>& suggestions)
-      override;
   void RunFileChooser(content::RenderFrameHost* render_frame_host,
                       scoped_refptr<content::FileSelectListener> listener,
                       const blink::mojom::FileChooserParams& params) override;
+  std::unique_ptr<content::EyeDropper> OpenEyeDropper(
+      content::RenderFrameHost* frame,
+      content::EyeDropperListener* listener) override;
   void ResizeDueToAutoResize(content::WebContents* source,
                              const gfx::Size& new_size) override;
 
@@ -108,10 +110,10 @@ class ExtensionViewHost
   content::WebContents* GetAssociatedWebContents() const override;
   content::WebContents* GetVisibleWebContents() const override;
 
-  // content::NotificationObserver
-  void Observe(int type,
-               const content::NotificationSource& source,
-               const content::NotificationDetails& details) override;
+  // ExtensionHostRegistry::Observer:
+  void OnExtensionHostDocumentElementAvailable(
+      content::BrowserContext* browser_context,
+      ExtensionHost* extension_host) override;
 
  private:
   // Returns whether the provided event is a raw escape keypress in a
@@ -122,7 +124,7 @@ class ExtensionViewHost
   Browser* browser_;
 
   // View that shows the rendered content in the UI.
-  ExtensionView* view_;
+  ExtensionView* view_ = nullptr;
 
   // The relevant WebContents associated with this ExtensionViewHost, if any.
   content::WebContents* associated_web_contents_ = nullptr;
@@ -132,9 +134,9 @@ class ExtensionViewHost
   std::unique_ptr<AssociatedWebContentsObserver>
       associated_web_contents_observer_;
 
-  content::NotificationRegistrar registrar_;
-
-  DISALLOW_COPY_AND_ASSIGN(ExtensionViewHost);
+  base::ScopedObservation<ExtensionHostRegistry,
+                          ExtensionHostRegistry::Observer>
+      host_registry_observation_{this};
 };
 
 }  // namespace extensions

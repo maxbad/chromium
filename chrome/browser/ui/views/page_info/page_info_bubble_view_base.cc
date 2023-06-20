@@ -78,14 +78,16 @@ void PageInfoBubbleViewBase::OnVisibilityChanged(
     GetWidget()->Close();
 }
 
-void PageInfoBubbleViewBase::DidStartNavigation(
-    content::NavigationHandle* handle) {
-  if (handle->IsInMainFrame())
-    GetWidget()->Close();
+void PageInfoBubbleViewBase::PrimaryPageChanged(content::Page& page) {
+  GetWidget()->Close();
 }
 
 void PageInfoBubbleViewBase::DidChangeVisibleSecurityState() {
   // Subclasses may update instead, but this the only safe general option.
+  GetWidget()->Close();
+}
+
+void PageInfoBubbleViewBase::WebContentsDestroyed() {
   GetWidget()->Close();
 }
 

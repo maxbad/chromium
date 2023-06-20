@@ -20,9 +20,9 @@
 #include "base/macros.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/single_thread_task_runner.h"
 #include "base/synchronization/lock.h"
 #include "base/synchronization/waitable_event.h"
+#include "base/task/single_thread_task_runner.h"
 #include "components/viz/common/display/update_vsync_parameters_callback.h"
 #include "components/viz/common/gpu/gpu_vsync_callback.h"
 #include "components/viz/common/resources/resource_format.h"
@@ -106,6 +106,10 @@ class GL_IN_PROCESS_CONTEXT_EXPORT InProcessCommandBuffer
  public:
   InProcessCommandBuffer(CommandBufferTaskExecutor* task_executor,
                          const GURL& active_url);
+
+  InProcessCommandBuffer(const InProcessCommandBuffer&) = delete;
+  InProcessCommandBuffer& operator=(const InProcessCommandBuffer&) = delete;
+
   ~InProcessCommandBuffer() override;
 
   // If |surface| is not null, use it directly; in this case, the command
@@ -193,7 +197,8 @@ class GL_IN_PROCESS_CONTEXT_EXPORT InProcessCommandBuffer
       SurfaceHandle parent_window,
       SurfaceHandle child_window) override;
 #endif
-  void DidSwapBuffersComplete(SwapBuffersCompleteParams params) override;
+  void DidSwapBuffersComplete(SwapBuffersCompleteParams params,
+                              gfx::GpuFenceHandle release_fence) override;
   const gles2::FeatureInfo* GetFeatureInfo() const override;
   const GpuPreferences& GetGpuPreferences() const override;
   void BufferPresented(const gfx::PresentationFeedback& feedback) override;
@@ -346,7 +351,8 @@ class GL_IN_PROCESS_CONTEXT_EXPORT InProcessCommandBuffer
 
   // Callback implementations on the client thread.
   void OnContextLost();
-  void DidSwapBuffersCompleteOnOriginThread(SwapBuffersCompleteParams params);
+  void DidSwapBuffersCompleteOnOriginThread(SwapBuffersCompleteParams params,
+                                            gfx::GpuFenceHandle release_fence);
   void BufferPresentedOnOriginThread(uint64_t swap_id,
                                      uint32_t flags,
                                      const gfx::PresentationFeedback& feedback);
@@ -374,7 +380,6 @@ class GL_IN_PROCESS_CONTEXT_EXPORT InProcessCommandBuffer
   scoped_refptr<base::SingleThreadTaskRunner> origin_task_runner_;
   std::unique_ptr<CommandBufferService> command_buffer_;
   std::unique_ptr<DecoderContext> decoder_;
-  absl::optional<raster::GrCacheController> gr_cache_controller_;
   scoped_refptr<gl::GLContext> context_;
   scoped_refptr<gl::GLSurface> surface_;
   scoped_refptr<SyncPointClientState> sync_point_client_state_;
@@ -450,8 +455,6 @@ class GL_IN_PROCESS_CONTEXT_EXPORT InProcessCommandBuffer
       this};
   base::WeakPtrFactory<InProcessCommandBuffer> gpu_thread_weak_ptr_factory_{
       this};
-
-  DISALLOW_COPY_AND_ASSIGN(InProcessCommandBuffer);
 };
 
 }  // namespace gpu

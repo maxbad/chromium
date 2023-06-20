@@ -13,6 +13,7 @@
 #include "base/command_line.h"
 #include "base/memory/weak_ptr.h"
 #include "base/timer/timer.h"
+#include "chromeos/dbus/tpm_manager/tpm_manager.pb.h"
 #include "components/arc/enterprise/arc_apps_tracker.h"
 #include "components/arc/enterprise/snapshot_hours_policy_service.h"
 #include "components/arc/enterprise/snapshot_reboot_controller.h"
@@ -43,6 +44,8 @@ extern const char kHeadless[];
 // The restart of frecon is needed only when system UI is shown (in BlockedUi
 // state).
 extern const char kRestartFreconEnv[];
+// TPM2 version number.
+extern const int kTpm2Version;
 
 // This class manages ARC data/ directory snapshots and controls the lifetime of
 // the arc-data-snapshotd daemon.
@@ -102,8 +105,8 @@ class ArcDataSnapshotdManager final
   class SnapshotInfo {
    public:
     // Creates new snapshot with current parameters.
-    explicit SnapshotInfo(bool last);
-    SnapshotInfo(const base::Value* value, bool last);
+    explicit SnapshotInfo(bool is_last);
+    SnapshotInfo(const base::Value* value, bool is_last);
     SnapshotInfo(const SnapshotInfo&) = delete;
     SnapshotInfo& operator=(const SnapshotInfo&) = delete;
     ~SnapshotInfo();
@@ -115,7 +118,7 @@ class ArcDataSnapshotdManager final
         const base::Time& creation_date,
         bool verified,
         bool updated,
-        bool last);
+        bool is_last);
 
     // Syncs stored snapshot info to dictionaty |value|.
     void Sync(base::Value* value);
@@ -129,8 +132,10 @@ class ArcDataSnapshotdManager final
     void set_verified(bool verified) { verified_ = true; }
     bool is_verified() const { return verified_; }
 
+    void set_is_last(bool is_last) { is_last_ = is_last; }
     bool is_last() const { return is_last_; }
 
+    void set_updated(bool updated) { updated_ = updated; }
     bool updated() const { return updated_; }
 
    private:
@@ -138,7 +143,7 @@ class ArcDataSnapshotdManager final
                  const base::Time& creation_date,
                  bool verified,
                  bool updated,
-                 bool last);
+                 bool is_last);
 
     // Returns dictionary path in arc.snapshot local state preference.
     std::string GetDictPath() const;
@@ -148,6 +153,7 @@ class ArcDataSnapshotdManager final
     // Called once this snapshot is expired.
     void OnSnapshotExpired();
 
+    // True if the instance is the last snapshot taken.
     bool is_last_;
 
     // Values should be kept in sync with values stored in arc.snapshot.last or
@@ -183,13 +189,20 @@ class ArcDataSnapshotdManager final
         PrefService* local_state,
         bool blocked_ui_mode,
         bool started,
-        std::unique_ptr<SnapshotInfo> last,
-        std::unique_ptr<SnapshotInfo> previous);
+        absl::optional<int> tpm_version,
+        std::unique_ptr<SnapshotInfo> last_snapshot,
+        std::unique_ptr<SnapshotInfo> previous_snapshot);
 
     // Parses the snapshot info from arc.snapshot preference.
     void Parse();
     // Syncs stored snapshot info to local state.
     void Sync();
+
+    // Syncs stored snapshot info to local state.
+    // |callback| is executed once all changes to the local state have been
+    // committed.
+    void Sync(base::OnceClosure callback);
+
     // Clears snapshot related info in arc.snapshot preference either last
     // if |last| is true or previous otherwise.
     void ClearSnapshot(bool last);
@@ -209,15 +222,20 @@ class ArcDataSnapshotdManager final
     }
     bool is_blocked_ui_mode() const { return blocked_ui_mode_; }
     bool started() const { return started_; }
-    SnapshotInfo* last() { return last_.get(); }
-    SnapshotInfo* previous() { return previous_.get(); }
+    SnapshotInfo* last_snapshot() { return last_snapshot_.get(); }
+    SnapshotInfo* previous_snapshot() { return previous_snapshot_.get(); }
+
+    void set_tpm_version(int tpm_version) { tpm_version_ = tpm_version; }
+    bool is_tpm_initialized() const { return tpm_version_.has_value(); }
+    bool is_tpm2() const { return tpm_version_ == kTpm2Version; }
 
    private:
     Snapshot(PrefService* local_state,
              bool blocked_ui_mode,
              bool started,
-             std::unique_ptr<SnapshotInfo> last,
-             std::unique_ptr<SnapshotInfo> previous);
+             absl::optional<int> tpm_version,
+             std::unique_ptr<SnapshotInfo> last_snapshot,
+             std::unique_ptr<SnapshotInfo> previous_snapshot);
 
     // Unowned pointer - outlives this instance.
     PrefService* const local_state_;
@@ -226,8 +244,9 @@ class ArcDataSnapshotdManager final
     // preference.
     bool blocked_ui_mode_ = false;
     bool started_ = false;
-    std::unique_ptr<SnapshotInfo> last_;
-    std::unique_ptr<SnapshotInfo> previous_;
+    absl::optional<int> tpm_version_;
+    std::unique_ptr<SnapshotInfo> last_snapshot_;
+    std::unique_ptr<SnapshotInfo> previous_snapshot_;
   };
 
   ArcDataSnapshotdManager(PrefService* local_state,
@@ -289,6 +308,9 @@ class ArcDataSnapshotdManager final
 
   State state() const { return state_; }
 
+  base::OnceClosure& get_reset_autologin_callback_for_testing() {
+    return reset_autologin_callback_;
+  }
   void set_reset_autologin_callback(base::OnceClosure callback) {
     reset_autologin_callback_ = std::move(callback);
   }
@@ -306,6 +328,12 @@ class ArcDataSnapshotdManager final
  private:
   // Local State initialization observer.
   void OnLocalStateInitialized(bool intialized);
+
+  // Completes initialization.
+  void CompleteInitialization();
+
+  // Sets a TPM version into local_state_.
+  void OnGetTpmVersion(const ::tpm_manager::GetVersionInfoReply& reply);
 
   // Attempts to arc-data-snapshotd daemon regardless of state of the class.
   // Runs |callback| once finished.

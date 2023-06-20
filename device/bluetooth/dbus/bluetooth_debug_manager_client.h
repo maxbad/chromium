@@ -21,6 +21,10 @@ namespace bluez {
 class DEVICE_BLUETOOTH_EXPORT BluetoothDebugManagerClient
     : public BluezDBusClient {
  public:
+  BluetoothDebugManagerClient(const BluetoothDebugManagerClient&) = delete;
+  BluetoothDebugManagerClient& operator=(const BluetoothDebugManagerClient&) =
+      delete;
+
   ~BluetoothDebugManagerClient() override;
 
   // The ErrorCallback is used by debug manager methods to indicate failure.
@@ -32,9 +36,7 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothDebugManagerClient
 
   // Invoke D-Bus API to set the levels of logging verbosity for each of
   // the bluetooth daemons and kernel.
-  virtual void SetLogLevels(const uint8_t dispatcher_level,
-                            const uint8_t newblue_level,
-                            const uint8_t bluez_level,
+  virtual void SetLogLevels(const uint8_t bluez_level,
                             const uint8_t kernel_level,
                             base::OnceClosure callback,
                             ErrorCallback error_callback) = 0;
@@ -49,9 +51,6 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothDebugManagerClient
 
  protected:
   BluetoothDebugManagerClient();
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(BluetoothDebugManagerClient);
 };
 
 }  // namespace bluez

@@ -10,8 +10,8 @@
 #include <memory>
 #include <string>
 
-#include "base/single_thread_task_runner.h"
 #include "base/supports_user_data.h"
+#include "base/task/single_thread_task_runner.h"
 #include "content/common/content_export.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
@@ -140,6 +140,11 @@ class CONTENT_EXPORT RenderFrame : public IPC::Listener,
   // Returns the RenderView associated with this frame.
   virtual RenderView* GetRenderView() = 0;
 
+  // Returns the RenderFrame associated with the main frame of the WebView.
+  // See `blink::WebView::MainFrame()`. Note that this will be null when
+  // the main frame in this process is a remote frame.
+  virtual RenderFrame* GetMainRenderFrame() = 0;
+
   // Return the RenderAccessibility associated with this frame.
   virtual RenderAccessibility* GetRenderAccessibility() = 0;
 
@@ -208,9 +213,6 @@ class CONTENT_EXPORT RenderFrame : public IPC::Listener,
   virtual void PluginDidStartLoading() = 0;
   virtual void PluginDidStopLoading() = 0;
 #endif
-
-  // Returns true if this frame is a FTP directory listing.
-  virtual bool IsFTPDirectoryListing() = 0;
 
   // Notifies the browser of text selection changes made.
   virtual void SetSelectedText(const std::u16string& selection_text,

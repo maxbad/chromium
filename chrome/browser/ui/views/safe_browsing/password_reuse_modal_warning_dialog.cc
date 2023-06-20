@@ -15,12 +15,13 @@
 #include "components/constrained_window/constrained_window_views.h"
 #include "components/password_manager/core/browser/password_manager_metrics_util.h"
 #include "components/safe_browsing/buildflags.h"
-#include "components/safe_browsing/core/password_protection/metrics_util.h"
+#include "components/safe_browsing/core/browser/password_protection/metrics_util.h"
 #include "components/strings/grit/components_strings.h"
 #include "components/vector_icons/vector_icons.h"
 #include "content/public/browser/web_contents.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/metadata/metadata_impl_macros.h"
+#include "ui/base/models/image_model.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/color_palette.h"
 #include "ui/gfx/image/image.h"
@@ -166,21 +167,16 @@ PasswordReuseModalWarningDialog::PasswordReuseModalWarningDialog(
   if (service_)
     service_->AddObserver(this);
 
-  std::vector<size_t> placeholder_offsets;
-
   if (password_type.account_type() ==
       ReusedPasswordAccountType::SAVED_PASSWORD) {
     const std::u16string message_body =
-        service_->GetWarningDetailText(password_type, &placeholder_offsets);
+        service_->GetWarningDetailText(password_type);
 
-    CreateSavedPasswordReuseModalWarningDialog(
-        message_body, service_->GetPlaceholdersForSavedPasswordWarningText(),
-        placeholder_offsets);
+    CreateSavedPasswordReuseModalWarningDialog(message_body);
   } else {
     views::Label* message_body_label = CreateMessageBodyLabel(
         service_
-            ? service_->GetWarningDetailText(password_type,
-                                             &placeholder_offsets)
+            ? service_->GetWarningDetailText(password_type)
             : l10n_util::GetStringUTF16(IDS_PAGE_INFO_CHANGE_PASSWORD_DETAILS));
     CreateGaiaPasswordReuseModalWarningDialog(message_body_label);
   }
@@ -195,27 +191,16 @@ PasswordReuseModalWarningDialog::~PasswordReuseModalWarningDialog() {
 
 void PasswordReuseModalWarningDialog::
     CreateSavedPasswordReuseModalWarningDialog(
-        const std::u16string message_body,
-        std::vector<std::u16string> placeholders,
-        std::vector<size_t> placeholder_offsets) {
+        const std::u16string message_body) {
   SetLayoutManager(std::make_unique<BoxLayout>(
       views::BoxLayout::Orientation::kVertical, gfx::Insets(),
       0 /* between_child_spacing */));
-  std::unique_ptr<views::View> content = SetupContent(
-      l10n_util::GetStringUTF16(IDS_PAGE_INFO_CHANGE_PASSWORD_SUMMARY));
+  std::unique_ptr<views::View> content = SetupContent(l10n_util::GetStringUTF16(
+      IDS_PAGE_INFO_CHANGE_PASSWORD_SAVED_PASSWORD_SUMMARY));
 
-  // Bold the domains in the message body label.
   views::StyledLabel* const styled_message_body_label =
       content->AddChildView(std::make_unique<views::StyledLabel>());
   styled_message_body_label->SetText(message_body);
-  views::StyledLabel::RangeStyleInfo bold_style;
-  bold_style.text_style = STYLE_EMPHASIZED;
-  for (size_t idx = 0; idx < placeholder_offsets.size(); idx++) {
-    styled_message_body_label->AddStyleRange(
-        gfx::Range(placeholder_offsets[idx],
-                   placeholder_offsets[idx] + placeholders.at(idx).length()),
-        bold_style);
-  }
   styled_message_body_label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   AddChildView(std::make_unique<SafeBrowsingImageView>());
   AddChildView(std::move(content));
@@ -259,15 +244,14 @@ bool PasswordReuseModalWarningDialog::ShouldShowCloseButton() const {
   return false;
 }
 
-gfx::ImageSkia PasswordReuseModalWarningDialog::GetWindowIcon() {
+ui::ImageModel PasswordReuseModalWarningDialog::GetWindowIcon() {
   return password_type_.account_type() ==
                  ReusedPasswordAccountType::SAVED_PASSWORD
-             ? gfx::ImageSkia()
-             : gfx::CreateVectorIcon(
-                   kSecurityIcon,
+             ? ui::ImageModel()
+             : ui::ImageModel::FromVectorIcon(
+                   kSecurityIcon, gfx::kChromeIconGrey,
                    ChromeLayoutProvider::Get()->GetDistanceMetric(
-                       DISTANCE_BUBBLE_HEADER_VECTOR_ICON_SIZE),
-                   gfx::kChromeIconGrey);
+                       DISTANCE_BUBBLE_HEADER_VECTOR_ICON_SIZE));
 }
 
 void PasswordReuseModalWarningDialog::OnGaiaPasswordChanged() {

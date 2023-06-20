@@ -32,9 +32,10 @@
 #include "components/enterprise/common/proto/connectors.pb.h"
 #include "components/enterprise/common/strings.h"
 #include "components/prefs/pref_service.h"
-#include "components/safe_browsing/content/web_ui/safe_browsing_ui.h"
+#include "components/safe_browsing/content/browser/web_ui/safe_browsing_ui.h"
+#include "components/safe_browsing/core/common/features.h"
 #include "components/safe_browsing/core/common/safe_browsing_prefs.h"
-#include "components/safe_browsing/core/features.h"
+
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
 #include "net/base/url_util.h"
@@ -44,13 +45,16 @@
 namespace safe_browsing {
 namespace {
 
+// The command line flag to control the max amount of concurrent active
+// requests.
+// TODO(crbug.com/1191061): Tweak this number to an "optimal" value.
+constexpr char kMaxParallelActiveRequests[] = "wp-max-parallel-active-requests";
+constexpr int kDefaultMaxParallelActiveRequests = 5;
+
 const int kScanningTimeoutSeconds = 5 * 60;  // 5 minutes
 
 const char kSbEnterpriseUploadUrl[] =
     "https://safebrowsing.google.com/safebrowsing/uploads/scan";
-
-const char kSbAppUploadUrl[] =
-    "https://safebrowsing.google.com/safebrowsing/uploads/app";
 
 const char kSbConsumerUploadUrl[] =
     "https://safebrowsing.google.com/safebrowsing/uploads/consumer";
@@ -182,18 +186,26 @@ net::NetworkTrafficAnnotationTag GetTrafficAnnotationTag(bool is_app) {
 
 }  // namespace
 
-BinaryUploadService::BinaryUploadService(Profile* profile)
-    : url_loader_factory_(profile->GetURLLoaderFactory()),
-      binary_fcm_service_(BinaryFCMService::Create(profile)),
-      profile_(profile),
-      weakptr_factory_(this) {
-  DCHECK(base::FeatureList::IsEnabled(kSafeBrowsingRemoveCookies));
+// static
+size_t BinaryUploadService::GetParallelActiveRequestsMax() {
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
+  if (command_line->HasSwitch(kMaxParallelActiveRequests)) {
+    int parsed_max;
+    if (base::StringToInt(
+            command_line->GetSwitchValueASCII(kMaxParallelActiveRequests),
+            &parsed_max) &&
+        parsed_max > 0) {
+      return parsed_max;
+    } else {
+      LOG(ERROR) << "wp-max-parallel-active-requests had invalid value";
+    }
+  }
+
+  return kDefaultMaxParallelActiveRequests;
 }
 
-BinaryUploadService::BinaryUploadService(
-    scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
-    Profile* profile)
-    : url_loader_factory_(url_loader_factory),
+BinaryUploadService::BinaryUploadService(Profile* profile)
+    : url_loader_factory_(profile->GetURLLoaderFactory()),
       binary_fcm_service_(BinaryFCMService::Create(profile)),
       profile_(profile),
       weakptr_factory_(this) {}
@@ -221,10 +233,7 @@ void BinaryUploadService::MaybeUploadForDeepScanning(
         profile_ && IsEnhancedProtectionEnabled(*profile_->GetPrefs());
 
     const bool is_deep_scan_authorized =
-        is_advanced_protection ||
-        (base::FeatureList::IsEnabled(
-             safe_browsing::kPromptEsbForDeepScanning) &&
-         is_enhanced_protection);
+        is_advanced_protection || is_enhanced_protection;
     MaybeUploadForDeepScanningCallback(std::move(request),
                                        /*authorized=*/is_deep_scan_authorized);
     return;
@@ -272,7 +281,7 @@ void BinaryUploadService::MaybeUploadForDeepScanningCallback(
 
 void BinaryUploadService::QueueForDeepScanning(
     std::unique_ptr<BinaryUploadService::Request> request) {
-  if (active_requests_.size() >= kParallelActiveRequestsMax)
+  if (active_requests_.size() >= GetParallelActiveRequestsMax())
     request_queue_.push(std::move(request));
   else
     UploadForDeepScanning(std::move(request));
@@ -291,7 +300,7 @@ void BinaryUploadService::UploadForDeepScanning(
   active_tokens_[raw_request] = token;
   raw_request->set_request_token(token);
 
-  if (!binary_fcm_service_) {
+  if (!binary_fcm_service_ || !binary_fcm_service_->Connected()) {
     content::GetUIThreadTaskRunner({})->PostTask(
         FROM_HERE,
         base::BindOnce(&BinaryUploadService::FinishRequest,
@@ -309,7 +318,7 @@ void BinaryUploadService::UploadForDeepScanning(
                      weakptr_factory_.GetWeakPtr(), raw_request));
   active_timers_[raw_request] = std::make_unique<base::OneShotTimer>();
   active_timers_[raw_request]->Start(
-      FROM_HERE, base::TimeDelta::FromSeconds(kScanningTimeoutSeconds),
+      FROM_HERE, base::Seconds(kScanningTimeoutSeconds),
       base::BindOnce(&BinaryUploadService::OnTimeout,
                      weakptr_factory_.GetWeakPtr(), raw_request));
 }
@@ -327,9 +336,8 @@ void BinaryUploadService::OnGetInstanceID(Request* request,
 
   base::UmaHistogramCustomTimes(
       "SafeBrowsingBinaryUploadRequest.TimeToGetFCMToken",
-      base::TimeTicks::Now() - start_times_[request],
-      base::TimeDelta::FromMilliseconds(1), base::TimeDelta::FromMinutes(6),
-      50);
+      base::TimeTicks::Now() - start_times_[request], base::Milliseconds(1),
+      base::Minutes(6), 50);
 
   request->set_fcm_token(instance_id);
   request->GetRequestData(base::BindOnce(&BinaryUploadService::OnGetRequestData,
@@ -489,10 +497,10 @@ void BinaryUploadService::FinishRequestCleanup(Request* request,
   received_connector_results_.erase(request);
 
   auto token_it = active_tokens_.find(request);
-  DCHECK(token_it != active_tokens_.end());
-  if (binary_fcm_service_) {
+  if (binary_fcm_service_ && token_it != active_tokens_.end())
     binary_fcm_service_->ClearCallbackForToken(token_it->second);
 
+  if (binary_fcm_service_ && instance_id != BinaryFCMService::kInvalidId) {
     // The BinaryFCMService will handle all recoverable errors. In case of
     // unrecoverable error, there's nothing we can do here.
     binary_fcm_service_->UnregisterInstanceID(
@@ -500,13 +508,15 @@ void BinaryUploadService::FinishRequestCleanup(Request* request,
         base::BindOnce(&BinaryUploadService::InstanceIDUnregisteredCallback,
                        weakptr_factory_.GetWeakPtr(), dm_token, connector));
   } else {
-    // |binary_fcm_service_| can be null in tests, but
+    // `binary_fcm_service_` can be null in tests and `instance_id` can be
+    // invalid if getting an FCM token failed or timed out, but
     // InstanceIDUnregisteredCallback should be called anyway so the requests
     // waiting on authentication can complete.
     InstanceIDUnregisteredCallback(dm_token, connector, true);
   }
 
-  active_tokens_.erase(token_it);
+  if (token_it != active_tokens_.end())
+    active_tokens_.erase(token_it);
 }
 
 void BinaryUploadService::InstanceIDUnregisteredCallback(
@@ -530,8 +540,7 @@ void BinaryUploadService::RecordRequestMetrics(Request* request,
                                 result);
   base::UmaHistogramCustomTimes("SafeBrowsingBinaryUploadRequest.Duration",
                                 base::TimeTicks::Now() - start_times_[request],
-                                base::TimeDelta::FromMilliseconds(1),
-                                base::TimeDelta::FromMinutes(6), 50);
+                                base::Milliseconds(1), base::Minutes(6), 50);
 }
 
 void BinaryUploadService::RecordRequestMetrics(
@@ -539,17 +548,17 @@ void BinaryUploadService::RecordRequestMetrics(
     Result result,
     const enterprise_connectors::ContentAnalysisResponse& response) {
   RecordRequestMetrics(request, result);
-  for (const auto& result : response.results()) {
-    if (result.tag() == "malware") {
+  for (const auto& response_result : response.results()) {
+    if (response_result.tag() == "malware") {
       base::UmaHistogramBoolean(
           "SafeBrowsingBinaryUploadRequest.MalwareResult",
-          result.status() !=
+          response_result.status() !=
               enterprise_connectors::ContentAnalysisResponse::Result::FAILURE);
     }
-    if (result.tag() == "dlp") {
+    if (response_result.tag() == "dlp") {
       base::UmaHistogramBoolean(
           "SafeBrowsingBinaryUploadRequest.DlpResult",
-          result.status() !=
+          response_result.status() !=
               enterprise_connectors::ContentAnalysisResponse::Result::FAILURE);
     }
   }
@@ -636,6 +645,10 @@ void BinaryUploadService::Request::set_client_metadata(
   *content_analysis_request_.mutable_client_metadata() = std::move(metadata);
 }
 
+void BinaryUploadService::Request::set_content_type(const std::string& type) {
+  content_analysis_request_.mutable_request_data()->set_content_type(type);
+}
+
 enterprise_connectors::AnalysisConnector
 BinaryUploadService::Request::analysis_connector() {
   return content_analysis_request_.analysis_connector();
@@ -660,6 +673,10 @@ const std::string& BinaryUploadService::Request::filename() const {
 
 const std::string& BinaryUploadService::Request::digest() const {
   return content_analysis_request_.request_data().digest();
+}
+
+const std::string& BinaryUploadService::Request::content_type() const {
+  return content_analysis_request_.request_data().content_type();
 }
 
 void BinaryUploadService::Request::FinishRequest(
@@ -738,7 +755,7 @@ void BinaryUploadService::IsAuthorized(
   // order to invalidate the authorization every 24 hours.
   if (!timer_.IsRunning()) {
     timer_.Start(
-        FROM_HERE, base::TimeDelta::FromHours(24),
+        FROM_HERE, base::Hours(24),
         base::BindRepeating(&BinaryUploadService::ResetAuthorizationData,
                             weakptr_factory_.GetWeakPtr(), url));
   }
@@ -826,18 +843,14 @@ void BinaryUploadService::SetAuthForTesting(const std::string& dm_token,
 // static
 GURL BinaryUploadService::GetUploadUrl(bool is_consumer_scan_eligible) {
   if (is_consumer_scan_eligible) {
-    if (base::FeatureList::IsEnabled(
-            safe_browsing::kPromptEsbForDeepScanning)) {
-      return GURL(kSbConsumerUploadUrl);
-    }
-    return GURL(kSbAppUploadUrl);
+    return GURL(kSbConsumerUploadUrl);
   } else {
     return GURL(kSbEnterpriseUploadUrl);
   }
 }
 
 void BinaryUploadService::PopRequestQueue() {
-  while (active_requests_.size() < kParallelActiveRequestsMax &&
+  while (active_requests_.size() < GetParallelActiveRequestsMax() &&
          !request_queue_.empty()) {
     std::unique_ptr<Request> request = std::move(request_queue_.front());
     request_queue_.pop();

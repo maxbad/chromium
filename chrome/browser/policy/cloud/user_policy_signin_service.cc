@@ -16,11 +16,14 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/signin/account_id_from_account_info.h"
+#include "chrome/browser/signin/signin_features.h"
 #include "chrome/browser/signin/signin_util.h"
+#include "chrome/common/pref_names.h"
 #include "components/policy/core/common/cloud/cloud_policy_client_registration_helper.h"
 #include "components/policy/core/common/cloud/user_cloud_policy_manager.h"
+#include "components/prefs/pref_change_registrar.h"
+#include "components/signin/public/base/consent_level.h"
 #include "components/signin/public/identity_manager/account_info.h"
-#include "components/signin/public/identity_manager/consent_level.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/storage_partition.h"
@@ -49,6 +52,12 @@ UserPolicySigninService::UserPolicySigninService(
   // happens in the background after PKS initialization - so this service
   // should always be created before the oauth token is available.
   DCHECK(!CanApplyPoliciesForSignedInUser(/*check_for_refresh_token=*/true));
+  // Some tests don't have a profile manager.
+  if (base::FeatureList::IsEnabled(kAccountPoliciesLoadedWithoutSync) &&
+      g_browser_process->profile_manager()) {
+    observed_profile_.Observe(
+        &g_browser_process->profile_manager()->GetProfileAttributesStorage());
+  }
 }
 
 UserPolicySigninService::~UserPolicySigninService() {
@@ -59,6 +68,7 @@ void UserPolicySigninService::PrepareForUserCloudPolicyManagerShutdown() {
   // in the destructor because we want to shutdown the registration helper
   // before UserCloudPolicyManager shuts down the CloudPolicyClient.
   registration_helper_.reset();
+  observed_profile_.Reset();
 
   UserPolicySigninServiceBase::PrepareForUserCloudPolicyManagerShutdown();
 }
@@ -146,6 +156,8 @@ void UserPolicySigninService::TryInitializeForSignedInUser() {
     return;
   }
 
+  observed_profile_.Reset();
+
   InitializeForSignedInUser(
       AccountIdFromAccountInfo(
           identity_manager()->GetPrimaryAccountInfo(consent_level())),
@@ -169,6 +181,12 @@ void UserPolicySigninService::ShutdownUserCloudPolicyManager() {
     signin_util::SetUserSignoutAllowedForProfile(profile(), true);
 
   UserPolicySigninServiceBase::ShutdownUserCloudPolicyManager();
+}
+
+void UserPolicySigninService::OnProfileUserManagementAcceptanceChanged(
+    const base::FilePath& profile_path) {
+  if (CanApplyPoliciesForSignedInUser(/*check_for_refresh_token=*/true))
+    TryInitializeForSignedInUser();
 }
 
 void UserPolicySigninService::OnCloudPolicyServiceInitializationCompleted() {

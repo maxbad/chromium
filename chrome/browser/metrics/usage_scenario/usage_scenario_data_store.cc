@@ -18,6 +18,8 @@ UsageScenarioDataStore::~UsageScenarioDataStore() = default;
 UsageScenarioDataStore::IntervalData::IntervalData() = default;
 UsageScenarioDataStore::IntervalData::IntervalData(const IntervalData&) =
     default;
+UsageScenarioDataStore::IntervalData&
+UsageScenarioDataStore::IntervalData::operator=(const IntervalData&) = default;
 
 UsageScenarioDataStoreImpl::UsageScenarioDataStoreImpl()
     : UsageScenarioDataStoreImpl(base::DefaultTickClock::GetInstance()) {}
@@ -205,6 +207,11 @@ void UsageScenarioDataStoreImpl::OnAudioStops() {
         base::TimeTicks::Now() - playing_audio_since_;
     playing_audio_since_ = base::TimeTicks();
   }
+}
+
+void UsageScenarioDataStoreImpl::OnSleepEvent() {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  interval_data_.sleep_events++;
 }
 
 void UsageScenarioDataStoreImpl::OnVideoStartsInVisibleTab() {

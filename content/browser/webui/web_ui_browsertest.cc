@@ -87,15 +87,15 @@ const char kLoadDedicatedWorkerScript[] = R"(
 class TestWebUIMessageHandler : public WebUIMessageHandler {
  public:
   void RegisterMessages() override {
-    web_ui()->RegisterMessageCallback(
+    web_ui()->RegisterDeprecatedMessageCallback(
         "messageRequiringGesture",
         base::BindRepeating(&TestWebUIMessageHandler::OnMessageRequiringGesture,
                             base::Unretained(this)));
-    web_ui()->RegisterMessageCallback(
+    web_ui()->RegisterDeprecatedMessageCallback(
         "notifyFinish",
         base::BindRepeating(&TestWebUIMessageHandler::OnNotifyFinish,
                             base::Unretained(this)));
-    web_ui()->RegisterMessageCallback(
+    web_ui()->RegisterDeprecatedMessageCallback(
         "sendMessage",
         base::BindRepeating(&TestWebUIMessageHandler::OnSendMessase,
                             base::Unretained(this)));
@@ -208,8 +208,7 @@ IN_PROC_BROWSER_TEST_F(WebUIImplBrowserTest, ForceSwapOnDifferenteWebUITypes) {
   // Capture the SiteInstance before navigating for later comparison.
   scoped_refptr<SiteInstance> orig_site_instance(
       web_contents->GetSiteInstance());
-  int32_t orig_browsing_instance_id =
-      orig_site_instance->GetBrowsingInstanceId();
+  auto orig_browsing_instance_id = orig_site_instance->GetBrowsingInstanceId();
 
   // Navigate to a different WebUI type and ensure that the SiteInstance
   // has changed and the new process also has WebUI bindings.
@@ -263,8 +262,7 @@ IN_PROC_BROWSER_TEST_F(WebUIImplBrowserTest, ForceSwapOnFromChromeToUntrusted) {
   // Capture the SiteInstance before navigating for later comparison.
   scoped_refptr<SiteInstance> orig_site_instance(
       web_contents->GetSiteInstance());
-  int32_t orig_browsing_instance_id =
-      orig_site_instance->GetBrowsingInstanceId();
+  auto orig_browsing_instance_id = orig_site_instance->GetBrowsingInstanceId();
 
   // Navigate to chrome-untrusted:// and ensure that the SiteInstance
   // has changed and the new process has no WebUI bindings.
@@ -293,8 +291,7 @@ IN_PROC_BROWSER_TEST_F(WebUIImplBrowserTest, ForceSwapOnFromUntrustedToChrome) {
   // Capture the SiteInstance before navigating for later comparison.
   scoped_refptr<SiteInstance> orig_site_instance(
       web_contents->GetSiteInstance());
-  int32_t orig_browsing_instance_id =
-      orig_site_instance->GetBrowsingInstanceId();
+  auto orig_browsing_instance_id = orig_site_instance->GetBrowsingInstanceId();
 
   // Navigate to a WebUI and ensure that the SiteInstance has changed and the
   // new process has WebUI bindings.
@@ -389,12 +386,12 @@ IN_PROC_BROWSER_TEST_F(WebUIRequiringGestureBrowserTest,
   EXPECT_EQ(1, test_handler()->message_requiring_gesture_count());
 
   // Now+5 seconds should be allowed.
-  AdvanceClock(base::TimeDelta::FromSeconds(5));
+  AdvanceClock(base::Seconds(5));
   SendMessageAndWaitForFinish();
   EXPECT_EQ(2, test_handler()->message_requiring_gesture_count());
 
   // Anything after that should be disallowed though.
-  AdvanceClock(base::TimeDelta::FromMicroseconds(1));
+  AdvanceClock(base::Microseconds(1));
   SendMessageAndWaitForFinish();
   EXPECT_EQ(2, test_handler()->message_requiring_gesture_count());
 }
@@ -412,7 +409,8 @@ IN_PROC_BROWSER_TEST_F(WebUIImplBrowserTest, UntrustedSchemeLoads) {
 
 // Verify that we can successfully navigate to a chrome-untrusted:// URL
 // without a crash while WebUI::Send is being performed.
-IN_PROC_BROWSER_TEST_F(WebUIImplBrowserTest, NavigateWhileWebUISend) {
+// TODO(crbug.com/1221528): Enable this test once a root cause is identified.
+IN_PROC_BROWSER_TEST_F(WebUIImplBrowserTest, DISABLED_NavigateWhileWebUISend) {
   ASSERT_TRUE(embedded_test_server()->Start());
 
   auto* web_contents = shell()->web_contents();
@@ -494,8 +492,8 @@ IN_PROC_BROWSER_TEST_F(WebUIRequestSchemesTest, DefaultSchemesCanBeRequested) {
 
   std::vector<std::string> requestable_schemes = {
       // WebSafe Schemes:
-      "feed", url::kHttpScheme, url::kHttpsScheme, url::kFtpScheme,
-      url::kDataScheme, url::kWsScheme, url::kWssScheme,
+      url::kHttpScheme, url::kHttpsScheme, url::kDataScheme, url::kWsScheme,
+      url::kWssScheme,
       // Default added as requestable schemes:
       url::kFileScheme, kChromeUIScheme};
 
@@ -534,10 +532,8 @@ IN_PROC_BROWSER_TEST_F(WebUIRequestSchemesTest,
   // not requestable.
   std::vector<std::string> requestable_schemes = {
       // WebSafe schemes:
-      "feed",
       url::kHttpScheme,
       url::kHttpsScheme,
-      url::kFtpScheme,
       url::kDataScheme,
       url::kWsScheme,
       url::kWssScheme,

@@ -4,8 +4,8 @@
 
 #include "ash/wm/gestures/wm_gesture_handler.h"
 
-#include "ash/public/cpp/ash_features.h"
-#include "ash/public/cpp/ash_pref_names.h"
+#include "ash/constants/ash_features.h"
+#include "ash/constants/ash_pref_names.h"
 #include "ash/public/cpp/toast_data.h"
 #include "ash/session/session_controller_impl.h"
 #include "ash/shell.h"
@@ -37,8 +37,7 @@ constexpr char kExitOverviewToastId[] = "ash.wm.reverse_exit_overview_toast";
 constexpr char kSwitchNextDeskToastId[] = "ash.wm.reverse_next_desk_toast";
 constexpr char kSwitchLastDeskToastId[] = "ash.wm.reverse_last_desk_toast";
 
-constexpr base::TimeDelta kToastDurationMs =
-    base::TimeDelta::FromMilliseconds(2500);
+constexpr base::TimeDelta kToastDurationMs = base::Milliseconds(2500);
 
 // Check if the user used the wrong gestures.
 bool g_did_wrong_enter_overview_gesture = false;
@@ -120,14 +119,15 @@ bool Handle3FingerVerticalScroll(float scroll_y) {
     base::RecordAction(base::UserMetricsAction("Touchpad_Gesture_Overview"));
     if (overview_controller->AcceptSelection())
       return true;
-    overview_controller->EndOverview();
+    overview_controller->EndOverview(OverviewEndAction::k3FingerVerticalScroll);
   } else {
     auto* window_cycle_controller = Shell::Get()->window_cycle_controller();
     if (window_cycle_controller->IsCycling())
       window_cycle_controller->CancelCycling();
 
     base::RecordAction(base::UserMetricsAction("Touchpad_Gesture_Overview"));
-    overview_controller->StartOverview();
+    overview_controller->StartOverview(
+        OverviewStartAction::k3FingerVerticalScroll);
   }
 
   return true;

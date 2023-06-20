@@ -56,7 +56,8 @@ class AppMenu : public views::MenuDelegate,
   views::MenuItemView* root_menu_item() { return root_; }
 
   // MenuDelegate overrides:
-  void GetLabelStyle(int command_id, LabelStyle* style) const override;
+  const gfx::FontList* GetLabelFontList(int command_id) const override;
+  absl::optional<SkColor> GetLabelColor(int command_id) const override;
   std::u16string GetTooltipText(int command_id,
                                 const gfx::Point& p) const override;
   bool IsTriggerableEvent(views::MenuItemView* menu,
@@ -71,6 +72,10 @@ class AppMenu : public views::MenuDelegate,
                                             const ui::DropTargetEvent& event,
                                             DropPosition* position) override;
   ui::mojom::DragOperation OnPerformDrop(
+      views::MenuItemView* menu,
+      DropPosition position,
+      const ui::DropTargetEvent& event) override;
+  views::View::DropCallback GetDropCallback(
       views::MenuItemView* menu,
       DropPosition position,
       const ui::DropTargetEvent& event) override;

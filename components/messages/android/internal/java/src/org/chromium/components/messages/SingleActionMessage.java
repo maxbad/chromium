@@ -38,6 +38,10 @@ public class SingleActionMessage implements MessageStateHandler {
     private final Supplier<Long> mAutodismissDurationMs;
     private final Supplier<Integer> mMaxTranslationSupplier;
     private final Callback<Animator> mAnimatorStartCallback;
+    private boolean mMessageDismissed;
+
+    // The timestamp when the message was shown. Used for reproting visible duration.
+    private long mMessageShownTime;
 
     /**
      * @param container The container holding messages.
@@ -70,6 +74,7 @@ public class SingleActionMessage implements MessageStateHandler {
 
         mModel.set(
                 MessageBannerProperties.PRIMARY_BUTTON_CLICK_LISTENER, this::handlePrimaryAction);
+        mModel.set(MessageBannerProperties.ON_SECONDARY_BUTTON_CLICK, this::handleSecondaryAction);
     }
 
     /**
@@ -95,6 +100,7 @@ public class SingleActionMessage implements MessageStateHandler {
         // is required in case the animation set-up requires the height of the container, e.g.
         // showing messages without the top controls visible.
         mContainer.runAfterInitialMessageLayout(mMessageBanner::show);
+        mMessageShownTime = MessagesMetrics.now();
     }
 
     /**
@@ -115,14 +121,30 @@ public class SingleActionMessage implements MessageStateHandler {
      */
     @Override
     public void dismiss(@DismissReason int dismissReason) {
-        if (mMessageBanner != null) mMessageBanner.dismiss();
         Callback<Integer> onDismissed = mModel.get(MessageBannerProperties.ON_DISMISSED);
         if (onDismissed != null) onDismissed.onResult(dismissReason);
+        mMessageDismissed = true;
+        if (dismissReason == DismissReason.PRIMARY_ACTION
+                || dismissReason == DismissReason.SECONDARY_ACTION
+                || dismissReason == DismissReason.GESTURE) {
+            // Only record time to dismiss when the user explicitly dismissed the message.
+            MessagesMetrics.recordTimeToAction(getMessageIdentifier(),
+                    dismissReason == DismissReason.GESTURE,
+                    MessagesMetrics.now() - mMessageShownTime);
+        }
     }
 
     private void handlePrimaryAction(View v) {
+        // Avoid running the primary action callback if the message has already been dismissed.
+        if (mMessageDismissed) return;
         mModel.get(MessageBannerProperties.ON_PRIMARY_ACTION).run();
         mDismissHandler.invoke(mModel, DismissReason.PRIMARY_ACTION);
+    }
+
+    private void handleSecondaryAction() {
+        // Avoid running the secondary action callback if the message has already been dismissed.
+        if (mMessageDismissed) return;
+        mModel.get(MessageBannerProperties.ON_SECONDARY_ACTION).run();
     }
 
     @VisibleForTesting
@@ -138,5 +160,23 @@ public class SingleActionMessage implements MessageStateHandler {
     @VisibleForTesting
     void setViewForTesting(MessageBannerView view) {
         mView = view;
+    }
+
+    @VisibleForTesting
+    boolean getMessageDismissedForTesting() {
+        return mMessageDismissed;
+    }
+
+    @VisibleForTesting
+    PropertyModel getModelForTesting() {
+        return mModel;
+    }
+
+    @Override
+    @MessageIdentifier
+    public int getMessageIdentifier() {
+        Integer messageIdentifier = mModel.get(MessageBannerProperties.MESSAGE_IDENTIFIER);
+        assert messageIdentifier != null;
+        return messageIdentifier;
     }
 }

@@ -10,7 +10,7 @@
 #include "base/bind.h"
 #include "base/guid.h"
 #include "base/location.h"
-#include "base/single_thread_task_runner.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "components/dom_distiller/core/distilled_content_store.h"
 #include "components/dom_distiller/core/proto/distilled_article.pb.h"
@@ -43,7 +43,10 @@ DomDistillerService::DomDistillerService(
       distilled_page_prefs_(std::move(distilled_page_prefs)),
       distiller_ui_handle_(std::move(distiller_ui_handle)) {}
 
-DomDistillerService::~DomDistillerService() {}
+DomDistillerService::~DomDistillerService() {
+  // There shouldn't be any tasks pending at this point.
+  DCHECK(tasks_.empty());
+}
 
 std::unique_ptr<DistillerPage> DomDistillerService::CreateDefaultDistillerPage(
     const gfx::Size& render_view_size) {

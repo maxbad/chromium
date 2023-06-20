@@ -7,10 +7,9 @@
 
 #include <vector>
 
-#include "base/macros.h"
 #include "base/time/time.h"
 
-namespace chromeos {
+namespace ash {
 namespace power {
 namespace ml {
 
@@ -36,6 +35,10 @@ class RecentEventsCounter {
   // Count events for a time period of length |duration| using
   // |num_buckets| buckets.
   RecentEventsCounter(base::TimeDelta duration, int num_buckets);
+
+  RecentEventsCounter(const RecentEventsCounter&) = delete;
+  RecentEventsCounter& operator=(const RecentEventsCounter&) = delete;
+
   ~RecentEventsCounter();
 
   // Log an event at timedelta |timestamp|. |timestamp| cannot be negative.
@@ -63,10 +66,17 @@ class RecentEventsCounter {
   base::TimeDelta bucket_duration_;
   // The latest timedelta that has been logged.
   base::TimeDelta latest_;
-
-  DISALLOW_COPY_AND_ASSIGN(RecentEventsCounter);
 };
 
+}  // namespace ml
+}  // namespace power
+}  // namespace ash
+
+// TODO(https://crbug.com/1164001): remove when ChromeOS code migration is done.
+namespace chromeos {
+namespace power {
+namespace ml {
+using ::ash::power::ml::RecentEventsCounter;
 }  // namespace ml
 }  // namespace power
 }  // namespace chromeos

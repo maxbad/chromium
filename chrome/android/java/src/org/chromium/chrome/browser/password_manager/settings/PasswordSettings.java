@@ -40,9 +40,8 @@ import org.chromium.chrome.browser.preferences.Pref;
 import org.chromium.chrome.browser.profiles.Profile;
 import org.chromium.chrome.browser.settings.ChromeManagedPreferenceDelegate;
 import org.chromium.chrome.browser.settings.SettingsLauncherImpl;
-import org.chromium.chrome.browser.sync.ProfileSyncService;
+import org.chromium.chrome.browser.sync.SyncService;
 import org.chromium.chrome.browser.sync.settings.SyncSettingsUtils;
-import org.chromium.chrome.browser.webauthn.CableAuthenticatorModuleProvider;
 import org.chromium.components.browser_ui.settings.ChromeBasePreference;
 import org.chromium.components.browser_ui.settings.ChromeSwitchPreference;
 import org.chromium.components.browser_ui.settings.SearchUtils;
@@ -59,10 +58,9 @@ import java.util.Locale;
  * The "Passwords" screen in Settings, which allows the user to enable or disable password saving,
  * to view saved passwords (just the username and URL), and to delete saved passwords.
  */
-public class PasswordSettings
-        extends PreferenceFragmentCompat implements PasswordManagerHandler.PasswordListObserver,
-                                                    Preference.OnPreferenceClickListener,
-                                                    ProfileSyncService.SyncStateChangedListener {
+public class PasswordSettings extends PreferenceFragmentCompat
+        implements PasswordManagerHandler.PasswordListObserver,
+                   Preference.OnPreferenceClickListener, SyncService.SyncStateChangedListener {
     // Keys for name/password dictionaries.
     public static final String PASSWORD_LIST_URL = "url";
     public static final String PASSWORD_LIST_NAME = "name";
@@ -79,7 +77,6 @@ public class PasswordSettings
     public static final String PREF_CHECK_PASSWORDS = "check_passwords";
     public static final String PREF_TRUSTED_VAULT_OPT_IN = "trusted_vault_opt_in";
     public static final String PREF_KEY_MANAGE_ACCOUNT_LINK = "manage_account_link";
-    public static final String PREF_KEY_SECURITY_KEY_LINK = "security_key_link";
 
     // A PasswordEntryViewer receives a boolean value with this key. If set true, the the entry was
 
@@ -113,7 +110,6 @@ public class PasswordSettings
 
     private String mSearchQuery;
     private Preference mLinkPref;
-    private Preference mSecurityKey;
     private ChromeSwitchPreference mSavePasswordsSwitch;
     private ChromeSwitchPreference mAutoSignInSwitch;
     private ChromeBasePreference mCheckPasswords;
@@ -156,8 +152,8 @@ public class PasswordSettings
         setPreferenceScreen(getPreferenceManager().createPreferenceScreen(getStyledContext()));
         PasswordManagerHandlerProvider.getInstance().addObserver(this);
 
-        if (ProfileSyncService.get() != null) {
-            ProfileSyncService.get().addSyncStateChangedListener(this);
+        if (SyncService.get() != null) {
+            SyncService.get().addSyncStateChangedListener(this);
         }
 
         setHasOptionsMenu(true); // Password Export might be optional but Search is always present.
@@ -190,8 +186,8 @@ public class PasswordSettings
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         mPasswordCheck = PasswordCheckFactory.getOrCreate(new SettingsLauncherImpl());
-        mShouldShowTrustedVaultOptIn = ProfileSyncService.get() != null
-                && ProfileSyncService.get().shouldOfferTrustedVaultOptIn();
+        mShouldShowTrustedVaultOptIn =
+                SyncService.get() != null && SyncService.get().shouldOfferTrustedVaultOptIn();
     }
 
     @Override
@@ -325,10 +321,6 @@ public class PasswordSettings
         resetList(PREF_KEY_CATEGORY_SAVED_PASSWORDS);
         resetNoEntriesTextMessage();
 
-        if (ChromeFeatureList.isEnabled(ChromeFeatureList.WEB_AUTH_PHONE_SUPPORT)) {
-            displaySecurityKeyLink();
-        }
-
         mNoPasswords = count == 0;
         if (mNoPasswords) {
             if (mNoPasswordExceptions) displayEmptyScreenMessage();
@@ -457,16 +449,18 @@ public class PasswordSettings
     public void onDestroy() {
         super.onDestroy();
 
-        if (ProfileSyncService.get() != null) {
-            ProfileSyncService.get().removeSyncStateChangedListener(this);
+        if (SyncService.get() != null) {
+            SyncService.get().removeSyncStateChangedListener(this);
         }
         // The component should only be destroyed when the activity has been closed by the user
         // (e.g. by pressing on the back button) and not when the activity is temporarily destroyed
         // by the system.
-        if (getActivity().isFinishing() && mPasswordCheck != null
-                && mManagePasswordsReferrer != ManagePasswordsReferrer.CHROME_SETTINGS) {
+        if (getActivity().isFinishing()) {
             PasswordManagerHandlerProvider.getInstance().removeObserver(this);
-            PasswordCheckFactory.destroy();
+            if (mPasswordCheck != null
+                    && mManagePasswordsReferrer != ManagePasswordsReferrer.CHROME_SETTINGS) {
+                PasswordCheckFactory.destroy();
+            }
         }
     }
 
@@ -567,11 +561,10 @@ public class PasswordSettings
         mTrustedVaultOptIn.setKey(PREF_TRUSTED_VAULT_OPT_IN);
         mTrustedVaultOptIn.setTitle(R.string.android_trusted_vault_opt_in_label);
         mTrustedVaultOptIn.setOrder(ORDER_TRUSTED_VAULT_OPT_IN);
-        mTrustedVaultOptIn.setIcon(android.R.drawable.ic_lock_lock);
         mTrustedVaultOptIn.setSummary(R.string.android_trusted_vault_opt_in_sub_label);
         mTrustedVaultOptIn.setOnPreferenceClickListener(preference -> {
-            assert ProfileSyncService.get() != null;
-            CoreAccountInfo accountInfo = ProfileSyncService.get().getAuthenticatedAccountInfo();
+            assert SyncService.get() != null;
+            CoreAccountInfo accountInfo = SyncService.get().getAccountInfo();
             assert accountInfo != null;
             SyncSettingsUtils.openTrustedVaultOptInDialog(
                     this, accountInfo, REQUEST_CODE_TRUSTED_VAULT_OPT_IN);
@@ -608,22 +601,6 @@ public class PasswordSettings
         getPreferenceScreen().addPreference(mLinkPref);
     }
 
-    private void displaySecurityKeyLink() {
-        if (mSecurityKey == null) {
-            mSecurityKey = new ChromeBasePreference(getStyledContext());
-            mSecurityKey.setKey(PREF_KEY_SECURITY_KEY_LINK);
-            mSecurityKey.setTitle(R.string.phone_as_security_key_text);
-            mSecurityKey.setOnPreferenceClickListener(preference -> {
-                SettingsLauncher settingsLauncher = new SettingsLauncherImpl();
-                settingsLauncher.launchSettingsActivity(
-                        getActivity(), CableAuthenticatorModuleProvider.class, null);
-                return true;
-            });
-            mSecurityKey.setOrder(ORDER_SECURITY_KEY);
-        }
-        getPreferenceScreen().addPreference(mSecurityKey);
-    }
-
     private Context getStyledContext() {
         return getPreferenceManager().getContext();
     }
@@ -634,8 +611,7 @@ public class PasswordSettings
 
     @Override
     public void syncStateChanged() {
-        boolean shouldShowTrustedVaultOptIn =
-                ProfileSyncService.get().shouldOfferTrustedVaultOptIn();
+        boolean shouldShowTrustedVaultOptIn = SyncService.get().shouldOfferTrustedVaultOptIn();
         if (mShouldShowTrustedVaultOptIn != shouldShowTrustedVaultOptIn) {
             mShouldShowTrustedVaultOptIn = shouldShowTrustedVaultOptIn;
             rebuildPasswordLists();

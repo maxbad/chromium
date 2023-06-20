@@ -11,7 +11,7 @@
 #include <memory>
 #include <vector>
 
-#include "base/macros.h"
+#include "base/callback_list.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/synchronization/lock.h"
@@ -75,16 +75,16 @@ class CONTENT_EXPORT GpuVideoAcceleratorFactoriesImpl
 
   // media::GpuVideoAcceleratorFactories implementation.
   bool IsGpuVideoAcceleratorEnabled() override;
-  base::UnguessableToken GetChannelToken() override;
+  void GetChannelToken(
+      gpu::mojom::GpuChannel::GetChannelTokenCallback cb) override;
   int32_t GetCommandBufferRouteId() override;
   Supported IsDecoderConfigSupported(
-      media::VideoDecoderImplementation implementation,
       const media::VideoDecoderConfig& config) override;
+  media::VideoDecoderType GetDecoderType() override;
   bool IsDecoderSupportKnown() override;
   void NotifyDecoderSupportKnown(base::OnceClosure callback) override;
   std::unique_ptr<media::VideoDecoder> CreateVideoDecoder(
       media::MediaLog* media_log,
-      media::VideoDecoderImplementation implementation,
       media::RequestOverlayInfoCB request_overlay_info_cb) override;
   absl::optional<media::VideoEncodeAccelerator::SupportedProfiles>
   GetVideoEncodeAcceleratorSupportedProfiles() override;
@@ -130,6 +130,11 @@ class CONTENT_EXPORT GpuVideoAcceleratorFactoriesImpl
   // with a new ContextProvider.
   bool CheckContextProviderLostOnMainThread();
 
+  GpuVideoAcceleratorFactoriesImpl(const GpuVideoAcceleratorFactoriesImpl&) =
+      delete;
+  GpuVideoAcceleratorFactoriesImpl& operator=(
+      const GpuVideoAcceleratorFactoriesImpl&) = delete;
+
   ~GpuVideoAcceleratorFactoriesImpl() override;
 
  private:
@@ -172,13 +177,15 @@ class CONTENT_EXPORT GpuVideoAcceleratorFactoriesImpl
   void SetContextProviderLostOnMainThread();
 
   void OnSupportedDecoderConfigs(
-      const media::SupportedVideoDecoderConfigMap& supported_configs);
+      const media::SupportedVideoDecoderConfigs& supported_configs,
+      media::VideoDecoderType decoder_type);
   void OnDecoderSupportFailed();
 
   void OnGetVideoEncodeAcceleratorSupportedProfiles(
       const media::VideoEncodeAccelerator::SupportedProfiles&
           supported_profiles);
   void OnEncoderSupportFailed();
+  void OnChannelTokenReady(const base::UnguessableToken& token);
 
   const scoped_refptr<base::SequencedTaskRunner> main_thread_task_runner_;
   const scoped_refptr<base::SequencedTaskRunner> task_runner_;
@@ -195,6 +202,8 @@ class CONTENT_EXPORT GpuVideoAcceleratorFactoriesImpl
   bool context_provider_lost_on_media_thread_ = false;
 
   base::UnguessableToken channel_token_;
+  base::OnceCallbackList<void(const base::UnguessableToken&)>
+      channel_token_callbacks_;
 
   // Whether gpu memory buffers should be used to hold video frames data.
   const bool enable_video_gpu_memory_buffers_;
@@ -217,15 +226,15 @@ class CONTENT_EXPORT GpuVideoAcceleratorFactoriesImpl
   // If the Optional is empty, then we have not yet gotten the configs.  If the
   // Optional contains an empty vector, then we have gotten the result and there
   // are no supported configs.
-  absl::optional<media::SupportedVideoDecoderConfigMap>
-      supported_decoder_configs_ GUARDED_BY(supported_profiles_lock_);
+  absl::optional<media::SupportedVideoDecoderConfigs> supported_decoder_configs_
+      GUARDED_BY(supported_profiles_lock_);
+  media::VideoDecoderType video_decoder_type_
+      GUARDED_BY(supported_profiles_lock_) = media::VideoDecoderType::kUnknown;
   Notifier decoder_support_notifier_ GUARDED_BY(supported_profiles_lock_);
 
   absl::optional<media::VideoEncodeAccelerator::SupportedProfiles>
       supported_vea_profiles_ GUARDED_BY(supported_profiles_lock_);
   Notifier encoder_support_notifier_ GUARDED_BY(supported_profiles_lock_);
-
-  DISALLOW_COPY_AND_ASSIGN(GpuVideoAcceleratorFactoriesImpl);
 };
 
 }  // namespace content

@@ -15,13 +15,12 @@
 #include "chrome/browser/ash/borealis/borealis_metrics.h"
 #include "chrome/browser/ash/borealis/borealis_task.h"
 #include "chrome/browser/ash/borealis/testing/callback_factory.h"
+#include "chrome/browser/ash/borealis/testing/dbus.h"
 #include "chrome/browser/ash/guest_os/guest_os_stability_monitor.h"
 #include "chrome/browser/ash/login/users/mock_user_manager.h"
 #include "chrome/browser/ash/profiles/profile_helper.h"
+#include "chrome/browser/sessions/exit_type_service.h"
 #include "chrome/test/base/testing_profile.h"
-#include "chromeos/dbus/cicerone/cicerone_client.h"
-#include "chromeos/dbus/concierge/concierge_client.h"
-#include "chromeos/dbus/concierge/concierge_service.pb.h"
 #include "chromeos/dbus/concierge/fake_concierge_client.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/seneschal/seneschal_client.h"
@@ -45,7 +44,8 @@ MATCHER(IsFailureResult, "") {
 
 class MockTask : public BorealisTask {
  public:
-  explicit MockTask(bool success) : success_(success) {}
+  explicit MockTask(bool success)
+      : BorealisTask("MockTask"), success_(success) {}
   void RunInternal(BorealisContext* context) override {
     if (success_) {
       context->set_vm_name("test_vm_name");
@@ -88,7 +88,8 @@ class BorealisContextManagerImplForTesting : public BorealisContextManagerImpl {
 using StartupCallbackFactory =
     StrictCallbackFactory<void(BorealisContextManager::ContextOrFailure)>;
 
-class BorealisContextManagerTest : public testing::Test {
+class BorealisContextManagerTest : public testing::Test,
+                                   protected FakeVmServicesHelper {
  public:
   BorealisContextManagerTest() = default;
   BorealisContextManagerTest(const BorealisContextManagerTest&) = delete;
@@ -99,20 +100,22 @@ class BorealisContextManagerTest : public testing::Test {
  protected:
   void SetUp() override {
     CreateProfile();
-    chromeos::DBusThreadManager::Initialize();
-    chromeos::CiceroneClient::InitializeFake();
-    chromeos::ConciergeClient::InitializeFake();
-    chromeos::SeneschalClient::InitializeFake();
     histogram_tester_ = std::make_unique<base::HistogramTester>();
   }
 
   void TearDown() override {
-    chromeos::SeneschalClient::Shutdown();
-    chromeos::ConciergeClient::Shutdown();
-    chromeos::CiceroneClient::Shutdown();
-    chromeos::DBusThreadManager::Shutdown();
     profile_.reset();
     histogram_tester_.reset();
+  }
+
+  void SendVmStartedSignal() {
+    auto* concierge_client = chromeos::FakeConciergeClient::Get();
+
+    vm_tools::concierge::VmStartedSignal signal;
+    signal.set_name("test_vm_name");
+    signal.set_owner_id(
+        ash::ProfileHelper::GetUserIdHashFromProfile(profile_.get()));
+    concierge_client->NotifyVmStarted(signal);
   }
 
   void SendVmStoppedSignal() {
@@ -258,6 +261,7 @@ class NeverCompletingContextManager : public BorealisContextManagerImpl {
  private:
   class NeverCompletingTask : public BorealisTask {
    public:
+    NeverCompletingTask() : BorealisTask("NeverCompletingTask") {}
     void RunInternal(BorealisContext* context) override {}
   };
 
@@ -340,7 +344,8 @@ class MockContextManager : public BorealisContextManagerImpl {
 class TaskThatDoesSomethingAfterCompletion : public BorealisTask {
  public:
   explicit TaskThatDoesSomethingAfterCompletion(base::OnceClosure something)
-      : something_(std::move(something)) {}
+      : BorealisTask("TaskThatDoesSomethingAfterCompletion"),
+        something_(std::move(something)) {}
 
   void RunInternal(BorealisContext* context) override {
     Complete(BorealisStartupResult::kSuccess, "");
@@ -423,7 +428,12 @@ TEST_F(BorealisContextManagerTest, LogVmStoppedWhenUnexpected) {
 TEST_F(BorealisContextManagerTest, VmShutsDownAfterChromeCrashes) {
   chromeos::FakeConciergeClient* fake_concierge_client =
       chromeos::FakeConciergeClient::Get();
-  profile_->set_last_session_exited_cleanly(false);
+
+  // Ensure that GetVmInfo returns success - a VM "still running".
+  SendVmStartedSignal();
+
+  ExitTypeService::GetInstanceForProfile(profile_.get())
+      ->SetLastSessionExitTypeForTest(ExitType::kCrashed);
   BorealisContextManagerImpl context_manager(profile_.get());
   task_environment_.RunUntilIdle();
   EXPECT_GE(fake_concierge_client->stop_vm_call_count(), 1);

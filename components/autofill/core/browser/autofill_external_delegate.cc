@@ -12,17 +12,17 @@
 #include "base/check.h"
 #include "base/command_line.h"
 #include "base/containers/contains.h"
+#include "base/containers/cxx20_erase.h"
 #include "base/feature_list.h"
 #include "base/i18n/case_conversion.h"
 #include "base/notreached.h"
-#include "base/stl_util.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "components/autofill/core/browser/autocomplete_history_manager.h"
 #include "components/autofill/core/browser/autofill_driver.h"
-#include "components/autofill/core/browser/autofill_metrics.h"
 #include "components/autofill/core/browser/browser_autofill_manager.h"
+#include "components/autofill/core/browser/metrics/autofill_metrics.h"
 #include "components/autofill/core/browser/ui/popup_item_ids.h"
 #include "components/autofill/core/common/autofill_features.h"
 #include "components/autofill/core/common/autofill_payments_features.h"
@@ -174,7 +174,7 @@ void AutofillExternalDelegate::OnSuggestionsReturned(
   }
 
   // Send to display.
-  if (query_field_.is_focusable && GetAutofillDriver()->CanShowAutofillUi()) {
+  if (query_field_.is_focusable && driver_->CanShowAutofillUi()) {
     autofill::AutofillClient::PopupOpenArgs open_args(
         element_bounds_, query_field_.text_direction, suggestions,
         AutoselectFirstSuggestion(autoselect_first_suggestion), popup_type_);
@@ -267,7 +267,7 @@ void AutofillExternalDelegate::DidAcceptSuggestion(
     // User selected an Autocomplete, so we fill directly.
     driver_->RendererShouldFillFieldWithValue(query_field_.global_id(), value);
     AutofillMetrics::LogAutocompleteSuggestionAcceptedIndex(position);
-    manager_->OnAutocompleteEntrySelected(value);
+    manager_->OnSingleFieldSuggestionSelected(value);
   } else if (frontend_id == POPUP_ITEM_ID_SCAN_CREDIT_CARD) {
     manager_->client()->ScanCreditCard(base::BindOnce(
         &AutofillExternalDelegate::OnCreditCardScanned, GetWeakPtr()));
@@ -285,7 +285,11 @@ void AutofillExternalDelegate::DidAcceptSuggestion(
     NOTREACHED();
 #endif
   } else if (frontend_id == POPUP_ITEM_ID_VIRTUAL_CREDIT_CARD_ENTRY) {
-    // TODO(crbug.com/1196021): Add handling logic.
+    // There can be multiple virtual credit cards that all rely on
+    // POPUP_ITEM_ID_VIRTUAL_CREDIT_CARD_ENTRY as a frontend_id. In this case,
+    // the backend_id identifies the actually chosen credit card.
+    manager_->FillVirtualCardInformation(backend_id, query_id_, query_form_,
+                                         query_field_);
   } else {
     if (frontend_id > 0) {  // Denotes an Autofill suggestion.
       AutofillMetrics::LogAutofillSuggestionAcceptedIndex(
@@ -323,7 +327,7 @@ bool AutofillExternalDelegate::RemoveSuggestion(const std::u16string& value,
     return manager_->RemoveAutofillProfileOrCreditCard(frontend_id);
 
   if (frontend_id == POPUP_ITEM_ID_AUTOCOMPLETE_ENTRY) {
-    manager_->RemoveAutocompleteEntry(query_field_.name, value);
+    manager_->RemoveCurrentSingleFieldSuggestion(query_field_.name, value);
     return true;
   }
 
@@ -342,7 +346,8 @@ PopupType AutofillExternalDelegate::GetPopupType() const {
   return popup_type_;
 }
 
-AutofillDriver* AutofillExternalDelegate::GetAutofillDriver() {
+absl::variant<AutofillDriver*, password_manager::PasswordManagerDriver*>
+AutofillExternalDelegate::GetDriver() {
   return driver_;
 }
 
@@ -356,7 +361,9 @@ void AutofillExternalDelegate::RegisterDeletionCallback(
 }
 
 void AutofillExternalDelegate::Reset() {
-  manager_->client()->HideAutofillPopup(PopupHidingReason::kNavigation);
+  // We should not affect UI on the active page due to a prerendered page.
+  if (!manager_->driver()->IsPrerendering())
+    manager_->client()->HideAutofillPopup(PopupHidingReason::kNavigation);
 }
 
 base::WeakPtr<AutofillExternalDelegate> AutofillExternalDelegate::GetWeakPtr() {
@@ -374,9 +381,9 @@ void AutofillExternalDelegate::FillAutofillFormData(int unique_id,
   if (IsAutofillWarningEntry(unique_id))
     return;
 
-  AutofillDriver::RendererFormDataAction renderer_action =
-      is_preview ? AutofillDriver::FORM_DATA_ACTION_PREVIEW
-                 : AutofillDriver::FORM_DATA_ACTION_FILL;
+  mojom::RendererFormDataAction renderer_action =
+      is_preview ? mojom::RendererFormDataAction::kPreview
+                 : mojom::RendererFormDataAction::kFill;
 
   DCHECK(driver_->RendererIsAvailable());
   // Fill the values for the whole form.
@@ -416,13 +423,19 @@ void AutofillExternalDelegate::ApplyAutofillOptions(
   // popup layout experiment.
   suggestions->push_back(Suggestion(GetSettingsSuggestionValue()));
   suggestions->back().frontend_id = POPUP_ITEM_ID_AUTOFILL_OPTIONS;
+
+  if (base::FeatureList::IsEnabled(
+          features::kAutofillUseConsistentPopupSettingsIcons)) {
+    suggestions->back().icon = "settingsIcon";
+  }
+
   // On Android and Desktop, Google Pay branding is shown along with Settings.
   // So Google Pay Icon is just attached to an existing menu item.
   if (is_all_server_suggestions) {
 #if defined(OS_ANDROID) || defined(OS_IOS)
     suggestions->back().icon = "googlePay";
 #else
-    suggestions->back().icon =
+    suggestions->back().store_indicator_icon =
         ui::NativeTheme::GetInstanceForNativeUi()->ShouldUseDarkColors()
             ? "googlePayDark"
             : "googlePay";

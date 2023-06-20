@@ -86,6 +86,11 @@ class TrackedPreferencesMigrationTest : public testing::Test {
         unprotected_store_migration_complete_(false),
         protected_store_migration_complete_(false) {}
 
+  TrackedPreferencesMigrationTest(const TrackedPreferencesMigrationTest&) =
+      delete;
+  TrackedPreferencesMigrationTest& operator=(
+      const TrackedPreferencesMigrationTest&) = delete;
+
   void SetUp() override { Reset(); }
 
   void Reset() {
@@ -329,11 +334,11 @@ class TrackedPreferencesMigrationTest : public testing::Test {
     switch (store_id) {
       case MOCK_UNPROTECTED_PREF_STORE:
         ASSERT_TRUE(unprotected_prefs_);
-        unprotected_prefs_->RemovePath(key, NULL);
+        unprotected_prefs_->RemovePath(key);
         break;
       case MOCK_PROTECTED_PREF_STORE:
         ASSERT_TRUE(protected_prefs_);
-        protected_prefs_->RemovePath(key, NULL);
+        protected_prefs_->RemovePath(key);
         break;
     }
   }
@@ -376,8 +381,6 @@ class TrackedPreferencesMigrationTest : public testing::Test {
   bool protected_store_migration_complete_;
 
   TestingPrefServiceSimple local_state_;
-
-  DISALLOW_COPY_AND_ASSIGN(TrackedPreferencesMigrationTest);
 };
 
 // static

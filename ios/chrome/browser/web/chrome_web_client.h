@@ -16,6 +16,10 @@
 class ChromeWebClient : public web::WebClient {
  public:
   ChromeWebClient();
+
+  ChromeWebClient(const ChromeWebClient&) = delete;
+  ChromeWebClient& operator=(const ChromeWebClient&) = delete;
+
   ~ChromeWebClient() override;
 
   // WebClient implementation.
@@ -29,7 +33,7 @@ class ChromeWebClient : public web::WebClient {
   std::u16string GetLocalizedString(int message_id) const override;
   base::StringPiece GetDataResource(
       int resource_id,
-      ui::ScaleFactor scale_factor) const override;
+      ui::ResourceScaleFactor scale_factor) const override;
   base::RefCountedMemory* GetDataResourceBytes(int resource_id) const override;
   void GetAdditionalWebUISchemes(
       std::vector<std::string>* additional_schemes) override;
@@ -52,16 +56,14 @@ class ChromeWebClient : public web::WebClient {
   UIView* GetWindowedContainer() override;
   bool EnableLongPressAndForceTouchHandling() const override;
   bool EnableLongPressUIContextMenu() const override;
-  bool ForceMobileVersionByDefault(const GURL& url) override;
   web::UserAgentType GetDefaultUserAgent(id<UITraitEnvironment> web_view,
                                          const GURL& url) override;
   bool RestoreSessionFromCache(web::WebState* web_state) const override;
+  void CleanupNativeRestoreURLs(web::WebState* web_state) const override;
 
  private:
   // Reference to a view that is attached to a window.
   UIView* windowed_container_ = nil;
-
-  DISALLOW_COPY_AND_ASSIGN(ChromeWebClient);
 };
 
 #endif  // IOS_CHROME_BROWSER_WEB_CHROME_WEB_CLIENT_H_

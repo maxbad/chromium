@@ -63,6 +63,9 @@ class RASTER_EXPORT RasterImplementation : public RasterInterface,
       GpuControl* gpu_control,
       ImageDecodeAcceleratorInterface* image_decode_accelerator);
 
+  RasterImplementation(const RasterImplementation&) = delete;
+  RasterImplementation& operator=(const RasterImplementation&) = delete;
+
   ~RasterImplementation() override;
 
   gpu::ContextResult Initialize(const SharedMemoryLimits& limits);
@@ -137,9 +140,16 @@ class RASTER_EXPORT RasterImplementation : public RasterInterface,
       SkYUVAInfo::Subsampling subsampling,
       const gpu::Mailbox yuva_plane_mailboxes[]) override;
 
+  void ConvertRGBAToYUVAMailboxes(SkYUVColorSpace planes_yuv_color_space,
+                                  SkYUVAInfo::PlaneConfig plane_config,
+                                  SkYUVAInfo::Subsampling subsampling,
+                                  const gpu::Mailbox yuva_plane_mailboxes[],
+                                  const gpu::Mailbox& source_mailbox) override;
+
   void BeginRasterCHROMIUM(GLuint sk_color,
                            GLboolean needs_clear,
                            GLuint msaa_sample_count,
+                           MsaaMode msaa_mode,
                            GLboolean can_use_lcd_text,
                            const gfx::ColorSpace& color_space,
                            const GLbyte* mailbox) override;
@@ -151,7 +161,8 @@ class RASTER_EXPORT RasterImplementation : public RasterInterface,
                       const gfx::Vector2dF& post_translate,
                       const gfx::Vector2dF& post_scale,
                       bool requires_clear,
-                      size_t* max_op_size_hint) override;
+                      size_t* max_op_size_hint,
+                      bool preserve_recording = true) override;
   SyncToken ScheduleImageDecode(base::span<const uint8_t> encoded_data,
                                 const gfx::Size& output_size,
                                 uint32_t transfer_cache_entry_id,
@@ -295,7 +306,8 @@ class RASTER_EXPORT RasterImplementation : public RasterInterface,
   void OnGpuControlLostContextMaybeReentrant() final;
   void OnGpuControlErrorMessage(const char* message, int32_t id) final;
   void OnGpuControlSwapBuffersCompleted(
-      const SwapBuffersCompleteParams& params) final;
+      const SwapBuffersCompleteParams& params,
+      gfx::GpuFenceHandle release_fence) final;
   void OnSwapBufferPresented(uint64_t swap_id,
                              const gfx::PresentationFeedback& feedback) final;
   void OnGpuControlReturnData(base::span<const uint8_t> data) final;
@@ -445,8 +457,6 @@ class RASTER_EXPORT RasterImplementation : public RasterInterface,
 
   // Tracing helpers.
   int raster_chromium_id_ = 0;
-
-  DISALLOW_COPY_AND_ASSIGN(RasterImplementation);
 };
 
 }  // namespace raster

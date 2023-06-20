@@ -6,7 +6,7 @@ import {html, PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/poly
 import {InfiniteList, TabData, TabSearchItem, TitleItem} from 'chrome://tab-search.top-chrome/tab_search.js';
 
 import {assertEquals, assertGT, assertNotEquals, assertTrue} from '../../chai_assert.js';
-import {flushTasks, waitAfterNextRender} from '../../test_util.m.js';
+import {flushTasks, waitAfterNextRender} from '../../test_util.js';
 
 import {generateSampleTabsFromSiteNames, sampleSiteNames} from './tab_search_test_data.js';
 import {assertTabItemAndNeighborsInViewBounds, disableAnimationBehavior} from './tab_search_test_helper.js';
@@ -88,7 +88,7 @@ suite('InfiniteListTest', () => {
    */
   function sampleTabItems(siteNames) {
     return generateSampleTabsFromSiteNames(siteNames).map(tab => {
-      const tabData = {hostname: new URL(tab.url).hostname, tab};
+      const tabData = {hostname: new URL(tab.url.url).hostname, tab};
       Object.setPrototypeOf(tabData, TabData.prototype);
       return tabData;
     });

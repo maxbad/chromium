@@ -6,6 +6,8 @@ package org.chromium.chrome.browser.language;
 
 import android.app.Activity;
 import android.content.res.Resources;
+import android.os.SystemClock;
+import android.text.TextUtils;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -14,37 +16,49 @@ import android.widget.RadioButton;
 import android.widget.TextView;
 
 import androidx.annotation.IntDef;
+import androidx.annotation.VisibleForTesting;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
+import org.chromium.base.LocaleUtils;
+import org.chromium.base.metrics.RecordHistogram;
 import org.chromium.base.supplier.ObservableSupplier;
 import org.chromium.chrome.browser.flags.ChromeFeatureList;
 import org.chromium.chrome.browser.language.settings.LanguageItem;
 import org.chromium.chrome.browser.language.settings.LanguagesManager;
 import org.chromium.chrome.browser.translate.TranslateBridge;
+import org.chromium.components.language.AndroidLanguageMetricsBridge;
 import org.chromium.components.language.GeoLanguageProviderBridge;
+import org.chromium.net.NetworkChangeNotifier;
 import org.chromium.ui.modaldialog.DialogDismissalCause;
 import org.chromium.ui.modaldialog.ModalDialogManager;
 import org.chromium.ui.modaldialog.ModalDialogProperties;
+import org.chromium.ui.modaldialog.SimpleModalDialogController;
 import org.chromium.ui.modelutil.PropertyModel;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * Implements a modal dialog that prompts the user to change their UI language. Displayed once at
  * browser startup when no other promo or modals are shown.
  */
-public class AppLanguagePromoDialog implements ModalDialogProperties.Controller {
+public class AppLanguagePromoDialog {
     private Activity mActivity;
     private ModalDialogManager mModalDialogManager;
     private PropertyModel mAppLanguageModal;
+    private PropertyModel mLoadingModal;
     private LanguageItemAdapter mAdapter;
+    private RestartAction mRestartAction;
+    private long mStartTime;
 
+    /** Annotation for row item type. Either a LanguageItem or separator */
     @IntDef({ItemType.LANGUAGE, ItemType.SEPARATOR})
     @Retention(RetentionPolicy.SOURCE)
     private @interface ItemType {
@@ -52,23 +66,57 @@ public class AppLanguagePromoDialog implements ModalDialogProperties.Controller 
         int SEPARATOR = 1;
     }
 
-    public AppLanguagePromoDialog(
-            Activity activity, ObservableSupplier<ModalDialogManager> modalDialogManagerSupplier) {
+    /**
+     * Annotation for the action taken on the language dialog.
+     * Do not reorder or remove items, only add new items before NUM_ENTRIES.
+     * Keep in sync with LanguageSettingsAppLanguagePromptAction from enums.xml.
+     */
+    @IntDef({ActionType.DISMISSED_CANCEL_BUTTON, ActionType.DISMISSED_SYSTEM_BACK,
+            ActionType.OK_CHANGE_LANGUAGE, ActionType.OK_SAME_LANGUAGE, ActionType.OTHER})
+    @Retention(RetentionPolicy.SOURCE)
+    private @interface ActionType {
+        int DISMISSED_CANCEL_BUTTON = 0;
+        int DISMISSED_SYSTEM_BACK = 1;
+        int OK_CHANGE_LANGUAGE = 2;
+        int OK_SAME_LANGUAGE = 3;
+        int OTHER = 4;
+        int NUM_ENTRIES = 5;
+    }
+
+    /**
+     * Interface for holding the Chrome restart action.
+     */
+    @FunctionalInterface
+    public interface RestartAction {
+        void restart();
+    }
+
+    public AppLanguagePromoDialog(Activity activity,
+            ObservableSupplier<ModalDialogManager> modalDialogManagerSupplier,
+            RestartAction restartAction) {
         mActivity = activity;
         mModalDialogManager = modalDialogManagerSupplier.get();
+        mRestartAction = restartAction;
 
         Resources resources = mActivity.getResources();
         mAppLanguageModal =
                 new PropertyModel.Builder(ModalDialogProperties.ALL_KEYS)
-                        .with(ModalDialogProperties.CONTROLLER, this)
+                        .with(ModalDialogProperties.CONTROLLER,
+                                new SimpleModalDialogController(
+                                        mModalDialogManager, this::onDismissAppLanguageModal))
                         .with(ModalDialogProperties.TITLE, resources, R.string.languages_srp_title)
-                        .with(ModalDialogProperties.POSITIVE_BUTTON_TEXT, resources,
-                                R.string.languages_srp_accept_title)
+                        .with(ModalDialogProperties.POSITIVE_BUTTON_TEXT, resources, R.string.ok)
                         .with(ModalDialogProperties.NEGATIVE_BUTTON_TEXT, resources,
-                                R.string.languages_srp_cancel_title)
-                        .with(ModalDialogProperties.CANCEL_ON_TOUCH_OUTSIDE, true)
-                        .with(ModalDialogProperties.PRIMARY_BUTTON_FILLED, true)
+                                R.string.cancel)
+                        .with(ModalDialogProperties.BUTTON_STYLES,
+                                ModalDialogProperties.ButtonStyles.PRIMARY_FILLED_NEGATIVE_OUTLINE)
                         .build();
+
+        mLoadingModal = new PropertyModel.Builder(ModalDialogProperties.ALL_KEYS)
+                                .with(ModalDialogProperties.CONTROLLER,
+                                        new SimpleModalDialogController(
+                                                mModalDialogManager, this::onDismissConfirmModal))
+                                .build();
     }
 
     /**
@@ -150,6 +198,10 @@ public class AppLanguagePromoDialog implements ModalDialogProperties.Controller 
             return mCurrentLanguage;
         }
 
+        public boolean isTopLanguageSelected() {
+            return mTopLanguages.contains(mCurrentLanguage);
+        }
+
         private LanguageItem getLanguageItemAt(int position) {
             if (position < mTopLanguages.size()) {
                 return mTopLanguages.get(position);
@@ -163,18 +215,19 @@ public class AppLanguagePromoDialog implements ModalDialogProperties.Controller 
     }
 
     /**
-     * Internal class representing an individual langauge row.
+     * Internal class representing an individual language row.
      */
     private class AppLanguagePromptRowViewHolder
             extends RecyclerView.ViewHolder implements View.OnClickListener {
-        private TextView mDisplayNameTextView;
-        private TextView mNativeNameTextView;
+        private TextView mPrimaryNameTextView;
+        private TextView mSecondaryNameTextView;
         private RadioButton mRadioButton;
 
         AppLanguagePromptRowViewHolder(View view) {
             super(view);
-            mDisplayNameTextView = ((TextView) itemView.findViewById(R.id.display_language_name));
-            mNativeNameTextView = ((TextView) itemView.findViewById(R.id.native_language_name));
+            mPrimaryNameTextView = ((TextView) itemView.findViewById(R.id.primary_language_name));
+            mSecondaryNameTextView =
+                    ((TextView) itemView.findViewById(R.id.secondary_language_name));
             mRadioButton =
                     ((RadioButton) itemView.findViewById(R.id.app_language_prompt_radiobutton));
 
@@ -190,8 +243,14 @@ public class AppLanguagePromoDialog implements ModalDialogProperties.Controller 
 
         public void bindViewHolder(LanguageItem languageItem, boolean checked) {
             mRadioButton.setChecked(checked);
-            mDisplayNameTextView.setText(languageItem.getDisplayName());
-            mNativeNameTextView.setText(languageItem.getNativeDisplayName());
+            if (languageItem.isSystemDefault()) {
+                // For the system default locale the display name should be the primary TextView.
+                mPrimaryNameTextView.setText(languageItem.getDisplayName());
+                mSecondaryNameTextView.setText(languageItem.getNativeDisplayName());
+            } else {
+                mPrimaryNameTextView.setText(languageItem.getNativeDisplayName());
+                mSecondaryNameTextView.setText(languageItem.getDisplayName());
+            }
         }
     }
 
@@ -210,13 +269,14 @@ public class AppLanguagePromoDialog implements ModalDialogProperties.Controller 
      */
     protected void showAppLanguageModal() {
         // Setup initial language lists.
-        LanguageItem currentLanguage =
+        LanguageItem currentOverrideLanguage =
                 LanguagesManager.getInstance().getLanguageItem(AppLocaleUtils.getAppLanguagePref());
-        LinkedHashSet<LanguageItem> uiLanguages =
-                new LinkedHashSet<>(LanguagesManager.getInstance().getPotentialUiLanguages());
-        LinkedHashSet<LanguageItem> topLanguages = getTopLanguages(uiLanguages, currentLanguage);
+        LinkedHashSet<LanguageItem> uiLanguages = new LinkedHashSet<LanguageItem>(
+                LanguagesManager.getInstance().getAllPossibleUiLanguages());
+        LinkedHashSet<LanguageItem> topLanguages =
+                getTopLanguages(uiLanguages, currentOverrideLanguage);
         uiLanguages.removeAll(topLanguages);
-        mAdapter = new LanguageItemAdapter(topLanguages, uiLanguages, currentLanguage);
+        mAdapter = new LanguageItemAdapter(topLanguages, uiLanguages, currentOverrideLanguage);
         // Release all static LanguagesManager resources since they are no longer needed.
         LanguagesManager.recycle();
 
@@ -252,54 +312,175 @@ public class AppLanguagePromoDialog implements ModalDialogProperties.Controller 
         });
 
         mAppLanguageModal.set(ModalDialogProperties.CUSTOM_VIEW, customView);
+        mStartTime = SystemClock.elapsedRealtime();
         mModalDialogManager.showDialog(mAppLanguageModal, ModalDialogManager.ModalDialogType.APP);
     }
 
-    @Override
-    public void onClick(PropertyModel model, int buttonType) {
-        if (buttonType == ModalDialogProperties.ButtonType.NEGATIVE) {
-            mModalDialogManager.dismissDialog(model, DialogDismissalCause.NEGATIVE_BUTTON_CLICKED);
-        } else {
-            saveAppLanguage();
-            mModalDialogManager.dismissDialog(model, DialogDismissalCause.POSITIVE_BUTTON_CLICKED);
-        }
-    }
-
-    @Override
-    public void onDismiss(PropertyModel model, int dismissalCause) {
+    public void onDismissAppLanguageModal(@DialogDismissalCause int dismissalCause) {
+        long displayTime = SystemClock.elapsedRealtime() - mStartTime;
         if (dismissalCause == DialogDismissalCause.POSITIVE_BUTTON_CLICKED) {
-            saveAppLanguage();
+            String languageCode = mAdapter.getSelectedLanguage().getCode();
+            if (AppLocaleUtils.isAppLanguagePref(languageCode)) {
+                recordDismissAction(ActionType.OK_SAME_LANGUAGE, displayTime);
+            } else {
+                recordDismissAction(ActionType.OK_CHANGE_LANGUAGE, displayTime);
+            }
+            startAppLanguageInstall();
+        } else if (dismissalCause == DialogDismissalCause.NEGATIVE_BUTTON_CLICKED) {
+            recordDismissAction(ActionType.DISMISSED_CANCEL_BUTTON, displayTime);
+        } else if (dismissalCause == DialogDismissalCause.NAVIGATE_BACK_OR_TOUCH_OUTSIDE) {
+            recordDismissAction(ActionType.DISMISSED_SYSTEM_BACK, displayTime);
+        } else {
+            recordDismissAction(ActionType.OTHER, displayTime);
         }
         TranslateBridge.setAppLanguagePromptShown();
     }
 
+    public void onDismissConfirmModal(@DialogDismissalCause int dismissalCause) {
+        // No action is taken if the confirm modal is dismissed.
+    }
+
     /**
      * Return an ordered set of LanguageItems that should be shown at the top of the list. These
-     * languages come from the user's currently location and preferred languages.
-     * @param uiLanguages Collection of possible UI langauges.
-     * @param currentLanguage The LanguageItem representing the current UI language.
-     * @return An ordered set of LangaugeItems.
+     * languages come from the user's current location and preferred languages. The original
+     * system language is replaced with a value that follows the current device language and is
+     * added to the top of the list.
+     * @param uiLanguages Collection of possible UI languages.
+     * @param currentOverrideLanguage The LanguageItem representing the current UI language.
+     * @return An ordered set of LanguageItems.
      */
-    private LinkedHashSet<LanguageItem> getTopLanguages(
-            Collection<LanguageItem> uiLanguages, LanguageItem currentLanguage) {
+    private static LinkedHashSet<LanguageItem> getTopLanguages(
+            Collection<LanguageItem> uiLanguages, LanguageItem currentOverrideLanguage) {
         LinkedHashSet<String> topLanguageCodes =
                 new LinkedHashSet<>(GeoLanguageProviderBridge.getCurrentGeoLanguages());
         topLanguageCodes.addAll(TranslateBridge.getUserLanguageCodes());
+
+        Locale originalSystemLocale =
+                GlobalAppLocaleController.getInstance().getOriginalSystemLocale();
+        return getTopLanguagesHelper(
+                uiLanguages, topLanguageCodes, currentOverrideLanguage, originalSystemLocale);
+    }
+
+    /**
+     * Helper function isolating the logic for making the top language list for testing. Adds the
+     * system default language to the top of the list if needed and only adds top languages that are
+     * possible UI languages.
+     * @param uiLanguages Collection of possible UI languages.
+     * @param topLanguageCodes Ordered set of potential top languages tags.
+     * @param currentOverrideLanguage The LanguageItem representing the current UI language.
+     * @param originalSystemLocale Locale of the original device language before any override.
+     * @return An ordered set of LanguageItems.
+     */
+    @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
+    static LinkedHashSet<LanguageItem> getTopLanguagesHelper(Collection<LanguageItem> uiLanguages,
+            LinkedHashSet<String> topLanguageCodes, LanguageItem currentOverrideLanguage,
+            Locale originalSystemLocale) {
+        // Remove the exact language from top language codes if there are multiple UI languages
+        // with the same base, otherwise remove the base language.
+        if (AppLocaleUtils.hasMultipleUiLanguageVariants(originalSystemLocale.toLanguageTag())) {
+            topLanguageCodes.remove(originalSystemLocale.toLanguageTag());
+        } else {
+            topLanguageCodes.remove(originalSystemLocale.getLanguage());
+        }
+
+        // The system default language should always be at the top of the list unless the current
+        // override language is equal to the original system language. In that case only the
+        // current override language is added to the top of the list.
         LinkedHashSet<LanguageItem> topLanguages = new LinkedHashSet<>();
-        topLanguages.add(currentLanguage);
-        // Only add top languages that can be UI languages.
+        if (currentOverrideLanguage.isSystemDefault()) {
+            topLanguages.add(LanguageItem.makeFollowSystemLanguageItem());
+        } else if (!isOverrideLanguageOriginalSystemLanguage(
+                           currentOverrideLanguage, originalSystemLocale)) {
+            topLanguages.add(LanguageItem.makeFollowSystemLanguageItem());
+            topLanguages.add(currentOverrideLanguage);
+        } else {
+            // The current override language can only be the original system language if it has
+            // already been changed in settings. The option to track the system language is not
+            // given in the app language promo - but can be reset from Language Settings.
+            topLanguages.add(currentOverrideLanguage);
+        }
+
+        // Make a map of code -> LanguageItem for UI languages
+        HashMap<String, LanguageItem> uiLanguagesMap = new HashMap<>();
         for (LanguageItem item : uiLanguages) {
-            if (topLanguageCodes.contains(item.getCode())) topLanguages.add(item);
+            uiLanguagesMap.put(item.getCode(), item);
+        }
+        // Only add top languages that can be UI languages.
+        for (String code : topLanguageCodes) {
+            LanguageItem item = uiLanguagesMap.get(code);
+            if (item != null) topLanguages.add(item);
         }
         return topLanguages;
     }
 
     /**
-     * Save the currently selected language as the app language. Setting the app language preference
-     * will start a downloaded for the correct language split if needed.
+     * Returns true if the current override language is the same as the original system language.
+     * For languages that have only one Chrome UI language variant the base languages are compared
+     * and for languages with multiple Chrome UI languages the full language tag is compared.
+     * @param overrideLanguage LanguageItem for the current override language.
+     * @param originalSystemLocale String language code for the original system locale.
+     * @return Whether or not the override language is the same as the original system language.
      */
-    private void saveAppLanguage() {
-        AppLocaleUtils.setAppLanguagePref(mAdapter.getSelectedLanguage().getCode());
+    @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
+    static boolean isOverrideLanguageOriginalSystemLanguage(
+            LanguageItem overrideLanguage, Locale originalSystemLocale) {
+        if (overrideLanguage.isSystemDefault()) {
+            return false;
+        }
+        if (AppLocaleUtils.hasMultipleUiLanguageVariants(overrideLanguage.getCode())) {
+            return TextUtils.equals(
+                    overrideLanguage.getCode(), originalSystemLocale.toLanguageTag());
+        }
+        return LocaleUtils.isBaseLanguageEqual(
+                overrideLanguage.getCode(), originalSystemLocale.toLanguageTag());
+    }
+
+    /**
+     * Show the confirm modal with a progress spinner and start the language split install. Chrome
+     * will restart once the language split has been downloaded. If the download fails an error
+     * message is shown.
+     */
+    private void startAppLanguageInstall() {
+        View customView = LayoutInflater.from(mActivity).inflate(
+                R.layout.app_language_confirm_content, null, false);
+        LanguageItem selectedLanguage = mAdapter.getSelectedLanguage();
+        CharSequence messageText = mActivity.getResources().getString(
+                R.string.languages_srp_loading_text, selectedLanguage.getDisplayName());
+        TextView messageView = customView.findViewById(R.id.message);
+        messageView.setText(messageText);
+
+        mLoadingModal.set(ModalDialogProperties.CUSTOM_VIEW, customView);
+
+        // Only show the modal if the selected language is not installed.
+        if (!LanguageSplitInstaller.getInstance().isLanguageSplitInstalled(
+                    selectedLanguage.getCode())) {
+            mModalDialogManager.showDialog(mLoadingModal, ModalDialogManager.ModalDialogType.APP);
+        }
+
+        boolean isSelectedCurrentUI = AppLocaleUtils.isAppLanguagePref(selectedLanguage.getCode());
+        if (!isSelectedCurrentUI) {
+            // Only record isTopLanguage if the app language has changed.
+            recordIsTopLanguage(mAdapter.isTopLanguageSelected());
+        }
+        AndroidLanguageMetricsBridge.reportAppLanguagePromptLanguage(
+                selectedLanguage.isSystemDefault() ? "" : selectedLanguage.getCode());
+
+        // Create call back for after language split install completes.
+        AppLocaleUtils.setAppLanguagePref(selectedLanguage.getCode(), (success) -> {
+            if (success) {
+                if (!isSelectedCurrentUI) {
+                    // Only restart if the new language is different than the current UI.
+                    mRestartAction.restart();
+                }
+            } else {
+                // The loading language modal will always already be shown if a download fails.
+                CharSequence failedText = mActivity.getResources().getString(
+                        R.string.languages_split_failed, selectedLanguage.getDisplayName());
+                messageView.setText(failedText);
+                mLoadingModal.set(ModalDialogProperties.POSITIVE_BUTTON_TEXT,
+                        mActivity.getText(R.string.ok).toString());
+            }
+        });
     }
 
     /**
@@ -308,12 +489,13 @@ public class AppLanguagePromoDialog implements ModalDialogProperties.Controller 
      * @param modalDialogManagerSupplier Supplier of {@link ModalDialogManager}.
      * @return Whether the prompt was shown or not.
      */
-    public static boolean maybeShowPrompt(
-            Activity activity, ObservableSupplier<ModalDialogManager> modalDialogManagerSupplier) {
+    public static boolean maybeShowPrompt(Activity activity,
+            ObservableSupplier<ModalDialogManager> modalDialogManagerSupplier,
+            RestartAction restartAction) {
         if (!shouldShowPrompt()) return false;
 
         AppLanguagePromoDialog prompt =
-                new AppLanguagePromoDialog(activity, modalDialogManagerSupplier);
+                new AppLanguagePromoDialog(activity, modalDialogManagerSupplier, restartAction);
         prompt.showAppLanguageModal();
         return true;
     }
@@ -322,13 +504,61 @@ public class AppLanguagePromoDialog implements ModalDialogProperties.Controller 
      * @return Whether the app language prompt should be shown or not.
      */
     private static boolean shouldShowPrompt() {
+        boolean isOnline = NetworkChangeNotifier.isOnline();
         // This switch is only used for testing so it is ok to override all other checks.
-        if (ChromeFeatureList.isEnabled(ChromeFeatureList.FORCE_APP_LANGUAGE_PROMPT)) return true;
+        if (ChromeFeatureList.isEnabled(ChromeFeatureList.FORCE_APP_LANGUAGE_PROMPT)) {
+            // Even if feature is set don't show prompt if offline for testing.
+            recordOnlineStatus(isOnline);
+            return isOnline;
+        }
 
         // Don't show the prompt if not enabled or already shown.
         if (!ChromeFeatureList.isEnabled(ChromeFeatureList.APP_LANGUAGE_PROMPT)) return false;
         if (TranslateBridge.getAppLanguagePromptShown()) return false;
 
-        return true;
+        // Don't show the prompt if offline since a language pack download will fail.
+        recordOnlineStatus(isOnline);
+        return isOnline;
+    }
+
+    /**
+     * Record the action type when dismissing the dialog and how long the dialog was shown for.
+     * @param @ActionType int.
+     * @param displayTime Time in ms that the app language promo dialog is showing for.
+     */
+    private static void recordDismissAction(@ActionType int actionType, long displayTime) {
+        RecordHistogram.recordEnumeratedHistogram(
+                "LanguageSettings.AppLanguagePrompt.Action", actionType, ActionType.NUM_ENTRIES);
+        switch (actionType) {
+            case ActionType.DISMISSED_CANCEL_BUTTON:
+                recordOpenDuration("Cancel", displayTime);
+                break;
+            case ActionType.DISMISSED_SYSTEM_BACK:
+                recordOpenDuration("Back", displayTime);
+                break;
+            case ActionType.OK_CHANGE_LANGUAGE:
+                recordOpenDuration("Change", displayTime);
+                break;
+            case ActionType.OK_SAME_LANGUAGE:
+                recordOpenDuration("Same", displayTime);
+                break;
+            default:
+                // Do not record a time for other action types.
+        }
+    }
+
+    private static void recordOnlineStatus(boolean isOnline) {
+        RecordHistogram.recordBooleanHistogram(
+                "LanguageSettings.AppLanguagePrompt.IsOnline", isOnline);
+    }
+
+    private static void recordOpenDuration(String type, long displayTime) {
+        RecordHistogram.recordLongTimesHistogram100(
+                "LanguageSettings.AppLanguagePrompt.OpenDuration." + type, displayTime);
+    }
+
+    private static void recordIsTopLanguage(boolean isTopLanguage) {
+        RecordHistogram.recordBooleanHistogram(
+                "LanguageSettings.AppLanguagePrompt.IsTopLanguageSelected", isTopLanguage);
     }
 }

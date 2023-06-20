@@ -7,6 +7,8 @@ package org.chromium.chrome.browser.tasks;
 import android.app.Activity;
 import android.view.ViewGroup;
 
+import androidx.annotation.VisibleForTesting;
+
 import org.chromium.base.Log;
 import org.chromium.base.supplier.Supplier;
 import org.chromium.chrome.browser.native_page.ContextMenuManager;
@@ -33,7 +35,6 @@ import org.chromium.chrome.browser.tabmodel.document.TabDelegate;
 import org.chromium.chrome.browser.tasks.tab_management.TabUiFeatureUtilities;
 import org.chromium.chrome.browser.ui.messages.snackbar.SnackbarManager;
 import org.chromium.chrome.browser.ui.native_page.NativePageHost;
-import org.chromium.chrome.features.start_surface.StartSurfaceConfiguration;
 import org.chromium.content_public.browser.LoadUrlParams;
 import org.chromium.ui.base.DeviceFormFactor;
 import org.chromium.ui.base.PageTransition;
@@ -65,12 +66,14 @@ class MostVisitedListCoordinator implements TileGroup.Observer {
     private final Supplier<Tab> mParentTabSupplier;
     private final SnackbarManager mSnackbarManager;
     private TileGroup mTileGroup;
+    private TileGroup.Delegate mTileGroupDelegate;
     private TileRenderer mRenderer;
     private SuggestionsUiDelegate mSuggestionsUiDelegate;
     private ContextMenuManager mContextMenuManager;
     private OfflinePageBridge mOfflinePageBridge;
     private SuggestionsNavigationDelegate mNavigationDelegate;
     private boolean mInitializationComplete;
+    private ImageFetcher mImageFetcher;
 
     public MostVisitedListCoordinator(Activity activity, MvTilesLayout mvTilesLayout,
             PropertyModel propertyModel, Supplier<Tab> parentTabSupplier,
@@ -90,9 +93,10 @@ class MostVisitedListCoordinator implements TileGroup.Observer {
 
         // If it's a cold start and Instant Start is turned on, we render MV tiles placeholder here
         // pre-native.
-        if (!mInitializationComplete && StartSurfaceConfiguration.isStartSurfaceEnabled()
+        if (!mInitializationComplete
+                && ReturnToChromeExperimentsUtil.isStartSurfaceEnabled(mActivity)
                 && TabUiFeatureUtilities.supportInstantStart(
-                        DeviceFormFactor.isNonMultiDisplayContextOnTablet(mActivity))) {
+                        DeviceFormFactor.isNonMultiDisplayContextOnTablet(mActivity), mActivity)) {
             try {
                 List<Tile> tiles =
                         MostVisitedSitesMetadataUtils.restoreFileToSuggestionListsOnUiThread();
@@ -107,33 +111,34 @@ class MostVisitedListCoordinator implements TileGroup.Observer {
         }
     }
 
+    /**
+     * Called before the TasksSurface is showing to initialize MV tiles.
+     * {@link MostVisitedListCoordinator#destroyMVTiles()} is called after the TasksSurface hides.
+     */
     public void initWithNative() {
         Profile profile = Profile.getLastUsedRegularProfile();
-        if (!mInitializationComplete) {
-            ImageFetcher imageFetcher = new ImageFetcher(profile);
-            if (mRenderer == null) {
-                // This function is never called in incognito mode.
-                mRenderer = new TileRenderer(
-                        mActivity, SuggestionsConfig.TileStyle.MODERN, TITLE_LINES, imageFetcher);
-            } else {
-                mRenderer.setImageFetcher(imageFetcher);
-            }
-            mNavigationDelegate = new MostVisitedTileNavigationDelegate(
-                    mActivity, profile, null, null, null, mParentTabSupplier);
-            mSuggestionsUiDelegate = new MostVisitedSuggestionsUiDelegate(
-                    mNavigationDelegate, profile, mSnackbarManager);
-            Runnable closeContextMenuCallback = mActivity::closeContextMenu;
-            mContextMenuManager = new ContextMenuManager(
-                    mSuggestionsUiDelegate.getNavigationDelegate(),
-                    (enabled) -> {}, closeContextMenuCallback, CONTEXT_MENU_USER_ACTION_PREFIX);
-            mWindowAndroid.addContextMenuCloseListener(mContextMenuManager);
-            mOfflinePageBridge =
-                    SuggestionsDependencyFactory.getInstance().getOfflinePageBridge(profile);
+        mImageFetcher = new ImageFetcher(profile);
+        if (mRenderer == null) {
+            // This function is never called in incognito mode.
+            mRenderer = new TileRenderer(
+                    mActivity, SuggestionsConfig.TileStyle.MODERN, TITLE_LINES, mImageFetcher);
+        } else {
+            mRenderer.setImageFetcher(mImageFetcher);
         }
-        TileGroupDelegateImpl tileGroupDelegate = new TileGroupDelegateImpl(
+        mNavigationDelegate = new MostVisitedTileNavigationDelegate(
+                mActivity, profile, null, null, null, mParentTabSupplier);
+        mSuggestionsUiDelegate = new MostVisitedSuggestionsUiDelegate(
+                mNavigationDelegate, profile, mSnackbarManager);
+        Runnable closeContextMenuCallback = mActivity::closeContextMenu;
+        mContextMenuManager = new ContextMenuManager(mSuggestionsUiDelegate.getNavigationDelegate(),
+                (enabled) -> {}, closeContextMenuCallback, CONTEXT_MENU_USER_ACTION_PREFIX);
+        mWindowAndroid.addContextMenuCloseListener(mContextMenuManager);
+        mOfflinePageBridge =
+                SuggestionsDependencyFactory.getInstance().getOfflinePageBridge(profile);
+        mTileGroupDelegate = new TileGroupDelegateImpl(
                 mActivity, profile, mNavigationDelegate, mSnackbarManager);
         mTileGroup = new TileGroup(mRenderer, mSuggestionsUiDelegate, mContextMenuManager,
-                tileGroupDelegate, this, mOfflinePageBridge);
+                mTileGroupDelegate, this, mOfflinePageBridge);
         mTileGroup.startObserving(MAX_RESULTS);
         mInitializationComplete = true;
     }
@@ -198,14 +203,6 @@ class MostVisitedListCoordinator implements TileGroup.Observer {
             return false;
         }
 
-        @Override
-        public void navigateToHelpPage() {
-            // TODO(dgn): Use the standard Help UI rather than a random link to online help?
-            ReturnToChromeExperimentsUtil.handleLoadUrlFromStartSurface(
-                    new LoadUrlParams(NEW_TAB_URL_HELP, PageTransition.AUTO_BOOKMARK),
-                    true /*incognito*/, mParentTabSupplier.get());
-        }
-
         /**
          * Opens the suggestions page without recording metrics.
          *
@@ -254,6 +251,41 @@ class MostVisitedListCoordinator implements TileGroup.Observer {
             mTabDelegate.createTabInOtherWindow(loadUrlParams, mActivity,
                     mParentTabSupplier.get() == null ? -1 : mParentTabSupplier.get().getId());
         }
+    }
+
+    /** Called when the TasksSurface is hidden. */
+    public void destroyMVTiles() {
+        mMvTilesLayout.destroy();
+
+        if (mTileGroup != null) {
+            mTileGroup.destroy();
+            mTileGroup = null;
+        }
+        if (mTileGroupDelegate != null) {
+            mTileGroupDelegate.destroy();
+            mTileGroupDelegate = null;
+        }
+        mOfflinePageBridge = null;
+
+        if (mWindowAndroid != null) {
+            mWindowAndroid.removeContextMenuCloseListener(mContextMenuManager);
+            mContextMenuManager = null;
+        }
+        if (mSuggestionsUiDelegate != null) {
+            ((SuggestionsUiDelegateImpl) mSuggestionsUiDelegate).onDestroy();
+            mSuggestionsUiDelegate = null;
+        }
+
+        mRenderer = null;
+
+        if (mImageFetcher != null) {
+            mImageFetcher.onDestroy();
+        }
+    }
+
+    @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
+    boolean isMVTilesCleanedUp() {
+        return mTileGroupDelegate == null && mTileGroup == null;
     }
 
     /** Suggestions UI Delegate for constructing the TileGroup. */

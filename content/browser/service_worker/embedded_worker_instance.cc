@@ -11,7 +11,6 @@
 #include "base/callback_helpers.h"
 #include "base/containers/contains.h"
 #include "base/feature_list.h"
-#include "base/macros.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/no_destructor.h"
 #include "base/trace_event/trace_event.h"
@@ -119,6 +118,9 @@ class EmbeddedWorkerInstance::DevToolsProxy {
         agent_route_id_(agent_route_id),
         devtools_id_(devtools_id) {}
 
+  DevToolsProxy(const DevToolsProxy&) = delete;
+  DevToolsProxy& operator=(const DevToolsProxy&) = delete;
+
   ~DevToolsProxy() {
     DCHECK_CURRENTLY_ON(BrowserThread::UI);
     ServiceWorkerDevToolsManager::GetInstance()->WorkerStopped(process_id_,
@@ -155,30 +157,6 @@ class EmbeddedWorkerInstance::DevToolsProxy {
   const int agent_route_id_;
   const base::UnguessableToken devtools_id_;
   bool worker_stop_ignored_notified_ = false;
-
-  DISALLOW_COPY_AND_ASSIGN(DevToolsProxy);
-};
-
-// Tracks how long a service worker runs for, for UMA purposes.
-class EmbeddedWorkerInstance::ScopedLifetimeTracker {
- public:
-  ScopedLifetimeTracker() : start_ticks_(base::TimeTicks::Now()) {}
-
-  ~ScopedLifetimeTracker() {
-    if (!start_ticks_.is_null()) {
-      ServiceWorkerMetrics::RecordRuntime(base::TimeTicks::Now() -
-                                          start_ticks_);
-    }
-  }
-
-  // Called when DevTools was attached to the worker. Ensures no metric is
-  // recorded for this worker.
-  void Abort() { start_ticks_ = base::TimeTicks(); }
-
- private:
-  base::TimeTicks start_ticks_;
-
-  DISALLOW_COPY_AND_ASSIGN(ScopedLifetimeTracker);
 };
 
 // A handle for a renderer process managed by ServiceWorkerProcessManager.
@@ -198,6 +176,9 @@ class EmbeddedWorkerInstance::WorkerProcessHandle {
     DCHECK_NE(ChildProcessHost::kInvalidUniqueID, process_id_);
   }
 
+  WorkerProcessHandle(const WorkerProcessHandle&) = delete;
+  WorkerProcessHandle& operator=(const WorkerProcessHandle&) = delete;
+
   ~WorkerProcessHandle() {
     DCHECK_CURRENTLY_ON(BrowserThread::UI);
     process_manager_->ReleaseWorkerProcess(embedded_worker_id_);
@@ -210,8 +191,6 @@ class EmbeddedWorkerInstance::WorkerProcessHandle {
 
   const int embedded_worker_id_;
   const int process_id_;
-
-  DISALLOW_COPY_AND_ASSIGN(WorkerProcessHandle);
 };
 
 // Info that is recorded as UMA on OnStarted().
@@ -328,19 +307,19 @@ void EmbeddedWorkerInstance::Start(
           reporting_observer_remote;
       owner_version_->set_reporting_observer_receiver(
           reporting_observer_remote.InitWithNewPipeAndPassReceiver());
-      auto reporter = std::make_unique<CrossOriginEmbedderPolicyReporter>(
+      coep_reporter_ = std::make_unique<CrossOriginEmbedderPolicyReporter>(
+          CrossOriginEmbedderPolicyReporter::Creator::kServiceWorker,
           rph->GetStoragePartition(), params->script_url,
           owner_version_->cross_origin_embedder_policy()->reporting_endpoint,
           owner_version_->cross_origin_embedder_policy()
               ->report_only_reporting_endpoint,
+          owner_version_->reporting_source(),
           // TODO(https://crbug.com/1147281): This is the NetworkIsolationKey of
           // a top-level browsing context, which shouldn't be use for
           // ServiceWorkers used in iframes.
           net::NetworkIsolationKey::ToDoUseTopFrameOriginAsWell(
               url::Origin::Create(params->script_url)));
-      reporter->BindObserver(std::move(reporting_observer_remote));
-      mojo::MakeSelfOwnedReceiver(std::move(reporter),
-                                  coep_reporter_.BindNewPipeAndPassReceiver());
+      coep_reporter_->BindObserver(std::move(reporting_observer_remote));
 
       coep_reporter_->Clone(
           coep_reporter_for_devtools.InitWithNewPipeAndPassReceiver());
@@ -665,9 +644,6 @@ void EmbeddedWorkerInstance::OnStarted(
     return;
   }
 
-  if (!devtools_attached_)
-    lifetime_tracker_ = std::make_unique<ScopedLifetimeTracker>();
-
   // Stop was requested before OnStarted was sent back from the worker. Just
   // pretend startup didn't happen, so observers don't try to use the running
   // worker as it will stop soon.
@@ -783,6 +759,8 @@ EmbeddedWorkerInstance::CreateFactoryBundle(
   mojo::PendingReceiver<network::mojom::URLLoaderFactory>
       default_factory_receiver = factory_bundle->pending_default_factory()
                                      .InitWithNewPipeAndPassReceiver();
+  // TODO(crbug.com/1231019): make sure client_security_state is no longer
+  // nullptr anywhere.
   network::mojom::URLLoaderFactoryParamsPtr factory_params =
       URLLoaderFactoryParamsHelper::CreateForWorker(
           rph, origin,
@@ -793,6 +771,7 @@ EmbeddedWorkerInstance::CreateFactoryBundle(
           static_cast<StoragePartitionImpl*>(rph->GetStoragePartition())
               ->CreateAuthCertObserverForServiceWorker(),
           NetworkServiceDevToolsObserver::MakeSelfOwned(devtools_worker_token),
+          /*client_security_state=*/nullptr,
           "EmbeddedWorkerInstance::CreateFactoryBundle");
   bool bypass_redirect_checks = false;
 
@@ -888,19 +867,19 @@ EmbeddedWorkerInstance::CreateFactoryBundles() {
     owner_version_->set_reporting_observer_receiver(
         reporting_observer_remote.InitWithNewPipeAndPassReceiver());
 
-    auto reporter = std::make_unique<CrossOriginEmbedderPolicyReporter>(
+    coep_reporter_ = std::make_unique<CrossOriginEmbedderPolicyReporter>(
+        CrossOriginEmbedderPolicyReporter::Creator::kServiceWorker,
         rph->GetStoragePartition(), owner_version_->script_url(),
         owner_version_->cross_origin_embedder_policy()->reporting_endpoint,
         owner_version_->cross_origin_embedder_policy()
             ->report_only_reporting_endpoint,
+        owner_version_->reporting_source(),
         // TODO(https://crbug.com/1147281): This is the NetworkIsolationKey of a
         // top-level browsing context, which shouldn't be use for ServiceWorkers
         // used in iframes.
         net::NetworkIsolationKey::ToDoUseTopFrameOriginAsWell(
             url::Origin::Create(owner_version_->script_url())));
-    reporter->BindObserver(std::move(reporting_observer_remote));
-    mojo::MakeSelfOwnedReceiver(std::move(reporter),
-                                coep_reporter_.BindNewPipeAndPassReceiver());
+    coep_reporter_->BindObserver(std::move(reporting_observer_remote));
     coep_reporter_->Clone(
         coep_reporter_for_devtools.InitWithNewPipeAndPassReceiver());
     coep_reporter_->Clone(
@@ -989,14 +968,6 @@ void EmbeddedWorkerInstance::SetDevToolsAttached(bool attached) {
     return;
   if (inflight_start_info_)
     inflight_start_info_->skip_recording_startup_time = true;
-  AbortLifetimeTracking();
-}
-
-void EmbeddedWorkerInstance::AbortLifetimeTracking() {
-  if (lifetime_tracker_) {
-    lifetime_tracker_->Abort();
-    lifetime_tracker_.reset();
-  }
 }
 
 void EmbeddedWorkerInstance::OnNetworkAccessedForScriptLoad() {
@@ -1013,7 +984,6 @@ void EmbeddedWorkerInstance::ReleaseProcess() {
   instance_host_receiver_.reset();
   devtools_proxy_.reset();
   process_handle_.reset();
-  lifetime_tracker_.reset();
   subresource_loader_updater_.reset();
   coep_reporter_.reset();
   status_ = EmbeddedWorkerStatus::STOPPED;
@@ -1138,7 +1108,7 @@ void EmbeddedWorkerInstance::BindCacheStorageInternal() {
       return;
 
     rph->BindCacheStorage(coep, std::move(coep_reporter_remote),
-                          owner_version_->key().origin(), std::move(receiver));
+                          owner_version_->key(), std::move(receiver));
   }
   pending_cache_storage_receivers_.clear();
 }

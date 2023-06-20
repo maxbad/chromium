@@ -23,19 +23,23 @@
 #include "media/base/media_switches.h"
 #include "net/base/url_util.h"
 #include "third_party/blink/public/mojom/permissions_policy/permissions_policy_feature.mojom.h"
+
 #if BUILDFLAG(IS_CHROMEOS_ASH)
 #include <utility>
 
+#include "ash/components/settings/cros_settings_names.h"
 #include "ash/constants/ash_switches.h"
 #include "base/metrics/histogram_macros.h"
 #include "chrome/browser/ash/settings/cros_settings.h"
-#include "chromeos/dbus/constants/dbus_switches.h"
-#include "chromeos/settings/cros_settings_names.h"
-#include "components/permissions/permission_request_impl.h"
+#include "chromeos/dbus/constants/dbus_switches.h"  // nogncheck
+#include "components/permissions/permission_request.h"
 #include "components/permissions/permission_uma_util.h"
+#include "components/permissions/request_type.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/user_prefs/user_prefs.h"
-#elif !defined(OS_ANDROID) && !defined(OS_WIN)
+#endif
+
+#if !(defined(OS_ANDROID) || defined(OS_WIN) || defined(OS_CHROMEOS))
 #error This file currently only supports Chrome OS, Android and Windows.
 #endif
 
@@ -114,7 +118,7 @@ void ProtectedMediaIdentifierPermissionContext::UpdateTabContext(
           id.render_process_id(), id.render_frame_id());
   if (content_settings) {
     content_settings->OnProtectedMediaIdentifierPermissionSet(
-        requesting_frame.GetOrigin(), allowed);
+        requesting_frame.DeprecatedGetOriginAsURL(), allowed);
   }
 }
 
@@ -147,11 +151,11 @@ bool ProtectedMediaIdentifierPermissionContext::
     return false;
   }
 
-  // This could be disabled by the device policy or by user's master switch.
+  // This could be disabled by the device policy or by a switch in content
+  // settings.
   bool enabled_for_device = false;
   if (!ash::CrosSettings::Get()->GetBoolean(
-          chromeos::kAttestationForContentProtectionEnabled,
-          &enabled_for_device) ||
+          ash::kAttestationForContentProtectionEnabled, &enabled_for_device) ||
       !enabled_for_device) {
     DVLOG(1) << "Protected media identifier disabled by the user or by device "
                 "policy.";

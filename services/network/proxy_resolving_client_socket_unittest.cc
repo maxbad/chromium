@@ -26,6 +26,7 @@
 #include "net/proxy_resolution/proxy_config_service_fixed.h"
 #include "net/proxy_resolution/proxy_config_with_annotation.h"
 #include "net/socket/client_socket_pool_manager.h"
+#include "net/socket/connect_job_factory.h"
 #include "net/socket/socket_test_util.h"
 #include "net/spdy/spdy_test_util_common.h"
 #include "net/test/gtest_util.h"
@@ -47,8 +48,10 @@ class TestURLRequestContextWithProxy : public net::TestURLRequestContext {
     context_storage_.set_proxy_resolution_service(
         net::ConfiguredProxyResolutionService::CreateFixedFromPacResult(
             pac_result, TRAFFIC_ANNOTATION_FOR_TESTS));
-    // net::MockHostResolver maps all hosts to localhost.
-    auto host_resolver = std::make_unique<net::MockCachingHostResolver>();
+    auto host_resolver = std::make_unique<net::MockCachingHostResolver>(
+        /*cache_invalidation_num=*/0,
+        /*default_result=*/net::MockHostResolverBase::RuleResolver::
+            GetLocalhostResult());
     context_storage_.set_host_resolver(std::move(host_resolver));
     set_client_socket_factory(client_socket_factory);
     Init();
@@ -146,7 +149,7 @@ TEST_P(ProxyResolvingClientSocketTest, NetworkIsolationKeyDirect) {
             kDestinationHostPortPair, other_nik, net::NetLogWithSource(),
             params);
     net::TestCompletionCallback callback3;
-    int result = request2->Start(callback3.callback());
+    result = request2->Start(callback3.callback());
     EXPECT_EQ(net::ERR_NAME_NOT_RESOLVED, callback3.GetResult(result));
   }
 }
@@ -236,13 +239,15 @@ TEST_P(ProxyResolvingClientSocketTest, NetworkIsolationKeyWithH2Proxy) {
   ssl_data2.next_proto = net::kProtoHTTP2;
   session_deps.socket_factory->AddSSLSocketDataProvider(&ssl_data2);
 
+  net::ConnectJobFactory connect_job_factory;
+
   // Connect to kDestination1 using kNetworkIsolationKey1. It should use a new
   // H2 session.
   net::CommonConnectJobParams common_connect_job_params =
       http_network_session->CreateCommonConnectJobParams();
   ProxyResolvingClientSocket socket1(
       http_network_session.get(), &common_connect_job_params, kDestination1,
-      kNetworkIsolationKey1, false /* use_tls */);
+      kNetworkIsolationKey1, false /* use_tls */, &connect_job_factory);
   net::TestCompletionCallback callback1;
   int result = socket1.Connect(callback1.callback());
   EXPECT_THAT(callback1.GetResult(result), net::test::IsOk());
@@ -251,7 +256,7 @@ TEST_P(ProxyResolvingClientSocketTest, NetworkIsolationKeyWithH2Proxy) {
   // H2 session.
   ProxyResolvingClientSocket socket2(
       http_network_session.get(), &common_connect_job_params, kDestination2,
-      kNetworkIsolationKey2, false /* use_tls */);
+      kNetworkIsolationKey2, false /* use_tls */, &connect_job_factory);
   net::TestCompletionCallback callback2;
   result = socket2.Connect(callback2.callback());
   EXPECT_THAT(callback2.GetResult(result), net::test::IsOk());
@@ -262,7 +267,7 @@ TEST_P(ProxyResolvingClientSocketTest, NetworkIsolationKeyWithH2Proxy) {
   // first H2 session.
   ProxyResolvingClientSocket socket3(
       http_network_session.get(), &common_connect_job_params, kDestination3,
-      kNetworkIsolationKey1, false /* use_tls */);
+      kNetworkIsolationKey1, false /* use_tls */, &connect_job_factory);
   net::TestCompletionCallback callback3;
   result = socket3.Connect(callback3.callback());
   EXPECT_THAT(callback3.GetResult(result), net::test::IsOk());

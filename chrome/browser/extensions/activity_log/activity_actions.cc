@@ -68,7 +68,7 @@ scoped_refptr<Action> Action::Clone() const {
   auto clone = base::MakeRefCounted<Action>(
       extension_id(), time(), action_type(), api_name(), action_id());
   if (args())
-    clone->set_args(base::WrapUnique(args()->DeepCopy()));
+    clone->set_args(args()->CreateDeepCopy());
   clone->set_page_url(page_url());
   clone->set_page_title(page_title());
   clone->set_page_incognito(page_incognito());
@@ -199,9 +199,9 @@ ExtensionActivity Action::ConvertToExtensionActivity() {
       other_field->web_request = std::make_unique<std::string>(
           ActivityLogPolicy::Util::Serialize(web_request));
     }
-    std::string extra;
-    if (other()->GetStringWithoutPathExpansion(constants::kActionExtra, &extra))
-      other_field->extra = std::make_unique<std::string>(extra);
+    const std::string* extra = other()->FindStringKey(constants::kActionExtra);
+    if (extra)
+      other_field->extra = std::make_unique<std::string>(*extra);
     if (absl::optional<int> dom_verb =
             other()->FindIntKey(constants::kActionDomVerb)) {
       switch (static_cast<DomActionType::Type>(dom_verb.value())) {

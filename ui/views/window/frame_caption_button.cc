@@ -14,9 +14,10 @@
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/color_utils.h"
 #include "ui/gfx/geometry/rect_conversions.h"
+#include "ui/gfx/geometry/rrect_f.h"
 #include "ui/gfx/paint_vector_icon.h"
-#include "ui/gfx/rrect_f.h"
 #include "ui/views/animation/flood_fill_ink_drop_ripple.h"
+#include "ui/views/animation/ink_drop.h"
 #include "ui/views/animation/ink_drop_highlight.h"
 #include "ui/views/animation/ink_drop_impl.h"
 #include "ui/views/animation/ink_drop_ripple.h"
@@ -76,18 +77,18 @@ FrameCaptionButton::FrameCaptionButton(PressedCallback callback,
   swap_images_animation_->Reset(1);
 
   SetHasInkDropActionOnClick(true);
-  ink_drop()->SetMode(views::InkDropHost::InkDropMode::ON);
-  ink_drop()->SetVisibleOpacity(kInkDropVisibleOpacity);
+  InkDrop::Get(this)->SetMode(views::InkDropHost::InkDropMode::ON);
+  InkDrop::Get(this)->SetVisibleOpacity(kInkDropVisibleOpacity);
   UpdateInkDropBaseColor();
-  views::InkDrop::UseInkDropWithoutAutoHighlight(ink_drop(),
-                                                 /*highlight_on_hover=*/false);
-  ink_drop()->SetCreateRippleCallback(base::BindRepeating(
+  InkDrop::UseInkDropWithoutAutoHighlight(InkDrop::Get(this),
+                                          /*highlight_on_hover=*/false);
+  InkDrop::Get(this)->SetCreateRippleCallback(base::BindRepeating(
       [](FrameCaptionButton* host) -> std::unique_ptr<views::InkDropRipple> {
         return std::make_unique<views::FloodFillInkDropRipple>(
             host->size(), host->GetInkdropInsets(host->size()),
-            host->ink_drop()->GetInkDropCenterBasedOnLastEvent(),
-            host->ink_drop()->GetBaseColor(),
-            host->ink_drop()->GetVisibleOpacity());
+            InkDrop::Get(host)->GetInkDropCenterBasedOnLastEvent(),
+            InkDrop::Get(host)->GetBaseColor(),
+            InkDrop::Get(host)->GetVisibleOpacity());
       },
       this));
 
@@ -147,8 +148,7 @@ void FrameCaptionButton::SetImage(CaptionButtonIcon icon,
 
   if (animate == Animate::kYes) {
     swap_images_animation_->Reset(0);
-    swap_images_animation_->SetSlideDuration(
-        base::TimeDelta::FromMilliseconds(200));
+    swap_images_animation_->SetSlideDuration(base::Milliseconds(200));
     swap_images_animation_->Show();
   } else {
     swap_images_animation_->Reset(1);
@@ -260,6 +260,12 @@ gfx::Size FrameCaptionButton::GetInkDropSize() const {
   return gfx::Size(2 * GetInkDropCornerRadius(), 2 * GetInkDropCornerRadius());
 }
 
+gfx::Insets FrameCaptionButton::GetInkdropInsets(
+    const gfx::Size& button_size) const {
+  return gfx::Insets((button_size.height() - GetInkDropSize().height()) / 2,
+                     (button_size.width() - GetInkDropSize().width()) / 2);
+}
+
 void FrameCaptionButton::PaintButtonContents(gfx::Canvas* canvas) {
   constexpr SkAlpha kHighlightVisibleOpacity = 0x14;
   SkAlpha highlight_alpha = SK_AlphaTRANSPARENT;
@@ -279,7 +285,7 @@ void FrameCaptionButton::PaintButtonContents(gfx::Canvas* canvas) {
     // the window is moving as a result of the animation from normal to
     // maximized state or vice versa. https://crbug.com/840901.
     cc::PaintFlags flags;
-    flags.setColor(ink_drop()->GetBaseColor());
+    flags.setColor(InkDrop::Get(this)->GetBaseColor());
     flags.setAlpha(highlight_alpha);
     DrawHighlight(canvas, flags);
   }
@@ -333,12 +339,6 @@ int FrameCaptionButton::GetAlphaForIcon(int base_alpha) const {
   return base_alpha * inactive_alpha;
 }
 
-gfx::Insets FrameCaptionButton::GetInkdropInsets(
-    const gfx::Size& button_size) const {
-  return gfx::Insets((button_size.height() - GetInkDropSize().height()) / 2,
-                     (button_size.width() - GetInkDropSize().width()) / 2);
-}
-
 void FrameCaptionButton::UpdateInkDropBaseColor() {
   using color_utils::GetColorWithMaxContrast;
   // A typical implementation would simply do
@@ -349,7 +349,7 @@ void FrameCaptionButton::UpdateInkDropBaseColor() {
   // TODO(pkasting): It would likely be better to make the button glyph always
   // be an alpha-blended version of GetColorWithMaxContrast(background_color_).
   const SkColor button_color = GetButtonColor(background_color_);
-  ink_drop()->SetBaseColor(
+  InkDrop::Get(this)->SetBaseColor(
       GetColorWithMaxContrast(GetColorWithMaxContrast(button_color)));
 }
 
@@ -370,10 +370,10 @@ DEFINE_ENUM_CONVERTERS(
      u"CAPTION_BUTTON_ICON_MAXIMIZE_RESTORE"},
     {views::CaptionButtonIcon::CAPTION_BUTTON_ICON_CLOSE,
      u"CAPTION_BUTTON_ICON_CLOSE"},
-    {views::CaptionButtonIcon::CAPTION_BUTTON_ICON_LEFT_SNAPPED,
-     u"CAPTION_BUTTON_ICON_LEFT_SNAPPED"},
-    {views::CaptionButtonIcon::CAPTION_BUTTON_ICON_RIGHT_SNAPPED,
-     u"CAPTION_BUTTON_ICON_RIGHT_SNAPPED"},
+    {views::CaptionButtonIcon::CAPTION_BUTTON_ICON_LEFT_TOP_SNAPPED,
+     u"CAPTION_BUTTON_ICON_LEFT_TOP_SNAPPED"},
+    {views::CaptionButtonIcon::CAPTION_BUTTON_ICON_RIGHT_BOTTOM_SNAPPED,
+     u"CAPTION_BUTTON_ICON_RIGHT_BOTTOM_SNAPPED"},
     {views::CaptionButtonIcon::CAPTION_BUTTON_ICON_BACK,
      u"CAPTION_BUTTON_ICON_BACK"},
     {views::CaptionButtonIcon::CAPTION_BUTTON_ICON_LOCATION,
@@ -384,5 +384,7 @@ DEFINE_ENUM_CONVERTERS(
      u"CAPTION_BUTTON_ICON_ZOOM"},
     {views::CaptionButtonIcon::CAPTION_BUTTON_ICON_CENTER,
      u"CAPTION_BUTTON_ICON_CENTER"},
+    {views::CaptionButtonIcon::CAPTION_BUTTON_ICON_CUSTOM,
+     u"CAPTION_BUTTON_ICON_CUSTOM"},
     {views::CaptionButtonIcon::CAPTION_BUTTON_ICON_COUNT,
      u"CAPTION_BUTTON_ICON_COUNT"})

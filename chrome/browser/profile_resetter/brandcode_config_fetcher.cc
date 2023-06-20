@@ -21,6 +21,7 @@
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/simple_url_loader.h"
 #include "services/network/public/mojom/url_loader_factory.mojom.h"
+#include "services/network/public/mojom/url_response_head.mojom.h"
 
 namespace {
 
@@ -94,9 +95,7 @@ BrandcodeConfigFetcher::BrandcodeConfigFetcher(
       base::BindOnce(&BrandcodeConfigFetcher::OnSimpleLoaderComplete,
                      weak_ptr_factory_.GetWeakPtr()));
   // Abort the download attempt if it takes too long.
-  download_timer_.Start(FROM_HERE,
-                        base::TimeDelta::FromSeconds(kDownloadTimeoutSec),
-                        this,
+  download_timer_.Start(FROM_HERE, base::Seconds(kDownloadTimeoutSec), this,
                         &BrandcodeConfigFetcher::OnDownloadTimeout);
 }
 

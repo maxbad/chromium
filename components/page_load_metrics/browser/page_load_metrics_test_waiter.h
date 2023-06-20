@@ -68,6 +68,9 @@ class PageLoadMetricsTestWaiter
   // Add a single WebFeature expectation.
   void AddWebFeatureExpectation(blink::mojom::WebFeature web_feature);
 
+  // Add a single UseCounterFeature expectation.
+  void AddUseCounterFeatureExpectation(const blink::UseCounterFeature& feature);
+
   // Wait for the subframe to navigate at least once.
   void AddSubframeNavigationExpectation();
 
@@ -86,7 +89,7 @@ class PageLoadMetricsTestWaiter
 
   // Inserts `routing_id` into `expected_.memory_update_frame_ids_`, the set of
   // frame routing IDs expected to receive a memory measurement update.
-  void AddMemoryUpdateExpectation(int routing_id);
+  void AddMemoryUpdateExpectation(content::GlobalRenderFrameHostId routing_id);
 
   // Adds all |blink::LoadingBehaviorFlag|s set in |behavior_flags| to the
   // set of expected behaviors.
@@ -271,8 +274,7 @@ class PageLoadMetricsTestWaiter
 
   void OnCommit(page_load_metrics::PageLoadTracker* tracker) override;
 
-  void OnRestoredFromBackForwardCache(
-      page_load_metrics::PageLoadTracker* tracker) override;
+  void OnActivate(page_load_metrics::PageLoadTracker* tracker) override;
 
   // These methods check whether expectations are satisfied for specific fields
   // inside the State object, by comparing them in expected_ and observed_.
@@ -304,7 +306,9 @@ class PageLoadMetricsTestWaiter
     std::set<gfx::Size, FrameSizeComparator> frame_sizes_;
     bool did_set_main_frame_intersection_ = false;
     std::vector<gfx::Rect> main_frame_intersections_;
-    std::unordered_set<int> memory_update_frame_ids_;
+    std::unordered_set<content::GlobalRenderFrameHostId,
+                       content::GlobalRenderFrameHostIdHasher>
+        memory_update_frame_ids_;
   };
   State expected_;
   State observed_;

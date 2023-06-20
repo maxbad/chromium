@@ -37,12 +37,6 @@ extern const base::Feature kCrossOriginEmbedderPolicyCredentialless;
 COMPONENT_EXPORT(NETWORK_CPP)
 extern const base::Feature kCrossOriginOpenerPolicy;
 COMPONENT_EXPORT(NETWORK_CPP)
-extern const base::Feature kCrossOriginOpenerPolicyReporting;
-COMPONENT_EXPORT(NETWORK_CPP)
-extern const base::Feature kCrossOriginOpenerPolicyReportingOriginTrial;
-COMPONENT_EXPORT(NETWORK_CPP)
-extern const base::Feature kCrossOriginOpenerPolicyAccessReporting;
-COMPONENT_EXPORT(NETWORK_CPP)
 extern const base::Feature kCrossOriginOpenerPolicyByDefault;
 COMPONENT_EXPORT(NETWORK_CPP)
 extern const base::Feature kSplitAuthCacheByNetworkIsolationKey;
@@ -78,10 +72,45 @@ COMPONENT_EXPORT(NETWORK_CPP)
 extern const base::Feature kAcceptCHFrame;
 
 COMPONENT_EXPORT(NETWORK_CPP)
-extern const base::Feature kFtpProtocol;
+extern const base::Feature kSCTAuditingRetryAndPersistReports;
 
 COMPONENT_EXPORT(NETWORK_CPP)
-extern const base::Feature kSCTAuditingRetryAndPersistReports;
+extern const base::Feature kLoaderDataPipeTuningFeature;
+
+enum class DataPipeAllocationSize {
+  kDefaultSizeOnly,
+  kLargerSizeIfPossible,
+};
+
+COMPONENT_EXPORT(NETWORK_CPP)
+extern uint32_t GetDataPipeDefaultAllocationSize(
+    DataPipeAllocationSize = DataPipeAllocationSize::kDefaultSizeOnly);
+
+COMPONENT_EXPORT(NETWORK_CPP)
+extern uint32_t GetLoaderChunkSize();
+
+COMPONENT_EXPORT(NETWORK_CPP)
+extern const base::Feature kRecordRadioWakeupTrigger;
+
+COMPONENT_EXPORT(NETWORK_CPP)
+extern const base::Feature kCheckCacheForQueuedRequests;
+
+COMPONENT_EXPORT(NETWORK_CPP)
+extern const base::FeatureParam<base::TimeDelta>
+    kQueuedRequestsCacheCheckInterval;
+
+COMPONENT_EXPORT(NETWORK_CPP)
+extern const base::FeatureParam<base::TimeDelta>
+    kQueuedRequestsCacheCheckTimeThreshold;
+
+COMPONENT_EXPORT(NETWORK_CPP)
+extern const base::Feature kCorsNonWildcardRequestHeadersSupport;
+
+COMPONENT_EXPORT(NETWORK_CPP)
+extern const base::Feature kURLLoaderSyncClient;
+
+COMPONENT_EXPORT(NETWORK_CPP)
+extern const base::Feature kClientHintDeprecationIssue;
 
 }  // namespace features
 }  // namespace network

@@ -14,11 +14,10 @@
 #include "base/callback.h"
 #include "base/component_export.h"
 #include "base/containers/flat_map.h"
-#include "base/macros.h"
-#include "base/observer_list.h"
 #include "chromeos/dbus/audio/audio_node.h"
 #include "chromeos/dbus/audio/volume_state.h"
 #include "chromeos/dbus/dbus_method_call_status.h"
+#include "third_party/cros_system_api/dbus/service_constants.h"
 
 namespace dbus {
 class Bus;
@@ -84,6 +83,9 @@ class COMPONENT_EXPORT(DBUS_AUDIO) CrasAudioClient {
 
   // Returns the global instance if initialized. May return null.
   static CrasAudioClient* Get();
+
+  CrasAudioClient(const CrasAudioClient&) = delete;
+  CrasAudioClient& operator=(const CrasAudioClient&) = delete;
 
   // Adds and removes the observer.
   virtual void AddObserver(Observer* observer) = 0;
@@ -164,6 +166,9 @@ class COMPONENT_EXPORT(DBUS_AUDIO) CrasAudioClient {
   // Enables or disables the usage of fixed A2DP packet size in CRAS.
   virtual void SetFixA2dpPacketSize(bool enabled) = 0;
 
+  // Enables or disables CRAS to use Floss as the Bluetooth stack.
+  virtual void SetFlossEnabled(bool enabled) = 0;
+
   // Adds input node |node_id| to the active input list. This is used to add
   // an additional active input node besides the one set by SetActiveInputNode.
   // Note that this action will not trigger an ActiveInputNodeChanged event and
@@ -190,6 +195,12 @@ class COMPONENT_EXPORT(DBUS_AUDIO) CrasAudioClient {
   // The dbus message will be dropped if this feature is not supported on the
   // |node_id|.
   virtual void SwapLeftRight(uint64_t node_id, bool swap) = 0;
+
+  // Sets the display |rotation| attribute of the primary active output device.
+  // The dbus message will be dropped if this feature is not supported on the
+  // |node_id|.
+  virtual void SetDisplayRotation(uint64_t node_id,
+                                  cras::DisplayRotation rotation) = 0;
 
   virtual void SetGlobalOutputChannelRemix(
       int32_t channels,
@@ -226,11 +237,14 @@ class COMPONENT_EXPORT(DBUS_AUDIO) CrasAudioClient {
 
   CrasAudioClient();
   virtual ~CrasAudioClient();
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(CrasAudioClient);
 };
 
 }  // namespace chromeos
+
+// TODO(https://crbug.com/1164001): remove after the //chrome/browser/chromeos
+// source migration is finished.
+namespace ash {
+using ::chromeos::CrasAudioClient;
+}
 
 #endif  // CHROMEOS_DBUS_AUDIO_CRAS_AUDIO_CLIENT_H_

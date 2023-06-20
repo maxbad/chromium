@@ -7,8 +7,8 @@
 #include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/location.h"
-#include "base/single_thread_task_runner.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/threading/thread_task_runner_handle.h"
@@ -50,7 +50,14 @@ using ContextType = ExtensionApiTest::ContextType;
 
 class ExtensionContentSettingsApiTest : public ExtensionApiTest {
  public:
-  ExtensionContentSettingsApiTest() : profile_(nullptr) {}
+  explicit ExtensionContentSettingsApiTest(
+      ContextType context_type = ContextType::kNone)
+      : ExtensionApiTest(context_type) {}
+  ~ExtensionContentSettingsApiTest() override = default;
+  ExtensionContentSettingsApiTest(const ExtensionContentSettingsApiTest&) =
+      delete;
+  ExtensionContentSettingsApiTest& operator=(
+      const ExtensionContentSettingsApiTest&) = delete;
 
   void SetUpOnMainThread() override {
     ExtensionApiTest::SetUpOnMainThread();
@@ -219,7 +226,7 @@ class ExtensionContentSettingsApiTest : public ExtensionApiTest {
   }
 
  private:
-  Profile* profile_;
+  Profile* profile_ = nullptr;
   std::unique_ptr<ScopedKeepAlive> keep_alive_;
   std::unique_ptr<ScopedProfileKeepAlive> profile_keep_alive_;
 };
@@ -227,12 +234,14 @@ class ExtensionContentSettingsApiTest : public ExtensionApiTest {
 class ExtensionContentSettingsApiTestWithContextType
     : public ExtensionContentSettingsApiTest,
       public testing::WithParamInterface<ContextType> {
- protected:
-  bool RunLazyTest(const char* extension_name) {
-    return RunExtensionTest(
-        extension_name, {},
-        {.load_as_service_worker = GetParam() == ContextType::kServiceWorker});
-  }
+ public:
+  ExtensionContentSettingsApiTestWithContextType()
+      : ExtensionContentSettingsApiTest(GetParam()) {}
+  ~ExtensionContentSettingsApiTestWithContextType() override = default;
+  ExtensionContentSettingsApiTestWithContextType(
+      const ExtensionContentSettingsApiTestWithContextType&) = delete;
+  ExtensionContentSettingsApiTestWithContextType& operator=(
+      const ExtensionContentSettingsApiTestWithContextType&) = delete;
 };
 
 INSTANTIATE_TEST_SUITE_P(PersistentBackground,
@@ -242,8 +251,7 @@ INSTANTIATE_TEST_SUITE_P(ServiceWorker,
                          ExtensionContentSettingsApiTestWithContextType,
                          ::testing::Values(ContextType::kServiceWorker));
 
-IN_PROC_BROWSER_TEST_P(ExtensionContentSettingsApiTestWithContextType,
-                       Standard) {
+IN_PROC_BROWSER_TEST_F(ExtensionContentSettingsApiTest, Standard) {
   CheckContentSettingsDefault();
 
   static constexpr char kExtensionPath[] = "content_settings/standard";
@@ -279,7 +287,7 @@ IN_PROC_BROWSER_TEST_P(ExtensionContentSettingsApiTestWithContextType,
 IN_PROC_BROWSER_TEST_P(ExtensionContentSettingsApiTestWithContextType,
                        ClearProperlyGranular) {
   const char kExtensionPath[] = "content_settings/clearproperlygranular";
-  EXPECT_TRUE(RunLazyTest(kExtensionPath)) << message_;
+  EXPECT_TRUE(RunExtensionTest(kExtensionPath)) << message_;
 }
 
 // Tests if changing permissions in incognito mode keeps the previous state of
@@ -328,7 +336,7 @@ IN_PROC_BROWSER_TEST_P(ExtensionContentSettingsApiTestWithContextType,
                        EmbeddedSettingsMetric) {
   base::HistogramTester histogram_tester;
   const char kExtensionPath[] = "content_settings/embeddedsettingsmetric";
-  EXPECT_TRUE(RunLazyTest(kExtensionPath)) << message_;
+  EXPECT_TRUE(RunExtensionTest(kExtensionPath)) << message_;
 
   size_t num_values = 0;
   int images_type = ContentSettingTypeToHistogramValue(
@@ -353,8 +361,7 @@ IN_PROC_BROWSER_TEST_P(ExtensionContentSettingsApiTestWithContextType,
       "ContentSettings.ExtensionNonEmbeddedSettingSet", 2);
 }
 
-IN_PROC_BROWSER_TEST_P(ExtensionContentSettingsApiTestWithContextType,
-                       ConsoleErrorTest) {
+IN_PROC_BROWSER_TEST_F(ExtensionContentSettingsApiTest, ConsoleErrorTest) {
   constexpr char kExtensionPath[] = "content_settings/disablepluginsapi";
   const extensions::Extension* extension =
       LoadExtension(test_data_dir_.AppendASCII(kExtensionPath));

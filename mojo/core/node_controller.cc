@@ -17,11 +17,10 @@
 #include "base/rand_util.h"
 #include "base/strings/string_piece.h"
 #include "base/task/current_thread.h"
-#include "base/time/time.h"
-#include "base/timer/elapsed_timer.h"
 #include "mojo/core/broker.h"
 #include "mojo/core/broker_host.h"
 #include "mojo/core/configuration.h"
+#include "mojo/core/ports/name.h"
 #include "mojo/core/request_context.h"
 #include "mojo/core/user_message_impl.h"
 #include "mojo/public/cpp/platform/named_platform_channel.h"
@@ -123,6 +122,10 @@ class ThreadDestructionObserver
     }
   }
 
+  ThreadDestructionObserver(const ThreadDestructionObserver&) = delete;
+  ThreadDestructionObserver& operator=(const ThreadDestructionObserver&) =
+      delete;
+
  private:
   explicit ThreadDestructionObserver(base::OnceClosure callback)
       : callback_(std::move(callback)) {
@@ -140,8 +143,6 @@ class ThreadDestructionObserver
   }
 
   base::OnceClosure callback_;
-
-  DISALLOW_COPY_AND_ASSIGN(ThreadDestructionObserver);
 };
 
 }  // namespace
@@ -197,7 +198,6 @@ void NodeController::AcceptBrokerClientInvitation(
     // Use the bootstrap channel for the broker and receive the node's channel
     // synchronously as the first message from the broker.
     DCHECK(connection_params.endpoint().is_valid());
-    base::ElapsedTimer timer;
     broker_ = std::make_unique<Broker>(
         connection_params.TakeEndpoint().TakePlatformHandle(),
         /*wait_for_channel_handle=*/true);
@@ -1129,6 +1129,12 @@ void NodeController::OnIntroduce(const ports::NodeName& from_node,
                                  PlatformHandle channel_handle,
                                  const uint64_t remote_capabilities) {
   DCHECK(io_task_runner_->RunsTasksInCurrentSequence());
+
+  if (broker_name_ == ports::kInvalidNodeName || from_node != broker_name_) {
+    DVLOG(1) << "Ignoring introduction from non-broker process.";
+    DropPeer(from_node, nullptr);
+    return;
+  }
 
   if (!channel_handle.is_valid()) {
     node_->LostConnectionToNode(name);

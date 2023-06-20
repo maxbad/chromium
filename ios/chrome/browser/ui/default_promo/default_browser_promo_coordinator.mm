@@ -75,14 +75,9 @@
 
 #pragma mark - ConfirmationAlertActionHandler
 
-- (void)confirmationAlertDismissAction {
-  // There should be no cancel toolbar button for this UI.
-  NOTREACHED();
-}
-
 - (void)confirmationAlertPrimaryAction {
   if (IsInRemindMeLaterGroup()) {
-    if (self.defaultBrowerPromoViewController.tertiaryActionAvailable) {
+    if (self.defaultBrowerPromoViewController.tertiaryActionString) {
       [self logDefaultBrowserFullscreenPromoRemindMeHistogramForAction:
                 ACTION_BUTTON];
     } else {
@@ -104,8 +99,9 @@
 }
 
 - (void)confirmationAlertSecondaryAction {
+  LogUserInteractionWithFullscreenPromo();
   if (IsInRemindMeLaterGroup()) {
-    if (self.defaultBrowerPromoViewController.tertiaryActionAvailable) {
+    if (self.defaultBrowerPromoViewController.tertiaryActionString) {
       // When the "Remind Me Later" button is visible, it is the secondary
       // button, while the "No Thanks" button is the tertiary button.
       [self logDefaultBrowserFullscreenPromoRemindMeHistogramForAction:
@@ -118,13 +114,11 @@
                 CANCEL];
       base::RecordAction(base::UserMetricsAction(
           "IOS.DefaultBrowserFullscreenPromo.Dismissed"));
-      LogUserInteractionWithFullscreenPromo();
     }
   } else {
     [self logDefaultBrowserFullscreenPromoHistogramForAction:CANCEL];
     base::RecordAction(
         base::UserMetricsAction("IOS.DefaultBrowserFullscreenPromo.Dismissed"));
-    LogUserInteractionWithFullscreenPromo();
   }
   [self.handler hidePromo];
 }

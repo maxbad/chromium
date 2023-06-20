@@ -21,9 +21,13 @@
 #include "chrome/grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/metadata/metadata_impl_macros.h"
+#include "ui/color/color_id.h"
+#include "ui/color/color_provider.h"
 #include "ui/gfx/color_utils.h"
 #include "ui/gfx/paint_vector_icon.h"
+#include "ui/views/animation/ink_drop.h"
 #include "ui/views/animation/ink_drop_host_view.h"
+#include "ui/views/border.h"
 #include "ui/views/controls/button/button.h"
 #include "ui/views/controls/button/menu_button_controller.h"
 #include "ui/views/layout/flex_layout.h"
@@ -120,11 +124,10 @@ ExtensionsMenuItemView::~ExtensionsMenuItemView() = default;
 void ExtensionsMenuItemView::OnThemeChanged() {
   views::View::OnThemeChanged();
   const SkColor icon_color =
-      GetAdjustedIconColor(GetNativeTheme()->GetSystemColor(
-          ui::NativeTheme::kColorId_MenuIconColor));
+      GetAdjustedIconColor(GetColorProvider()->GetColor(ui::kColorMenuIcon));
 
   if (pin_button_)
-    pin_button_->ink_drop()->SetBaseColor(icon_color);
+    views::InkDrop::Get(pin_button_)->SetBaseColor(icon_color);
 
   SetButtonIconWithColor(context_menu_button_, kBrowserToolsIcon, icon_color);
 
@@ -152,12 +155,11 @@ void ExtensionsMenuItemView::UpdatePinButton() {
   if (!GetWidget())
     return;
   SkColor unpinned_icon_color =
-      GetAdjustedIconColor(GetNativeTheme()->GetSystemColor(
-          ui::NativeTheme::kColorId_MenuIconColor));
-  SkColor icon_color =
-      IsPinned() ? GetAdjustedIconColor(GetNativeTheme()->GetSystemColor(
-                       ui::NativeTheme::kColorId_ProminentButtonColor))
-                 : unpinned_icon_color;
+      GetAdjustedIconColor(GetColorProvider()->GetColor(ui::kColorMenuIcon));
+  SkColor icon_color = IsPinned()
+                           ? GetAdjustedIconColor(GetColorProvider()->GetColor(
+                                 ui::kColorButtonBackgroundProminent))
+                           : unpinned_icon_color;
   SetButtonIconWithColor(pin_button_,
                          IsPinned() ? views::kUnpinIcon : views::kPinIcon,
                          icon_color);
@@ -193,8 +195,8 @@ ExtensionsMenuItemView::primary_action_button_for_testing() {
 }
 
 SkColor ExtensionsMenuItemView::GetAdjustedIconColor(SkColor icon_color) const {
-  const SkColor background_color = GetNativeTheme()->GetSystemColor(
-      ui::NativeTheme::kColorId_BubbleBackground);
+  const SkColor background_color =
+      GetColorProvider()->GetColor(ui::kColorBubbleBackground);
   if (background_color != SK_ColorTRANSPARENT) {
     return color_utils::BlendForMinContrast(icon_color, background_color).color;
   }

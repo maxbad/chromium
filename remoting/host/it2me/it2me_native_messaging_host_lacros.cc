@@ -9,6 +9,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <utility>
 
 #include "base/bind.h"
 #include "base/json/json_reader.h"
@@ -16,18 +17,18 @@
 #include "base/memory/weak_ptr.h"
 #include "base/notreached.h"
 #include "base/sequence_checker.h"
-#include "base/single_thread_task_runner.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/time/time.h"
 #include "base/values.h"
 #include "chromeos/crosapi/mojom/remoting.mojom.h"
-#include "chromeos/lacros/lacros_chrome_service_impl.h"
+#include "chromeos/lacros/lacros_service.h"
 #include "extensions/browser/api/messaging/native_message_host.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "remoting/host/it2me/it2me_constants.h"
-#include "remoting/host/it2me/it2me_helpers.h"
 #include "remoting/host/mojom/remote_support.mojom.h"
+#include "remoting/host/native_messaging/native_messaging_helpers.h"
 #include "remoting/protocol/errors.h"
 
 namespace remoting {
@@ -75,7 +76,8 @@ class It2MeNativeMessagingHostLacros : public extensions::NativeMessageHost,
                                      base::TimeDelta lifetime) override;
   void OnHostStateConnecting() override;
   void OnHostStateConnected(const std::string& remote_username) override;
-  void OnHostStateDisconnected() override;
+  void OnHostStateDisconnected(
+      const absl::optional<std::string>& disconnect_reason) override;
   void OnNatPolicyChanged(mojom::NatPolicyStatePtr policy_state) override;
   void OnHostStateError(int64_t error_code) override;
   void OnPolicyError() override;
@@ -86,24 +88,24 @@ class It2MeNativeMessagingHostLacros : public extensions::NativeMessageHost,
   void OnSupportSessionStarted(mojom::StartSupportSessionResponsePtr response);
 
  private:
-  void ProcessHello();
-  void ProcessConnect(base::Value message);
-  void ProcessDisconnect(base::Value message);
+  void ProcessHello(int message_id);
+  void ProcessConnect(int message_id, base::Value message);
+  void ProcessDisconnect(int message_id);
   void SendMessageToClient(base::Value message) const;
   void SendErrorAndExit(const protocol::ErrorCode error_code,
                         int message_id = kInvalidMessageId) const;
 
-  void HandleHostStateChange(It2MeHostState state);
+  void HandleHostStateChange(
+      It2MeHostState state,
+      base::Value message = base::Value(base::Value::Type::DICTIONARY));
 
   SEQUENCE_CHECKER(sequence_checker_);
 
   Client* client_ GUARDED_BY_CONTEXT(sequence_checker_) = nullptr;
   scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
 
-  std::string access_code_;
-  base::TimeDelta access_code_lifetime_;
-  std::string remote_username_;
   int connect_response_id_ = kInvalidMessageId;
+  int hello_response_id_ = kInvalidMessageId;
 
   bool hello_response_pending_ GUARDED_BY_CONTEXT(sequence_checker_) = false;
   mojom::SupportHostDetailsPtr host_details_
@@ -117,7 +119,7 @@ class It2MeNativeMessagingHostLacros : public extensions::NativeMessageHost,
 
 It2MeNativeMessagingHostLacros::It2MeNativeMessagingHostLacros(
     scoped_refptr<base::SingleThreadTaskRunner> task_runner)
-    : task_runner_(task_runner) {}
+    : task_runner_(std::move(task_runner)) {}
 
 It2MeNativeMessagingHostLacros::~It2MeNativeMessagingHostLacros() = default;
 
@@ -125,26 +127,27 @@ void It2MeNativeMessagingHostLacros::OnMessage(const std::string& message) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   std::string type;
   base::Value contents;
-  if (!ParseIt2MeNativeMessageJson(message, type, contents)) {
+  if (!ParseNativeMessageJson(message, type, contents)) {
     client_->CloseChannel(std::string());
     return;
   }
 
+  int message_id = GetMessageId(contents);
   if (type.empty()) {
     LOG(ERROR) << "'type' not found in request.";
-    SendErrorAndExit(protocol::ErrorCode::INCOMPATIBLE_PROTOCOL);
+    SendErrorAndExit(protocol::ErrorCode::INCOMPATIBLE_PROTOCOL, message_id);
     return;
   }
 
   if (type == kHelloMessage) {
-    ProcessHello();
+    ProcessHello(message_id);
   } else if (type == kConnectMessage) {
-    ProcessConnect(std::move(contents));
+    ProcessConnect(message_id, std::move(contents));
   } else if (type == kDisconnectMessage) {
-    ProcessDisconnect(std::move(contents));
+    ProcessDisconnect(message_id);
   } else {
     LOG(ERROR) << "Unsupported request type: " << type;
-    SendErrorAndExit(protocol::ErrorCode::INCOMPATIBLE_PROTOCOL);
+    SendErrorAndExit(protocol::ErrorCode::INCOMPATIBLE_PROTOCOL, message_id);
   }
 }
 
@@ -152,15 +155,15 @@ void It2MeNativeMessagingHostLacros::Start(Client* client) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   client_ = client;
 
-  auto* lacros_chrome_service = chromeos::LacrosChromeServiceImpl::Get();
-  if (!lacros_chrome_service->IsAvailable<crosapi::mojom::Remoting>()) {
+  auto* lacros_service = chromeos::LacrosService::Get();
+  if (!lacros_service->IsAvailable<crosapi::mojom::Remoting>()) {
     LOG(ERROR) << "Remoting is not available in this version of the browser.";
     client_->CloseChannel(std::string());
     return;
   }
 
-  lacros_chrome_service->GetRemote<crosapi::mojom::Remoting>()
-      ->GetSupportHostDetails(base::BindOnce(
+  lacros_service->GetRemote<crosapi::mojom::Remoting>()->GetSupportHostDetails(
+      base::BindOnce(
           &It2MeNativeMessagingHostLacros::OnSupportHostDetailsReceived,
           weak_factory_.GetWeakPtr()));
 }
@@ -184,9 +187,11 @@ void It2MeNativeMessagingHostLacros::OnHostStateReceivedAccessCode(
     const std::string& access_code,
     base::TimeDelta lifetime) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  access_code_ = access_code;
-  access_code_lifetime_ = lifetime;
-  HandleHostStateChange(It2MeHostState::kReceivedAccessCode);
+  base::Value message(base::Value::Type::DICTIONARY);
+  message.SetStringKey(kAccessCode, access_code);
+  message.SetIntKey(kAccessCodeLifetime, lifetime.InSeconds());
+  HandleHostStateChange(It2MeHostState::kReceivedAccessCode,
+                        std::move(message));
 }
 
 void It2MeNativeMessagingHostLacros::OnHostStateConnecting() {
@@ -197,13 +202,19 @@ void It2MeNativeMessagingHostLacros::OnHostStateConnecting() {
 void It2MeNativeMessagingHostLacros::OnHostStateConnected(
     const std::string& remote_username) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  remote_username_ = remote_username;
-  HandleHostStateChange(It2MeHostState::kConnected);
+  base::Value message(base::Value::Type::DICTIONARY);
+  message.SetStringKey(kClient, remote_username);
+  HandleHostStateChange(It2MeHostState::kConnected, std::move(message));
 }
 
-void It2MeNativeMessagingHostLacros::OnHostStateDisconnected() {
+void It2MeNativeMessagingHostLacros::OnHostStateDisconnected(
+    const absl::optional<std::string>& disconnect_reason) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  HandleHostStateChange(It2MeHostState::kDisconnected);
+  base::Value message(base::Value::Type::DICTIONARY);
+  if (disconnect_reason.has_value()) {
+    message.SetStringKey(kDisconnectReason, disconnect_reason.value());
+  }
+  HandleHostStateChange(It2MeHostState::kDisconnected, std::move(message));
 }
 
 void It2MeNativeMessagingHostLacros::OnNatPolicyChanged(
@@ -240,8 +251,10 @@ void It2MeNativeMessagingHostLacros::OnInvalidDomainError() {
 }
 
 void It2MeNativeMessagingHostLacros::HandleHostStateChange(
-    It2MeHostState state) {
-  base::Value message(base::Value::Type::DICTIONARY);
+    It2MeHostState state,
+    base::Value message) {
+  DCHECK(message.is_dict());
+
   message.SetStringKey(kMessageType, kHostStateChangedMessage);
 
   switch (state) {
@@ -255,8 +268,6 @@ void It2MeNativeMessagingHostLacros::HandleHostStateChange(
 
     case It2MeHostState::kReceivedAccessCode:
       message.SetStringKey(kState, kHostStateReceivedAccessCode);
-      message.SetStringKey(kAccessCode, access_code_);
-      message.SetIntKey(kAccessCodeLifetime, access_code_lifetime_.InSeconds());
       break;
 
     case It2MeHostState::kConnecting:
@@ -265,12 +276,10 @@ void It2MeNativeMessagingHostLacros::HandleHostStateChange(
 
     case It2MeHostState::kConnected:
       message.SetStringKey(kState, kHostStateConnected);
-      message.SetStringKey(kClient, remote_username_);
       break;
 
     case It2MeHostState::kDisconnected:
       message.SetStringKey(kState, kHostStateDisconnected);
-      remote_username_.clear();
       break;
 
     case It2MeHostState::kInvalidDomainError:
@@ -292,17 +301,21 @@ void It2MeNativeMessagingHostLacros::OnSupportHostDetailsReceived(
 
   if (hello_response_pending_) {
     hello_response_pending_ = false;
-    ProcessHello();
+    int response_id = hello_response_id_;
+    hello_response_id_ = kInvalidMessageId;
+    ProcessHello(response_id);
   }
 }
 
 void It2MeNativeMessagingHostLacros::OnSupportSessionStarted(
     mojom::StartSupportSessionResponsePtr mojo_response) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  int response_id = connect_response_id_;
+  connect_response_id_ = kInvalidMessageId;
   if (mojo_response->is_support_session_error()) {
     SendErrorAndExit(SupportSessionErrorToProtocolError(
                          mojo_response->get_support_session_error()),
-                     connect_response_id_);
+                     response_id);
     return;
   }
 
@@ -311,24 +324,28 @@ void It2MeNativeMessagingHostLacros::OnSupportSessionStarted(
   base::Value response(base::Value::Type::DICTIONARY);
   response.SetStringKey(kMessageType, kConnectResponse);
 
-  if (connect_response_id_ != kInvalidMessageId) {
-    response.SetIntKey(kMessageId, connect_response_id_);
-    connect_response_id_ = kInvalidMessageId;
+  if (response_id != kInvalidMessageId) {
+    response.SetIntKey(kMessageId, response_id);
   }
 
   SendMessageToClient(std::move(response));
 }
 
-void It2MeNativeMessagingHostLacros::ProcessHello() {
+void It2MeNativeMessagingHostLacros::ProcessHello(int message_id) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (host_details_.is_null()) {
     // We haven't received the host details from ash so wait before responding.
     hello_response_pending_ = true;
+    hello_response_id_ = message_id;
     return;
   }
 
   base::Value response(base::Value::Type::DICTIONARY);
   response.SetStringKey(kMessageType, kHelloResponse);
+  if (message_id != kInvalidMessageId) {
+    response.SetIntKey(kMessageId, message_id);
+  }
+
   response.SetStringKey(kHostVersion, host_details_.get()->host_version);
 
   std::vector<base::Value> features;
@@ -339,9 +356,10 @@ void It2MeNativeMessagingHostLacros::ProcessHello() {
   SendMessageToClient(std::move(response));
 }
 
-void It2MeNativeMessagingHostLacros::ProcessConnect(base::Value message) {
+void It2MeNativeMessagingHostLacros::ProcessConnect(int message_id,
+                                                    base::Value message) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  int message_id = GetMessageId(message);
+
   if (message_id != kInvalidMessageId) {
     connect_response_id_ = message_id;
   }
@@ -349,14 +367,15 @@ void It2MeNativeMessagingHostLacros::ProcessConnect(base::Value message) {
   mojom::SupportSessionParamsPtr session_params =
       mojom::SupportSessionParams::New();
 
-  std::string* user_name = message.FindStringKey(kUserName);
+  const std::string* user_name = message.FindStringKey(kUserName);
   if (!user_name) {
     SendErrorAndExit(protocol::ErrorCode::INCOMPATIBLE_PROTOCOL, message_id);
     return;
   }
   session_params->user_name = *user_name;
 
-  std::string* access_token = message.FindStringKey(kAuthServiceWithToken);
+  const std::string* access_token =
+      message.FindStringKey(kAuthServiceWithToken);
   if (!access_token) {
     SendErrorAndExit(protocol::ErrorCode::INCOMPATIBLE_PROTOCOL, message_id);
     return;
@@ -367,25 +386,32 @@ void It2MeNativeMessagingHostLacros::ProcessConnect(base::Value message) {
   // testing purposes. This should probably be encapsulated in a check that the
   // machine is in developer-mode and/or !NDEBUG.
 
-  auto* lacros_chrome_service = chromeos::LacrosChromeServiceImpl::Get();
-  lacros_chrome_service->GetRemote<crosapi::mojom::Remoting>()
-      ->StartSupportSession(
-          std::move(session_params),
-          base::BindOnce(
-              &It2MeNativeMessagingHostLacros::OnSupportSessionStarted,
-              base::Unretained(this)));
+  auto* lacros_service = chromeos::LacrosService::Get();
+  lacros_service->GetRemote<crosapi::mojom::Remoting>()->StartSupportSession(
+      std::move(session_params),
+      base::BindOnce(&It2MeNativeMessagingHostLacros::OnSupportSessionStarted,
+                     base::Unretained(this)));
 }
 
-void It2MeNativeMessagingHostLacros::ProcessDisconnect(base::Value message) {
+void It2MeNativeMessagingHostLacros::ProcessDisconnect(int message_id) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
+  // Resetting the observer will cause the host running in ash to disconnect.
   support_host_observer_.reset();
+
+  // Since the mojo channel was disconnected above, we will no longer receive
+  // events from ash-chrome (including the disconnected host state change).
+  // Set the new state here to reflect that we've disconnected the host. This
+  // will cause a message to be sent to the client so it can update its UI.
+  HandleHostStateChange(It2MeHostState::kDisconnected);
 
   base::Value response(base::Value::Type::DICTIONARY);
   response.SetStringKey(kMessageType, kDisconnectResponse);
-  int message_id = GetMessageId(message);
+
   if (message_id != kInvalidMessageId) {
     response.SetIntKey(kMessageId, message_id);
   }
+
   SendMessageToClient(std::move(response));
 }
 
@@ -420,10 +446,9 @@ void It2MeNativeMessagingHostLacros::SendErrorAndExit(
 
 std::unique_ptr<extensions::NativeMessageHost>
 CreateIt2MeNativeMessagingHostForLacros(
-    scoped_refptr<base::SingleThreadTaskRunner> io_runnner,
     scoped_refptr<base::SingleThreadTaskRunner> ui_runnner) {
-  // TODO(joedow): Verify |io_runner| is not required then remove it.
-  return std::make_unique<It2MeNativeMessagingHostLacros>(ui_runnner);
+  return std::make_unique<It2MeNativeMessagingHostLacros>(
+      std::move(ui_runnner));
 }
 
 }  // namespace remoting

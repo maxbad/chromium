@@ -17,13 +17,17 @@
 #include "device/vr/public/mojom/vr_service.mojom.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/openxr/src/include/openxr/openxr.h"
-#include "ui/gfx/transform.h"
+#include "ui/gfx/geometry/transform.h"
 
 namespace device {
 
 class OpenXrController {
  public:
   OpenXrController();
+
+  OpenXrController(const OpenXrController&) = delete;
+  OpenXrController& operator=(const OpenXrController&) = delete;
+
   ~OpenXrController();
 
   // The lifetime of OpenXRInputHelper is a superset of OpenXRController. Thus
@@ -69,6 +73,11 @@ class OpenXrController {
 
   XrResult SuggestBindings(
       std::map<XrPath, std::vector<XrActionSuggestedBinding>>* bindings) const;
+  XrResult SuggestBindingsForButtonMaps(
+      std::map<XrPath, std::vector<XrActionSuggestedBinding>>* bindings,
+      const std::vector<OpenXrButtonPathMap>& button_maps,
+      XrPath interaction_profile_path,
+      const std::string& binding_prefix) const;
 
   XrResult CreateActionsForButton(OpenXrButtonType button_type);
   XrResult CreateAction(XrActionType type,
@@ -161,8 +170,6 @@ class OpenXrController {
 
   const OpenXRPathHelper* path_helper_;
   const OpenXrExtensionHelper* extension_helper_;
-
-  DISALLOW_COPY_AND_ASSIGN(OpenXrController);
 };
 
 }  // namespace device

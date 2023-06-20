@@ -7,11 +7,10 @@
 
 #include <string>
 
-#include "base/macros.h"
 #include "chromeos/components/proximity_auth/screenlock_bridge.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
-namespace chromeos {
+namespace ash {
 
 // Mock implementation of proximity_auth::ScreenlockBridge::LockHandler.
 class MockLockHandler : public proximity_auth::ScreenlockBridge::LockHandler {
@@ -29,6 +28,12 @@ class MockLockHandler : public proximity_auth::ScreenlockBridge::LockHandler {
                const proximity_auth::ScreenlockBridge::UserPodCustomIconInfo&
                    icon_info));
   MOCK_METHOD(void, HideUserPodCustomIcon, (const AccountId& account_id));
+  MOCK_METHOD(void,
+              SetSmartLockState,
+              (const AccountId& account_id, ash::SmartLockState statel));
+  MOCK_METHOD(void,
+              NotifySmartLockAuthResult,
+              (const AccountId& account_id, bool successful));
   MOCK_METHOD(void, EnableInput, ());
   MOCK_METHOD(void,
               SetAuthType,
@@ -48,6 +53,6 @@ class MockLockHandler : public proximity_auth::ScreenlockBridge::LockHandler {
                const std::string& key_label));
 };
 
-}  // namespace chromeos
+}  // namespace ash
 
 #endif  // CHROME_BROWSER_ASH_LOGIN_SAML_MOCK_LOCK_HANDLER_H_

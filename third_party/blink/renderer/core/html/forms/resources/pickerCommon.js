@@ -24,6 +24,8 @@
  * DAMAGE.
  */
 
+let didOpenPicker = false;
+
 /**
  * @param {!string} id
  */
@@ -148,13 +150,7 @@ function _adjustWindowRectVertically(
   availableSpaceBelow =
       Math.max(0, Math.min(availRect.height, availableSpaceBelow));
 
-  // In some situations, there may be no space available.  This can happen on
-  // Linux when using a buggy window manager (https://crbug.com/774232).  When
-  // this happens, don't try to constrain the window at all.
-  if (availableSpaceAbove == 0 && availableSpaceBelow == 0) {
-    windowRect.height = Math.max(minHeight, windowRect.height);
-    windowRect.y = anchorRect.maxY;
-  } else if (
+  if (
       windowRect.height > availableSpaceBelow &&
       availableSpaceBelow < availableSpaceAbove) {
     windowRect.height = Math.min(windowRect.height, availableSpaceAbove);
@@ -172,11 +168,6 @@ function _adjustWindowRectVertically(
  */
 function _adjustWindowRectHorizontally(
     windowRect, availRect, anchorRect, minWidth) {
-  if (anchorRect.maxX <= availRect.x || availRect.maxX <= anchorRect.x) {
-    windowRect.width = Math.max(minWidth, windowRect.width);
-    windowRect.x = anchorRect.x
-    return;
-  }
   windowRect.width = Math.min(windowRect.width, availRect.width);
   windowRect.width = Math.max(windowRect.width, minWidth);
   windowRect.x = anchorRect.x;
@@ -216,10 +207,12 @@ function isWindowHidden() {
 }
 
 window.addEventListener('resize', function() {
-  if (isWindowHidden())
+  if (isWindowHidden()) {
     window.dispatchEvent(new CustomEvent('didHide'));
-  else
+  } else {
     window.dispatchEvent(new CustomEvent('didOpenPicker'));
+    window.didOpenPicker = true;
+  }
 }, false);
 
 /**

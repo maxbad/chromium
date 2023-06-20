@@ -10,8 +10,8 @@
 #include <memory>
 #include <string>
 
+#include "base/cxx17_backports.h"
 #include "base/macros.h"
-#include "base/stl_util.h"
 #include "sandbox/win/src/nt_internals.h"
 
 namespace sandbox {
@@ -27,17 +27,21 @@ const size_t kNTDevicePrefixLen = base::size(kNTDevicePrefix) - 1;
 // is destroyed.
 class AutoLock {
  public:
+  AutoLock() = delete;
+
   // Acquires the lock.
   explicit AutoLock(CRITICAL_SECTION* lock) : lock_(lock) {
     ::EnterCriticalSection(lock);
   }
+
+  AutoLock(const AutoLock&) = delete;
+  AutoLock& operator=(const AutoLock&) = delete;
 
   // Releases the lock;
   ~AutoLock() { ::LeaveCriticalSection(lock_); }
 
  private:
   CRITICAL_SECTION* lock_;
-  DISALLOW_IMPLICIT_CONSTRUCTORS(AutoLock);
 };
 
 // Basic implementation of a singleton which calls the destructor

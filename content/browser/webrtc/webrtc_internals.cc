@@ -154,7 +154,7 @@ WebRTCInternals* WebRTCInternals::GetInstance() {
   return g_webrtc_internals;
 }
 
-void WebRTCInternals::OnPeerConnectionAdded(GlobalFrameRoutingId frame_id,
+void WebRTCInternals::OnPeerConnectionAdded(GlobalRenderFrameHostId frame_id,
                                             int lid,
                                             ProcessId pid,
                                             const string& url,
@@ -187,7 +187,7 @@ void WebRTCInternals::OnPeerConnectionAdded(GlobalFrameRoutingId frame_id,
   }
 }
 
-void WebRTCInternals::OnPeerConnectionRemoved(GlobalFrameRoutingId frame_id,
+void WebRTCInternals::OnPeerConnectionRemoved(GlobalRenderFrameHostId frame_id,
                                               int lid) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
@@ -205,7 +205,7 @@ void WebRTCInternals::OnPeerConnectionRemoved(GlobalFrameRoutingId frame_id,
   }
 }
 
-void WebRTCInternals::OnPeerConnectionUpdated(GlobalFrameRoutingId frame_id,
+void WebRTCInternals::OnPeerConnectionUpdated(GlobalRenderFrameHostId frame_id,
                                               int lid,
                                               const string& type,
                                               const string& value) {
@@ -215,14 +215,14 @@ void WebRTCInternals::OnPeerConnectionUpdated(GlobalFrameRoutingId frame_id,
   if (it == peer_connection_data_.GetList().end())
     return;
 
-  if (type == "iceConnectionStateChange") {
+  if (type == "iceconnectionstatechange") {
     if (value == "connected" || value == "checking" || value == "completed") {
       MaybeMarkPeerConnectionAsConnected(&*it);
     } else if (value == "failed" || value == "disconnected" ||
                value == "closed" || value == "new") {
       MaybeMarkPeerConnectionAsNotConnected(&*it);
     }
-  } else if (type == "stop") {
+  } else if (type == "close") {
     MaybeClosePeerConnection(&*it);
   } else if (type == "setConfiguration") {
     // Update the configuration we have for this connection.
@@ -252,7 +252,7 @@ void WebRTCInternals::OnPeerConnectionUpdated(GlobalFrameRoutingId frame_id,
   EnsureLogList(&*it)->Append(std::move(log_entry));
 }
 
-void WebRTCInternals::OnAddStandardStats(GlobalFrameRoutingId frame_id,
+void WebRTCInternals::OnAddStandardStats(GlobalRenderFrameHostId frame_id,
                                          int lid,
                                          base::Value value) {
   if (observers_.empty())
@@ -267,7 +267,7 @@ void WebRTCInternals::OnAddStandardStats(GlobalFrameRoutingId frame_id,
   SendUpdate("add-standard-stats", std::move(dict));
 }
 
-void WebRTCInternals::OnAddLegacyStats(GlobalFrameRoutingId frame_id,
+void WebRTCInternals::OnAddLegacyStats(GlobalRenderFrameHostId frame_id,
                                        int lid,
                                        base::Value value) {
   if (observers_.empty())
@@ -282,7 +282,7 @@ void WebRTCInternals::OnAddLegacyStats(GlobalFrameRoutingId frame_id,
   SendUpdate("add-legacy-stats", std::move(dict));
 }
 
-void WebRTCInternals::OnGetUserMedia(GlobalFrameRoutingId frame_id,
+void WebRTCInternals::OnGetUserMedia(GlobalRenderFrameHostId frame_id,
                                      base::ProcessId pid,
                                      const std::string& origin,
                                      bool audio,
@@ -464,7 +464,7 @@ void WebRTCInternals::SendUpdate(const std::string& event_name,
         FROM_HERE,
         base::BindOnce(&WebRTCInternals::ProcessPendingUpdates,
                        weak_factory_.GetWeakPtr()),
-        base::TimeDelta::FromMilliseconds(aggregate_updates_ms_));
+        base::Milliseconds(aggregate_updates_ms_));
   }
 }
 
@@ -666,7 +666,7 @@ void WebRTCInternals::ProcessPendingUpdates() {
 }
 
 base::CheckedContiguousIterator<base::Value> WebRTCInternals::FindRecord(
-    GlobalFrameRoutingId frame_id,
+    GlobalRenderFrameHostId frame_id,
     int lid) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 

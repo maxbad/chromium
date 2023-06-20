@@ -10,7 +10,7 @@
 #include "chromeos/services/machine_learning/public/mojom/model.mojom.h"
 #include "mojo/public/cpp/bindings/remote.h"
 
-namespace chromeos {
+namespace ash {
 namespace power {
 namespace ml {
 
@@ -19,6 +19,10 @@ namespace ml {
 class BuiltinWorker : public SmartDimWorker {
  public:
   BuiltinWorker();
+
+  BuiltinWorker(const BuiltinWorker&) = delete;
+  BuiltinWorker& operator=(const BuiltinWorker&) = delete;
+
   ~BuiltinWorker() override;
 
   // SmartDimWorker overrides:
@@ -31,12 +35,10 @@ class BuiltinWorker : public SmartDimWorker {
   // Loads the built-in preprocessor config if not loaded yet. Also
   // initializes the model_ and executor_ with built-in model.
   void LazyInitialize();
-
-  DISALLOW_COPY_AND_ASSIGN(BuiltinWorker);
 };
 
 }  // namespace ml
 }  // namespace power
-}  // namespace chromeos
+}  // namespace ash
 
 #endif  // CHROME_BROWSER_ASH_POWER_ML_SMART_DIM_BUILTIN_WORKER_H_

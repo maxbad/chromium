@@ -13,7 +13,6 @@
 #include "base/compiler_specific.h"
 #include "base/containers/flat_map.h"
 #include "base/gtest_prod_util.h"
-#include "base/macros.h"
 #include "base/time/time.h"
 #include "ui/events/event_constants.h"
 #include "ui/events/gesture_event_details.h"
@@ -59,6 +58,9 @@ class EVENTS_EXPORT Event {
    public:
     explicit DispatcherApi(Event* event) : event_(event) {}
 
+    DispatcherApi(const DispatcherApi&) = delete;
+    DispatcherApi& operator=(const DispatcherApi&) = delete;
+
     void set_target(EventTarget* target) { event_->target_ = target; }
 
     void set_phase(EventPhase phase) { event_->phase_ = phase; }
@@ -69,8 +71,6 @@ class EVENTS_EXPORT Event {
 
    private:
     Event* event_;
-
-    DISALLOW_COPY_AND_ASSIGN(DispatcherApi);
   };
 
   void SetNativeEvent(const PlatformEvent& event);
@@ -313,6 +313,9 @@ class EVENTS_EXPORT Event {
   PlatformEvent native_event_;
   bool delete_native_event_ = false;
   bool cancelable_ = true;
+  // Neither Event copy constructor nor the assignment operator copies
+  // `target_`, as `target_` should be explicitly set so the setter will be
+  // responsible for tracking it.
   EventTarget* target_ = nullptr;
   EventPhase phase_ = EP_PREDISPATCH;
   EventResult result_ = ER_UNHANDLED;
@@ -478,6 +481,9 @@ class EVENTS_EXPORT MouseEvent : public LocatedEvent {
    public:
     explicit DispatcherApi(MouseEvent* event) : event_(event) {}
 
+    DispatcherApi(const DispatcherApi&) = delete;
+    DispatcherApi& operator=(const DispatcherApi&) = delete;
+
     // TODO(eirage): convert this to builder pattern.
     void set_movement(const gfx::Vector2dF& movement) {
       event_->movement_ = movement;
@@ -486,8 +492,6 @@ class EVENTS_EXPORT MouseEvent : public LocatedEvent {
 
    private:
     MouseEvent* event_;
-
-    DISALLOW_COPY_AND_ASSIGN(DispatcherApi);
   };
 
   // Conveniences to quickly test what button is down
@@ -802,6 +806,12 @@ class EVENTS_EXPORT KeyEvent : public Event {
 
   ~KeyEvent() override;
 
+  // Returns true if synthesizing key repeat in InitializeNative is enabled.
+  static bool IsSynthesizeKeyRepeatEnabled();
+
+  // Sets whether to enable synthesizing key repeat in InitializeNative().
+  static void SetSynthesizeKeyRepeatEnabled(bool enabled);
+
   void InitializeNative();
 
   // This bypasses the normal mapping from keystroke events to characters,
@@ -927,9 +937,11 @@ class EVENTS_EXPORT KeyEvent : public Event {
   mutable DomKey key_ = DomKey::NONE;
 
   static KeyEvent* last_key_event_;
-#if defined(USE_X11) || defined(USE_OZONE)
+#if defined(USE_OZONE)
   static KeyEvent* last_ibus_key_event_;
 #endif
+
+  static bool synthesize_key_repeat_enabled_;
 };
 
 class EVENTS_EXPORT ScrollEvent : public MouseEvent {

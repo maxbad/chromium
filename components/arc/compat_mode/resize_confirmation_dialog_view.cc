@@ -7,10 +7,13 @@
 #include <memory>
 
 #include "base/bind.h"
+#include "base/callback_helpers.h"
 #include "components/arc/compat_mode/overlay_dialog.h"
 #include "components/arc/compat_mode/style/arc_color_provider.h"
 #include "components/strings/grit/components_strings.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/color/color_id.h"
+#include "ui/color/color_provider.h"
 #include "ui/strings/grit/ui_strings.h"
 #include "ui/views/accessibility/view_accessibility.h"
 #include "ui/views/bubble/bubble_border.h"
@@ -76,22 +79,28 @@ void ResizeConfirmationDialogView::AddedToWidget() {
       l10n_util::GetStringUTF16(IDS_ASH_ARC_APP_COMPAT_RESIZE_CONFIRM_TITLE));
 }
 
+void ResizeConfirmationDialogView::OnThemeChanged() {
+  views::BoxLayoutView::OnThemeChanged();
+  do_not_ask_checkbox_->SetEnabledTextColors(
+      GetColorProvider()->GetColor(ui::kColorDialogForeground));
+}
+
 std::unique_ptr<views::View> ResizeConfirmationDialogView::MakeContentsView() {
   return views::Builder<views::BoxLayoutView>()
       .SetOrientation(views::BoxLayout::Orientation::kVertical)
       .SetBetweenChildSpacing(19)
       .SetProperty(views::kMarginsKey, gfx::Insets(0, 0, 23, 0))
-      .AddChildren(
-          {views::Builder<views::Label>()
-               .SetText(l10n_util::GetStringUTF16(
-                   IDS_ASH_ARC_APP_COMPAT_RESIZE_CONFIRM_BODY))
-               .SetTextContext(views::style::CONTEXT_DIALOG_BODY_TEXT)
-               .SetHorizontalAlignment(gfx::ALIGN_LEFT)
-               .SetMultiLine(true),
-           views::Builder<views::Checkbox>()
-               .CopyAddressTo(&do_not_ask_checkbox_)
-               .SetText(l10n_util::GetStringUTF16(
-                   IDS_ASH_ARC_APP_COMPAT_RESIZE_CONFIRM_DONT_ASK_ME))})
+      .AddChildren(views::Builder<views::Label>()
+                       .SetText(l10n_util::GetStringUTF16(
+                           IDS_ASH_ARC_APP_COMPAT_RESIZE_CONFIRM_BODY))
+                       .SetTextContext(views::style::CONTEXT_DIALOG_BODY_TEXT)
+                       .SetTextStyle(views::style::STYLE_SECONDARY)
+                       .SetHorizontalAlignment(gfx::ALIGN_LEFT)
+                       .SetMultiLine(true),
+                   views::Builder<views::Checkbox>()
+                       .CopyAddressTo(&do_not_ask_checkbox_)
+                       .SetText(l10n_util::GetStringUTF16(
+                           IDS_ASH_ARC_APP_COMPAT_RESIZE_CONFIRM_DONT_ASK_ME)))
       .Build();
 }
 
@@ -102,39 +111,45 @@ std::unique_ptr<views::View> ResizeConfirmationDialogView::MakeButtonsView() {
       .SetMainAxisAlignment(views::BoxLayout::MainAxisAlignment::kEnd)
       .SetBetweenChildSpacing(provider->GetDistanceMetric(
           views::DistanceMetric::DISTANCE_RELATED_BUTTON_HORIZONTAL))
-      .AddChildren({views::Builder<views::MdTextButton>()  // Cancel button.
-                        .CopyAddressTo(&cancel_button_)
-                        .SetCallback(base::BindRepeating(
-                            &ResizeConfirmationDialogView::OnButtonClicked,
-                            base::Unretained(this), false))
-                        .SetText(l10n_util::GetStringUTF16(IDS_APP_CANCEL))
-                        .SetProminent(false)
-                        .SetIsDefault(false),
-                    views::Builder<views::MdTextButton>()  // Accept button.
-                        .CopyAddressTo(&accept_button_)
-                        .SetCallback(base::BindRepeating(
-                            &ResizeConfirmationDialogView::OnButtonClicked,
-                            base::Unretained(this), true))
-                        .SetText(l10n_util::GetStringUTF16(
-                            IDS_ASH_ARC_APP_COMPAT_RESIZE_CONFIRM_ACCEPT))
-                        .SetProminent(true)
-                        .SetIsDefault(true)})
+      .AddChildren(views::Builder<views::MdTextButton>()  // Cancel button.
+                       .CopyAddressTo(&cancel_button_)
+                       .SetCallback(base::BindRepeating(
+                           &ResizeConfirmationDialogView::OnButtonClicked,
+                           base::Unretained(this), false))
+                       .SetText(l10n_util::GetStringUTF16(IDS_APP_CANCEL))
+                       .SetProminent(false)
+                       .SetIsDefault(false),
+                   views::Builder<views::MdTextButton>()  // Accept button.
+                       .CopyAddressTo(&accept_button_)
+                       .SetCallback(base::BindRepeating(
+                           &ResizeConfirmationDialogView::OnButtonClicked,
+                           base::Unretained(this), true))
+                       .SetText(l10n_util::GetStringUTF16(
+                           IDS_ASH_ARC_APP_COMPAT_RESIZE_CONFIRM_ACCEPT))
+                       .SetProminent(true)
+                       .SetIsDefault(true))
       .Build();
 }
 
 void ResizeConfirmationDialogView::OnButtonClicked(bool accept) {
-  DCHECK(callback_);
+  if (!callback_)
+    return;
   std::move(callback_).Run(accept, do_not_ask_checkbox_->GetChecked());
 }
 
-void ShowResizeConfirmationDialog(aura::Window* parent,
-                                  ResizeConfirmationCallback callback) {
+void ResizeConfirmationDialogView::Show(aura::Window* parent,
+                                        ResizeConfirmationCallback callback) {
   auto remove_overlay =
-      base::BindOnce(&CloseOverlayDialogIfAny, base::Unretained(parent));
+      base::BindOnce(&OverlayDialog::CloseIfAny, base::Unretained(parent));
 
-  ShowOverlayDialog(parent,
-                    std::make_unique<ResizeConfirmationDialogView>(
-                        std::move(callback).Then(std::move(remove_overlay))));
+  auto dialog_view = std::make_unique<ResizeConfirmationDialogView>(
+      std::move(callback).Then(std::move(remove_overlay)));
+
+  OverlayDialog::Show(
+      parent,
+      base::BindOnce(&ResizeConfirmationDialogView::OnButtonClicked,
+                     base::Unretained(dialog_view.get()), /*accept=*/false),
+      std::move(dialog_view));
 }
 
 }  // namespace arc

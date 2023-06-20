@@ -6,6 +6,7 @@
 
 #include <set>
 
+#include "base/allocator/buildflags.h"
 #include "base/feature_list.h"
 #include "base/memory/ref_counted.h"
 #include "base/run_loop.h"
@@ -102,6 +103,11 @@ class ProcessMemoryMetricsEmitterFake : public ProcessMemoryMetricsEmitter {
                                            ukm::TestUkmRecorder* recorder)
       : run_loop_(run_loop), recorder_(recorder) {}
 
+  ProcessMemoryMetricsEmitterFake(const ProcessMemoryMetricsEmitterFake&) =
+      delete;
+  ProcessMemoryMetricsEmitterFake& operator=(
+      const ProcessMemoryMetricsEmitterFake&) = delete;
+
  private:
   ~ProcessMemoryMetricsEmitterFake() override {}
 
@@ -132,8 +138,6 @@ class ProcessMemoryMetricsEmitterFake : public ProcessMemoryMetricsEmitter {
   bool finished_memory_dump_ = false;
   bool finished_process_info_ = false;
   ukm::TestUkmRecorder* recorder_;
-
-  DISALLOW_COPY_AND_ASSIGN(ProcessMemoryMetricsEmitterFake);
 };
 
 void CheckMemoryMetric(const std::string& name,
@@ -183,6 +187,16 @@ void CheckExperimentalMemoryMetricsForProcessType(
   CheckMemoryMetric(std::string("Memory.Experimental.") + process_type + "2.V8",
                     histogram_tester, count, ValueRestriction::NONE,
                     number_of_processes);
+
+#if BUILDFLAG(USE_PARTITION_ALLOC_AS_MALLOC)
+  // It's a small metric, so should not be strictly zero in theory, but could be
+  // if purge comes at the wrong time, or the thread cache is not available on
+  // this platform.
+  CheckMemoryMetric(std::string("Memory.Experimental.") + process_type +
+                        "2.Small.Malloc.ThreadCache",
+                    histogram_tester, count, ValueRestriction::NONE,
+                    number_of_processes);
+#endif  // BUILDFLAG(USE_PARTITION_ALLOC_AS_MALLOC)
 }
 
 void CheckExperimentalMemoryMetrics(
@@ -301,6 +315,11 @@ class ProcessMemoryMetricsEmitterTest
   ProcessMemoryMetricsEmitterTest() {
     scoped_feature_list_.InitAndEnableFeature(ukm::kUkmFeature);
   }
+
+  ProcessMemoryMetricsEmitterTest(const ProcessMemoryMetricsEmitterTest&) =
+      delete;
+  ProcessMemoryMetricsEmitterTest& operator=(
+      const ProcessMemoryMetricsEmitterTest&) = delete;
 
   ~ProcessMemoryMetricsEmitterTest() override {}
 
@@ -513,8 +532,6 @@ class ProcessMemoryMetricsEmitterTest
 #if BUILDFLAG(ENABLE_EXTENSIONS)
   std::vector<std::unique_ptr<TestExtensionDir>> temp_dirs_;
 #endif
-
-  DISALLOW_COPY_AND_ASSIGN(ProcessMemoryMetricsEmitterTest);
 };
 
 // TODO(crbug.com/732501): Re-enable on Win once not flaky.
@@ -619,7 +636,7 @@ IN_PROC_BROWSER_TEST_F(ProcessMemoryMetricsEmitterTest,
   ASSERT_TRUE(embedded_test_server()->Start());
   const GURL app_url = embedded_test_server()->GetURL("app.org", "/empty.html");
   const Extension* app = CreateHostedApp("App", GURL("http://app.org"));
-  ui_test_utils::NavigateToURL(browser(), app_url);
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), app_url));
 
   // Verify that the hosted app has loaded.
   ProcessManager* pm = ProcessManager::Get(profile());

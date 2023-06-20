@@ -53,11 +53,8 @@ id<GREYAction> ScrollDown() {
 }
 
 bool IsAppCompactWidth() {
-  UIApplication* remoteApplication =
-      [GREY_REMOTE_CLASS_IN_APP(UIApplication) sharedApplication];
-  UIWindow* remoteKeyWindow = remoteApplication.keyWindow;
   UIUserInterfaceSizeClass sizeClass =
-      remoteKeyWindow.traitCollection.horizontalSizeClass;
+      chrome_test_util::GetAnyKeyWindow().traitCollection.horizontalSizeClass;
 
   return sizeClass == UIUserInterfaceSizeClassCompact;
 }
@@ -276,7 +273,7 @@ class ScopedDisableTimerTracking {
 }
 
 - (void)openShareMenu {
-  [[EarlGrey selectElementWithMatcher:chrome_test_util::ShareButton()]
+  [[EarlGrey selectElementWithMatcher:chrome_test_util::TabShareButton()]
       performAction:grey_tap()];
 }
 

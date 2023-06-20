@@ -18,7 +18,8 @@
                   android:launchMode="singleTask"
                   android:theme="@style/Theme.AppCompat.Light"
                   android:configChanges="orientation|keyboardHidden|keyboard|screenSize"
-                  android:hardwareAccelerated="true">
+                  android:hardwareAccelerated="true"
+                  android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
@@ -29,6 +30,7 @@
             android:authorities="org.chromium.cronet_sample_apk.androidx-startup"
             android:name="androidx.startup.InitializationProvider"
             android:exported="false"
+            tools:replace="android:authorities"
             tools:node="remove">
         </provider>
     </application>

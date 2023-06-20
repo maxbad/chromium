@@ -22,7 +22,6 @@
 #include "components/sync/driver/sync_service.h"
 #include "components/sync/driver/sync_service_impl.h"
 #include "components/sync/engine/loopback_server/loopback_server_entity.h"
-#include "components/sync/engine/nigori/key_derivation_params.h"
 #include "components/sync/nigori/nigori_test_utils.h"
 #include "components/sync/test/fake_server/entity_builder_factory.h"
 #include "components/sync/test/fake_server/fake_server.h"
@@ -142,7 +141,7 @@ int GetNumberOfSyncEntities(syncer::ModelType type) {
   if (!entities->GetList(model_type_string, &entity_list)) {
     return 0;
   }
-  return entity_list->GetSize();
+  return entity_list->GetList().size();
 }
 
 BOOL VerifyNumberOfSyncEntitiesWithName(syncer::ModelType type,
@@ -181,7 +180,10 @@ void AddLegacyBookmarkToFakeSyncServer(std::string url,
       entity_builder_factory.NewBookmarkEntityBuilder(
           title, std::move(originator_client_item_id));
   gSyncFakeServer->InjectEntity(
-      bookmark_builder.BuildBookmark(GURL(url), /*is_legacy=*/true));
+      bookmark_builder
+          .SetGeneration(fake_server::BookmarkEntityBuilder::
+                             BookmarkGeneration::kWithoutTitleInSpecifics)
+          .BuildBookmark(GURL(url)));
 }
 
 bool IsSyncInitialized() {
@@ -362,8 +364,7 @@ BOOL IsTypedUrlPresentOnClient(const GURL& url,
   NSDate* deadline = [NSDate dateWithTimeIntervalSinceNow:4.0];
   while (!history_service_callback_called &&
          [[NSDate date] compare:deadline] != NSOrderedDescending) {
-    base::test::ios::SpinRunLoopWithMaxDelay(
-        base::TimeDelta::FromSecondsD(0.1));
+    base::test::ios::SpinRunLoopWithMaxDelay(base::Seconds(0.1));
   }
 
   NSString* error_message = nil;
@@ -415,16 +416,17 @@ void DeleteTypedUrlFromFakeSyncServer(std::string url) {
 }
 
 void AddBookmarkWithSyncPassphrase(const std::string& sync_passphrase) {
-  syncer::KeyParamsForTesting key_params = {
-      syncer::KeyDerivationParams::CreateForPbkdf2(), sync_passphrase};
+  syncer::KeyParamsForTesting key_params =
+      syncer::Pbkdf2PassphraseKeyParamsForTesting(sync_passphrase);
   std::unique_ptr<syncer::LoopbackServerEntity> server_entity =
       CreateBookmarkServerEntity("PBKDF2-encrypted bookmark",
                                  GURL("http://example.com/doesnt-matter"));
   server_entity->SetSpecifics(GetEncryptedBookmarkEntitySpecifics(
       server_entity->GetSpecifics().bookmark(), key_params));
   gSyncFakeServer->InjectEntity(std::move(server_entity));
-  fake_server::SetNigoriInFakeServer(CreateCustomPassphraseNigori(key_params),
-                                     gSyncFakeServer);
+  fake_server::SetNigoriInFakeServer(
+      syncer::BuildCustomPassphraseNigoriSpecifics(key_params),
+      gSyncFakeServer);
 }
 
 }  // namespace chrome_test_util

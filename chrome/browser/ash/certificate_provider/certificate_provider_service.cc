@@ -15,11 +15,10 @@
 #include "base/callback_helpers.h"
 #include "base/location.h"
 #include "base/logging.h"
-#include "base/macros.h"
 #include "base/memory/ptr_util.h"
 #include "base/strings/string_piece.h"
-#include "base/task_runner.h"
-#include "base/task_runner_util.h"
+#include "base/task/task_runner.h"
+#include "base/task/task_runner_util.h"
 #include "base/threading/sequenced_task_runner_handle.h"
 #include "chrome/browser/ash/certificate_provider/certificate_provider.h"
 #include "net/base/net_errors.h"
@@ -51,6 +50,10 @@ class CertificateProviderService::CertificateProviderImpl
   // CertificateProviderService.
   explicit CertificateProviderImpl(
       const base::WeakPtr<CertificateProviderService>& service);
+
+  CertificateProviderImpl(const CertificateProviderImpl&) = delete;
+  CertificateProviderImpl& operator=(const CertificateProviderImpl&) = delete;
+
   ~CertificateProviderImpl() override;
 
   void GetCertificates(
@@ -60,8 +63,6 @@ class CertificateProviderService::CertificateProviderImpl
 
   const base::WeakPtr<CertificateProviderService> service_;
   SEQUENCE_CHECKER(sequence_checker_);
-
-  DISALLOW_COPY_AND_ASSIGN(CertificateProviderImpl);
 };
 
 // Implements an SSLPrivateKey backed by the signing function exposed by an
@@ -73,6 +74,9 @@ class CertificateProviderService::SSLPrivateKey : public net::SSLPrivateKey {
                 const CertificateInfo& cert_info,
                 const base::WeakPtr<CertificateProviderService>& service);
 
+  SSLPrivateKey(const SSLPrivateKey&) = delete;
+  SSLPrivateKey& operator=(const SSLPrivateKey&) = delete;
+
   // net::SSLPrivateKey:
   std::string GetProviderName() override;
   std::vector<uint16_t> GetAlgorithmPreferences() override;
@@ -81,14 +85,12 @@ class CertificateProviderService::SSLPrivateKey : public net::SSLPrivateKey {
             SignCallback callback) override;
 
  private:
-  ~SSLPrivateKey() override = default;
+  ~SSLPrivateKey() override;
 
   const std::string extension_id_;
   const CertificateInfo cert_info_;
   const base::WeakPtr<CertificateProviderService> service_;
   SEQUENCE_CHECKER(sequence_checker_);
-
-  DISALLOW_COPY_AND_ASSIGN(SSLPrivateKey);
 };
 
 class CertificateProviderService::ClientCertIdentity
@@ -98,6 +100,11 @@ class CertificateProviderService::ClientCertIdentity
                      base::WeakPtr<CertificateProviderService> service)
       : net::ClientCertIdentity(std::move(cert)), service_(service) {}
 
+  ClientCertIdentity(const ClientCertIdentity&) = delete;
+  ClientCertIdentity& operator=(const ClientCertIdentity&) = delete;
+
+  ~ClientCertIdentity() override;
+
   void AcquirePrivateKey(
       base::OnceCallback<void(scoped_refptr<net::SSLPrivateKey>)>
           private_key_callback) override;
@@ -105,13 +112,17 @@ class CertificateProviderService::ClientCertIdentity
  private:
   SEQUENCE_CHECKER(sequence_checker_);
   const base::WeakPtr<CertificateProviderService> service_;
-
-  DISALLOW_COPY_AND_ASSIGN(ClientCertIdentity);
 };
+
+CertificateProviderService::ClientCertIdentity::~ClientCertIdentity() {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+}
 
 void CertificateProviderService::ClientCertIdentity::AcquirePrivateKey(
     base::OnceCallback<void(scoped_refptr<net::SSLPrivateKey>)>
         private_key_callback) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
   if (!service_) {
     std::move(private_key_callback).Run(nullptr);
     return;
@@ -138,7 +149,9 @@ CertificateProviderService::CertificateProviderImpl::CertificateProviderImpl(
     : service_(service) {}
 
 CertificateProviderService::CertificateProviderImpl::
-    ~CertificateProviderImpl() {}
+    ~CertificateProviderImpl() {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+}
 
 void CertificateProviderService::CertificateProviderImpl::GetCertificates(
     base::OnceCallback<void(net::ClientCertIdentityList)> callback) {
@@ -191,6 +204,10 @@ void CertificateProviderService::SSLPrivateKey::Sign(
       /*authenticating_user_account_id=*/{}, std::move(callback));
 }
 
+CertificateProviderService::SSLPrivateKey::~SSLPrivateKey() {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+}
+
 CertificateProviderService::CertificateProviderService() {}
 
 CertificateProviderService::~CertificateProviderService() {
@@ -207,10 +224,12 @@ void CertificateProviderService::SetDelegate(
 }
 
 void CertificateProviderService::AddObserver(Observer* observer) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   observers_.AddObserver(observer);
 }
 
 void CertificateProviderService::RemoveObserver(Observer* observer) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   observers_.RemoveObserver(observer);
 }
 
@@ -356,6 +375,8 @@ bool CertificateProviderService::LookUpSpki(
 
 void CertificateProviderService::AbortSignatureRequestsForAuthenticatingUser(
     const AccountId& authenticating_user_account_id) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
   using ExtensionNameRequestIdPair =
       certificate_provider::SignRequests::ExtensionNameRequestIdPair;
 

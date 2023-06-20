@@ -11,8 +11,10 @@
 #include "cc/paint/node_id.h"
 #include "cc/paint/paint_export.h"
 #include "cc/paint/paint_image.h"
+#include "cc/paint/skottie_frame_data.h"
 #include "third_party/skia/include/core/SkCanvas.h"
-#include "third_party/skia/include/core/SkTextBlob.h"
+
+class SkTextBlob;
 
 namespace printing {
 class MetafileSkia;
@@ -26,6 +28,8 @@ namespace cc {
 class SkottieWrapper;
 class PaintFlags;
 class PaintOpBuffer;
+
+enum class UsePaintCache { kDisabled = 0, kEnabled };
 
 using PaintRecord = PaintOpBuffer;
 
@@ -109,10 +113,17 @@ class CC_PAINT_EXPORT PaintCanvas {
 
   virtual void clipPath(const SkPath& path,
                         SkClipOp op,
-                        bool do_anti_alias) = 0;
-  void clipPath(const SkPath& path, SkClipOp op) { clipPath(path, op, false); }
+                        bool do_anti_alias,
+                        UsePaintCache) = 0;
+  void clipPath(const SkPath& path, SkClipOp op, bool do_anti_alias) {
+    clipPath(path, op, do_anti_alias, UsePaintCache::kEnabled);
+  }
+  void clipPath(const SkPath& path, SkClipOp op) {
+    clipPath(path, op, /*do_anti_alias=*/false, UsePaintCache::kEnabled);
+  }
   void clipPath(const SkPath& path, bool do_anti_alias) {
-    clipPath(path, SkClipOp::kIntersect, do_anti_alias);
+    clipPath(path, SkClipOp::kIntersect, do_anti_alias,
+             UsePaintCache::kEnabled);
   }
 
   virtual SkRect getLocalClipBounds() const = 0;
@@ -141,7 +152,12 @@ class CC_PAINT_EXPORT PaintCanvas {
                              SkScalar rx,
                              SkScalar ry,
                              const PaintFlags& flags) = 0;
-  virtual void drawPath(const SkPath& path, const PaintFlags& flags) = 0;
+  virtual void drawPath(const SkPath& path,
+                        const PaintFlags& flags,
+                        UsePaintCache) = 0;
+  void drawPath(const SkPath& path, const PaintFlags& flags) {
+    drawPath(path, flags, UsePaintCache::kEnabled);
+  }
   virtual void drawImage(const PaintImage& image,
                          SkScalar left,
                          SkScalar top,
@@ -166,10 +182,13 @@ class CC_PAINT_EXPORT PaintCanvas {
 
   // Draws the frame of the |skottie| animation specified by the normalized time
   // t [0->first frame..1->last frame] at the destination bounds given by |dst|
-  // onto the canvas.
+  // onto the canvas. |images| is a map from asset id to the corresponding image
+  // to use when rendering this frame; it may be empty if this animation frame
+  // does not contain any images in it.
   virtual void drawSkottie(scoped_refptr<SkottieWrapper> skottie,
                            const SkRect& dst,
-                           float t) = 0;
+                           float t,
+                           SkottieFrameDataMap images) = 0;
 
   virtual void drawTextBlob(sk_sp<SkTextBlob> blob,
                             SkScalar x,
@@ -189,6 +208,8 @@ class CC_PAINT_EXPORT PaintCanvas {
   virtual bool isClipEmpty() const = 0;
   virtual SkMatrix getTotalMatrix() const = 0;
   virtual SkM44 getLocalToDevice() const = 0;
+
+  virtual bool NeedsFlush() const = 0;
 
   // Used for printing
   enum class AnnotationType {

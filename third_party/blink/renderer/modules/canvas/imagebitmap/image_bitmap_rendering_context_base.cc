@@ -5,7 +5,6 @@
 #include "third_party/blink/renderer/modules/canvas/imagebitmap/image_bitmap_rendering_context_base.h"
 
 #include "third_party/blink/renderer/bindings/core/v8/v8_union_htmlcanvaselement_offscreencanvas.h"
-#include "third_party/blink/renderer/bindings/modules/v8/rendering_context.h"
 #include "third_party/blink/renderer/core/imagebitmap/image_bitmap.h"
 #include "third_party/blink/renderer/platform/graphics/gpu/image_layer_bridge.h"
 #include "third_party/blink/renderer/platform/graphics/gpu/shared_gpu_context.h"
@@ -20,7 +19,7 @@ namespace blink {
 ImageBitmapRenderingContextBase::ImageBitmapRenderingContextBase(
     CanvasRenderingContextHost* host,
     const CanvasContextCreationAttributesCore& attrs)
-    : CanvasRenderingContext(host, attrs),
+    : CanvasRenderingContext(host, attrs, CanvasRenderingAPI::kBitmaprenderer),
       image_layer_bridge_(MakeGarbageCollected<ImageLayerBridge>(
           attrs.alpha ? kNonOpaque : kOpaque)) {}
 
@@ -63,7 +62,7 @@ void ImageBitmapRenderingContextBase::SetImage(ImageBitmap* image_bitmap) {
   else
     ResetInternalBitmapToBlackTransparent(Host()->width(), Host()->height());
 
-  DidDraw();
+  DidDraw(CanvasPerformanceMonitor::DrawType::kOther);
 
   if (image_bitmap)
     image_bitmap->close();
@@ -121,6 +120,9 @@ bool ImageBitmapRenderingContextBase::PushFrame() {
     return false;
 
   scoped_refptr<StaticBitmapImage> image = image_layer_bridge_->GetImage();
+  if (!image) {
+    return false;
+  }
   cc::PaintFlags paint_flags;
   paint_flags.setBlendMode(SkBlendMode::kSrc);
   Host()->ResourceProvider()->Canvas()->drawImage(
@@ -130,8 +132,8 @@ bool ImageBitmapRenderingContextBase::PushFrame() {
       Host()->ResourceProvider()->ProduceCanvasResource();
   Host()->PushFrame(
       std::move(resource),
-      SkIRect::MakeWH(image_layer_bridge_->GetImage()->Size().Width(),
-                      image_layer_bridge_->GetImage()->Size().Height()));
+      SkIRect::MakeWH(image_layer_bridge_->GetImage()->Size().width(),
+                      image_layer_bridge_->GetImage()->Size().height()));
   return true;
 }
 

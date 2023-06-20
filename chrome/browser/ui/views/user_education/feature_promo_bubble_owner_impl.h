@@ -10,6 +10,7 @@
 #include "chrome/browser/ui/views/user_education/feature_promo_bubble_owner.h"
 #include "chrome/browser/ui/views/user_education/feature_promo_bubble_view.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
+#include "ui/views/bubble/bubble_dialog_delegate_view.h"
 #include "ui/views/widget/widget_observer.h"
 
 // FeaturePromoBubbleOwner that creates a production FeaturePromoBubbleView.
@@ -21,16 +22,26 @@ class FeaturePromoBubbleOwnerImpl : public FeaturePromoBubbleOwner,
 
   static FeaturePromoBubbleOwnerImpl* GetInstance();
 
+  // Attempts to activate the bubble, if it's showing, or if it's already
+  // focused, attempts to focus the anchor view. Returns true if it was
+  // successful. Returns false if no bubble is showing or if focus cannot be
+  // toggled.
+  bool ToggleFocusForAccessibility();
+
+  // Checks if the bubble is a promo bubble.
+  bool IsPromoBubble(const views::DialogDelegate* bubble) const;
+
   FeaturePromoBubbleView* bubble_for_testing() { return bubble_; }
 
   // FeaturePromoBubbleOwner:
   absl::optional<base::Token> ShowBubble(
       FeaturePromoBubbleView::CreateParams params,
       base::OnceClosure close_callback) override;
-  bool BubbleIsShowing(base::Token bubble_id) override;
-  bool AnyBubbleIsShowing() override;
+  bool BubbleIsShowing(base::Token bubble_id) const override;
+  bool AnyBubbleIsShowing() const override;
   void CloseBubble(base::Token bubble_id) override;
   void NotifyAnchorBoundsChanged() override;
+  gfx::Rect GetBubbleBoundsInScreen(base::Token bubble_id) const override;
 
   // views::WidgetObserver:
   void OnWidgetClosing(views::Widget* widget) override;

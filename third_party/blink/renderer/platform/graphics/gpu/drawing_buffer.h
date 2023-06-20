@@ -34,7 +34,6 @@
 #include <memory>
 
 #include "base/containers/span.h"
-#include "base/macros.h"
 #include "cc/layers/texture_layer_client.h"
 #include "cc/resources/cross_thread_shared_bitmap.h"
 #include "cc/resources/shared_bitmap_id_registrar.h"
@@ -49,6 +48,7 @@
 #include "third_party/blink/renderer/platform/geometry/int_size.h"
 #include "third_party/blink/renderer/platform/graphics/gpu/webgl_image_conversion.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_types_3d.h"
+#include "third_party/blink/renderer/platform/graphics/web_graphics_context_3d_video_frame_pool.h"
 #include "third_party/blink/renderer/platform/platform_export.h"
 #include "third_party/blink/renderer/platform/wtf/allocator/allocator.h"
 #include "third_party/blink/renderer/platform/wtf/deque.h"
@@ -139,10 +139,12 @@ class PLATFORM_EXPORT DrawingBuffer : public cc::TextureLayerClient,
       PreserveDrawingBuffer,
       WebGLVersion,
       ChromiumImageUsage,
-      SkFilterQuality,
+      cc::PaintFlags::FilterQuality,
       const CanvasColorParams&,
       gl::GpuPreference);
 
+  DrawingBuffer(const DrawingBuffer&) = delete;
+  DrawingBuffer& operator=(const DrawingBuffer&) = delete;
   ~DrawingBuffer() override;
 
   // Destruction will be completed after all mailboxes are released.
@@ -210,8 +212,10 @@ class PLATFORM_EXPORT DrawingBuffer : public cc::TextureLayerClient,
   GLbitfield GetBuffersToAutoClear() const;
 
   void SetIsInHiddenPage(bool);
-  void SetFilterQuality(SkFilterQuality);
-  SkFilterQuality FilterQuality() const { return filter_quality_; }
+  void SetFilterQuality(cc::PaintFlags::FilterQuality);
+  cc::PaintFlags::FilterQuality FilterQuality() const {
+    return filter_quality_;
+  }
 
   // Whether the target for draw operations has format GL_RGBA, but is
   // emulating format GL_RGB. When the target's storage is first
@@ -257,7 +261,7 @@ class PLATFORM_EXPORT DrawingBuffer : public cc::TextureLayerClient,
                              GLint dst_level,
                              bool premultiply_alpha,
                              bool flip_y,
-                             const IntPoint& dst_texture_offset,
+                             const gfx::Point& dst_texture_offset,
                              const IntRect& src_sub_rectangle,
                              SourceDrawingBuffer);
 
@@ -265,9 +269,16 @@ class PLATFORM_EXPORT DrawingBuffer : public cc::TextureLayerClient,
                              gpu::Mailbox dst_mailbox,
                              GLenum dst_texture_target,
                              bool flip_y,
-                             const IntPoint& dst_texture_offset,
+                             const gfx::Point& dst_texture_offset,
                              const IntRect& src_sub_rectangle,
                              SourceDrawingBuffer src_buffer);
+
+  void CopyToVideoFrame(
+      WebGraphicsContext3DVideoFramePool* frame_pool,
+      SourceDrawingBuffer src_buffer,
+      bool src_origin_is_top_left,
+      const gfx::ColorSpace& dst_color_space,
+      WebGraphicsContext3DVideoFramePool::FrameReadyCallback& callback);
 
   sk_sp<SkData> PaintRenderingResultsToDataArray(SourceDrawingBuffer);
 
@@ -283,6 +294,12 @@ class PLATFORM_EXPORT DrawingBuffer : public cc::TextureLayerClient,
   void RestoreAllState();
 
   bool UsingSwapChain() const { return using_swap_chain_; }
+
+  // Keep track of low latency buffer status.
+  bool low_latency_enabled() const { return low_latency_enabled_; }
+  void set_low_latency_enabled(bool low_latency_enabled) {
+    low_latency_enabled_ = low_latency_enabled;
+  }
 
   // This class helps implement correct semantics for BlitFramebuffer
   // when the DrawingBuffer is using a CHROMIUM image for its backing
@@ -321,7 +338,7 @@ class PLATFORM_EXPORT DrawingBuffer : public cc::TextureLayerClient,
                 bool wants_depth,
                 bool wants_stencil,
                 ChromiumImageUsage,
-                SkFilterQuality,
+                cc::PaintFlags::FilterQuality,
                 const CanvasColorParams&,
                 gl::GpuPreference gpu_preference);
 
@@ -386,6 +403,8 @@ class PLATFORM_EXPORT DrawingBuffer : public cc::TextureLayerClient,
                 GLuint texture_id,
                 std::unique_ptr<gfx::GpuMemoryBuffer>,
                 gpu::Mailbox mailbox);
+    ColorBuffer(const ColorBuffer&) = delete;
+    ColorBuffer& operator=(const ColorBuffer&) = delete;
     ~ColorBuffer();
 
     // The thread on which the ColorBuffer is created and the DrawingBuffer is
@@ -420,9 +439,6 @@ class PLATFORM_EXPORT DrawingBuffer : public cc::TextureLayerClient,
     // The sync token for when this buffer was received back from the
     // compositor.
     gpu::SyncToken receive_sync_token;
-
-   private:
-    DISALLOW_COPY_AND_ASSIGN(ColorBuffer);
   };
 
   template <typename CopyFunction>
@@ -430,7 +446,7 @@ class PLATFORM_EXPORT DrawingBuffer : public cc::TextureLayerClient,
                               SourceDrawingBuffer src_buffer,
                               const CopyFunction& copy_function);
 
-  enum ClearOption { ClearOnlyMultisampledFBO, ClearAllFBOs };
+  enum ClearOption { kClearOnlyMultisampledFBO, kClearAllFBOs };
 
   // Clears out newly-allocated framebuffers (really, renderbuffers / textures).
   void ClearNewlyAllocatedFramebuffers(ClearOption clear_option);
@@ -448,10 +464,19 @@ class PLATFORM_EXPORT DrawingBuffer : public cc::TextureLayerClient,
   // Resolves m_multisampleFBO into m_fbo, if multisampling.
   void ResolveIfNeeded();
 
-  // This method checks if the context or the resource has been destroyed,
-  // ensures that there are changes in the content, check that the context is
-  // not lost and resolve the multisampled buffer if needed.
-  bool CheckForDestructionChangeAndResolveIfNeeded();
+  enum CheckForDestructionResult {
+    kDestroyedOrLost,
+    kContentsUnchanged,
+    kContentsResolvedIfNeeded
+  };
+
+  // This method:
+  //  - Checks if the context or the resource has been destroyed
+  //  - Checks whether there are changes in the content
+  //  - Checks whether the context has been lost
+  // If all of the above checks pass, resolves the multisampled
+  // renderbuffer if needed.
+  CheckForDestructionResult CheckForDestructionAndChangeAndResolveIfNeeded();
 
   bool PrepareTransferableResourceInternal(
       cc::SharedBitmapIdRegistrar* bitmap_registrar,
@@ -563,6 +588,7 @@ class PLATFORM_EXPORT DrawingBuffer : public cc::TextureLayerClient,
   const bool premultiplied_alpha_;
   Platform::GraphicsInfo graphics_info_;
   const bool using_swap_chain_;
+  bool low_latency_enabled_ = false;
   bool has_implicit_stencil_buffer_ = false;
 
   // The texture target (2D or RECTANGLE) for our allocations.
@@ -637,7 +663,8 @@ class PLATFORM_EXPORT DrawingBuffer : public cc::TextureLayerClient,
   bool destruction_in_progress_ = false;
   bool is_hidden_ = false;
   bool has_eqaa_support = false;
-  SkFilterQuality filter_quality_ = kLow_SkFilterQuality;
+  cc::PaintFlags::FilterQuality filter_quality_ =
+      cc::PaintFlags::FilterQuality::kLow;
 
   scoped_refptr<cc::TextureLayer> layer_;
 
@@ -659,8 +686,6 @@ class PLATFORM_EXPORT DrawingBuffer : public cc::TextureLayerClient,
   gl::GpuPreference current_active_gpu_;
 
   base::WeakPtrFactory<DrawingBuffer> weak_factory_;
-
-  DISALLOW_COPY_AND_ASSIGN(DrawingBuffer);
 };
 
 }  // namespace blink

@@ -4,10 +4,11 @@
 
 #include "chrome/browser/ash/remote_apps/remote_apps_manager.h"
 
-#include "ash/app_list/app_list_controller_impl.h"
+#include "ash/app_list/app_list_model_provider.h"
 #include "ash/app_list/model/app_list_item.h"
 #include "ash/app_list/model/app_list_model.h"
 #include "ash/constants/ash_switches.h"
+#include "ash/public/cpp/accelerators.h"
 #include "ash/public/cpp/app_list/app_list_types.h"
 #include "ash/public/cpp/image_downloader.h"
 #include "ash/public/cpp/shelf_item.h"
@@ -17,24 +18,26 @@
 #include "base/run_loop.h"
 #include "base/scoped_observation.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/apps/app_service/app_icon_factory.h"
+#include "base/test/bind.h"
+#include "chrome/browser/apps/app_service/app_icon/app_icon_factory.h"
 #include "chrome/browser/apps/app_service/app_service_proxy.h"
 #include "chrome/browser/apps/app_service/app_service_proxy_factory.h"
 #include "chrome/browser/ash/login/test/local_policy_test_server_mixin.h"
 #include "chrome/browser/ash/login/test/session_manager_state_waiter.h"
 #include "chrome/browser/ash/login/wizard_controller.h"
+#include "chrome/browser/ash/policy/core/device_policy_cros_browser_test.h"
 #include "chrome/browser/ash/profiles/profile_helper.h"
 #include "chrome/browser/ash/remote_apps/id_generator.h"
 #include "chrome/browser/ash/remote_apps/remote_apps_manager_factory.h"
 #include "chrome/browser/ash/remote_apps/remote_apps_model.h"
-#include "chrome/browser/chromeos/policy/device_policy_cros_browser_test.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/app_list/app_list_client_impl.h"
 #include "chrome/browser/ui/app_list/app_list_syncable_service_factory.h"
 #include "chrome/browser/ui/ash/shelf/chrome_shelf_controller.h"
-#include "chrome/common/chrome_features.h"
 #include "chromeos/login/auth/user_context.h"
 #include "components/account_id/account_id.h"
 #include "components/policy/proto/chrome_device_policy.pb.h"
+#include "components/services/app_service/public/cpp/icon_types.h"
 #include "components/services/app_service/public/mojom/types.mojom.h"
 #include "components/user_manager/user.h"
 #include "components/user_manager/user_manager.h"
@@ -202,11 +205,8 @@ class RemoteAppsManagerBrowsertest
             });
   }
 
-  ash::AppListItem* GetAppListItem(const std::string& id) {
-    ash::AppListControllerImpl* controller =
-        ash::Shell::Get()->app_list_controller();
-    ash::AppListModel* model = controller->GetModel();
-    return model->FindItem(id);
+  AppListItem* GetAppListItem(const std::string& id) {
+    return AppListModelProvider::Get()->model()->FindItem(id);
   }
 
   std::string AddApp(const std::string& name,
@@ -220,13 +220,11 @@ class RemoteAppsManagerBrowsertest
                          [](base::RepeatingClosure closure, std::string* id_arg,
                             const std::string& id, RemoteAppsError error) {
                            ASSERT_EQ(RemoteAppsError::kNone, error);
+                           ASSERT_TRUE(
+                               AppListModelProvider::Get()->model()->FindItem(
+                                   id));
 
-                           ash::AppListControllerImpl* controller =
-                               ash::Shell::Get()->app_list_controller();
-                           ash::AppListModel* model = controller->GetModel();
-                           ASSERT_TRUE(model->FindItem(id));
                            *id_arg = id;
-
                            closure.Run();
                          },
                          run_loop.QuitClosure(), &id));
@@ -278,6 +276,14 @@ class RemoteAppsManagerBrowsertest
     run_loop.Run();
   }
 
+  void ShowLauncherAppsGrid() {
+    AppListClientImpl* client = AppListClientImpl::GetInstance();
+    EXPECT_FALSE(client->GetAppListWindow());
+    ash::AcceleratorController::Get()->PerformActionIfEnabled(
+        ash::TOGGLE_APP_LIST_FULLSCREEN, {});
+    EXPECT_TRUE(client->GetAppListWindow());
+  }
+
  protected:
   RemoteAppsManager* manager_ = nullptr;
   MockImageDownloader* image_downloader_ = nullptr;
@@ -286,6 +292,9 @@ class RemoteAppsManagerBrowsertest
 };
 
 IN_PROC_BROWSER_TEST_F(RemoteAppsManagerBrowsertest, AddApp) {
+  // Show launcher UI so that app icons are loaded.
+  ShowLauncherAppsGrid();
+
   std::string name = "name";
   GURL icon_url("icon_url");
   gfx::ImageSkia icon = CreateTestIcon(32, SK_ColorRED);
@@ -298,26 +307,20 @@ IN_PROC_BROWSER_TEST_F(RemoteAppsManagerBrowsertest, AddApp) {
   EXPECT_FALSE(item->is_folder());
   EXPECT_EQ(name, item->name());
   // kShared uses size hint 64 dip.
-  apps::IconEffects icon_effects =
-      base::FeatureList::IsEnabled(features::kAppServiceAdaptiveIcon)
-          ? apps::IconEffects::kCrOsStandardIcon
-          : apps::IconEffects::kResizeAndPad;
+  apps::IconEffects icon_effects = apps::IconEffects::kCrOsStandardIcon;
 
   base::RunLoop run_loop;
-  apps::mojom::IconValuePtr output_data = apps::mojom::IconValue::New();
-  apps::mojom::IconValuePtr iv = apps::mojom::IconValue::New();
-  iv->icon_type = apps::mojom::IconType::kStandard;
+  auto output_data = std::make_unique<apps::IconValue>();
+  auto iv = std::make_unique<apps::IconValue>();
+  iv->icon_type = apps::IconType::kStandard;
   iv->uncompressed = icon;
   iv->is_placeholder_icon = true;
-  apps::ApplyIconEffects(icon_effects, 64, std::move(iv),
-                         base::BindOnce(
-                             [](apps::mojom::IconValuePtr* result,
-                                base::OnceClosure load_app_icon_callback,
-                                apps::mojom::IconValuePtr icon) {
-                               *result = std::move(icon);
-                               std::move(load_app_icon_callback).Run();
-                             },
-                             &output_data, run_loop.QuitClosure()));
+  apps::ApplyIconEffects(
+      icon_effects, 64, std::move(iv),
+      base::BindLambdaForTesting([&](apps::IconValuePtr icon) {
+        output_data = std::move(icon);
+        run_loop.Quit();
+      }));
   run_loop.Run();
   CheckIconsEqual(output_data->uncompressed, item->GetDefaultIcon());
 }

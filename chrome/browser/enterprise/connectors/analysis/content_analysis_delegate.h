@@ -1,4 +1,4 @@
-// Copyright (c) 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,7 +12,6 @@
 
 #include "base/feature_list.h"
 #include "base/files/file_path.h"
-#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
 #include "chrome/browser/enterprise/connectors/analysis/content_analysis_delegate_base.h"
@@ -20,6 +19,8 @@
 #include "chrome/browser/enterprise/connectors/connectors_manager.h"
 #include "chrome/browser/safe_browsing/cloud_content_scanning/binary_upload_service.h"
 #include "chrome/browser/safe_browsing/cloud_content_scanning/deep_scanning_utils.h"
+#include "chrome/browser/safe_browsing/cloud_content_scanning/file_analysis_request.h"
+#include "chrome/browser/safe_browsing/cloud_content_scanning/file_opening_job.h"
 #include "chrome/browser/ui/tab_modal_confirm_dialog.h"
 #include "chrome/browser/ui/tab_modal_confirm_dialog_delegate.h"
 #include "components/enterprise/common/proto/connectors.pb.h"
@@ -72,8 +73,8 @@ class ContentAnalysisDelegate : public ContentAnalysisDelegateBase {
     // URL of the page that is to receive sensitive data.
     GURL url;
 
-    // Text data to scan, such as plain text, URLs, HTML content, etc.
-    std::vector<std::u16string> text;
+    // UTF-8 encoded text data to scan, such as plain text, URLs, HTML, etc.
+    std::vector<std::string> text;
 
     // List of files to scan.
     std::vector<base::FilePath> paths;
@@ -164,6 +165,12 @@ class ContentAnalysisDelegate : public ContentAnalysisDelegateBase {
   // "CancelledByUser" metrics should not be recorded.
   void Cancel(bool warning) override;
 
+  absl::optional<std::u16string> GetCustomMessage() const override;
+
+  absl::optional<GURL> GetCustomLearnMoreUrl() const override;
+
+  absl::optional<std::u16string> OverrideCancelButtonText() const override;
+
   // Returns true if the deep scanning feature is enabled in the upload
   // direction via enterprise policies.  If the appropriate enterprise policies
   // are not set this feature is not enabled.
@@ -236,8 +243,8 @@ class ContentAnalysisDelegate : public ContentAnalysisDelegateBase {
 
   // Prepares an upload request for the file at |path|.  If the file
   // cannot be uploaded it will have a failure verdict added to |result_|.
-  // Virtual so that it can be overridden in tests.
-  void PrepareFileRequest(const base::FilePath& path);
+  safe_browsing::FileAnalysisRequest* PrepareFileRequest(
+      const base::FilePath& path);
 
   // Adds required fields to |request| before sending it to the binary upload
   // service.
@@ -280,18 +287,10 @@ class ContentAnalysisDelegate : public ContentAnalysisDelegateBase {
       safe_browsing::BinaryUploadService::Result result,
       const safe_browsing::BinaryUploadService::Request::Data& data);
 
-  // Completion of |FileRequestCallback| once the mime type is obtained
-  // asynchronously.
-  void CompleteFileRequestCallback(
-      size_t index,
-      base::FilePath path,
-      safe_browsing::BinaryUploadService::Result result,
-      enterprise_connectors::ContentAnalysisResponse response,
-      std::string mime_type);
-
   // Updates |final_result_| following the precedence established by the
   // FinalResult enum.
-  void UpdateFinalResult(ContentAnalysisDelegateBase::FinalResult message);
+  void UpdateFinalResult(ContentAnalysisDelegateBase::FinalResult message,
+                         const std::string& tag);
 
   // Returns the BinaryUploadService used to upload content for deep scanning.
   // Virtual to override in tests.
@@ -339,6 +338,9 @@ class ContentAnalysisDelegate : public ContentAnalysisDelegateBase {
   // Scanning result to be shown to the user once every request is done.
   ContentAnalysisDelegateBase::FinalResult final_result_ =
       ContentAnalysisDelegateBase::FinalResult::SUCCESS;
+  // The tag (dlp, malware, etc) of the result that triggered the verdict
+  // represented by |final_result_|.
+  std::string final_result_tag_;
 
   // Set to true at the end of UploadData to indicate requests have been made
   // for every file/text. This is read to ensure |this| isn't deleted too early.
@@ -347,6 +349,10 @@ class ContentAnalysisDelegate : public ContentAnalysisDelegateBase {
   // This is set to true as soon as a TOO_MANY_REQUESTS response is obtained. No
   // more data should be upload for |this| at that point.
   bool throttled_ = false;
+
+  // Owner of the FileOpeningJob responsible for opening files on parallel
+  // threads. Always nullptr for non-file content scanning.
+  std::unique_ptr<safe_browsing::FileOpeningJob> file_opening_job_;
 
   base::TimeTicks upload_start_time_;
 
